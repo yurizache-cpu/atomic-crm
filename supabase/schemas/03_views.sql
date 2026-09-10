@@ -118,6 +118,14 @@ select
     co.linkedin_url,
     co.email_jsonb,
     co.phone_jsonb,
+    lp.acquired_at,
+    lp.last_interaction_at,
+    lp.next_action_at,
+    lp.operational_status,
+    lp.do_not_contact,
+    attribution.source as acquisition_source,
+    attribution.medium as acquisition_medium,
+    attribution.campaign as acquisition_campaign,
     (jsonb_path_query_array(co.email_jsonb, '$[*]."email"'))::text as email_fts,
     (jsonb_path_query_array(co.phone_jsonb, '$[*]."number"'))::text as phone_fts,
     c.name as company_name,
@@ -125,9 +133,17 @@ select
 from public.contacts co
     left join public.tasks t on co.id = t.contact_id
     left join public.companies c on co.company_id = c.id
-group by co.id, c.name;
+    left join public.lead_profiles lp on lp.contact_id = co.id
+    left join lateral (
+        select aa.source, aa.medium, aa.campaign
+        from public.acquisition_attributions aa
+        where aa.contact_id = co.id
+        order by aa.acquired_at desc, aa.id desc
+        limit 1
+    ) attribution on true
+group by co.id, c.name, lp.id, attribution.source, attribution.medium, attribution.campaign;
 
-create or replace view public.init_state with (security_invoker = off) as
+create or replace view public.init_state with (security_invoker = on) as
 select count(sub.id) as is_initialized
 from (
     select sales.id from public.sales limit 1

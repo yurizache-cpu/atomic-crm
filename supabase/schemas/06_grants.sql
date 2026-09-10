@@ -1,177 +1,67 @@
 --
 -- Grants
--- This file declares all grants and default privileges for the public schema.
+-- RLS is the row-level boundary. These grants provide only the verbs needed by
+-- the browser application; anon receives no access to commercial data.
 --
 
--- Schema usage
-grant usage on schema public to postgres;
-grant usage on schema public to anon;
-grant usage on schema public to authenticated;
-grant usage on schema public to service_role;
+grant usage on schema public to postgres, authenticated, service_role;
+revoke usage on schema public from anon;
 
--- Function grants
-grant all on function public.cleanup_note_attachments() to anon;
-grant all on function public.cleanup_note_attachments() to authenticated;
-grant all on function public.cleanup_note_attachments() to service_role;
+revoke all on all tables in schema public from anon, authenticated;
+revoke all on all sequences in schema public from anon, authenticated;
+revoke all on all functions in schema public from public, anon, authenticated;
 
-grant all on function public.get_avatar_for_email(text) to anon;
-grant all on function public.get_avatar_for_email(text) to authenticated;
-grant all on function public.get_avatar_for_email(text) to service_role;
+-- Browser data access. Policies in 05_policies.sql further constrain every row.
+grant select, insert, update, delete on table public.companies to authenticated;
+grant select, insert, update, delete on table public.contacts to authenticated;
+grant select, insert, update, delete on table public.contact_notes to authenticated;
+grant select, insert, update, delete on table public.deals to authenticated;
+grant select, insert, update, delete on table public.deal_notes to authenticated;
+grant select on table public.sales to authenticated;
+grant select, insert, update, delete on table public.tags to authenticated;
+grant select, insert, update, delete on table public.tasks to authenticated;
+grant select, update on table public.configuration to authenticated;
+grant select on table public.favicons_excluded_domains to authenticated;
+grant select, update on table public.lead_profiles to authenticated;
+grant select, insert, update, delete on table public.acquisition_attributions to authenticated;
+grant select, insert, update, delete on table public.loss_reasons to authenticated;
 
-grant all on function public.get_domain_favicon(text) to anon;
-grant all on function public.get_domain_favicon(text) to authenticated;
-grant all on function public.get_domain_favicon(text) to service_role;
+-- Views are read-only API resources. security_invoker views apply the caller's
+-- RLS policies on their source tables.
+grant select on table public.activity_log to authenticated;
+grant select on table public.companies_summary to authenticated;
+grant select on table public.contacts_summary to authenticated;
 
-grant all on function public.get_note_attachments_function_url() to anon;
-grant all on function public.get_note_attachments_function_url() to authenticated;
-grant all on function public.get_note_attachments_function_url() to service_role;
+-- Identity sequences require USAGE for inserts performed through PostgREST.
+grant usage on sequence public.companies_id_seq to authenticated;
+grant usage on sequence public."contactNotes_id_seq" to authenticated;
+grant usage on sequence public.contacts_id_seq to authenticated;
+grant usage on sequence public."dealNotes_id_seq" to authenticated;
+grant usage on sequence public.deals_id_seq to authenticated;
+grant usage on sequence public.tags_id_seq to authenticated;
+grant usage on sequence public.tasks_id_seq to authenticated;
+grant usage on sequence public.acquisition_attributions_id_seq to authenticated;
+grant usage on sequence public.loss_reasons_id_seq to authenticated;
 
-revoke all on function public.get_user_id_by_email(text) from public;
-grant all on function public.get_user_id_by_email(text) to service_role;
+-- Policy helper functions are executable by authenticated callers only. The
+-- remaining functions are trigger/internal or service-role-only operations.
+grant execute on function public.current_sales_id() to authenticated;
+grant execute on function public.is_active_sales_user() to authenticated;
+grant execute on function public.is_admin() to authenticated;
+grant execute on function public.can_manage_sales_id(bigint) to authenticated;
+grant execute on function public.can_access_contact(bigint) to authenticated;
+grant execute on function public.can_access_deal(bigint) to authenticated;
+grant execute on function public.get_user_id_by_email(text) to service_role;
 
-grant all on function public.handle_company_saved() to anon;
-grant all on function public.handle_company_saved() to authenticated;
-grant all on function public.handle_company_saved() to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant all on all functions in schema public to service_role;
 
-grant all on function public.handle_contact_note_created_or_updated() to anon;
-grant all on function public.handle_contact_note_created_or_updated() to authenticated;
-grant all on function public.handle_contact_note_created_or_updated() to service_role;
-
-grant all on function public.handle_contact_saved() to anon;
-grant all on function public.handle_contact_saved() to authenticated;
-grant all on function public.handle_contact_saved() to service_role;
-
-grant all on function public.handle_new_user() to anon;
-grant all on function public.handle_new_user() to authenticated;
-grant all on function public.handle_new_user() to service_role;
-
-grant all on function public.handle_update_user() to anon;
-grant all on function public.handle_update_user() to authenticated;
-grant all on function public.handle_update_user() to service_role;
-
-grant all on function public.is_admin() to anon;
-grant all on function public.is_admin() to authenticated;
-grant all on function public.is_admin() to service_role;
-
-grant all on function public.lowercase_email_jsonb() to anon;
-grant all on function public.lowercase_email_jsonb() to authenticated;
-grant all on function public.lowercase_email_jsonb() to service_role;
-
-grant all on function public.merge_contacts(bigint, bigint) to anon;
-grant all on function public.merge_contacts(bigint, bigint) to authenticated;
-grant all on function public.merge_contacts(bigint, bigint) to service_role;
-
-grant all on function public.set_sales_id_default() to anon;
-grant all on function public.set_sales_id_default() to authenticated;
-grant all on function public.set_sales_id_default() to service_role;
-
--- Table grants
-grant all on table public.companies to anon;
-grant all on table public.companies to authenticated;
-grant all on table public.companies to service_role;
-
-grant all on table public.contacts to anon;
-grant all on table public.contacts to authenticated;
-grant all on table public.contacts to service_role;
-
-grant all on table public.contact_notes to anon;
-grant all on table public.contact_notes to authenticated;
-grant all on table public.contact_notes to service_role;
-
-grant all on table public.deals to anon;
-grant all on table public.deals to authenticated;
-grant all on table public.deals to service_role;
-
-grant all on table public.deal_notes to anon;
-grant all on table public.deal_notes to authenticated;
-grant all on table public.deal_notes to service_role;
-
-grant all on table public.sales to anon;
-grant all on table public.sales to authenticated;
-grant all on table public.sales to service_role;
-
-grant all on table public.tags to anon;
-grant all on table public.tags to authenticated;
-grant all on table public.tags to service_role;
-
-grant all on table public.tasks to anon;
-grant all on table public.tasks to authenticated;
-grant all on table public.tasks to service_role;
-
-grant all on table public.configuration to anon;
-grant all on table public.configuration to authenticated;
-grant all on table public.configuration to service_role;
-
-grant all on table public.favicons_excluded_domains to anon;
-grant all on table public.favicons_excluded_domains to authenticated;
-grant all on table public.favicons_excluded_domains to service_role;
-
--- View grants
-grant all on table public.activity_log to anon;
-grant all on table public.activity_log to authenticated;
-grant all on table public.activity_log to service_role;
-
-grant all on table public.companies_summary to anon;
-grant all on table public.companies_summary to authenticated;
-grant all on table public.companies_summary to service_role;
-
-grant all on table public.contacts_summary to anon;
-grant all on table public.contacts_summary to authenticated;
-grant all on table public.contacts_summary to service_role;
-
-grant all on table public.init_state to anon;
-grant all on table public.init_state to authenticated;
-grant all on table public.init_state to service_role;
-
--- Sequence grants
-grant all on sequence public.companies_id_seq to anon;
-grant all on sequence public.companies_id_seq to authenticated;
-grant all on sequence public.companies_id_seq to service_role;
-
-grant all on sequence public."contactNotes_id_seq" to anon;
-grant all on sequence public."contactNotes_id_seq" to authenticated;
-grant all on sequence public."contactNotes_id_seq" to service_role;
-
-grant all on sequence public.contacts_id_seq to anon;
-grant all on sequence public.contacts_id_seq to authenticated;
-grant all on sequence public.contacts_id_seq to service_role;
-
-grant all on sequence public."dealNotes_id_seq" to anon;
-grant all on sequence public."dealNotes_id_seq" to authenticated;
-grant all on sequence public."dealNotes_id_seq" to service_role;
-
-grant all on sequence public.deals_id_seq to anon;
-grant all on sequence public.deals_id_seq to authenticated;
-grant all on sequence public.deals_id_seq to service_role;
-
-grant all on sequence public.favicons_excluded_domains_id_seq to anon;
-grant all on sequence public.favicons_excluded_domains_id_seq to authenticated;
-grant all on sequence public.favicons_excluded_domains_id_seq to service_role;
-
-grant all on sequence public.sales_id_seq to anon;
-grant all on sequence public.sales_id_seq to authenticated;
-grant all on sequence public.sales_id_seq to service_role;
-
-grant all on sequence public.tags_id_seq to anon;
-grant all on sequence public.tags_id_seq to authenticated;
-grant all on sequence public.tags_id_seq to service_role;
-
-grant all on sequence public.tasks_id_seq to anon;
-grant all on sequence public.tasks_id_seq to authenticated;
-grant all on sequence public.tasks_id_seq to service_role;
-
--- Default privileges
-alter default privileges for role postgres in schema public grant all on sequences to postgres;
-alter default privileges for role postgres in schema public grant all on sequences to anon;
-alter default privileges for role postgres in schema public grant all on sequences to authenticated;
-alter default privileges for role postgres in schema public grant all on sequences to service_role;
-
-alter default privileges for role postgres in schema public grant all on functions to postgres;
-alter default privileges for role postgres in schema public grant all on functions to anon;
-alter default privileges for role postgres in schema public grant all on functions to authenticated;
-alter default privileges for role postgres in schema public grant all on functions to service_role;
-
-alter default privileges for role postgres in schema public grant all on tables to postgres;
-alter default privileges for role postgres in schema public grant all on tables to anon;
-alter default privileges for role postgres in schema public grant all on tables to authenticated;
+-- New objects are private by default. Add explicit grants above when a browser
+-- capability is intentionally introduced.
+alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
+alter default privileges for role postgres in schema public revoke all on sequences from anon, authenticated;
+alter default privileges for role postgres in schema public revoke execute on functions from public, anon, authenticated;
 alter default privileges for role postgres in schema public grant all on tables to service_role;
+alter default privileges for role postgres in schema public grant all on sequences to service_role;
+alter default privileges for role postgres in schema public grant all on functions to service_role;

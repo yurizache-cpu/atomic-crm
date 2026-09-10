@@ -186,6 +186,10 @@ CREATE OR REPLACE FUNCTION "public"."handle_contact_note_created_or_updated"() R
     AS $$
 begin
   update public.contacts set last_seen = new.date where contacts.id = new.contact_id and contacts.last_seen < new.date;
+  update public.lead_profiles
+  set last_interaction_at = new.date
+  where contact_id = new.contact_id
+    and (last_interaction_at is null or last_interaction_at < new.date);
   return new;
 end;
 $$;
@@ -228,19 +232,15 @@ CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
     AS $$
-declare
-  sales_count int;
 begin
-  select count(id) into sales_count
-  from public.sales;
-
-  insert into public.sales (first_name, last_name, email, user_id, administrator)
+  insert into public.sales (first_name, last_name, email, user_id, administrator, role)
   values (
     coalesce(new.raw_user_meta_data ->> 'first_name', new.raw_user_meta_data -> 'custom_claims' ->> 'first_name', 'Pending'),
     coalesce(new.raw_user_meta_data ->> 'last_name', new.raw_user_meta_data -> 'custom_claims' ->> 'last_name', 'Pending'),
     new.email,
     new.id,
-    case when sales_count > 0 then FALSE else TRUE end
+    false,
+    'operator'
   );
   return new;
 end;
@@ -268,7 +268,12 @@ CREATE OR REPLACE FUNCTION "public"."is_admin"() RETURNS boolean
     AS $$
 begin
   return exists (
-    select 1 from public.sales where user_id = auth.uid() and administrator = true
+    select 1
+    from public.sales
+    where user_id = auth.uid()
+      and administrator = true
+      and role = 'owner'
+      and disabled = false
   );
 end;
 $$;
@@ -453,3 +458,102 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+CREATE OR REPLACE FUNCTION "public"."current_sales_id"() RETURNS bigint
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    select s.id
+    from public.sales s
+    where s.user_id = auth.uid()
+      and s.disabled = false
+    limit 1;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."is_active_sales_user"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    select public.current_sales_id() is not null;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."can_manage_sales_id"("target_sales_id" bigint) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    select public.is_admin() or public.current_sales_id() = $1;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."can_access_contact"("target_contact_id" bigint) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    select public.is_admin() or exists (
+      select 1
+      from public.contacts c
+      where c.id = $1
+        and c.sales_id = public.current_sales_id()
+    );
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."can_access_deal"("target_deal_id" bigint) RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    select public.is_admin() or exists (
+      select 1
+      from public.deals d
+      where d.id = $1
+        and d.sales_id = public.current_sales_id()
+    );
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."create_lead_profile_for_contact"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    begin
+      insert into public.lead_profiles (
+        contact_id,
+        acquired_at,
+        last_interaction_at
+      ) values (
+        new.id,
+        coalesce(new.first_seen, now()),
+        new.last_seen
+      ) on conflict (contact_id) do nothing;
+      return new;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."set_lead_profile_updated_at"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
+    AS $$
+    begin
+      new.updated_at = now();
+      return new;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."synchronize_deal_pipeline"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
+    AS $$
+    begin
+      if new.pipeline_stage is null then
+        new.pipeline_stage = coalesce(nullif(new.stage, ''), 'new_lead');
+      end if;
+
+      new.stage = new.pipeline_stage;
+      new.updated_at = now();
+
+      if tg_op = 'INSERT' then
+        new.stage_entered_at = coalesce(new.stage_entered_at, now());
+      elsif new.pipeline_stage is distinct from old.pipeline_stage then
+        new.stage_entered_at = now();
+      end if;
+
+      return new;
+    end;
+    $$;

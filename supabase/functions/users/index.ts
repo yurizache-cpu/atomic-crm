@@ -18,7 +18,10 @@ async function updateSaleAdministrator(
 ) {
   const { data: sales, error: salesError } = await supabaseAdmin
     .from("sales")
-    .update({ administrator })
+    .update({
+      administrator,
+      role: administrator ? "owner" : "operator",
+    })
     .eq("user_id", user_id)
     .select("*");
 
@@ -33,7 +36,6 @@ async function createSale(
   user_id: string,
   data: {
     email: string;
-    password: string;
     first_name: string;
     last_name: string;
     disabled: boolean;
@@ -51,6 +53,9 @@ async function createSale(
   }
   return sales.at(0);
 }
+
+const isOwner = (sale: any) =>
+  sale?.administrator === true && sale?.role === "owner" && !sale?.disabled;
 
 async function updateSaleAvatar(user_id: string, avatar: string) {
   const { data: sales, error: salesError } = await supabaseAdmin
@@ -70,7 +75,7 @@ async function inviteUser(req: Request, currentUserSale: any) {
   const { email, password, first_name, last_name, disabled, administrator } =
     await req.json();
 
-  if (!currentUserSale.administrator) {
+  if (!isOwner(currentUserSale)) {
     return createErrorResponse(401, "Not Authorized");
   }
 
@@ -116,7 +121,6 @@ async function inviteUser(req: Request, currentUserSale: any) {
 
       const sale = await createSale(user.id, {
         email,
-        password,
         first_name,
         last_name,
         disabled,
@@ -219,8 +223,8 @@ async function patchUser(req: Request, currentUserSale: any) {
     await updateSaleAvatar(data.user.id, avatar);
   }
 
-  // Only administrators can update the administrator and disabled status
-  if (!currentUserSale.administrator) {
+  // Only an active owner can change another user's role or disabled status.
+  if (!isOwner(currentUserSale)) {
     const { data: new_sale } = await supabaseAdmin
       .from("sales")
       .select("*")

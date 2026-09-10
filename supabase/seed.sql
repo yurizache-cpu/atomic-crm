@@ -101,3 +101,17 @@ INSERT INTO favicons_excluded_domains (domain) VALUES
     ('bigpond.net.au'),
     ('online.de'),
     ('apple.com');
+
+insert into loss_reasons (code, label, sort_order) values
+    ('financial_constraint', 'Restrição financeira', 10),
+    ('price', 'Preço', 20),
+    ('not_ready', 'Ainda não está pronto(a)', 30),
+    ('no_response', 'Sem resposta', 40),
+    ('chose_other_professional', 'Escolheu outro profissional', 50),
+    ('no_fit', 'Sem adequação', 60),
+    ('postponed', 'Adiado', 70),
+    ('other', 'Outro', 80),
+    ('unknown', 'Não informado', 90)
+on conflict (code) do update
+set label = excluded.label,
+    sort_order = excluded.sort_order;

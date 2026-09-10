@@ -20,6 +20,10 @@ create or replace trigger set_deal_sales_id_trigger
     before insert on public.deals
     for each row execute function public.set_sales_id_default();
 
+create or replace trigger synchronize_deal_pipeline_trigger
+    before insert or update on public.deals
+    for each row execute function public.synchronize_deal_pipeline();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();
@@ -48,27 +52,17 @@ create or replace trigger on_public_contact_notes_created_or_updated
     after insert on public.contact_notes
     for each row execute function public.handle_contact_note_created_or_updated();
 
--- Cleanup storage attachments when contact notes are updated or deleted
-create or replace trigger on_contact_notes_attachments_updated_delete_note_attachments
-    after update on public.contact_notes
-    for each row
-    when (old.attachments is distinct from new.attachments)
-    execute function public.cleanup_note_attachments();
+-- The clinical configuration keeps note attachments disabled. The upstream
+-- cleanup function remains isolated for a future opt-in restoration, but no
+-- attachment-triggered network call is installed in this profile.
 
-create or replace trigger on_contact_notes_deleted_delete_note_attachments
-    after delete on public.contact_notes
-    for each row execute function public.cleanup_note_attachments();
+create or replace trigger create_lead_profile_after_contact_insert
+    after insert on public.contacts
+    for each row execute function public.create_lead_profile_for_contact();
 
--- Cleanup storage attachments when deal notes are updated or deleted
-create or replace trigger on_deal_notes_attachments_updated_delete_note_attachments
-    after update on public.deal_notes
-    for each row
-    when (old.attachments is distinct from new.attachments)
-    execute function public.cleanup_note_attachments();
-
-create or replace trigger on_deal_notes_deleted_delete_note_attachments
-    after delete on public.deal_notes
-    for each row execute function public.cleanup_note_attachments();
+create or replace trigger set_lead_profile_updated_at_trigger
+    before update on public.lead_profiles
+    for each row execute function public.set_lead_profile_updated_at();
 
 -- Auth triggers: sync auth.users to public.sales
 create or replace trigger on_auth_user_created
