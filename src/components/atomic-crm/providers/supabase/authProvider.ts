@@ -34,22 +34,11 @@ function getLocalStorage(): Storage | null {
 }
 
 export async function getIsInitialized() {
-  const storage = getLocalStorage();
-  const cachedValue = storage?.getItem(IS_INITIALIZED_CACHE_KEY);
-  if (cachedValue != null) {
-    return cachedValue === "true";
-  }
-
-  const { data } = await getSupabaseClient()
-    .from("init_state")
-    .select("is_initialized");
-  const isInitialized = data?.at(0)?.is_initialized > 0;
-
-  if (isInitialized) {
-    storage?.setItem(IS_INITIALIZED_CACHE_KEY, "true");
-  }
-
-  return isInitialized;
+  // Phase 1 removes the public first-user bootstrap. An owner is provisioned
+  // through the controlled Supabase/admin procedure documented for deployment.
+  // Keeping this function avoids a broad upstream refactor while ensuring the
+  // browser never probes a public initialization endpoint.
+  return true;
 }
 
 const getSale = async () => {
@@ -69,12 +58,12 @@ const getSale = async () => {
 
   const { data: dataSale, error: errorSale } = await getSupabaseClient()
     .from("sales")
-    .select("id, first_name, last_name, avatar, administrator")
+    .select("id, first_name, last_name, avatar, administrator, role, disabled")
     .match({ user_id: dataSession?.session?.user.id })
     .single();
 
   // Shouldn't happen either as all users are sales but just in case
-  if (dataSale == null || errorSale) {
+  if (dataSale == null || errorSale || dataSale.disabled) {
     return undefined;
   }
 
@@ -123,36 +112,20 @@ export const getAuthProvider = (): AuthProvider => {
       ) {
         return;
       }
-      // Users are on the sign-up page, nothing to do
-      if (
-        window.location.pathname === "/sign-up" ||
-        window.location.hash.includes("#/sign-up")
-      ) {
-        return;
-      }
+      await baseAuthProvider.checkAuth(params);
+      if (await getSale()) return;
 
-      const isInitialized = await getIsInitialized();
-
-      if (!isInitialized) {
-        await getSupabaseClient().auth.signOut();
-        throw {
-          redirectTo: "/sign-up",
-          message: false,
-        };
-      }
-
-      return baseAuthProvider.checkAuth(params);
+      await getSupabaseClient().auth.signOut();
+      throw new Error("Your account is disabled or has not been provisioned.");
     },
     canAccess: async (params) => {
-      const isInitialized = await getIsInitialized();
-      if (!isInitialized) return false;
-
       // Get the current user
       const sale = await getSale();
       if (sale == null) return false;
 
       // Compute access rights from the sale role
-      const role = sale.administrator ? "admin" : "user";
+      const role =
+        sale.administrator && sale.role === "owner" ? "admin" : "user";
       return canAccess(role, params);
     },
     getAuthorizationDetails(authorizationId: string) {

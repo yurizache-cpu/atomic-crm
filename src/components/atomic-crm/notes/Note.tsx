@@ -25,7 +25,6 @@ import { Markdown } from "../misc/Markdown";
 import { RelativeDate } from "../misc/RelativeDate";
 import { Status } from "../misc/Status";
 import type { ContactNote, DealNote } from "../types";
-import { NoteAttachments } from "./NoteAttachments";
 import { NoteInputs } from "./NoteInputs";
 import { useGetSalesName } from "../sales/useGetSalesName";
 
@@ -211,8 +210,6 @@ export const Note = ({
                 : translate("crm.common.read_more")}
             </button>
           )}
-
-          {note.attachments && <NoteAttachments note={note} />}
         </div>
       )}
     </div>

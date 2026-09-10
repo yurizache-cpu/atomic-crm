@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { Check, CircleX, Copy, Pencil, Save } from "lucide-react";
+import { CircleX, Pencil, Save } from "lucide-react";
 import {
   Form,
   useDataProvider,
@@ -8,7 +8,6 @@ import {
   useLocaleState,
   useLocales,
   useNotify,
-  useRecordContext,
   useTranslate,
 } from "ra-core";
 import { useState } from "react";
@@ -24,16 +23,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-
-import ImageEditorField from "../misc/ImageEditorField";
 import type { CrmDataProvider } from "../providers/types";
-import type { Sale, SalesFormData } from "../types";
+import type { SalesFormData } from "../types";
 
 export const ProfilePage = () => {
   const [isEditMode, setEditMode] = useState(false);
@@ -101,8 +92,7 @@ const ProfileForm = ({
 }) => {
   const notify = useNotify();
   const translate = useTranslate();
-  const record = useRecordContext<Sale>();
-  const { identity, refetch } = useGetIdentity();
+  const { identity } = useGetIdentity();
   const { isDirty } = useFormState();
   const dataProvider = useDataProvider<CrmDataProvider>();
 
@@ -132,43 +122,10 @@ const ProfileForm = ({
     },
   });
 
-  const { mutate: mutateSale } = useMutation({
-    mutationKey: ["signup"],
-    mutationFn: async (data: SalesFormData) => {
-      if (!record) {
-        throw new Error(
-          translate("crm.profile.record_not_found", {
-            _: "Record not found",
-          }),
-        );
-      }
-      return dataProvider.salesUpdate(record.id, data);
-    },
-    onSuccess: () => {
-      refetch();
-      notify("crm.profile.updated", {
-        messageArgs: {
-          _: "Your profile has been updated",
-        },
-      });
-    },
-    onError: () => {
-      notify("crm.profile.update_error", {
-        type: "error",
-        messageArgs: {
-          _: "An error occurred. Please try again.",
-        },
-      });
-    },
-  });
   if (!identity) return null;
 
   const handleClickOpenPasswordChange = () => {
     updatePassword();
-  };
-
-  const handleAvatarUpdate = async (values: any) => {
-    mutateSale(values);
   };
 
   return (
@@ -182,12 +139,6 @@ const ProfileForm = ({
           </div>
 
           <div className="space-y-4 mb-4">
-            <ImageEditorField
-              source="avatar"
-              type="avatar"
-              onSave={handleAvatarUpdate}
-              linkPosition="right"
-            />
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <TextRender source="first_name" isEditMode={isEditMode} />
               <TextRender source="last_name" isEditMode={isEditMode} />
@@ -227,43 +178,6 @@ const ProfileForm = ({
                 {translate("ra.action.save")}
               </Button>
             )}
-          </div>
-        </CardContent>
-      </Card>
-      {import.meta.env.VITE_INBOUND_EMAIL && (
-        <Card>
-          <CardContent>
-            <div className="space-y-4 justify-between">
-              <h2 className="text-xl font-semibold text-muted-foreground">
-                {translate("crm.profile.inbound.title")}
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {translate("crm.profile.inbound.description", {
-                  _: "You can start sending emails to your server's inbound email address, e.g. by adding it to the Cc: field. Atomic CRM will process the emails and add notes to the corresponding contacts.",
-                  field: "Cc:",
-                })}
-              </p>
-              <CopyPaste value={import.meta.env.VITE_INBOUND_EMAIL} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      <Card>
-        <CardContent>
-          <div className="space-y-4 justify-between">
-            <h2 className="text-xl font-semibold text-muted-foreground">
-              {translate("crm.profile.mcp.title", {
-                _: "MCP Server",
-              })}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              {translate("crm.profile.mcp.description", {
-                _: "Use this URL to connect your AI assistant to your CRM data via the Model Context Protocol (MCP).",
-              })}
-            </p>
-            <CopyPaste
-              value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp`}
-            />
           </div>
         </CardContent>
       </Card>
@@ -325,46 +239,6 @@ const TextRender = ({
     <div className={className}>
       <RecordField source={source} label={label} />
     </div>
-  );
-};
-
-const CopyPaste = ({ value }: { value: string }) => {
-  const translate = useTranslate();
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    setCopied(true);
-    navigator.clipboard.writeText(value);
-    setTimeout(() => {
-      setCopied(false);
-    }, 1500);
-  };
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            onClick={handleCopy}
-            variant="ghost"
-            className="normal-case justify-between w-full"
-          >
-            <span className="overflow-hidden text-ellipsis">{value}</span>
-            {copied ? (
-              <Check className="h-4 w-4 ml-2" />
-            ) : (
-              <Copy className="h-4 w-4 ml-2" />
-            )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>
-            {copied
-              ? translate("crm.common.copied")
-              : translate("crm.common.copy")}
-          </p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 };
 

@@ -1,21 +1,10 @@
 import { useEffect, useRef } from "react";
-import { Paperclip } from "lucide-react";
-import {
-  required,
-  useInput,
-  useTranslate,
-  ValidationError,
-  RecordContextProvider,
-} from "ra-core";
+import { required, useInput, useTranslate, ValidationError } from "ra-core";
 import { AutocompleteInput, ReferenceInput } from "@/components/admin";
-import { FileInputPreview } from "@/components/admin/file-input";
-import { useFormContext, useWatch } from "react-hook-form";
 
 import { contactOptionText } from "../misc/ContactOption";
-import { AttachmentField } from "./AttachmentField";
 import { foreignKeyMapping } from "./foreignKeyMapping";
-import { validateNoteOrAttachmentRequired } from "./noteModel";
-import type { ContactNote } from "../types";
+import { validateCommercialNoteRequired } from "./noteModel";
 
 export const NoteInputsMobile = ({
   selectContact,
@@ -26,7 +15,7 @@ export const NoteInputsMobile = ({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const { field, fieldState } = useInput({
     source: "text",
-    validate: validateNoteOrAttachmentRequired,
+    validate: validateCommercialNoteRequired,
   });
 
   useEffect(() => {
@@ -42,6 +31,9 @@ export const NoteInputsMobile = ({
   return (
     <div className="flex flex-col flex-1 -m-4">
       <div className="flex-1 flex flex-col">
+        <p className="px-4 pt-3 text-xs text-muted-foreground">
+          {translate("resources.notes.commercial_only")}
+        </p>
         <textarea
           {...field}
           ref={(node) => {
@@ -73,87 +65,6 @@ export const NoteInputsMobile = ({
           </ReferenceInput>
         </div>
       )}
-      <div className="px-4">
-        <AttachmentPreviewsMobile />
-        <AttachButton />
-      </div>
-    </div>
-  );
-};
-
-const AttachButton = () => {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const { getValues, setValue } = useFormContext();
-  const translate = useTranslate();
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-
-    const newFiles = Array.from(fileList).map((file) => ({
-      rawFile: file,
-      src: URL.createObjectURL(file),
-      title: file.name,
-    }));
-
-    const existing = getValues("attachments") || [];
-    const currentFiles = Array.isArray(existing) ? existing : [existing];
-    setValue("attachments", [...currentFiles, ...newFiles], {
-      shouldDirty: true,
-    });
-
-    e.target.value = "";
-  };
-
-  return (
-    <>
-      <button
-        type="button"
-        className="flex items-center gap-2 py-3 text-sm text-muted-foreground"
-        onClick={() => inputRef.current?.click()}
-      >
-        <Paperclip className="size-4" />
-        {translate("resources.notes.actions.attach_document", {
-          _: "Attach document",
-        })}
-      </button>
-      <input
-        ref={inputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={handleFileChange}
-      />
-    </>
-  );
-};
-
-const AttachmentPreviewsMobile = () => {
-  const { control, setValue } = useFormContext();
-  const attachments = useWatch({ control, name: "attachments" }) as
-    | ContactNote["attachments"]
-    | undefined;
-
-  if (!Array.isArray(attachments) || attachments.length === 0) return null;
-
-  const onRemove = (index: number) => {
-    const updated = attachments.filter((_: unknown, i: number) => i !== index);
-    setValue("attachments", updated, { shouldDirty: true });
-  };
-
-  return (
-    <div className="flex flex-col gap-1">
-      {attachments.map((file, index: number) => (
-        <FileInputPreview
-          key={file.src}
-          file={file}
-          onRemove={() => onRemove(index)}
-        >
-          <RecordContextProvider value={file}>
-            <AttachmentField source="src" title="title" target="_blank" />
-          </RecordContextProvider>
-        </FileInputPreview>
-      ))}
     </div>
   );
 };

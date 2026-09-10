@@ -211,7 +211,6 @@ const ContactMiscInputs = () => {
       <h6 className="text-lg font-semibold">
         {translate("resources.contacts.field_categories.misc")}
       </h6>
-      <TextInput source="background" multiline helperText={false} />
       <BooleanInput source="has_newsletter" helperText={false} />
       <ReferenceInput
         reference="sales"

@@ -9,7 +9,7 @@ import {
 
 import { defaultNoteStatuses } from "../../../root/defaultConfiguration";
 import { contactGender } from "../../../contacts/contactModel";
-import type { Company, Contact } from "../../../types";
+import type { Company, Contact, OperationalStatus } from "../../../types";
 import type { Db } from "./types";
 import { randomDate, weightedBoolean } from "./utils";
 
@@ -20,6 +20,14 @@ const maxContacts = {
   250: 25,
   500: 50,
 };
+
+const operationalStatuses: OperationalStatus[] = [
+  "active",
+  "awaiting_lead",
+  "follow_up_due",
+  "maturing",
+  "paused",
+];
 
 const getRandomContactDetailsType = () =>
   random.arrayElement(["Work", "Home", "Other"]) as "Work" | "Home" | "Other";
@@ -96,6 +104,26 @@ export const generateContacts = (db: Db, size = 500): Required<Contact>[] => {
       sales_id: company.sales_id!,
       nb_tasks: 0,
       linkedin_url: null,
+      // Commercial lead fields, mirrored from lead_profiles /
+      // acquisition_attributions by the contacts_summary view in Supabase.
+      acquired_at: first_seen,
+      last_interaction_at: last_seen,
+      next_action_at: null,
+      operational_status: random.arrayElement(operationalStatuses),
+      do_not_contact: false,
+      acquisition_source: random.arrayElement([
+        "google",
+        "instagram",
+        "referral",
+        "direct",
+      ]),
+      acquisition_medium: random.arrayElement([
+        "cpc",
+        "organic",
+        "social",
+        "referral",
+      ]),
+      acquisition_campaign: null,
     };
   });
 };

@@ -5,6 +5,7 @@ import { ReferenceInput } from "@/components/admin/reference-input";
 import { TextInput } from "@/components/admin/text-input";
 import { NumberInput } from "@/components/admin/number-input";
 import { DateInput } from "@/components/admin/date-input";
+import { DateTimeInput } from "@/components/admin/date-time-input";
 import { SelectInput } from "@/components/admin/select-input";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -47,7 +48,6 @@ const DealLinkedToInputs = () => {
       <ReferenceInput source="company_id" reference="companies">
         <AutocompleteCompanyInput
           label="resources.deals.fields.company_id"
-          validate={required()}
           modal
         />
       </ReferenceInput>
@@ -92,13 +92,41 @@ const DealMiscInputs = () => {
         defaultValue={new Date().toISOString().split("T")[0]}
       />
       <SelectInput
-        source="stage"
+        source="pipeline_stage"
+        label="Etapa comercial"
         choices={dealStages}
         optionText="label"
         optionValue="value"
-        defaultValue="opportunity"
+        defaultValue="new_lead"
         helperText={false}
         validate={required()}
+      />
+      <DateTimeInput
+        source="next_action_at"
+        label="Próxima ação"
+        helperText="Data para o próximo acompanhamento comercial."
+      />
+      <ReferenceInput
+        source="loss_reason_id"
+        reference="loss_reasons"
+        filter={{ active: true }}
+        sort={{ field: "sort_order", order: "ASC" }}
+      >
+        <SelectInput
+          label="Motivo de perda"
+          optionText="label"
+          helperText="Use somente ao encerrar a oportunidade como perdida."
+        />
+      </ReferenceInput>
+      <DateTimeInput
+        source="lost_at"
+        label="Perdida em"
+        helperText="O motivo de perda é obrigatório quando esta data for definida."
+      />
+      <DateTimeInput
+        source="converted_at"
+        label="Conversão confirmada em"
+        helperText="Registre apenas após confirmação manual de pagamento."
       />
     </div>
   );

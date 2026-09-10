@@ -8,9 +8,9 @@ import lightModeLogo from "./logos/logo_atomic_crm_light.svg";
 export const defaultDarkModeLogo = darkModeLogo;
 export const defaultLightModeLogo = lightModeLogo;
 
-export const defaultCurrency = "USD";
+export const defaultCurrency = "BRL";
 
-export const defaultTitle = "Atomic CRM";
+export const defaultTitle = "CRM Comercial";
 
 export const defaultCompanySectors = [
   { value: "communication-services", label: "Communication Services" },
@@ -27,15 +27,18 @@ export const defaultCompanySectors = [
 ];
 
 export const defaultDealStages = [
-  { value: "opportunity", label: "Opportunity" },
-  { value: "proposal-sent", label: "Proposal Sent" },
-  { value: "in-negociation", label: "In Negotiation" },
-  { value: "won", label: "Won" },
-  { value: "lost", label: "Lost" },
-  { value: "delayed", label: "Delayed" },
+  { value: "new_lead", label: "Novo lead" },
+  { value: "contact_started", label: "Contato iniciado" },
+  { value: "conversation_active", label: "Conversa ativa" },
+  { value: "initial_session_scheduled", label: "Sessão inicial agendada" },
+  { value: "initial_session_paid", label: "Sessão inicial paga" },
+  { value: "initial_session_attended", label: "Sessão inicial realizada" },
+  { value: "continuity_offered", label: "Continuidade oferecida" },
+  { value: "continuity_accepted", label: "Continuidade aceita" },
+  { value: "continuity_converted", label: "Continuidade convertida" },
 ];
 
-export const defaultDealPipelineStatuses = ["won"];
+export const defaultDealPipelineStatuses = ["continuity_converted"];
 
 export const defaultDealCategories = [
   { value: "other", label: "Other" },

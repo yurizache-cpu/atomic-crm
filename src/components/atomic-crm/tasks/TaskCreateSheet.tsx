@@ -12,6 +12,7 @@ import { CreateSheet } from "../misc/CreateSheet";
 import { foreignKeyMapping } from "../notes/foreignKeyMapping";
 import { TaskFormContent } from "./TaskFormContent";
 import { useQueryClient } from "@tanstack/react-query";
+import type { LeadProfile } from "../types";
 
 export interface TaskCreateSheetProps {
   open: boolean;
@@ -53,6 +54,22 @@ export const TaskCreateSheet = ({
       data: { last_seen: new Date().toISOString() },
       previousData: contact,
     });
+    const { data: profiles } = await dataProvider.getList<LeadProfile>(
+      "lead_profiles",
+      {
+        filter: { contact_id: referenceRecordId },
+        pagination: { page: 1, perPage: 1 },
+        sort: { field: "id", order: "ASC" },
+      },
+    );
+    const profile = profiles[0];
+    if (profile) {
+      await dataProvider.update("lead_profiles", {
+        id: profile.id,
+        data: { next_action_at: data.due_date },
+        previousData: profile,
+      });
+    }
     queryClient.invalidateQueries({
       queryKey: ["contacts", "getOne"],
     });

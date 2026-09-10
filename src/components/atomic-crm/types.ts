@@ -100,6 +100,61 @@ export type Contact = {
   phone_jsonb: PhoneNumberAndType[];
   nb_tasks?: number;
   company_name?: string;
+  acquired_at?: string;
+  last_interaction_at?: string | null;
+  next_action_at?: string | null;
+  operational_status?: OperationalStatus;
+  do_not_contact?: boolean;
+  acquisition_source?: string | null;
+  acquisition_medium?: string | null;
+  acquisition_campaign?: string | null;
+} & Pick<RaRecord, "id">;
+
+export type OperationalStatus =
+  | "active"
+  | "awaiting_lead"
+  | "follow_up_due"
+  | "maturing"
+  | "paused";
+
+export type LeadProfile = {
+  contact_id: Identifier;
+  acquired_at: string;
+  last_interaction_at?: string | null;
+  next_action_at?: string | null;
+  operational_status: OperationalStatus;
+  do_not_contact: boolean;
+  created_at: string;
+  updated_at: string;
+} & Pick<RaRecord, "id">;
+
+export type AcquisitionAttribution = {
+  contact_id: Identifier;
+  acquired_at: string;
+  source?: string | null;
+  medium?: string | null;
+  campaign?: string | null;
+  campaign_id?: string | null;
+  ad_group?: string | null;
+  ad_group_id?: string | null;
+  ad?: string | null;
+  ad_id?: string | null;
+  keyword?: string | null;
+  match_type?: string | null;
+  landing_page?: string | null;
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  gclid?: string | null;
+} & Pick<RaRecord, "id">;
+
+export type LossReason = {
+  code: string;
+  label: string;
+  active: boolean;
+  sort_order: number;
 } & Pick<RaRecord, "id">;
 
 export type ContactNote = {
@@ -117,6 +172,12 @@ export type Deal = {
   contact_ids: Identifier[];
   category: string;
   stage: string;
+  pipeline_stage?: string;
+  stage_entered_at?: string;
+  loss_reason_id?: Identifier | null;
+  lost_at?: string | null;
+  converted_at?: string | null;
+  next_action_at?: string | null;
   description: string;
   amount: number;
   created_at: string;

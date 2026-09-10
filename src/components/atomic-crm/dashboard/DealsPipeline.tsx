@@ -38,7 +38,7 @@ export const DealsPipeline = () => {
       .filter((stage) => !dealPipelineStatuses.includes(stage.value))
       .forEach((stage) =>
         data
-          .filter((deal) => deal.stage === stage.value)
+          .filter((deal) => (deal.pipeline_stage ?? deal.stage) === stage.value)
           .forEach((deal) => deals.push(deal)),
       );
     return deals;
@@ -72,7 +72,7 @@ export const DealsPipeline = () => {
               currency,
               currencyDisplay: "narrowSymbol",
               minimumSignificantDigits: 3,
-            })} , ${findDealLabel(dealStages, deal.stage)}`
+            })} , ${findDealLabel(dealStages, deal.pipeline_stage ?? deal.stage)}`
           }
           leftAvatar={(deal) => (
             <ReferenceField

@@ -20,7 +20,6 @@ import { AutocompleteInput } from "@/components/admin/autocomplete-input";
 import { SimpleFormIterator } from "@/components/admin/simple-form-iterator";
 import { TextInput } from "@/components/admin/text-input";
 
-import ImageEditorField from "../misc/ImageEditorField";
 import {
   useConfigurationContext,
   useConfigurationUpdater,
@@ -278,32 +277,6 @@ const SettingsFormFields = () => {
               {translate("crm.settings.sections.branding")}
             </h2>
             <TextInput source="title" label="crm.settings.app_title" />
-            <div className="flex gap-8">
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-sm text-muted-foreground">
-                  {translate("crm.settings.light_mode_logo")}
-                </p>
-                <ImageEditorField
-                  source="lightModeLogo"
-                  width={100}
-                  height={100}
-                  linkPosition="bottom"
-                  backgroundImageColor="#f5f5f5"
-                />
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <p className="text-sm text-muted-foreground">
-                  {translate("crm.settings.dark_mode_logo")}
-                </p>
-                <ImageEditorField
-                  source="darkModeLogo"
-                  width={100}
-                  height={100}
-                  linkPosition="bottom"
-                  backgroundImageColor="#1a1a1a"
-                />
-              </div>
-            </div>
           </CardContent>
         </Card>
 

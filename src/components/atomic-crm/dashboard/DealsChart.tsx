@@ -4,16 +4,8 @@ import { TrendingUp } from "lucide-react";
 import { useGetList, useTranslate } from "ra-core";
 import { memo, useMemo } from "react";
 
-import { findDealLabel } from "../deals/dealUtils";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import type { Deal } from "../types";
-
-const multiplier = {
-  opportunity: 0.2,
-  "proposal-sent": 0.5,
-  "in-negociation": 0.8,
-  delayed: 0.3,
-};
 
 const threeMonthsAgo = new Date(
   new Date().setMonth(new Date().getMonth() - 6),
@@ -23,12 +15,12 @@ const DEFAULT_LOCALE = "en-US";
 
 export const DealsChart = memo(() => {
   const translate = useTranslate();
-  const { dealStages, currency } = useConfigurationContext();
+  const { currency } = useConfigurationContext();
   const acceptedLanguages = navigator
     ? navigator.languages || [navigator.language]
     : [DEFAULT_LOCALE];
-  const wonLabel = findDealLabel(dealStages, "won") ?? "Won";
-  const lostLabel = findDealLabel(dealStages, "lost") ?? "Lost";
+  const wonLabel = "Continuidade convertida";
+  const lostLabel = "Perdida";
 
   const { data, isPending } = useGetList<Deal>("deals", {
     pagination: { perPage: 100, page: 1 },
@@ -55,20 +47,21 @@ export const DealsChart = memo(() => {
       return {
         date: format(month, "MMM"),
         won: dealsByMonth[month]
-          .filter((deal: Deal) => deal.stage === "won")
+          .filter((deal: Deal) => deal.converted_at != null)
           .reduce((acc: number, deal: Deal) => {
             acc += deal.amount;
             return acc;
           }, 0),
         pending: dealsByMonth[month]
-          .filter((deal: Deal) => !["won", "lost"].includes(deal.stage))
+          .filter(
+            (deal: Deal) => deal.converted_at == null && deal.lost_at == null,
+          )
           .reduce((acc: number, deal: Deal) => {
-            // @ts-expect-error - multiplier type issue
-            acc += deal.amount * multiplier[deal.stage];
+            acc += deal.amount;
             return acc;
           }, 0),
         lost: dealsByMonth[month]
-          .filter((deal: Deal) => deal.stage === "lost")
+          .filter((deal: Deal) => deal.lost_at != null)
           .reduce((acc: number, deal: Deal) => {
             acc -= deal.amount;
             return acc;

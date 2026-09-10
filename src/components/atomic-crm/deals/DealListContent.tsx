@@ -50,7 +50,7 @@ export const DealListContent = () => {
     const destinationDeal = dealsByStage[destinationStage][
       destination.index
     ] ?? {
-      stage: destinationStage,
+      pipeline_stage: destinationStage,
       index: undefined, // undefined if dropped after the last item
     };
 
@@ -94,9 +94,12 @@ const updateDealStageLocal = (
   },
   dealsByStage: DealsByStage,
 ) => {
-  if (source.stage === destination.stage) {
+  // `source.stage` is the Kanban column key (the droppable id), which is
+  // already the pipeline stage — see the caller at :61.
+  const sourcePipelineStage = source.stage;
+  if (sourcePipelineStage === destination.stage) {
     // moving deal inside the same column
-    const column = dealsByStage[source.stage];
+    const column = dealsByStage[sourcePipelineStage];
     column.splice(source.index, 1);
     column.splice(destination.index ?? column.length + 1, 0, sourceDeal);
     return {
@@ -129,13 +132,14 @@ const updateDealStage = async (
   },
   dataProvider: DataProvider,
 ) => {
-  if (source.stage === destination.stage) {
+  const sourcePipelineStage = source.pipeline_stage ?? source.stage;
+  if (sourcePipelineStage === destination.stage) {
     // moving deal inside the same column
     // Fetch all the deals in this stage (because the list may be filtered, but we need to update even non-filtered deals)
     const { data: columnDeals } = await dataProvider.getList("deals", {
       sort: { field: "index", order: "ASC" },
       pagination: { page: 1, perPage: 100 },
-      filter: { stage: source.stage },
+      filter: { pipeline_stage: sourcePipelineStage },
     });
     const destinationIndex = destination.index ?? columnDeals.length + 1;
 
@@ -200,12 +204,12 @@ const updateDealStage = async (
         dataProvider.getList("deals", {
           sort: { field: "index", order: "ASC" },
           pagination: { page: 1, perPage: 100 },
-          filter: { stage: source.stage },
+          filter: { pipeline_stage: sourcePipelineStage },
         }),
         dataProvider.getList("deals", {
           sort: { field: "index", order: "ASC" },
           pagination: { page: 1, perPage: 100 },
-          filter: { stage: destination.stage },
+          filter: { pipeline_stage: destination.stage },
         }),
       ]);
     const destinationIndex = destination.index ?? destinationDeals.length + 1;
@@ -236,7 +240,7 @@ const updateDealStage = async (
         id: source.id,
         data: {
           index: destinationIndex,
-          stage: destination.stage,
+          pipeline_stage: destination.stage,
         },
         previousData: source,
       }),

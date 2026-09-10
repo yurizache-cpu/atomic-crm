@@ -264,14 +264,16 @@ export const englishCrmMessages = {
       added: "Note added",
       inputs: {
         add_note: "Add a note",
-        options_hint: "(attach files, or change details)",
+        options_hint: "(change status or date)",
         show_options: "Show options",
       },
+      commercial_only:
+        "Commercial or administrative information only. Do not enter clinical, therapeutic, or health information.",
       actions: {
         attach_document: "Attach document",
       },
       validation: {
-        note_or_attachment_required: "A note or an attachment is required",
+        note_required: "A commercial note is required",
       },
     },
     sales: {

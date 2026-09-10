@@ -18,7 +18,6 @@ import { MobileBackButton } from "../misc/MobileBackButton";
 import { RelativeDate } from "../misc/RelativeDate";
 import { Status } from "../misc/Status";
 import type { ContactNote } from "../types";
-import { NoteAttachments } from "./NoteAttachments";
 import { NoteEditSheet } from "./NoteEditSheet";
 import { useGetSalesName } from "../sales/useGetSalesName";
 
@@ -100,11 +99,7 @@ export const NoteShowPage = () => {
 
         {note.text && <Markdown className="text-sm">{note.text}</Markdown>}
 
-        {note.attachments && (
-          <div className="mt-4">
-            <NoteAttachments note={note} />
-          </div>
-        )}
+        {note.attachments && <div className="mt-4"></div>}
       </MobileContent>
     </>
   );

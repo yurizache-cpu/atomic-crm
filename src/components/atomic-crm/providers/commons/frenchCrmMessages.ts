@@ -271,11 +271,13 @@ export const frenchCrmMessages = {
         options_hint: "(joindre des fichiers ou modifier les détails)",
         show_options: "Afficher les options",
       },
+      commercial_only:
+        "Informations commerciales ou administratives uniquement. Ne pas saisir d'informations cliniques, thérapeutiques ou de santé.",
       actions: {
         attach_document: "Joindre un document",
       },
       validation: {
-        note_or_attachment_required: "Une note ou une pièce jointe est requise",
+        note_required: "Une note commerciale est requise",
       },
     },
     sales: {

@@ -57,6 +57,7 @@ export function useDealImport(): ProcessImportBatch {
               contact_ids: [],
               category: toConfiguredValue(row.category, dealCategories),
               stage,
+              pipeline_stage: stage,
               description: toText(row.description),
               // amount lands in a bigint column, which rejects "4500.50"
               amount: toInteger(row.amount),
@@ -116,7 +117,7 @@ const appendedIndexes = async (
 /** Highest index currently used in a stage, or -1 when it holds no deal. */
 const lastIndexOf = async (stage: string, dataProvider: DataProvider) => {
   const { data } = await dataProvider.getList("deals", {
-    filter: { stage },
+    filter: { pipeline_stage: stage },
     pagination: { page: 1, perPage: 1 },
     sort: { field: "index", order: "DESC" },
   });

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { required, useGetOne, useTranslate } from "ra-core";
 import { TextInput } from "@/components/admin/text-input";
-import { FileInput } from "@/components/admin/file-input";
 import { SelectInput } from "@/components/admin/select-input";
 import { DateTimeInput } from "@/components/admin/date-time-input";
 import { Button } from "@/components/ui/button";
@@ -12,11 +11,10 @@ import type { ContactNote, DealNote } from "../types";
 import { Status } from "../misc/Status";
 import { useConfigurationContext } from "../root/ConfigurationContext";
 import { getCurrentDate } from "./utils";
-import { AttachmentField } from "./AttachmentField";
 import { foreignKeyMapping } from "./foreignKeyMapping";
 import { AutocompleteInput, ReferenceInput } from "@/components/admin";
 import { contactOptionText } from "../misc/ContactOption";
-import { validateNoteOrAttachmentRequired } from "./noteModel";
+import { validateCommercialNoteRequired } from "./noteModel";
 
 export const NoteInputs = ({
   defaultStatus,
@@ -94,6 +92,9 @@ export const NoteInputs = ({
   // but we want it to be "notes" regardless of the context
   return (
     <div ref={containerRef} className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {translate("resources.notes.commercial_only")}
+      </p>
       <TextInput
         source="text"
         label={false}
@@ -107,7 +108,7 @@ export const NoteInputs = ({
         )}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
-        validate={validateNoteOrAttachmentRequired}
+        validate={validateCommercialNoteRequired}
       />
 
       {selectReference && reference && (
@@ -179,13 +180,6 @@ export const NoteInputs = ({
             defaultValue={getCurrentDate()}
           />
         </div>
-        <FileInput
-          source="attachments"
-          label="resources.notes.fields.attachments"
-          multiple
-        >
-          <AttachmentField source="src" title="title" target="_blank" />
-        </FileInput>
       </div>
     </div>
   );

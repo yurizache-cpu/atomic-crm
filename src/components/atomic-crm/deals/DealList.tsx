@@ -71,7 +71,7 @@ const DealList = () => {
   return (
     <List
       perPage={100}
-      filter={{ "archived_at@is": null }}
+      filter={{ "archived_at@is": null, "lost_at@is": null }}
       title={false}
       sort={{ field: "index", order: "DESC" }}
       filters={dealFilters}

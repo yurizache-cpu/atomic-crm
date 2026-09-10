@@ -133,10 +133,13 @@ const DealShowContent = () => {
 
             <div className="flex flex-col mr-10">
               <span className="text-xs text-muted-foreground tracking-wide">
-                {translate("resources.deals.fields.stage")}
+                Etapa comercial
               </span>
               <span className="text-sm">
-                {findDealLabel(dealStages, record.stage)}
+                {findDealLabel(
+                  dealStages,
+                  record.pipeline_stage ?? record.stage,
+                )}
               </span>
             </div>
           </div>
