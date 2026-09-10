@@ -1,5 +1,80 @@
 @AGENTS.md
 
+# AI Company OS
+
+Read this before doing anything. The repository is the project memory; conversation history is not.
+
+| | |
+| --- | --- |
+| **What this is** | An AI Company OS being built **on top of** a fork of [Atomic CRM](https://github.com/marmelab/atomic-crm). Companies, departments, AI employees, workflows, events, tasks, decisions, reviews, approvals, permissions, risk policy, cost accounting and audit trails as first-class data. |
+| **First tenant** | An online psychology clinic (Brazil, LGPD). A later tenant may be a 3D-printing business. |
+| **Current phase** | **Phase 0 complete** (audit + documentation). Phase 0.5 not started. **No engine code exists yet.** |
+| **Start here** | [docs/BASELINE_REPORT.md](docs/BASELINE_REPORT.md) → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) → [docs/ROADMAP.md](docs/ROADMAP.md) → [docs/DECISIONS.md](docs/DECISIONS.md) |
+
+## The five rules that override convenience
+
+1. **Atomic CRM is a replaceable adapter, not the foundation.** Business logic must never depend on Atomic CRM internals — no `ra-core` types, no PostgREST filter syntax (`field@ilike`, `tags@cs`), no view names (`contacts_summary`), no JSONB email/phone shapes, no bigint FKs into `public.*` from engine code.
+2. **Nothing in the engine may be psychology-specific.** Tenant vocabulary — pipeline stages, department names, task types, loss reasons — is **data**, never DDL and never a prompt constant. The nine-value CHECK constraint on `deals` (`supabase/schemas/01_tables.sql:86-96`) is the mistake to not repeat.
+3. **Deterministic code owns anything code can do reliably.** Arithmetic, permission checks, risk evaluation, budget checks, CRUD, state transitions, threshold detection. LLMs own language, interpretation, classification where rules are insufficient, analysis and recommendation.
+4. **Fail closed.** Every gate denies by default. This repo's existing gates fail *open* — `providers/commons/canAccess.ts` ends in `return true`, and the harness approval hook exits 0 when it cannot identify a ticket. Port those shapes, invert the defaults.
+5. **Functionality first.** Phase 1 UI is deliberately ugly: tables and cards. No animations, avatars, isometric environments or cosmetic refactors. Architecture, reliability, data integrity, security, observability, cost efficiency.
+
+## Known issues — the working tree is currently broken
+
+Verified 2026-09-10. Do not mistake any of these for something you introduced.
+
+- **`npm run typecheck` fails (5 errors)** and **`npm run lint` fails (2 errors)**. All attributable to uncommitted work on `feature/clinical-phase-1`.
+- **`npm run build` does not typecheck.** `tsconfig.json` is solution-style (`"files": []`), so the bare `tsc` in the build script compiles nothing. **`npm run typecheck` is the only real gate.**
+- **The schema rewrite reaches no database.** All 7 files in `supabase/schemas/` are modified with **zero** migrations, and `supabase/config.toml` has no `[db.migrations] schema_paths`, so the declarative workflow `AGENTS.md:33` documents is not wired to the CLI.
+- **A deployed instance is locked out.** `authProvider.ts:61` selects `sales.role`, a column in no migration → PostgREST 42703 on every login.
+- **No code path can create the first owner.** `is_admin()` requires `role='owner'`; the trigger hardcodes `operator`; signup is off; `authenticated` has no INSERT on `sales`; the bootstrap UI was deleted.
+- **`supabase db reset` fails** — `seed.sql:105` inserts into `loss_reasons`, which no migration creates. The e2e suite is red for this and two other reasons.
+- **`deploy.yml` is not gated on `check.yml`.** A red build deploys to production.
+- **47 unit tests fail** in the `claude` project (`.claude/hooks/test/*.mjs`) — Windows worktree/symlink incompatibilities in dev tooling. **Zero failures in `app` and `functions`.**
+- **`make` is not installed on this machine, and `.husky/pre-commit` line 1 is `make registry-gen`.** Husky aborts with `pre-commit script failed (code 127)` and `npx lint-staged` never runs, so **no commit succeeds without `--no-verify`**. Verified empirically. Fix the hook (use `npm run registry:gen`, or drop the step per [ADR 0008](docs/adr/0008-fork-posture.md)) rather than normalising `--no-verify`. Use `npm run` / `npx` directly, never `make`.
+
+## Commands
+
+```bash
+npm run typecheck                       # the ONLY real type gate
+npm run lint
+npx vitest run --config vitest.config.ts            # all three projects
+npx vitest run --config vitest.config.ts --project app
+npx playwright install                  # required once; browser-mode tests are blocked without it
+npm run dev                             # against Supabase
+npm run dev:demo                        # against FakeRest, no backend
+```
+
+Environment here: Windows 11, Node v22.23.1, npm 10.9.8, Docker 29.7.2, Supabase CLI 2.117.0. Docker and `node_modules` are both working — a prior audit that recorded them as blocked is out of date.
+
+## What NOT to do
+
+- **Do not hand-edit anything in `supabase/migrations/`.** Reconcile via a new generated migration.
+- **Do not run `supabase db diff` casually.** The next diff emits one migration mixing the clinic pipeline, the 43-policy rewrite, the grants and the storage change. Packaging it is Phase 0.5 work, not a side effect.
+- **Do not reformat `supabase/schemas/02_functions.sql`.** Function bodies must match `npx supabase db dump --local --schema public` exactly or every future diff emits phantom changes.
+- **Do not repurpose `public.companies` or `company_id`** — they mean *CRM customer account*, not tenant. Introduce a distinct name.
+- **Do not extend `public.tasks`** for engine work; `contact_id` is `not null` and it is a live CRM feature with e2e coverage.
+- **Do not treat `activity_log` as an audit log.** It is a `UNION ALL` view over `created_at` columns that can only emit `<entity>.created`; a deleted row erases its own history.
+- **Do not adopt `CrmDataProvider` as the CRM port.** It is `ReturnType<typeof getDataProviderWithCustomMethods>` — the Supabase implementation's own type — and both providers reach it only through an unsafe cast. Write the port by hand.
+- **Do not refactor `.claude/`.** 30+ hooks depend on each other's `/tmp` state and git topology. Study it for patterns; leave it alone.
+- **Do not rewrite `supabase/functions/mcp/validateSql.ts`.** It is incomplete but it is the only guard between a model and `DROP TABLE`. Extend it and its tests.
+- **Do not enable the attachments bucket, Supabase realtime publications, or `[auth.oauth_server]`.** Each was deliberately closed.
+- **Do not edit `docs/product/*.md`.** Untracked prior art in Portuguese, kept as a dated record. Supersede with a note instead.
+- **Do not modify `src/components/admin/` or `src/components/ui/`.** They are inbound shadcn-registry content (`registry.json` lists 214 `atomic-crm` files and **zero** from those directories). `AGENTS.md` says otherwise; `docs/product/07-upstream-strategy.md` wins — see [ADR 0008](docs/adr/0008-fork-posture.md).
+- **Do not commit secrets.** `.gitignore:42` deliberately un-ignores `supabase/functions/.env`; an EC private signing key is already tracked in `supabase/signing_keys.json`. Never let a provider key follow that path.
+
+## Conventions
+
+- **English** for source, docs, agent prompts, config keys and default config values (`.claude/rules/english-only.md`). Tenant-language vocabulary belongs in data, not code.
+- New engine code goes **outside** `src/components/` — every file added under `src/components/atomic-crm/` is republished publicly via `registry.json` on every push to `main`.
+- Structured, schema-validated outputs for every agent. Never parse prose. (Resolve the `zod` v4-app / v3-edge split before sharing schemas.)
+- Every external action is idempotent. Every important action writes an audit row.
+- Before a large change, read the relevant doc in `docs/`. After a large change, update it.
+- Use targeted file inspection. Do not re-read the whole repository; that is what these documents are for.
+
+---
+
+
 # Agent Workflow
 
 Code-change requests can run through the **agent harness**: subagents (planner, developer, quality-reviewer, merger, documentator) implementing the change via a deterministic foreground pipeline in git worktrees. **Opt-in, off by default;** otherwise the main thread implements the change itself.
