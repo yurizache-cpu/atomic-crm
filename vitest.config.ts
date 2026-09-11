@@ -110,7 +110,10 @@ export default defineConfig({
           name: "functions",
           globals: true,
           environment: "node",
-          include: ["supabase/functions/**/*.test.ts"],
+          // Widened from `supabase/functions/**` so schema-level checks
+          // (migrations vs seed vs declarative schema) can live next to the
+          // SQL they guard. Those are static file analyses — no database.
+          include: ["supabase/**/*.test.ts"],
           exclude: ["**/node_modules/**", ".supabase-e2e/**"],
         },
       },

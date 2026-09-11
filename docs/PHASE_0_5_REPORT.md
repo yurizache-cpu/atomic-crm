@@ -3,6 +3,8 @@
 **Date:** 2026-09-11 · **Branch:** `feature/clinical-phase-1` · **Base commit:** `729f5966`
 
 > **Status: NOT signed off.** Every database-level guarantee in this report is **unverified** — the Docker daemon is not running, so no migration has been applied, no RLS assertion executed, and no storage state observed. See [§11](#11-docker-blocked-verification) and [§14](#14-exact-criteria-for-phase-05-completion).
+>
+> **Update 2026-09-11 — Phase 0.5B attempted the verification and could not complete it.** Docker Desktop 4.89.0 is broken on this machine for a reason unrelated to this repository (socket creation produces files the system cannot access, across two independent subsystems; three antivirus products are stacked). Every non-destructive remediation available without administrator rights was attempted and failed. Work is checkpointed at commit `d3280333`. Full diagnosis, remediation options ranked by data-loss risk, and the revised signoff position: [PHASE_0_5B_DATABASE_VERIFICATION.md](PHASE_0_5B_DATABASE_VERIFICATION.md).
 
 **Method.** Every security-sensitive finding was reproduced on this machine before any code changed. Investigation ran as five parallel agents, each followed by an adversarial reviewer; every proposal was re-checked by hand before being applied, and three were rejected or materially amended ([§2.4](#24-proposals-rejected-or-amended-after-review)).
 
