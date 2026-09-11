@@ -60,3 +60,5 @@ node_modules/
 
 *.lock
  
+# Isolated Supabase instance used for verification (see PHASE_0_5B report).
+.supabase-e2e

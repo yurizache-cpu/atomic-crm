@@ -54,24 +54,15 @@ describe("migrations are self-sufficient", () => {
     expect(seededTables.length).toBeGreaterThan(0);
   });
 
-  // KNOWN BLOCKER, tracked in PHASE_0_5_REPORT.md: `loss_reasons` is created
-  // only in supabase/schemas/01_tables.sql, and the declarative schema has
-  // never been migrated. `it.fails` asserts the blocker still exists — so this
-  // suite stays green while it does, and turns RED the moment the migration
-  // lands, forcing this marker to be removed rather than silently forgotten.
-  it.fails(
-    "KNOWN BLOCKER: every table the seed writes to is created by a migration",
-    () => {
-      const missing = seededTables.filter((t) => !migrationCreates(t));
-      expect(missing).toEqual([]);
-    },
-  );
-
-  it("the only unmigrated seeded table is the one we know about", () => {
-    // Pins the blast radius. If a SECOND table ever goes missing, this fails
-    // immediately instead of hiding behind the known blocker above.
+  // RESOLVED 2026-09-11 (Phase 0.5B): the pending delta migration was
+  // generated against a live database and now creates loss_reasons, so a
+  // clean `supabase db reset` succeeds. This assertion was an `it.fails`
+  // marker while the blocker existed; it turned red the moment the migration
+  // landed, which is exactly what forced this rewrite instead of letting the
+  // marker rot. Verified: two consecutive clean resets, 36s and 34s, exit 0.
+  it("every table the seed writes to is created by a migration", () => {
     const missing = seededTables.filter((t) => !migrationCreates(t));
-    expect(missing).toEqual(["loss_reasons"]);
+    expect(missing).toEqual([]);
   });
 });
 
