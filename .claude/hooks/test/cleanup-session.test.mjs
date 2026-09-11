@@ -15,12 +15,13 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
+import { sanitizePath } from "../lib/paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(HERE, "..", "cleanup-session.mjs");
 const SESSION_ID = "cafe1234-1111-2222-3333-444455556666";
 const SHORT = SESSION_ID.split("-")[0];
-const sanitize = (p) => p.replace(/\//g, "_");
+const sanitize = sanitizePath;
 
 let TMP = null;
 afterEach(() => {
@@ -103,7 +104,9 @@ describe("cleanup-session", () => {
     const { app, run, worktreeList } = setup();
     run();
     expect(existsSync(join(app, "seed.txt"))).toBe(true);
-    expect(worktreeList()).toContain(app);
+    // `git worktree list --porcelain` prints POSIX-style separators on every
+    // platform, including Windows where join() built `app` with backslashes.
+    expect(worktreeList()).toContain(app.replace(/\\/g, "/"));
   });
 
   test("preserves state for resume when a ticket is not yet merged (in-flight)", () => {

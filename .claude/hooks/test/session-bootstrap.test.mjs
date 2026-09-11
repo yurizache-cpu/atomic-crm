@@ -6,7 +6,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { afterAll, describe, test, expect } from "vitest";
@@ -37,10 +37,14 @@ describe("session-bootstrap", () => {
     const r = run({ session_id: SESSION_ID });
     expect(r.status).toBe(0);
     const expectedDir = join(CRM_TMP_ROOT, sanitizePath(APP_DIR), SESSION_ID);
-    expect(r.stdout).toContain(`<session_dir>${expectedDir}</session_dir>`);
+    // stdout is the hook's JSON envelope, so on Windows the native separators
+    // are JSON-escaped there. The consumer reads the PARSED additionalContext,
+    // which is where the real spelling lives, so assert on that.
+    const injected = JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+    expect(injected).toContain(`<session_dir>${expectedDir}</session_dir>`);
     // Alignment invariant: basename(session_dir) === session_id.
-    const m = r.stdout.match(/<session_dir>(.+?)<\/session_dir>/);
-    expect(m && m[1].split("/").pop()).toBe(SESSION_ID);
+    const m = injected.match(/<session_dir>(.+?)<\/session_dir>/);
+    expect(m && basename(m[1])).toBe(SESSION_ID);
   });
 
   test("emits valid additionalContext JSON for SessionStart", () => {

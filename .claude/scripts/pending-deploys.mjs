@@ -12,6 +12,7 @@
 //   3 - could NOT decide: --session missing, or the passed <SESSION_SHORT>
 //       has session-base siblings but no refs of its own (likely a mismatch).
 import { execFileSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
 import {
   loadConfig,
   isDeployEnabled,
@@ -157,4 +158,10 @@ function main() {
   if (relevant.length) process.stdout.write(`${relevant.join("\n")}\n`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+// pathToFileURL, not `file://${process.argv[1]}`: on Windows argv[1] is a
+// backslash-separated drive path, so the template literal never equals
+// import.meta.url, main() never runs, and the script silently exits 0 - which
+// every caller reads as "nothing to deploy". Identical on POSIX, and correct
+// for repo paths containing spaces, which import.meta.url percent-encodes.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
+  main();

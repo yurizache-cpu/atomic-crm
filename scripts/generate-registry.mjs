@@ -6,10 +6,21 @@ import path from "node:path";
 
 const registryPath = "registry.json";
 const basePath = "src";
-const atomicCrmComponentsPath = path.join(basePath, "components", "atomic-crm");
-const supabaseComponentsPath = path.join(basePath, "components", "supabase");
-const hooksPath = path.join(basePath, "hooks");
-const libPath = path.join(basePath, "lib");
+// glob treats "\" as an escape character, so patterns must always use "/" —
+// path.join would emit backslashes on Windows and silently match nothing,
+// which regenerates an empty registry instead of failing.
+const atomicCrmComponentsPath = path.posix.join(
+  basePath,
+  "components",
+  "atomic-crm",
+);
+const supabaseComponentsPath = path.posix.join(
+  basePath,
+  "components",
+  "supabase",
+);
+const hooksPath = path.posix.join(basePath, "hooks");
+const libPath = path.posix.join(basePath, "lib");
 
 const excludedHooks = [
   "filter-context.tsx",
@@ -30,19 +41,23 @@ const testFilePattern = "**/*.{test,spec}.*";
 const storyFilePattern = "**/*.stories.*";
 
 const atomicCrmComponents = globSync(
-  path.join(atomicCrmComponentsPath, "**", "*.ts*"),
+  path.posix.join(atomicCrmComponentsPath, "**", "*.ts*"),
   { ignore: [testFilePattern, storyFilePattern] },
 );
 const supabaseComponents = globSync(
-  path.join(supabaseComponentsPath, "**", "*.ts*"),
+  path.posix.join(supabaseComponentsPath, "**", "*.ts*"),
   { ignore: [testFilePattern, storyFilePattern] },
 );
-const hooks = globSync(path.join(hooksPath, "**", "*.ts*")).filter((hook) => {
-  return !excludedHooks.includes(path.basename(hook));
-});
-const libFiles = globSync(path.join(libPath, "**", "*.ts*")).filter((file) => {
-  return !excludedLibFiles.includes(path.basename(file));
-});
+const hooks = globSync(path.posix.join(hooksPath, "**", "*.ts*")).filter(
+  (hook) => {
+    return !excludedHooks.includes(path.basename(hook));
+  },
+);
+const libFiles = globSync(path.posix.join(libPath, "**", "*.ts*")).filter(
+  (file) => {
+    return !excludedLibFiles.includes(path.basename(file));
+  },
+);
 const changelogPath = "CHANGELOG.md";
 
 const registryContent = JSON.parse(fs.readFileSync(registryPath, "utf-8"));

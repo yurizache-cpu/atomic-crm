@@ -11,6 +11,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadConfig, roleNames } from "../hooks/lib/config.mjs";
 
 function resolveRepo(argv) {
@@ -63,8 +64,17 @@ export function checkConfigSync(repo) {
   return { ok: missing.length === 0, missing, tokens, roles: [...roles] };
 }
 
-// Run as CLI when invoked directly (not when imported by a test).
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Run as CLI when invoked directly (not when imported by a test). The compare
+// goes through pathToFileURL: on Windows argv[1] is a backslashed drive path,
+// so a literal `file://` prefix never matches import.meta.url and this block
+// would silently never run (exit 0 = fail-open). Byte-identical on POSIX.
+// The argv[1] guard matters because this module also has a public export:
+// pathToFileURL(undefined) throws, where the previous template literal merely
+// failed to match, so an embedder without argv[1] would crash on import.
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   const repo = resolveRepo(process.argv.slice(2));
   const r = checkConfigSync(repo);
   if (r.error) {

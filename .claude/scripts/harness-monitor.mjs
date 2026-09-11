@@ -33,7 +33,10 @@ const REPO = (() => {
 })();
 
 const TMP_ROOT = process.env.CRM_TMP_ROOT || "/tmp";
-const sanitize = (p) => String(p).replace(/\//g, "_");
+// Must stay identical to sanitizePath() in .claude/hooks/lib/paths.mjs, or the
+// monitor watches a different directory than the hooks write to. Windows
+// separators and the drive colon are folded for the reason documented there.
+const sanitize = (p) => String(p).replace(/[/\\:]/g, "_");
 const WORKTREE_ROOT = join(TMP_ROOT, sanitize(REPO)); // /tmp/_workspaces_atomic-crm
 const CLAUDE_PROJ = join(
   homedir(),

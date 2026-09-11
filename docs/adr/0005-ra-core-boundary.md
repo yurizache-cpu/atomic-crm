@@ -4,7 +4,11 @@
 
 ## Context
 
-Every domain type in `src/components/atomic-crm/types.ts` is `& Pick<RaRecord, "id">`. About 40 files call `ra-core` hooks directly against literal resource names. `providers/types.ts` is a one-line re-export of the Supabase implementation's own type. Both providers are reconnected to `CrmDataProvider` only by an unsafe cast (`dataProvider.ts:341`, `fakerest/dataProvider.ts:609`) — so **neither implementation is actually type-checked against the contract**, and the two are not behaviourally equivalent.
+Every *entity* type in `src/components/atomic-crm/types.ts` is `& Pick<RaRecord, "id">` (13 of 24 exports; the rest are DTO/helper shapes, and `Activity` is the full `RaRecord &`). **The fork widened this rather than containing it:** all three types `2b5f20bb` added for the clinical/commercial domain — `LeadProfile`, `AcquisitionAttribution`, `LossReason` — were themselves written `& Pick<RaRecord, "id">`, so the fork's own Phase-1 domain data is already react-admin-shaped.
+
+**156 of the 254** tracked `.ts`/`.tsx` files under `src/components/atomic-crm/` import from `ra-core` (168 import statements), and 80 of them call a `ra-core` data or context hook directly against literal resource names. *(Corrected 2026-09-11: this originally read "about 40 files", understating it by 2–4× depending on how you count. The decision is unaffected — `ra-core` stays in the CRM screens and is forbidden in the engine — but the number matters for sizing any future extraction.)*
+
+`providers/types.ts` is a one-line re-export of the Supabase implementation's own type, and `CrmDataProvider` is `ReturnType<typeof getDataProviderWithCustomMethods>` — a type derived *from* an implementation, which is the actual defect. *(Corrected 2026-09-11: an earlier version said both providers reach it "only by an unsafe cast" and that "neither implementation is actually type-checked against the contract". Both halves were wrong. `withLifecycleCallbacks` is typed `<T extends DataProvider>(dp: T, …) => T`, so the `as CrmDataProvider` at `dataProvider.ts:343` asserts a type the expression already has — a redundant no-op, not an unsafe cast. And FakeRest reaches it by plain **annotation** — `createDataProvider(...): CrmDataProvider` and `const dataProviderWithCustomMethod: CrmDataProvider = {…}` — which are real assignability checks. The correct criticism is narrower and still sufficient: the contract is derived from one implementation, so conformance to it proves nothing about replaceability.)*
 
 ## Decision
 

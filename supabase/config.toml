@@ -24,6 +24,28 @@ shadow_port = 54320
 # server_version;` on the remote database to check.
 major_version = 15
 
+# Registers the declarative schema with the CLI. AGENTS.md documents
+# `supabase/schemas/` as the source of truth and `supabase db diff` as the way
+# migrations are generated from it — but without this key the CLI never read
+# those files, so the documented workflow silently did nothing and a ~1,000-line
+# security rewrite reached no database. Order matters: files are concatenated in
+# the order listed, so tables must precede the functions, views, triggers,
+# policies and grants that depend on them.
+[db.migrations]
+schema_paths = [
+  "./schemas/01_tables.sql",
+  "./schemas/02_functions.sql",
+  "./schemas/03_views.sql",
+  "./schemas/04_triggers.sql",
+  "./schemas/05_policies.sql",
+  "./schemas/06_grants.sql",
+  # 07_storage.sql is deliberately NOT listed. It is DML against
+  # `storage.buckets` plus cross-schema policy drops, which `db diff` cannot
+  # emit; including it would produce a phantom diff on every run. Its intent is
+  # enforced by the hand-written migration
+  # `20260911120000_close_attachments_bucket.sql` instead.
+]
+
 [db.pooler]
 enabled = false
 # Port to use for the local connection pooler.

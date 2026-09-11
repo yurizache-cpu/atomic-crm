@@ -72,6 +72,40 @@ describe("validateReadOnly", () => {
     ["multi-statement (SELECT; SET)", "SELECT 1; SET LOCAL role = 'postgres'"],
     ["multi-statement (two SELECTs)", "SELECT 1; SELECT 2"],
     ["unparseable SQL", "NOT VALID SQL %%%"],
+
+    // A CTE attached to a DML statement. The read-only gate used to walk only
+    // the WITH's `bind[]` (the CTE definitions) and never its `in` (the
+    // statement the WITH is attached to), so these collected {with, select}
+    // and were ALLOWED while actually writing. One line of prefix turned the
+    // `readOnlyHint: true` query tool into a write primitive.
+    [
+      "CTE attached to DELETE",
+      "WITH x AS (SELECT 1 AS a) DELETE FROM contacts",
+    ],
+    [
+      "CTE attached to UPDATE",
+      "WITH x AS (SELECT 1 AS a) UPDATE contacts SET first_name = 'pwned'",
+    ],
+    [
+      "CTE attached to INSERT",
+      "WITH x AS (SELECT 1 AS a) INSERT INTO contacts (first_name) VALUES ('pwned')",
+    ],
+    [
+      "CTE attached to schema-qualified DELETE",
+      "WITH x AS (SELECT 1 AS a) DELETE FROM public.contacts",
+    ],
+    [
+      "nested CTE attached to DELETE",
+      "WITH a AS (SELECT 1), b AS (SELECT 2) DELETE FROM contacts WHERE id IN (SELECT 1)",
+    ],
+    [
+      "CTE attached to DELETE, split across lines and comments",
+      "WITH x AS (\n  -- harmless\n  SELECT 1 AS a\n)\n/* still harmless */\nDELETE FROM contacts",
+    ],
+    [
+      "CTE attached to DELETE with RETURNING",
+      "WITH x AS (SELECT 1 AS a) DELETE FROM contacts RETURNING id",
+    ],
   ])("rejects %s", (_label, sql) => {
     expect(validateReadOnly(sql)).not.toBeNull();
   });

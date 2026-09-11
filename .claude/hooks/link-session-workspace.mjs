@@ -83,7 +83,17 @@ try {
     }
     rmSync(linkPath, { force: true });
   }
-  symlinkSync(ctx.sessionDir, linkPath);
+  // Windows refuses a plain symlink unless the process holds
+  // SeCreateSymbolicLinkPrivilege (Administrator or Developer Mode), throwing
+  // EPERM otherwise. A directory junction needs no privilege and is reported
+  // by lstat()/readlink() exactly like a symlink to the same target. The type
+  // argument is ignored off Windows, but stay explicit so POSIX still creates
+  // a real symlink.
+  symlinkSync(
+    ctx.sessionDir,
+    linkPath,
+    process.platform === "win32" ? "junction" : null,
+  );
   ctx.log(`linked ${LINK_NAME} -> ${ctx.sessionDir}`);
 } catch (e) {
   ctx.log(`skipped: ${e?.message ?? e}`);

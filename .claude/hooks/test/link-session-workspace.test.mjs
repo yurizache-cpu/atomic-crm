@@ -16,12 +16,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { afterEach, describe, test, expect } from "vitest";
+import { sanitizePath } from "../lib/paths.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const HOOK = join(HERE, "..", "link-session-workspace.mjs");
 const LINK_NAME = ".harness-session";
-// Mirror lib/paths.mjs sanitizePath: every "/" becomes "_".
-const sanitize = (p) => p.replace(/\//g, "_");
+const sanitize = sanitizePath;
 
 let TMP = null;
 afterEach(() => {

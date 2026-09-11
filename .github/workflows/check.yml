@@ -92,6 +92,12 @@ jobs:
               run: CI=1 npm run test:unit:app -- --run
             - name: 🔎 Unit Tests on Supabase functions
               run: CI=1 npm run test:unit:functions -- --run
+            # The harness hooks gate every agent run (validation, worktree
+            # cleanup, write restrictions). They were never exercised in CI,
+            # which is how a defect that made validate-on-stop validate nothing
+            # — and one that deleted live worktrees — shipped unnoticed.
+            - name: 🔎 Unit Tests on agent harness
+              run: CI=1 npm run test:unit:claude -- --run
 
     e2e-test:
       timeout-minutes: 10

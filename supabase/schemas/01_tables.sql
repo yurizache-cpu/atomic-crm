@@ -83,17 +83,12 @@ create table public.deals (
     lost_at timestamp with time zone,
     converted_at timestamp with time zone,
     next_action_at timestamp with time zone,
-    constraint deals_pipeline_stage_check check (pipeline_stage in (
-        'new_lead',
-        'contact_started',
-        'conversation_active',
-        'initial_session_scheduled',
-        'initial_session_paid',
-        'initial_session_attended',
-        'continuity_offered',
-        'continuity_accepted',
-        'continuity_converted'
-    )),
+    -- No CHECK enumerating pipeline stages. Stage vocabulary is tenant
+    -- CONFIGURATION, not schema semantics (ADR 0013): a nine-value clinic
+    -- pipeline frozen into DDL is exactly what stops a second tenant being
+    -- onboarded without a migration. The database validates structural
+    -- integrity (NOT NULL, default, index); which stages exist and what they
+    -- are called is data, as `loss_reasons` already is.
     constraint deals_lost_requires_reason check (
         lost_at is null or loss_reason_id is not null
     )
@@ -157,13 +152,8 @@ create table public.lead_profiles (
     acquired_at timestamp with time zone not null default now(),
     last_interaction_at timestamp with time zone,
     next_action_at timestamp with time zone,
-    operational_status text not null default 'active' check (operational_status in (
-        'active',
-        'awaiting_lead',
-        'follow_up_due',
-        'maturing',
-        'paused'
-    )),
+    -- Same rule as deals.pipeline_stage: tenant vocabulary, not DDL. ADR 0013.
+    operational_status text not null default 'active',
     do_not_contact boolean not null default false,
     created_at timestamp with time zone not null default now(),
     updated_at timestamp with time zone not null default now()

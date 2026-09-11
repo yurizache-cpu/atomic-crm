@@ -34,7 +34,11 @@ describe("NoteInputs", () => {
       .not.toBeInTheDocument();
 
     await expect.element(screen.getByText("Date")).toBeVisible();
-    await expect.element(screen.getByText("Attachments")).toBeVisible();
+    // Attachments were deliberately removed from note inputs: the revealed
+    // section must expose the date control and no file input.
+    await expect
+      .element(screen.getByText("Attachments"))
+      .not.toBeInTheDocument();
   });
 
   it("renders the status selector when showStatus is true", async () => {
@@ -58,6 +62,11 @@ describe("NoteInputs", () => {
 
   it("does not render the status selector when showStatus is false", async () => {
     const screen = await render(<Default />);
+
+    // Reveal the options section first. While collapsed, the options hint
+    // ("(change status or date)") is in the DOM and matches the
+    // case-insensitive substring lookup below, masking the real assertion.
+    await screen.getByRole("button", { name: "Show options" }).click();
 
     await expect.element(screen.getByText("Status")).not.toBeInTheDocument();
   });
@@ -111,13 +120,13 @@ describe("NoteInputs", () => {
     await expect(dateInput).toHaveValue("2024-01-01T12:00");
   });
 
-  it("shows a validation error when submitting an empty note without attachments", async () => {
+  it("shows a validation error when submitting an empty note", async () => {
     const screen = await render(<WithSaveButton />);
 
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .toBeVisible();
   });
 
@@ -128,7 +137,7 @@ describe("NoteInputs", () => {
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .toBeVisible();
   });
 
@@ -139,17 +148,17 @@ describe("NoteInputs", () => {
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .not.toBeInTheDocument();
   });
 
-  it("allows submitting a note with an attachment and no text", async () => {
+  it("still requires text when a legacy attachments value is present", async () => {
     const screen = await render(<WithAttachmentDefault />);
 
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
-      .not.toBeInTheDocument();
+      .element(screen.getByText("A commercial note is required"))
+      .toBeVisible();
   });
 });

@@ -12,12 +12,17 @@ describe("NoteInputsMobile", () => {
     await expect.element(screen.getByPlaceholder("Add a note")).toBeVisible();
   });
 
-  it("renders the attach document button", async () => {
+  it("does not offer an attachment control", async () => {
+    // File uploads are disabled in the clinical profile, so the mobile note
+    // form must not offer a way to attach one.
     const screen = await render(<Default />);
 
     await expect
       .element(screen.getByRole("button", { name: "Attach document" }))
-      .toBeVisible();
+      .not.toBeInTheDocument();
+    await expect
+      .poll(() => screen.container.querySelector('input[type="file"]'))
+      .toBeNull();
   });
 
   it("does not render the contact selector by default", async () => {
@@ -32,13 +37,13 @@ describe("NoteInputsMobile", () => {
     await expect.element(screen.getByText("Contact")).toBeVisible();
   });
 
-  it("shows a validation error when submitting an empty note without attachments", async () => {
+  it("shows a validation error when submitting an empty note", async () => {
     const screen = await render(<Default />);
 
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .toBeVisible();
   });
 
@@ -49,7 +54,7 @@ describe("NoteInputsMobile", () => {
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .toBeVisible();
   });
 
@@ -60,17 +65,20 @@ describe("NoteInputsMobile", () => {
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
+      .element(screen.getByText("A commercial note is required"))
       .not.toBeInTheDocument();
   });
 
-  it("allows submitting a note with an attachment and no text", async () => {
+  it("still requires text when an attachment is present", async () => {
+    // An attachment used to satisfy the validator on its own. It no longer
+    // does, and nothing in the form can create one — this pins that change
+    // so a future edit cannot quietly restore the escape hatch.
     const screen = await render(<WithAttachmentDefault />);
 
     await screen.getByRole("button", { name: "Save" }).click();
 
     await expect
-      .element(screen.getByText("A note or an attachment is required"))
-      .not.toBeInTheDocument();
+      .element(screen.getByText("A commercial note is required"))
+      .toBeVisible();
   });
 });

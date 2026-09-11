@@ -13,8 +13,46 @@ permissions:
     contents: write
 
 jobs:
+    # A red build must not deploy. deploy.yml and check.yml both trigger on
+    # push to main and carried no dependency between them, so typecheck, lint
+    # and the unit suites ran *in parallel with* the deploy rather than before
+    # it — a failing commit shipped anyway. Every deploy job now waits on this.
+    gate:
+        name: 🚦 Gate (must pass before any deploy)
+        runs-on: ubuntu-latest
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - name: 📥 Install dependencies
+              run: npm ci
+
+            - name: 🏷️ Typecheck
+              run: npm run typecheck
+
+            - name: 🔬 Lint
+              run: npm run lint
+
+            - name: 🎭 Install Playwright browsers
+              run: npx playwright install chromium-headless-shell 1>/dev/null
+
+            - name: 🔎 Unit Tests on App
+              run: CI=1 npm run test:unit:app -- --run
+
+            - name: 🔎 Unit Tests on Supabase functions
+              run: CI=1 npm run test:unit:functions -- --run
+
+            - name: 🔎 Unit Tests on agent harness
+              run: CI=1 npm run test:unit:claude -- --run
     deploy-doc:
         name: 🚀 Deploy (doc)
+        needs: gate
         runs-on: ubuntu-latest
         timeout-minutes: 5
 
@@ -54,6 +92,7 @@ jobs:
 
     deploy-demo:
         name: 🚀 Deploy (demo)
+        needs: gate
         runs-on: ubuntu-latest
         timeout-minutes: 10
 
@@ -94,6 +133,7 @@ jobs:
 
     deploy-supabase:
         name: 🚀 Deploy (supabase)
+        needs: gate
         runs-on: ubuntu-latest
         timeout-minutes: 10
 

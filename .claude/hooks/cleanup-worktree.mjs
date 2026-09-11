@@ -29,6 +29,7 @@ import {
   sessionBranch,
 } from "./lib/topology.mjs";
 import { removeWorktree } from "./lib/worktree.mjs";
+import { toGitPath } from "./lib/paths.mjs";
 import { removeWorktreeFolders } from "./lib/workspace-folders.mjs";
 
 const raw = readFileSync(0, "utf8");
@@ -57,13 +58,17 @@ if (!existsSync(ctx.worktreeBase)) {
   ctx.accept(`${ctx.worktreeBase} not found`);
 }
 
+// Every path built here is canonicalised before being matched against a
+// git-reported one; see toGitPath in lib/paths.mjs for why.
+const WORKTREE_BASE = toGitPath(ctx.worktreeBase);
+
 const base = getBaseBranch();
 ctx.log(
   `START session=${ctx.sessionShort} base=${ctx.worktreeBase} branch=${base}`,
 );
 
 const isUnderBase = (p) =>
-  p === ctx.worktreeBase || p.startsWith(ctx.worktreeBase + "/");
+  p === WORKTREE_BASE || p.startsWith(WORKTREE_BASE + "/");
 
 const hasLocalBranch = (ref) =>
   git(["show-ref", "--verify", "--quiet", `refs/heads/${ref}`]).status === 0;
@@ -135,8 +140,11 @@ toRemove.map((e) => e.branch).forEach(deleteBranch);
 // added them on a technical run). No-op under a managed launcher or a mono-folder
 // window (no `.code-workspace` to edit; `code --remove` does not exist).
 if (!process.env.CHAT_SESSION_DIR && toRemove.length) {
-  const removed = new Set(toRemove.map((e) => e.path));
-  removeWorktreeFolders(ctx.repo, (p) => removed.has(p));
+  // `toRemove` holds git-reported paths; the workspace file holds the join()
+  // form setup-worktree registered. Compare both in canonical form or the
+  // folders are never removed on Windows.
+  const removed = new Set(toRemove.map((e) => toGitPath(e.path)));
+  removeWorktreeFolders(ctx.repo, (p) => removed.has(toGitPath(p)));
 }
 
 git(["worktree", "prune"]);
@@ -145,7 +153,7 @@ const registered = getWorktreePaths();
 
 const sweepLeftover = (entry) => {
   if (!entry.isDirectory()) return;
-  const dir = join(ctx.worktreeBase, entry.name);
+  const dir = toGitPath(join(ctx.worktreeBase, entry.name));
   if (dir.endsWith("/_session")) {
     ctx.log(`SKIP-SESSION-LEFTOVER ${dir}`);
     return;

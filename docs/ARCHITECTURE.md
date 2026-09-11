@@ -1,8 +1,15 @@
 # Architecture — AI Company OS
 
 **Status:** proposed target architecture, pending owner approval.
-**Date:** 2026-09-10
+**Date:** 2026-09-10 · **Updated 2026-09-11** (Phase 0.5).
 **Basis:** [BASELINE_REPORT.md](BASELINE_REPORT.md). Decisions D1–D8 there are the load-bearing choices; this document is what follows from them.
+
+> **Phase 0.5 changed three things in this document's assumptions, and they matter more than the prose around them:**
+> 1. The isolation claim was **false** and is retracted — `ops` is unreachable *through PostgREST*, not "from any browser". The MCP function is a second, unguarded channel ([ADR 0011](adr/0011-mcp-trust-boundary.md)).
+> 2. The tenant-RLS pattern this document pointed at **cannot work for the worker** (`auth.uid()`, no JWT). The mechanism is now [ADR 0012](adr/0012-worker-tenant-context.md).
+> 3. Pipeline stage vocabulary is **configuration, not DDL** — both CHECK constraints removed before any migration froze them ([ADR 0013](adr/0013-pipeline-stages-are-configuration.md)).
+>
+> Current state and what remains unverified: [PHASE_0_5_REPORT.md](PHASE_0_5_REPORT.md).
 
 Nothing described here is built yet. What exists today is an Atomic CRM fork; see the baseline report.
 
@@ -60,7 +67,7 @@ The single hardest constraint in the baseline: **Supabase Edge Functions are per
                          └─────────────┘
 ```
 
-- **Postgres is the durable substrate**: the queue (`ops.jobs`), the scheduler table, the outbox, and all state. The repo already proves the DB → `pg_net` → function hop works (`02_functions.sql:34-45`); it proves nothing can run for ninety seconds.
+- **Postgres is the durable substrate**: the queue (`ops.jobs`), the scheduler table, the outbox, and all state. ⚠️ **Correction (2026-09-11):** an earlier draft said "the repo already proves the DB → `pg_net` → function hop works (`02_functions.sql:34-45`)". The *function* survives and still calls `net.http_post` at `:35`, but the fork's `04_triggers.sql:55-57` deliberately installs **no trigger that fires it** — so the hop is live only in a database built from the old migrations, and the single migration Phase 0.5 generates will `DROP TRIGGER` the last of them. Treat the outbox as **greenfield**: if the `pg_net` primitive is wanted, it must be re-declared in `supabase/schemas/` (trigger *and* `create extension pg_net`) as a deliberate act. What the repo does prove is the negative: nothing here can run for ninety seconds.
 - **One always-on worker** leases jobs with `FOR UPDATE SKIP LOCKED`. It is the only thing that runs agents. It is the only thing that holds provider API keys.
 - **Edge Functions stay** for what they are good at: thin, fast, authenticated HTTP — webhook ingress that writes to the outbox and returns immediately.
 - Reversing D1 rewrites every tool call, which is why it is decision #1.
@@ -76,18 +83,20 @@ The single hardest constraint in the baseline: **Supabase Edge Functions are per
 | `public` | The CRM. Unchanged. Tenant one's Atomic CRM instance. | Exposed (as today) |
 | `ops` | The engine. Every table below. | **Not exposed** |
 
-`supabase/config.toml:11` exposes schemas by explicit allowlist. Leaving `ops` out of it makes the engine unreachable from any browser by construction — a hard boundary, not a policy that can be misconfigured. The browser reaches engine data only through the worker's API.
+`supabase/config.toml:11` exposes schemas by explicit allowlist. Leaving `ops` out of it makes the engine unreachable **through PostgREST** by construction — a hard boundary, not a policy that can be misconfigured. The browser reaches engine data only through the worker's API.
+
+> ⚠️ **That is not the same as "unreachable from any browser", and an earlier draft of this section and of [ADR 0002](adr/0002-tenancy-model.md) overstated it.** The allowlist governs one channel. `supabase/functions/mcp/index.ts:22-25` opens a direct libpq `Pool` whose connection string defaults to the `postgres` **superuser**, and exposes `query` and `mutate` with no schema restriction — `validateSql.ts` contains no reference to `search_path`, schema names or `public.`. A raw libpq connection ignores the PostgREST allowlist entirely, and a superuser ignores `force row level security`. So **the MCP function is a second, unguarded channel into `ops`**, and it must be removed, downgraded to a non-superuser role, or schema-restricted *before* `ops` exists. §9 already says "no arbitrary SQL as an agent capability"; this is the same decision, arriving one phase earlier. The isolation test for Phase 2 must exercise **both** channels — a PostgREST-only test proves nothing about this one. Tracked as `BASELINE_REPORT.md` §13 Q12.
 
 This also avoids rewriting the 43 inherited `public` policies, and it means tenant two can have a different CRM, or none.
 
 ### Conventions for every `ops` table
 
 - **UUID/ULID primary keys (D3)**, client-generatable so inserts are idempotent.
-- **`tenant_id uuid not null`** on every table, with RLS routed through a helper function, following the pattern at `02_functions.sql:462-511`.
+- **`tenant_id uuid not null`** on every table, with RLS routed through a helper function. ⚠️ **Do not copy the `02_functions.sql:462-509` pattern literally.** Every helper there resolves through `auth.uid()`, which reads a Supabase JWT claim — and the worker, the *only* process that touches `ops.*` (§3), holds no end-user JWT. The engine needs a different tenant-context mechanism: a `SET LOCAL`-scoped GUC (`set_config('app.tenant_id', …, true)`) read by the policy, set by the worker on a **non-superuser** role, per leased job. Copy the *shape* — one SECURITY DEFINER helper, referenced by every policy — not the `auth.uid()` source. Unresolved: `BASELINE_REPORT.md` §13 Q11. Settle it before the first `ops` policy is written.
 - **`force row level security`** — the baseline has none, so today the owner role (which the MCP pool uses) bypasses every policy.
 - **No foreign key into `public.*`, ever.** The CRM is referenced as `(crm_provider, crm_entity, crm_id)` text. One bigint FK into `deals` would weld Atomic CRM to the core and make "replaceable adapter" a slogan.
 - **`created_at` and `updated_at` on everything.** The baseline has 9 of 13 tables without `created_at`.
-- **History tables are append-only**, enforced by `REVOKE UPDATE, DELETE`. The repo already has this shape: `lead_profiles` has no INSERT or DELETE policy and is written only by a SECURITY DEFINER trigger.
+- **History tables are append-only**, enforced by `REVOKE UPDATE, DELETE`. ⚠️ **Correction (2026-09-11): the repo has no example of this, and `lead_profiles` is the inverse.** Append-only means INSERT permitted, UPDATE/DELETE revoked. `lead_profiles` has no INSERT and no DELETE policy but **does** have `lead_profile_update_scoped` (`05_policies.sql:175-180`) and an explicit `grant select, update` (`06_grants.sql:25`) — a mutable current-state row that only a trigger may create. Copying it onto `ops.audit_log` would produce an audit log any authenticated user can rewrite in place, which is precisely the failure mode principle 5 exists to prevent. The append-only shape has to be **invented here**, not inherited.
 - **Enumerations are reference rows, not CHECK constraints**, unless the set is genuinely engine-owned (e.g. `task.status`). Tenant vocabulary is data. The nine-value psychology CHECK on `deals` is the counter-example to avoid.
 
 ### Core entities
@@ -109,6 +118,8 @@ This also avoids rewriting the 43 inherited `public` policies, and it means tena
 ---
 
 ## 5. Ports and adapters
+
+> **None of the workspace layout in this document exists yet.** There is no `apps/`, `packages/` or `services/` directory, and `package.json` has no `workspaces` key — this is a single-package Vite app. Creating the workspace (package manager workspaces, tsconfig project references, and the **lint rule** [ADR 0005](adr/0005-ra-core-boundary.md) says must enforce the `ra-core` boundary "mechanically, not by convention") is itself a scoped piece of work and must be an explicit step in the first phase that needs it. Until it lands, every boundary described below is a convention, and conventions do not survive a deadline. Tracked as `BASELINE_REPORT.md` §13 Q13.
 
 Interfaces live in `packages/ports`. They are hand-written contracts, and implementations are checked against them — unlike today's `CrmDataProvider`, which is `ReturnType<typeof getDataProviderWithCustomMethods>` (a type derived *from* the Supabase implementation) that both providers reach only via an unsafe cast.
 
@@ -157,7 +168,9 @@ Human override always exists, at every level.
 | HIGH | AI review + human approval |
 | CRITICAL | human approval mandatory; blocked by default |
 
-Inherently high/critical: large ad-budget changes, deleting data, billing changes, sending sensitive information, touching clinical data, changing security settings, mass messaging, irreversible external actions.
+**The default for an unmatched action is `CRITICAL`, not `LOW`.** An action that matches no rule is an action nobody has classified, and principle 5 applies to the risk engine itself before it applies to anything else. The natural implementation of "evaluate against configurable rules" — iterate, return the highest match, fall through to the bottom — is exactly the `return true` shape this repo already ships in `canAccess.ts`. Invert it: fall through to deny, and make "an unclassified action was attempted" a visible event, so the gap gets a rule instead of a silent pass.
+
+Inherently high/critical: large ad-budget changes, deleting data, billing changes, sending sensitive information, touching clinical data, changing security settings, mass messaging, irreversible external actions. **This list is seeded rows in `ops.risk_policies`, not constants in `packages/policy`.** It is tenant-shaped — "touching clinical data" means nothing to a 3D-printing tenant — and hardcoding it would repeat the `deals` CHECK mistake in the component that is hardest to change safely. The engine ships the *evaluator*; the rules are data, versioned and auditable like any other tenant configuration.
 
 ### Maker → Checker → Approver
 
@@ -166,6 +179,8 @@ The maker agent produces work; a **different** agent reviews it; the policy engi
 ### Confidence
 
 Confidence is **routing metadata, not probability**. `≥0.90` normal flow; `0.70–0.89` review; `<0.70` escalate or gather more evidence. **Risk always overrides confidence.**
+
+⚠️ **Confidence is self-reported by the maker, so it must never be the only thing standing between the maker and the checker.** A maker that emits `0.95` routes itself past review for everything the risk engine rates LOW or MEDIUM — "risk overrides confidence" only rescues HIGH and CRITICAL. Two constraints follow, and both are testable: (1) whether an action *class* requires a checker is decided by **risk and autonomy level**, never by the maker's own number — confidence may only escalate review, never skip it; (2) reported confidence is recorded on `agent_runs` and **calibrated against outcomes**, so an agent whose 0.95s are wrong 30% of the time is detected as a defect rather than trusted forever.
 
 ### Approval queue
 
@@ -201,11 +216,19 @@ event / schedule / task
 
 **Cost accounting is not optional.** Every invocation records provider, model, token counts, cost, agent, department, task and workflow. Budgets are per-agent daily / monthly / per-task. Exceeding one warns, throttles, falls back or requires approval — it never silently continues.
 
+**A fleet-wide kill switch is a deliverable, not a footnote.** Per-agent budgets bound one agent; they do not bound twenty agents each behaving within budget, a retry storm, or a workflow that spawns runs in a loop. The engine therefore ships a single, deterministic stop that (a) is enforced in the worker's pre-flight, not in a prompt, (b) halts new `agent_runs` across every tenant and department at once, (c) is reachable by the owner from the Phase-1 UI in one click and from a CLI without the UI, and (d) is **tested** — a test that trips it and asserts the next run is refused. Alongside it, a global daily spend ceiling that trips the same switch automatically. This belongs in the same phase as the runtime, with its own acceptance criterion.
+
 ---
 
 ## 8. Events, jobs and reliability
 
-**Event-driven, not polling.** Agents wake on events, schedules and tasks. This is most of the cost control.
+**Event-driven, not polling** — *at the agent layer.* Agents wake on events, schedules and tasks; no agent is ever invoked to go and look for work. This is most of the cost control, and it is the claim that matters, because agent wake-ups cost money.
+
+Be precise about the layer below, though: the **transport** is a poll. Job leasing with `FOR UPDATE SKIP LOCKED` (§3) and the scheduler tick are both loops against Postgres, and an earlier draft of this section read as if they were not. That is a deliberate trade — a Postgres-backed queue is the right substrate at this scale ([ADR 0001](adr/0001-runtime-execution-substrate.md)) — but it has to be stated with its numbers, because "event-driven" without a latency budget is how a 30-second poll ends up behind a WhatsApp reply:
+
+- **Idle poll interval and target wake-up latency are configuration with explicit defaults**, not incidental constants. A webhook-triggered job should start in single-digit seconds.
+- **Use `LISTEN`/`NOTIFY` to collapse the idle latency**: the outbox write issues a `pg_notify`, the worker blocks on `LISTEN` and falls back to the timed poll. The poll remains the correctness mechanism (notifications are not durable); the notify is only there to make the common case fast.
+- A polling loop with zero jobs costs one cheap query and **zero tokens**. That is the distinction the principle is actually protecting.
 
 **Outbox pattern.** Domain writes and their event rows commit in the same transaction; the worker publishes from the outbox. The repo's existing `pg_net` trigger is the transport primitive and also a catalogue of what to avoid: fire-and-forget, no retry, no delivery reconciliation, and a silent no-op whenever there is no end-user `Authorization` header.
 
@@ -225,6 +248,8 @@ event / schedule / task
 - **External content is data.** Content ingested from WhatsApp, email, web or CRM notes is stored with provenance and a trust level, and never interpreted as instructions to the system.
 - **No arbitrary SQL as an agent capability.** The existing MCP `query`/`mutate` pair is the fastest agent-to-data path and the largest blast radius, and it is structurally incompatible with a replaceable CRM. Agents get typed tools.
 - **Clinical data is segregated by design.** General agents work with operational, administrative, marketing, CRM, financial and scheduling data. Clinical records get separate access policies and a separate storage boundary; no general agent has a path to them. LGPD retention, erasure and data-subject requests are engine features, not later concerns.
+
+  ⚠️ **This paragraph is currently an assertion with no schedule behind it, and that is a real gap.** "Not later concerns" has to mean something in `ROADMAP.md`: the phase that first ingests patient-adjacent content (WhatsApp) must carry data-subject rights, retention and the clinical boundary **in its own Scope, Tests and Acceptance** — not in a hardening phase after ingestion has been running. The minimum that must exist *before* the first patient message is stored: a declared lawful basis and retention period per data class; erasure that actually erases (including from agent memory and any derived summary); a stored `do_not_contact`/consent state that no code path can silently drop (the `merge_contacts` cascade in `BASELINE_REPORT.md` §7.5a is the worked example of getting this wrong); and a test proving a general agent's tool surface cannot reach clinical records. LGPD Q8 (multi-tenant processor/controller roles) is still open.
 
 ---
 

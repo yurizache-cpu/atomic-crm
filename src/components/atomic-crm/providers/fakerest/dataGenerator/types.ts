@@ -1,9 +1,11 @@
 import type {
+  AcquisitionAttribution,
   Company,
   Contact,
   ContactNote,
   Deal,
   DealNote,
+  LeadProfile,
   Sale,
   Tag,
   Task,
@@ -16,6 +18,8 @@ export interface Db {
   contact_notes: ContactNote[];
   deals: Deal[];
   deal_notes: DealNote[];
+  lead_profiles: LeadProfile[];
+  acquisition_attributions: AcquisitionAttribution[];
   sales: Sale[];
   tags: Tag[];
   tasks: Task[];

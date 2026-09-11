@@ -209,6 +209,9 @@ async function executeQueryWithRLS(
   sql: string,
   userToken: string,
   validate: (sql: string) => string | null,
+  // Defaults to read-only so a future call site that forgets to declare its
+  // intent gets the restrictive mode, not the permissive one.
+  { readOnly = true }: { readOnly?: boolean } = {},
 ): Promise<
   { success: true; data: unknown[] } | { success: false; error: string }
 > {
@@ -223,6 +226,16 @@ async function executeQueryWithRLS(
     const claimsJson = JSON.stringify(jwtClaims);
 
     await client.queryObject("BEGIN");
+    if (readOnly) {
+      // The real barrier against writes. Postgres itself rejects every
+      // INSERT/UPDATE/DELETE/DDL in this transaction, so a statement that
+      // slips past the AST validator still cannot write — the validator is
+      // defence in depth, not the only thing standing between a caller and
+      // the data. Note this does NOT stop side effects that are not database
+      // writes (e.g. a network-capable function called from a SELECT); those
+      // are constrained by revoking EXECUTE, not here.
+      await client.queryObject("SET TRANSACTION READ ONLY");
+    }
     // set_config(..., is_local=true) is the parameterized equivalent of
     // SET LOCAL — avoids interpolating JWT claims into a SQL string.
     await client.queryObject(
@@ -379,6 +392,7 @@ Examples:
         sql,
         authInfo.token,
         validateWrite,
+        { readOnly: false },
       );
       if (result.success) {
         return {
@@ -524,6 +538,7 @@ Each task should include at least: id (required, used for the mark-as-done actio
         sql,
         authInfo.token,
         validateWrite,
+        { readOnly: false },
       );
       if (!result.success) {
         return {

@@ -79,6 +79,17 @@ export default defineConfig({
           // so they need more headroom than the default 5s.
           testTimeout: 30000,
           hookTimeout: 30000,
+          server: {
+            deps: {
+              // `.claude/scripts/*.mjs` are executables whose first line is a
+              // `#!` hashbang. Vite preserves it and Vitest wraps the module in
+              // a function body, where `#!` is a SyntaxError — so a test that
+              // imports one fails to collect. Externalising lets node import
+              // them natively, which accepts the hashbang. Scoped to this
+              // project; the app/functions projects are unaffected.
+              external: [/[/\\]\.claude[/\\]scripts[/\\][^/\\]+\.mjs$/],
+            },
+          },
         },
       },
       {

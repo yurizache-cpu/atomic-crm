@@ -26,7 +26,7 @@ import {
   rmSync,
   statSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { createHookContext } from "./lib/context.mjs";
 import { parseDispatch } from "./lib/dispatch-parse.mjs";
 import { getBaseBranch, getWorktreePaths, git } from "./lib/git.mjs";
@@ -207,7 +207,12 @@ ctx.log(
   `START agent=${d.subagentType}${d.mode ? ` mode=${d.mode}` : ""} path=${worktreePath} branch=${branchName}`,
 );
 
-if (getWorktreePaths().includes(worktreePath)) {
+// `git worktree list --porcelain` prints POSIX-separated paths on every platform
+// (C:/Users/... on Windows) while worktreePath comes from node:path, so a raw
+// string compare never matches there and a re-dispatch would wipe and recreate a
+// live worktree instead of reusing it. resolve() folds both spellings to the
+// platform form; on POSIX an already-absolute path comes back unchanged.
+if (getWorktreePaths().some((p) => resolve(p) === resolve(worktreePath))) {
   ctx.accept(`already registered (${worktreePath})`);
 }
 

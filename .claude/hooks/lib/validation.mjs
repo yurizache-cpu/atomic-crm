@@ -2,6 +2,7 @@ import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { getBaseBranch, getWorktreeChangeSummary, getWorktreePaths } from "./git.mjs";
+import { toGitPath } from "./paths.mjs";
 import { bash, exec } from "./process.mjs";
 import { loadConfig, validationSteps } from "./config.mjs";
 import { appendProgress } from "./progress-log.mjs";
@@ -13,7 +14,11 @@ import { appendProgress } from "./progress-log.mjs";
 export function getActiveWorktrees(ctx, only = "") {
   const narrowed = only || process.env.VALIDATE_WORKTREE || "";
   if (narrowed && existsSync(narrowed)) return [narrowed];
-  return getWorktreePaths().filter((p) => p.startsWith(ctx.worktreeBase + "/"));
+  // git reports POSIX separators on every platform; ctx.worktreeBase comes from
+  // join(). Without toGitPath this filter matched nothing on Windows and the
+  // caller read that as "no active worktree" — validating nothing, silently.
+  const base = toGitPath(ctx.worktreeBase);
+  return getWorktreePaths().filter((p) => p.startsWith(base + "/"));
 }
 
 // Pure query — never exits. An empty list with a non-empty skipReason means

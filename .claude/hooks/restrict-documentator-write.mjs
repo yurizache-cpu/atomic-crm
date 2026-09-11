@@ -41,11 +41,24 @@ const LOCAL_PREFIX = join(CONFIG_DIR, "local") + "/";
 const SETTINGS_LOCAL = join(CONFIG_DIR, "settings.local.json");
 const MEMORY = join(REPO, "MEMORY.md");
 
-const isAllowedPath = (p) =>
-  p === LEDGER ||
-  p === SETTINGS_LOCAL ||
-  p === MEMORY ||
-  p.startsWith(LOCAL_PREFIX);
+// Windows: node:path's join() emits "\" separators, while a payload's
+// file_path may carry either "/" or "\" (both are valid there). The
+// byte-exact comparisons then never match and every allowed path is
+// blocked, so compare on a separator-folded copy instead. On POSIX fold is
+// the identity function: "\" is a legal filename character there, and
+// folding it would change which paths match.
+const fold =
+  process.platform === "win32" ? (p) => p.replace(/\\/g, "/") : (p) => p;
+
+const isAllowedPath = (p) => {
+  const q = fold(p);
+  return (
+    q === fold(LEDGER) ||
+    q === fold(SETTINGS_LOCAL) ||
+    q === fold(MEMORY) ||
+    q.startsWith(fold(LOCAL_PREFIX))
+  );
+};
 
 if (isAllowedPath(filePath)) {
   process.exit(0);

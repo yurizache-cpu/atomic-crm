@@ -4,6 +4,7 @@
 // but keeps its own mutations because it honours --dry-run.
 
 import { rmSync } from "node:fs";
+import { sep } from "node:path";
 import { getWorktreeEntries, git } from "./git.mjs";
 
 // Remove one worktree: `git worktree remove --force`, falling back to a plain
@@ -19,8 +20,13 @@ export function removeWorktree(path) {
 // refs. Returns the count removed. The main repo worktree is never under a
 // session base, so it is excluded naturally.
 export function removeWorktreesUnder(base) {
+  // `git worktree list --porcelain` prints POSIX-style paths on every
+  // platform, while `base` comes from path.join() - backslashes on Windows,
+  // where the comparison therefore never matched and the session's worktrees
+  // stayed registered. Compare in git's spelling; identity on POSIX.
+  const prefix = sep === "\\" ? base.replace(/\\/g, "/") : base;
   const under = getWorktreeEntries().filter(
-    (e) => e.path === base || e.path.startsWith(base + "/"),
+    (e) => e.path === prefix || e.path.startsWith(prefix + "/"),
   );
   under.forEach((e) => removeWorktree(e.path));
   git(["worktree", "prune"]);

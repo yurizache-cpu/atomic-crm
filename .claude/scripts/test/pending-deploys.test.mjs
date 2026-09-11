@@ -8,9 +8,15 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { globToRegexSource, relevanceRegex } from "../pending-deploys.mjs";
 
-const SCRIPT = new URL("../pending-deploys.mjs", import.meta.url).pathname;
+// fileURLToPath, not URL.pathname: on Windows `.pathname` is a percent-encoded,
+// leading-slash string (`/C:/a%20b/x.mjs`) that node cannot open. On POSIX the
+// two agree for any path with no characters needing percent-encoding.
+const SCRIPT = fileURLToPath(
+  new URL("../pending-deploys.mjs", import.meta.url),
+);
 
 function git(cwd, ...args) {
   return execFileSync("git", args, { cwd }).toString();

@@ -5,7 +5,7 @@
 
 ## Context
 
-`harness.config.json:104-109` declares a `launcher` block:
+`harness.config.json:101-106` declares a `launcher` block:
 
 ```
 "launcher": {

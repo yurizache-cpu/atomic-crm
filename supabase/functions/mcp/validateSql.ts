@@ -3,20 +3,37 @@ import { parse, type Statement } from "npm:pgsql-ast-parser@^12";
 const ALLOWED_READ_TYPES = new Set(["select", "with"]);
 const ALLOWED_WRITE_TYPES = new Set(["insert", "update", "delete", "with"]);
 
-// Collect all statement types found in a parsed AST, including inner
-// statements in WITH (CTE) bindings which can contain writable DML.
+// Collect every statement type reachable in a parsed AST.
+//
+// A `with` node has TWO sides and both can carry DML:
+//   - `bind[]`  — the CTE definitions, e.g. WITH d AS (DELETE ... RETURNING *)
+//   - `in`      — the statement the WITH is attached to, e.g.
+//                 WITH x AS (SELECT 1) DELETE FROM contacts
+// An earlier version walked only `bind`, so the second form collected
+// {with, select} and passed the read-only gate while actually deleting.
+// Both sides recurse, because either can nest a further WITH.
+//
+// Unknown node shapes contribute their own `type`, so anything this function
+// does not understand lands outside the allow-list and is rejected: the
+// classifier fails closed by construction.
 function collectStatementTypes(stmts: Statement[]): Set<string> {
   const types = new Set<string>();
-  for (const stmt of stmts) {
-    types.add(stmt.type);
-    if (stmt.type === "with" && "bind" in stmt && Array.isArray(stmt.bind)) {
-      for (const cte of stmt.bind) {
-        if (cte.statement?.type) {
-          types.add(cte.statement.type);
-        }
-      }
+  const visit = (stmt: Statement | undefined | null, depth: number): void => {
+    // Depth cap: a hand-crafted deeply nested statement must not turn
+    // validation into a stack overflow (which would throw past the gate).
+    if (!stmt || typeof stmt !== "object" || depth > 50) return;
+    if (typeof stmt.type === "string") types.add(stmt.type);
+    if (stmt.type !== "with") return;
+    const node = stmt as Statement & {
+      bind?: { statement?: Statement }[];
+      in?: Statement;
+    };
+    if (Array.isArray(node.bind)) {
+      for (const cte of node.bind) visit(cte?.statement, depth + 1);
     }
-  }
+    visit(node.in, depth + 1);
+  };
+  for (const stmt of stmts) visit(stmt, 0);
   return types;
 }
 

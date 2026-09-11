@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { sanitizePath } from "../lib/paths.mjs";
@@ -141,9 +141,12 @@ describe("setup-worktree session-branch topology (PreToolUse/Agent)", () => {
 
   test("stale _session registration survives dir wipe", () => {
     rmSync(join(WB, "_session"), { recursive: true, force: true });
+    // `git worktree list --porcelain` prints POSIX separators on every platform
+    // (C:/Users/... on Windows), so compare against the POSIX spelling of the
+    // node:path-built path. A no-op where `sep` is already "/".
     expect(
       g("worktree", "list", "--porcelain").stdout.includes(
-        join(WB, "_session"),
+        join(WB, "_session").split(sep).join("/"),
       ),
     ).toBe(true);
   });
