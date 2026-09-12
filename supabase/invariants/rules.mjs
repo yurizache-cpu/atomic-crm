@@ -7,6 +7,7 @@
 
 import {
   AUTHENTICATED_PRIVILEGES,
+  OPS_WORKER_PRIVILEGES,
   BYPASS_ROLES,
   MATVIEW,
   UNKNOWN,
@@ -232,6 +233,33 @@ function grantFindingsForRole(ctx, grant, role) {
     );
     return;
   }
+  // The engine worker is scrutinised, not exempted. Its whole point is least
+  // privilege: it reads and it calls three lease-checking functions, so a write
+  // verb here would undo the Phase 1A isolation the database enforces.
+  if (role === "ops_worker") {
+    if (
+      /^all\s+(tables|sequences|functions|routines|procedures)\s+in\s+schema\b/.test(
+        grant.object,
+      )
+    ) {
+      ctx.at(
+        `grant:ops_worker:${grant.object}`,
+        "role-grant",
+        `GRANT … ON ${grant.object} TO ops_worker covers every current object at once, so an ops relation added later inherits it with no statement naming it.`,
+      );
+      return;
+    }
+    for (const privilege of grant.privileges) {
+      if (OPS_WORKER_PRIVILEGES.has(privilege)) continue;
+      ctx.at(
+        `grant:ops_worker:${grant.object}:${privilege}`,
+        "role-grant",
+        `GRANT ${privilege.toUpperCase()} ON ${grant.object} TO ops_worker. The worker holds no write verb anywhere: every state transition goes through a SECURITY DEFINER function that verifies the lease first, and a worker that could write directly could extend its own lease or settle another tenant's job.`,
+      );
+    }
+    return;
+  }
+
   if (role !== "authenticated") {
     ctx.at(
       `grant:${role}:${grant.object}`,

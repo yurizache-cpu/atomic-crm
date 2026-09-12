@@ -124,9 +124,27 @@ export function scanDoBody(statement) {
     preserveStrings: true,
   });
   const text = withStrings.masked;
+
+  // This pass keeps string literals intact (it has to — the dynamic SQL IS a
+  // literal), which means the word `execute` can also appear INSIDE one, where
+  // it is not a statement at all. `has_function_privilege(role, fn, 'EXECUTE')`
+  // is the real case that found this: an ordinary assertion was reported as
+  // unresolvable dynamic SQL and blocked a correct migration.
+  //
+  // Quote parity is sound here because this text has already been through
+  // maskStatement: comments are gone, quoted identifiers are unwrapped, and
+  // dollar-quoted bodies are placeholders — so every remaining `'` is a string
+  // delimiter, and a doubled `''` flips parity twice.
+  const insideLiteral = new Uint8Array(text.length);
+  for (let i = 0, open = 0; i < text.length; i += 1) {
+    if (text[i] === "'") open ^= 1;
+    else insideLiteral[i] = open;
+  }
+
   const executeRe = /\bexecute\b/g;
   let hit;
   while ((hit = executeRe.exec(text)) !== null) {
+    if (insideLiteral[hit.index]) continue;
     const pos = skipWs(text, hit.index + "execute".length);
     // `execute function f()` inside a CREATE TRIGGER is not dynamic SQL.
     if (/^(function|procedure)\b/.test(text.slice(pos))) continue;

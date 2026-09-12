@@ -248,6 +248,48 @@ describe("declaration.json cannot be mis-keyed into a no-op", () => {
   });
 });
 
+describe("the seal is portable across platforms", () => {
+  // CI caught this on its first run. The seal had been computed on Windows,
+  // where git checks these files out with CRLF; on the Linux runner the same
+  // committed bytes arrive with LF and every sealed file reported
+  // `seal:edited`. A seal that only holds on the machine that wrote it is a
+  // tripwire, not an integrity check.
+  //
+  // loadMigrationCorpus therefore normalises line endings before hashing. The
+  // cost is that a change which ONLY alters line endings is invisible to the
+  // seal — the right trade, since git rewrites them on checkout anyway.
+  const write = (dir: string, name: string, body: string) =>
+    writeFileSync(join(dir, name), body, "utf8");
+
+  const hashOf = (body: string) => {
+    const dir = mkdtempSync(join(tmpdir(), "seal-eol-"));
+    write(dir, "20240101000000_probe.sql", body);
+    return loadMigrationCorpus(dir)[0].sha256;
+  };
+
+  const LF = "create table public.x (id int);\nselect 1;\n";
+  const CRLF = LF.replace(/\n/g, "\r\n");
+
+  it("hashes the same content identically whatever the checkout produced", () => {
+    expect(hashOf(CRLF)).toBe(hashOf(LF));
+  });
+
+  it("still distinguishes genuinely different content", () => {
+    // The normalisation must not flatten everything into one hash.
+    expect(hashOf(LF)).not.toBe(hashOf(LF.replace("select 1", "select 2")));
+  });
+
+  it("parses the normalised text, so analysis matches the hash", () => {
+    // If the hash were normalised but the parser saw raw CRLF, the two halves
+    // of the guard would disagree about what they are looking at.
+    const dir = mkdtempSync(join(tmpdir(), "seal-eol-parse-"));
+    write(dir, "20240101000000_probe.sql", CRLF);
+    expect(loadMigrationCorpus(dir)[0].sql).not.toContain(
+      String.fromCharCode(13),
+    );
+  });
+});
+
 describe("the seal makes history immutable", () => {
   const idsOf = (input: Parameters<typeof analyze>[0]) =>
     analyze(input).findings.map((f) => f.id);
@@ -322,6 +364,31 @@ describe("the seal makes history immutable", () => {
 // indistinguishable from one that silently passes everything.
 
 const REJECTED: Array<[string, string, RegExp]> = [
+  // --- Phase 1A: the engine worker is scrutinised, never exempted. ----------
+  // ops_worker deliberately does NOT go in BYPASS_ROLES: it is the one role
+  // whose least privilege matters most. It reads and calls three lease-checking
+  // functions, so any write verb is a finding — a worker that could write
+  // ops.jobs directly could extend its own lease or settle another tenant's job.
+  [
+    "a write verb granted to the engine worker",
+    "grant update on ops.jobs to ops_worker;",
+    /^grant:ops_worker:ops\.jobs:update$/,
+  ],
+  [
+    "INSERT granted to the engine worker",
+    "grant insert on ops.jobs to ops_worker;",
+    /^grant:ops_worker:ops\.jobs:insert$/,
+  ],
+  [
+    "GRANT ALL to the engine worker",
+    "grant all on ops.jobs to ops_worker;",
+    /^grant:ops_worker:ops\.jobs:all$/,
+  ],
+  [
+    "a schema-wide grant to the engine worker",
+    "grant select on all tables in schema ops to ops_worker;",
+    /^grant:ops_worker:all tables in schema ops$/,
+  ],
   [
     "today's db diff output",
     [
@@ -546,6 +613,29 @@ const THROWN: Array<[string, string, RegExp]> = [
 ];
 
 const ACCEPTED: Array<[string, string]> = [
+  // --- Phase 1A ---
+  [
+    "SELECT granted to the engine worker",
+    "grant select on ops.jobs to ops_worker;",
+  ],
+  [
+    "EXECUTE granted to the engine worker",
+    "grant execute on function ops.current_tenant_id() to ops_worker;",
+  ],
+  [
+    // The word `execute` also appears INSIDE string literals, where it is not a
+    // statement. This exact assertion was reported as unresolvable dynamic SQL
+    // and blocked a correct migration until the scanner learned to skip
+    // literals — a false positive is a defect, not caution.
+    "an assertion that mentions EXECUTE inside a string literal",
+    `do $$
+     begin
+       if has_function_privilege('ops_worker', 'ops.enqueue_job(uuid)', 'EXECUTE') then
+         raise exception 'ops_worker can execute ops.enqueue_job';
+       end if;
+     end
+     $$;`,
+  ],
   [
     // `alter view … set` changes only the reloption, so the query text stays
     // byte-identical to pg_dump form and the next `db diff` sees no phantom

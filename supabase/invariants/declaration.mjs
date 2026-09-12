@@ -46,7 +46,19 @@ export function loadMigrationCorpus(dir) {
       );
     }
     previous = m[1];
-    const sql = readFileSync(join(dir, file), "utf8");
+    // Line endings are normalised before hashing AND before parsing.
+    //
+    // Without this the seal is not portable: git checks these files out with
+    // CRLF on Windows and LF on Linux, so the same committed bytes hash
+    // differently per platform. CI caught it on the first run — every sealed
+    // file reported `seal:edited` on the Linux runner while the working tree on
+    // Windows was untouched. A seal that fails everywhere except the machine
+    // that wrote it is not an integrity check, it is a tripwire on one laptop.
+    //
+    // Normalising loses the ability to detect a change that ONLY alters line
+    // endings. That is the right trade: line endings are not semantic in SQL,
+    // and git rewrites them on checkout regardless of what anyone intended.
+    const sql = readFileSync(join(dir, file), "utf8").replace(/\r\n/g, "\n");
     return {
       file,
       sql,

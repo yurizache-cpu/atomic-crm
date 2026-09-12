@@ -33,6 +33,18 @@ export const BYPASS_ROLES = new Set([
  *  with every SELECT policy in force. TRIGGER attaches code to a table you do
  *  not own; REFERENCES probes rows through a foreign key; `all` includes all
  *  three, which is why it must be enumerated. */
+/**
+ * The engine worker (Phase 1A). Deliberately NOT in BYPASS_ROLES: it is the one
+ * role whose least privilege matters most, so grants to it are checked rather
+ * than exempted.
+ *
+ * It reads, and it calls functions. Every state transition goes through a
+ * SECURITY DEFINER function that verifies the lease first, so the worker needs
+ * no write verb anywhere — which is why `insert`, `update`, `delete`, `truncate`
+ * and `all` are absent here, and a migration granting one is rejected.
+ */
+export const OPS_WORKER_PRIVILEGES = new Set(["select", "execute", "usage"]);
+
 export const AUTHENTICATED_PRIVILEGES = new Set([
   "select",
   "insert",

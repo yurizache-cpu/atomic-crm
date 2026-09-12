@@ -79,7 +79,16 @@ const suites = readdirSync(TESTS_DIR)
   .filter((f) => f.endsWith(".sql"))
   .sort();
 
-if (suites.length === 0) {
+// Some properties cannot be expressed in a .sql file at all. Concurrent leasing
+// needs two simultaneous connections, and one psql connection runs one
+// transaction at a time -- a single-connection test would only prove that
+// SKIP LOCKED parses. Those suites are Node scripts that open their own
+// connections; they are run the same way and their exit code is the verdict.
+const scriptSuites = readdirSync(TESTS_DIR)
+  .filter((f) => f.endsWith(".mjs"))
+  .sort();
+
+if (suites.length + scriptSuites.length === 0) {
   console.error(`FAILED: no .sql suites found in ${TESTS_DIR}`);
   process.exit(1);
 }
@@ -129,9 +138,26 @@ for (const suite of suites) {
   }
 }
 
+for (const suite of scriptSuites) {
+  const started = Date.now();
+  const result = run(process.execPath, [join(TESTS_DIR, suite)]);
+  const ms = Date.now() - started;
+
+  if (result.ok) {
+    process.stdout.write(`PASS ${suite} (${ms}ms)\n`);
+    if (result.stdout.trim()) process.stdout.write(result.stdout);
+  } else {
+    failed += 1;
+    console.error(`FAIL ${suite} (${ms}ms)`);
+    console.error(`${result.stdout}${result.stderr}`.trim());
+  }
+}
+
+const total = suites.length + scriptSuites.length;
+
 if (failed > 0) {
-  console.error(`\n${failed} of ${suites.length} database suite(s) failed.`);
+  console.error(`\n${failed} of ${total} database suite(s) failed.`);
   process.exit(1);
 }
 
-process.stdout.write(`\n${suites.length} database suite(s) passed.\n`);
+process.stdout.write(`\n${total} database suite(s) passed.\n`);
