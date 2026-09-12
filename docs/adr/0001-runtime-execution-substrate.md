@@ -33,3 +33,16 @@ Consequences for this ADR, which do not change the decision:
 - **The decision stands and is, if anything, reinforced.** The worker leasing jobs from Postgres with `FOR UPDATE SKIP LOCKED` **pulls**; it never needed the database to push. The hop was cited as evidence, not as a dependency.
 - **Database-initiated outbound calls are no longer available and must not be reintroduced casually.** Any future design that wants the database to call out — a webhook trigger, a notification, a Supabase Database Webhook — is reopening a channel that `anon` can also use. That is a decision with an ADR attached, not an implementation detail. It is guarded by an executable assertion: `supabase/tests/rls_tenant_isolation.sql` fails if `pg_net` or the `net` schema reappears.
 - **The worker's identity is constrained by [ADR 0012](0012-worker-tenant-context.md), which is still Proposed.** Its mechanism is now verified in isolation, but the worker must not run as `service_role` (carries `BYPASSRLS`) and must not run as `postgres` (also carries `BYPASSRLS` on Supabase — measured). Both are outside RLS entirely, so either choice would make the tenant model decorative.
+
+---
+
+## Addendum 2026-09-12 — the database half of this decision now exists (Phase 1A)
+
+"Postgres as the durable substrate (queue, scheduler, outbox)" is built and tested: `ops.jobs`, leasing with `FOR UPDATE SKIP LOCKED`, lease expiry and recovery, and a per-job audit trail — `20260912120000_ops_execution_core.sql`. Twelve concurrent workers leasing six jobs produced six distinct leases with no double-lease and no contention, against real simultaneous connections.
+
+**The "always-on worker process" half is deliberately NOT built.** What exists instead is `engine/worker/runOneJob.ts`: one unit of work — lease, verify the context came from the lease, execute, settle — with the database client injected, so it commits the project to no driver while this ADR is still Proposed. There is no daemon, no scheduler, no supervisor, and no handler.
+
+Nothing here changes the decision. Two things narrow it:
+
+- **Job leasing needs no push.** The worker pulls, which is why removing `pg_net` (ADR 0011) cost this design nothing.
+- **The worker's identity is settled by [ADR 0012](0012-worker-tenant-context.md), not by this ADR**: `ops_worker`, `NOLOGIN`, no `BYPASSRLS`, no write verb in `ops`, nothing in `public`. A worker running as `service_role` or `postgres` — both carry `BYPASSRLS` — would make the whole tenancy model decorative.

@@ -263,6 +263,77 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "`supabase db diff` currently emits `create extension pg_net` and recreates three views without security_invoker. Applying it unreviewed regresses SI-01 and SI-02. The guard rejects that output statically, with no Docker; it does not and cannot prove a running database is correct — that is `rls_tenant_isolation.sql`'s job.",
   },
+  // ── Phase 1A: the tenant-safe execution substrate ────────────────────────
+  {
+    id: "SI-13",
+    statement:
+      "The engine worker holds no write verb anywhere in ops and no BYPASSRLS. Every job state transition goes through a SECURITY DEFINER function that verifies the lease first.",
+    provenBy: ["live database", "migration assertion", "static guard"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/ops_execution_core.sql",
+        marker: /the worker must hold no write verb in ops/,
+      },
+      {
+        file: "supabase/migrations/20260912120000_ops_execution_core.sql",
+        marker: /ops_worker holds write privileges in ops/,
+      },
+      {
+        // The static guard scrutinises ops_worker rather than exempting it, so
+        // a migration granting it a write verb is rejected before it applies.
+        file: "supabase/invariants/parse.mjs",
+        marker: /OPS_WORKER_PRIVILEGES/,
+      },
+    ],
+    caveat:
+      "A worker that could write ops.jobs directly could extend its own lease or settle another tenant's job.",
+  },
+  {
+    id: "SI-14",
+    statement:
+      "Tenant context is derived from a live lease, never asserted by the worker, and dies with the transaction that holds it.",
+    provenBy: ["live database"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/ops_execution_core.sql",
+        marker: /a lease held by another worker resolved to a tenant/,
+      },
+      {
+        file: "supabase/tests/ops_execution_core.sql",
+        marker: /tenant context survived a COMMIT on the same connection/,
+      },
+      {
+        file: "supabase/migrations/20260912120000_ops_execution_core.sql",
+        marker: /Resolves the tenant from the live lease/,
+      },
+      {
+        file: "engine/worker/runOneJob.ts",
+        marker: /tenant context mismatch/,
+      },
+    ],
+    caveat:
+      "Measured: a worker CAN set any GUC (set_config is executable by PUBLIC), so a bare app.tenant_id would make tenancy an assertion by the worker. Binding it to the lease means the job PAYLOAD -- where LLM output arrives in Phase 1B -- can never influence it. Against a fully malicious worker PROCESS the bound is ops_worker's grants, not one tenant.",
+  },
+  {
+    id: "SI-15",
+    statement:
+      "The ops schema is unreachable by anon and authenticated, and is absent from the PostgREST allowlist.",
+    provenBy: ["migration assertion", "static guard"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260912120000_ops_execution_core.sql",
+        marker: /can reach schema ops/,
+      },
+      {
+        file: "supabase/config.toml",
+        // The allowlist must NOT name ops. Asserted as the exact current value
+        // so adding a schema is a deliberate, reviewable diff.
+        marker: /schemas = \["public", "storage", "graphql_public"\]/,
+      },
+    ],
+    caveat:
+      "The allowlist governs one channel. A direct libpq connection ignores it -- see ADR 0011.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

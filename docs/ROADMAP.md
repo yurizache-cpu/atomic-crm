@@ -245,3 +245,13 @@ A phase is complete when its work is: **working, tested, logged, permission-cont
 6. **No irreversible choice before the reversible one it depends on.** The `CRMProvider` port is the cheapest artifact on this list and was scheduled last, behind the agent runtime that would couple to the CRM without it. When ordering two phases, ask which one is harder to undo and put the *other* one first.
 7. **LGPD obligations ship with the data that creates them, not in a hardening phase.** Retention, erasure, consent state and the clinical boundary are Scope/Tests/Acceptance items of **Phase 8** (the first phase that stores patient-adjacent content), not Phase 14. A clinic that has been ingesting WhatsApp for six months before erasure works has a compliance problem, not a backlog item.
 8. **Approve the ADRs before implementing them.** Six are still `Proposed`, two of them rated *very high* reversal cost and scheduled for Phases 2 and 3. An unapproved ADR is not a decision; building on one converts a reversible choice into an accident.
+
+---
+
+## Status update 2026-09-12
+
+**Phase 0.5 — complete and signed off** (engineering baseline; see [PHASE_0_5_REPORT.md §17](PHASE_0_5_REPORT.md)). The branch is pushed and CI has executed, so "it passes here" is no longer the only evidence.
+
+**Phase 1A — the tenant-safe execution substrate — complete.** This is the part of *Phase 3 — Events, jobs, worker, scheduler* that everything else rests on, pulled forward deliberately: no engine table can be designed before tenancy is enforced rather than described. Built: `ops` schema, `ops_worker` role, job table, leasing with `FOR UPDATE SKIP LOCKED`, lease expiry and recovery, tenant context bound to a live lease, and an audit trail. Proven by two database suites, mutation-verified 10/10. See [PHASE_1A_REPORT.md](PHASE_1A_REPORT.md).
+
+Phases 1B onward are unchanged and unstarted. The sequencing rule still holds: **no agent before the kill switch and cost ledger exist.**

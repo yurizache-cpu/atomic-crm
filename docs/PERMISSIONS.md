@@ -91,3 +91,22 @@ None of these exists in code. They are recorded so the first phase that needs th
 ## 7. Verification status
 
 The `canAccess` behaviour is **verified by tests that run today**. Everything in sections 2–4 is **unverified** — it depends on a database, and Docker is not running here. In particular, no test has ever asserted an RLS outcome: that remains the largest test gap in the repository.
+
+---
+
+## 8. The engine worker (Phase 1A, 2026-09-12)
+
+A fourth database identity exists, and it is the first one in this project designed for least privilege rather than inherited from Supabase.
+
+| | `ops_worker` |
+| --- | --- |
+| Login | **no** — no credential exists in a migration. Production creates a login role at deploy time and grants it `ops_worker`; the worker does `set local role ops_worker` per transaction, the same shape PostgREST uses for `authenticated`. |
+| `BYPASSRLS` / superuser | no (asserted by the migration and by the test suite) |
+| `public` schema | nothing |
+| `ops` schema | `SELECT` on `tenants`, `jobs`, `job_events` — all filtered by RLS to the leased tenant |
+| Writes | **none, anywhere.** `lease_job` / `complete_job` / `fail_job` are `SECURITY DEFINER` and verify the lease first, so the worker cannot extend its own lease, reassign a job, or settle another tenant's work. |
+| Enqueue | **no.** `ops.enqueue_job` is granted to `service_role` only; a worker that could create work for an arbitrary tenant would undo the lease binding. |
+
+Row scoping in `ops` is by **tenant**, resolved from the live lease — not by `sales_id` as in `public.*`, and not from a GUC the caller writes. See [ADR 0012](adr/0012-worker-tenant-context.md).
+
+The static migration guard treats `ops_worker` as a **scrutinised** role rather than an exempt one: it is deliberately not in `BYPASS_ROLES`, and a migration granting it a write verb is rejected before it applies.

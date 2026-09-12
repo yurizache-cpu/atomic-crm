@@ -104,3 +104,19 @@ When agents exist, the assumptions change. Recorded now so the design accounts f
 Everything above that touches the database is **unverified**, because Docker is not running in this environment. Specifically unproven: the RLS policies, the grants, the storage assertion, and any claim about what a migrated database actually contains. See the BLOCKED section of [PHASE_0_5_REPORT.md](PHASE_0_5_REPORT.md).
 
 Application-layer and harness claims **are** verified by tests that run today.
+
+---
+
+## 7. Phase 1A — the tenant-safe execution substrate (2026-09-12)
+
+The canonical, executable list is [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) / `supabase/tests/securityInvariants.test.ts`. Three invariants were added:
+
+- **SI-13** — the engine worker holds no write verb anywhere in `ops` and no `BYPASSRLS`. Every job transition goes through a `SECURITY DEFINER` function that verifies the lease first.
+- **SI-14** — tenant context is derived from a **live lease**, never asserted by the worker, and dies with the transaction.
+- **SI-15** — `ops` is unreachable by `anon`/`authenticated` and absent from the PostgREST allowlist.
+
+**The trust boundary moved.** Before Phase 1A, anything running server-side ran as `service_role`, which carries `BYPASSRLS` — so "background work" and "full database access" were the same thing. The worker is now `ops_worker`: `NOLOGIN`, no `BYPASSRLS`, `SELECT` on three `ops` tables, `EXECUTE` on three lease-checking functions, and nothing at all in `public`.
+
+**The one measurement that shaped the design.** A worker can set any GUC — `set_config` is executable by PUBLIC, and a probe confirmed a worker role setting a tenant GUC and reading another tenant's row. So tenancy is not carried in a GUC the worker writes; it is resolved from an `ops.jobs` row that is leased, unexpired and owned by that worker. The bound, stated plainly: against a fully malicious worker *process* the limit is `ops_worker`'s grants, not one tenant. Against the threat that actually matters — a bug that forgets the context, or a tenant taken from the job **payload**, which is where LLM output arrives in Phase 1B — tenancy is unreachable.
+
+Proven by `supabase/tests/ops_execution_core.sql` and `jobLeasingConcurrency.mjs` (`npm run test:db`), mutation-verified 10/10. Unchanged and still open: the edge functions run as `service_role` (SI-06).

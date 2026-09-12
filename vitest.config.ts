@@ -66,6 +66,8 @@ export default defineConfig({
             // the browser-mode runner cannot do. This project has no `include`,
             // so anything not excluded here is picked up by the default glob.
             "scripts/**",
+            // The engine is a server-side Node process, not part of the bundle.
+            "engine/**",
           ],
           server: {
             deps: {
@@ -121,7 +123,9 @@ export default defineConfig({
           // Widened from `supabase/functions/**` so schema-level checks
           // (migrations vs seed vs declarative schema) can live next to the
           // SQL they guard. Those are static file analyses — no database.
-          include: ["supabase/**/*.test.ts"],
+          // `engine/` is the server-side Company OS code; it is Node, like
+          // the edge functions, so it runs in this project rather than a fourth.
+          include: ["supabase/**/*.test.ts", "engine/**/*.test.ts"],
           exclude: ["**/node_modules/**", ".supabase-e2e/**"],
         },
       },

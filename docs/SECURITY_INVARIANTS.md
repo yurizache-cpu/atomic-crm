@@ -40,6 +40,9 @@ Every generated migration is reviewed before it is accepted. Run `supabase db di
 | SI-10 | Inbound email ingestion is idempotent and fails closed: no unconditional 200, a durable record for every failure, and a synthetic key never reaches the ingest path. | unit test, migration assertion | `postmark/ingestionOutcome.ts`, `migrations/20260912090000_inbound_email_ledger.sql` |
 | SI-11 | anon holds no privilege on any table or view in public, and authenticated holds no TRUNCATE, TRIGGER or REFERENCES anywhere. | live database, migration assertion | `rls_tenant_isolation.sql`, `migrations/20260911235000_…` |
 | SI-12 | The declarative schema is not an automatically trusted migration. Generated output must be reviewed, and a generated migration that regresses security is rejected. | static guard | `supabase/tests/migrationInvariants.test.ts` + `supabase/invariants/` — replays every migration in order, with no Docker, and rejects a diff that regresses SI-01 / SI-02 / SI-11 |
+| SI-13 | The engine worker holds no write verb anywhere in ops and no BYPASSRLS. Every job state transition goes through a SECURITY DEFINER function that verifies the lease first. | live database, migration assertion, static guard | `ops_execution_core.sql`, `migrations/20260912120000_…`, `invariants/parse.mjs` |
+| SI-14 | Tenant context is derived from a live lease, never asserted by the worker, and dies with the transaction that holds it. | live database | `ops_execution_core.sql` (forgery cases + the COMMIT-leakage case), `engine/worker/runOneJob.ts` |
+| SI-15 | The ops schema is unreachable by anon and authenticated, and is absent from the PostgREST allowlist. | migration assertion, static guard | `migrations/20260912120000_…`, `supabase/config.toml` |
 
 ---
 
@@ -48,6 +51,8 @@ Every generated migration is reviewed before it is accepted. Run `supabase db di
 - **SI-06 is an ACCEPTED RISK, not a satisfied invariant.** The edge functions run as `service_role` today. Both database suites assert that bypass **explicitly**, so a green RLS run can never be mistaken for worker isolation. Closing it is [ADR 0012](adr/0012-worker-tenant-context.md)'s integration work, and that ADR is still **Proposed**.
 - **SI-11: RLS does not gate `TRUNCATE`.** Measured: as `anon`, `truncate public.lead_profiles` took it from 2 rows to 0 while every SELECT policy was in force. A grant is not made safe by RLS.
 - **SI-02 is irreversible in one direction.** Reinstalling `pg_net` re-grants `anon` and `authenticated`, and no privilege change this project can make will close it again — the `net` schema is owned by `supabase_admin`, and only a grantor may revoke. Removal was the only containment available.
+- **SI-14 is bounded, and the bound matters.** GUCs are readable and writable by any role, so no GUC-transport design is unforgeable against a fully malicious worker *process*; against one, the bound is `ops_worker`'s grants. What binding tenancy to a live lease *does* defend against is a worker bug that forgets the context, a worker that takes the tenant from the **payload**, and — from Phase 1B — LLM output reaching the tenant decision. The payload is the untrusted surface; tenancy is now unreachable from it.
+- **SI-13 and SI-15 do not make the worker trusted.** They make it *small*: it reads, it calls three lease-checking functions, and it can reach nothing in `public`.
 - **SI-03 is a decision, not a mechanism.** The AST validator and `SET TRANSACTION READ ONLY` are defence in depth. The actual boundary is not handing a model raw SQL.
 
 ---

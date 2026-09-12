@@ -1,6 +1,6 @@
 # ADR 0012 — Worker tenant context: scoped role + transaction-local GUC
 
-**Status:** **Proposed — mechanism verified, integration unverified** · **Date:** 2026-09-11 (verification added 2026-09-11, Phase 0.5C)
+**Status:** **Proposed — IMPLEMENTED AND VERIFIED in Phase 1A; recommended for acceptance by the owner** · **Date:** 2026-09-11 (implemented 2026-09-12)
 **Decided by:** owner, Phase 0.5 brief (Q11) — design only; no engine code is built in Phase 0.5.
 
 ## Context
@@ -73,3 +73,58 @@ Each was mutation-tested — the assertion was shown to fail when the property i
 4. **`postgres` itself carries `BYPASSRLS`** on Supabase (measured: `rolsuper=false`, `rolbypassrls=true`). Anything connecting as `postgres` — including every migration — is outside RLS. The `ops_worker` role must never be `postgres`.
 
 **Conclusion: Proposed.** The mechanism is no longer a hypothesis; the integration is entirely unbuilt. Accepting it requires items 1–3 above, which is Phase 1 work.
+
+---
+
+## Addendum 2026-09-12 — implemented, with two revisions the evidence forced (Phase 1A)
+
+The substrate exists: `supabase/migrations/20260912120000_ops_execution_core.sql`. Building it surfaced two things this ADR got wrong. Both were measured first — the probe results are in [PHASE_1A_DESIGN_NOTE.md](../PHASE_1A_DESIGN_NOTE.md).
+
+### Revision 1 — item 3's flow is circular
+
+Item 3 says the worker "leases a job (`FOR UPDATE SKIP LOCKED`) and reads `tenant_id` off the leased row inside the same transaction." To lease, it must read `ops.jobs`; at that moment there is no tenant context, so a tenant-scoped policy shows it **zero rows**. Fail-closed makes this ADR's own flow impossible.
+
+**Implemented instead:** `ops.lease_job()`, `SECURITY DEFINER`, owned by `postgres`. Probe P1 confirmed such a function sees every tenant's queue even under `FORCE ROW LEVEL SECURITY` (`postgres` is `rolsuper=false` but `rolbypassrls=true`); probe P3 confirmed `set_config(…, is_local := true)` inside it **propagates to the caller's transaction**. The worker therefore never composes an unscoped query — it calls one function that returns exactly one job and leaves the transaction already scoped.
+
+### Revision 2 — item 4's helper trusted the caller
+
+Item 4 proposed `ops.current_tenant_id()` returning `current_setting('app.tenant_id')`. Probe P5: **the worker set that GUC to another tenant and read that tenant's row.** `set_config` is executable by PUBLIC, so under this ADR as written, "which tenant am I" was an assertion by the worker rather than a fact the database checks.
+
+**Implemented instead:** the helper resolves the tenant from a **live lease** — `app.worker_id` + `app.job_id` must name an `ops.jobs` row that is `leased`, unexpired, and owned by that worker. A worker can only act as a tenant for which it holds server-recorded work in flight.
+
+Items 1, 2, 5 and 6 stand as written.
+
+### Evidence
+
+`supabase/tests/ops_execution_core.sql` and `supabase/tests/jobLeasingConcurrency.mjs`, run by `npm run test:db`. Concurrency needs real simultaneous connections, so it is a Node suite — one psql connection cannot race itself.
+
+| Property | Result |
+| --- | --- |
+| Worker is not superuser, no `BYPASSRLS`/`CREATEROLE`/`CREATEDB`/`LOGIN` | pass |
+| Tenant A sees only A; **and symmetrically** B sees only B | pass |
+| Worker holds **no write verb** in `ops` — 5 attempts, all refused at the privilege layer | pass |
+| Missing context → zero rows (jobs, events, tenants) | pass |
+| Malformed `app.job_id` → raises; unknown job id → no tenant | pass |
+| Forging a **queued** job of another tenant → no tenant | pass |
+| Forging a job **leased by another worker** → no tenant | pass |
+| Forging an **expired** lease → no tenant | pass |
+| Settling a job the worker does not hold → refused | pass |
+| Context does not survive a **COMMIT** on a reused connection, nor a ROLLBACK | pass |
+| 12 concurrent workers, 6 jobs → 6 distinct leases, no double-lease, no contention | pass |
+| A row held by another transaction is **skipped**, not waited on | pass |
+| Expired lease recovered **through `ops.lease_job` itself**; a live lease is not stolen; a job past `max_attempts` is retired | pass |
+| `service_role` has `BYPASSRLS` **and** no table privilege in `ops` | characterised |
+
+**Mutation-verified, 10/10.** Two were NOT caught until the tests were corrected: removing `SKIP LOCKED` (workers serialise rather than double-lease, so the end state looks identical — it took holding a row and racing it with a statement timeout to see the difference), and removing the reap call from `lease_job` (the suite was testing `reap_expired_leases()` directly, while `lease_job` is the only recovery path this phase has).
+
+### Trade-offs and limitations, stated
+
+- **GUC transport is forgeable by a malicious worker *process*.** Any role can write any GUC, so no design of this shape is unforgeable against one. The bound there is `ops_worker`'s grants: no `BYPASSRLS`, nothing in `public`, no arbitrary SQL, no DDL. What the lease binding defends against is a worker **bug** that forgets the context, a worker that takes the tenant from the **payload**, and — from Phase 1B — LLM output reaching the tenant decision. The payload is the untrusted surface, and tenancy is now unreachable from it.
+- **`FORCE ROW LEVEL SECURITY` does not constrain `postgres`**, which carries `BYPASSRLS`. It is set because ownership changes quietly, not because it binds the admin identity.
+- **`ops_worker` is `NOLOGIN`.** No credential exists in a migration, because that would be a secret in git. Production creates a login role as a deployment step and grants it `ops_worker`; the worker does `set local role ops_worker` per transaction — the same shape PostgREST uses to reach `authenticated`.
+- **Enqueueing is not the worker's capability** in this phase. `ops.enqueue_job` is granted to `service_role` only; a worker that could create work for an arbitrary tenant would undo the lease binding.
+- **Edge functions still run as `service_role`.** Unchanged, and still an ACCEPTED RISK (SI-06). Phase 1A moved the *worker* off it, not the CRM.
+
+### Recommendation
+
+**Accept** — the mechanism in this addendum, not the two superseded items above. Every property the ADR set out to guarantee is now enforced by the database and proven by mutation-verified tests. The status stays `Proposed` here because this repository marks an ADR `Accepted` only on an owner decision ([DECISIONS.md](../DECISIONS.md)), never on architectural merit alone.

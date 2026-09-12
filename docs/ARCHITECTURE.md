@@ -276,3 +276,28 @@ A feature is done when it works, is tested, logged, permission-controlled, cost-
 `/docs/ARCHITECTURE.md` (this), `BASELINE_REPORT.md`, `ROADMAP.md`, `DECISIONS.md` (ADR index) exist now. `DATABASE.md`, `AGENTS.md`, `WORKFLOWS.md`, `PERMISSIONS.md`, `SECURITY.md`, `INTEGRATIONS.md`, `COSTS.md` are written **as their phase lands** — writing them before the code would be fiction. ADRs live in `/docs/adr/`.
 
 The repository is the persistent project memory. Conversation history is not.
+
+---
+
+## 11. Phase 1A as built (2026-09-12)
+
+Sections 3 and 8 describe the intended runtime. What exists now is its **database half**, and only that:
+
+```
+ops.tenants ── ops.jobs ── ops.job_events
+                  │
+        ops.lease_job(worker, seconds)      SECURITY DEFINER
+          reap expired leases
+          UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)
+          install app.worker_id + app.job_id, transaction-local
+                  │
+        ops.current_tenant_id()             resolves the tenant FROM THE LEASE
+                  │
+        every ops policy reads that one helper
+                  │
+        ops.complete_job / ops.fail_job     verify the lease, then settle
+```
+
+`engine/worker/runOneJob.ts` is the application-side counterpart: one unit of work, database client injected, no driver dependency and no daemon. It encodes the ordering invariant — *trusted leased row → tenant established server-side → execute → settle* — and refuses to run a handler if the session's tenant disagrees with the lease.
+
+**Not built, deliberately:** the always-on process, a scheduler, handlers, retry policy beyond attempts-and-backoff, an outbox, and anything agent-shaped. See [PHASE_1A_REPORT.md](PHASE_1A_REPORT.md) for what is verified and what is not.

@@ -274,6 +274,65 @@ $$;
 rollback;
 
 -- ===========================================================================
+-- A (symmetry). THE SAME PROPERTIES FROM TENANT B'S SIDE.
+--
+--    The queue is ordered, so the case above always leases Alpha's job. A guard
+--    that only ever ran from one side could pass with a policy hard-wired to
+--    that tenant. Here Alpha's work is retired first so the next lease belongs
+--    to Beta, and the identical assertions are made.
+-- ===========================================================================
+do $$
+declare v_alpha uuid;
+begin
+  select id into v_alpha from ops.tenants where slug = 'phase1a-test-alpha';
+  update ops.jobs set status = 'succeeded', completed_at = now() where tenant_id = v_alpha;
+end
+$$;
+
+begin;
+set local role ops_worker;
+do $$
+declare
+  v_job    ops.jobs;
+  v_tenant uuid;
+  n        bigint;
+begin
+  v_job := ops.lease_job('worker-B', 60);
+  if v_job.id is null then raise exception 'A(sym): nothing could be leased for the second tenant'; end if;
+  v_tenant := v_job.tenant_id;
+
+  if ops.current_tenant_id() is distinct from v_tenant then
+    raise exception 'A(sym): current_tenant_id() does not match the leased job''s tenant';
+  end if;
+
+  select count(*) into n from ops.jobs where tenant_id <> v_tenant;
+  if n <> 0 then raise exception 'A(sym): % job rows from another tenant are visible', n; end if;
+
+  select count(*) into n from ops.job_events where tenant_id <> v_tenant;
+  if n <> 0 then raise exception 'A(sym): % job_event rows from another tenant are visible', n; end if;
+
+  select count(*) into n from ops.tenants where id <> v_tenant;
+  if n <> 0 then raise exception 'A(sym): % other tenant rows are visible', n; end if;
+
+  -- And it must be the OTHER tenant, or this case proved nothing.
+  if v_tenant = (select id from ops.tenants where slug = 'phase1a-test-alpha') then
+    raise exception 'A(sym): the second lease went to the same tenant again; symmetry was not exercised';
+  end if;
+end
+$$;
+rollback;
+
+-- Put Alpha's work back for the cases that follow.
+do $$
+declare v_alpha uuid;
+begin
+  select id into v_alpha from ops.tenants where slug = 'phase1a-test-alpha';
+  update ops.jobs set status = 'queued', completed_at = null, available_at = now()
+   where tenant_id = v_alpha;
+end
+$$;
+
+-- ===========================================================================
 -- A (writes). THE WORKER HOLDS NO WRITE VERB AT ALL.
 --    Cross-tenant mutation is not merely filtered here, it is ungranted — so
 --    the attempt fails at the privilege layer, which is a stronger guarantee
