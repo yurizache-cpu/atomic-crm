@@ -158,7 +158,7 @@ export const StoryWrapper = ({
   const store = useMemo(() => memoryStore(), []);
 
   useEffect(() => {
-    // Clear localStorage on mount to prevent data pollution from previous story / test, since we persist react-query cache in localStorage.
+    // Clear localStorage on mount so a story / test cannot see state a previous one stored (ra-core preferences, the FakeRest user).
     localStorage.clear();
   }, []);
 

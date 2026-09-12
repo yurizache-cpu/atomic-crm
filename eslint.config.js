@@ -73,5 +73,27 @@ export default tseslint.config(
       "@typescript-eslint/consistent-type-imports": "off",
     },
   },
+  {
+    // SEC-1BS-01 (docs/SECURITY_AUDIT_1BS_REPORT.md). A React Query persister
+    // writes every CRM record a user views — contacts, notes, email addresses,
+    // consent state — to browser storage that survives a restart. For a
+    // psychology clinic that is clinical data left behind on a device, and no
+    // product requirement needs offline access. The cache stays in memory.
+    files: ["src/**/*.{ts,tsx}", "demo/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@tanstack/*persist*"],
+              message:
+                "CRM response data must not be persisted to browser storage (SEC-1BS-01). Keep the React Query cache in memory.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   storybook.configs["flat/recommended"],
 );

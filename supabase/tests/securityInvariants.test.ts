@@ -415,6 +415,76 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "public.* carries no tenant column and never will (ADR 0002), so `ops.tenants.owns_local_crm` is the whole bridge. The retention floor is in the DATABASE, not the handler, so it holds against a handler that never validated anything.",
   },
+  {
+    id: "SI-19",
+    statement:
+      "No CRM record data (contacts, notes, lead profiles, email addresses, consent state) is written to durable browser storage. The React Query cache lives in memory only, a cache persisted by an earlier build is purged at startup, and logout clears it.",
+    provenBy: ["unit test"],
+    enforcedBy: [
+      {
+        file: "src/components/atomic-crm/root/CRM.security.test.tsx",
+        marker:
+          /keeps contacts, notes, emails and consent state out of storage/,
+      },
+      {
+        file: "src/components/atomic-crm/root/CRM.security.test.tsx",
+        marker: /purges a cache that an earlier build left on the device/,
+      },
+      {
+        file: "src/components/atomic-crm/providers/supabase/authProvider.security.test.ts",
+        marker: /removes the persisted React Query cache/,
+      },
+      {
+        file: "eslint.config.js",
+        marker: /group: \["@tanstack\/\*persist\*"\]/,
+      },
+    ],
+    caveat:
+      "Measured in localStorage and sessionStorage behind the real <CRM> root, mobile and desktop trees, with the FakeRest providers: a cache added inside the Supabase provider layer would not be seen by that test. Two API responses persist by design, the tenant's configuration and the signed-in user's own sales row, as do the Supabase session and ra-core's preference store. That store includes list filters the user typed, so a searched patient name survives until logout (SEC-1BS-13). The service worker precaches static assets only.",
+  },
+  {
+    id: "SI-20",
+    statement:
+      "The committed development JWT signing key never leaves local tooling: no other tracked file carries its private or public component, only local and test configuration names it, every GitHub Pages publish scans what it ships, and every push to Supabase in deploy.yml or the makefile is preceded by a blocking check that refuses a project trusting the key.",
+    provenBy: ["static guard", "unit test"],
+    enforcedBy: [
+      {
+        file: "scripts/dev-signing-key.mjs",
+        marker: /rule: "dev-key-material-copied"/,
+      },
+      {
+        file: "scripts/dev-signing-key.mjs",
+        marker: /rule: "direct-pages-publish"/,
+      },
+      {
+        file: "scripts/dev-signing-key.mjs",
+        marker: /rule: "deploy-without-key-check"/,
+      },
+      {
+        file: "scripts/test/dev-signing-key.test.mjs",
+        marker: /confines the development signing key to local tooling/,
+      },
+      {
+        file: "scripts/publish-pages.mjs",
+        marker: /Nothing was published/,
+      },
+      {
+        file: "scripts/scan-build-artifacts.mjs",
+        marker: /rule: "dev-signing-key"/,
+      },
+      {
+        file: ".github/workflows/deploy.yml",
+        marker:
+          /node scripts\/dev-signing-key\.mjs --project-ref "\$SUPABASE_PROJECT_ID"/,
+      },
+      {
+        file: "makefile",
+        marker: /node scripts\/dev-signing-key\.mjs --linked/,
+      },
+    ],
+    caveat:
+      "Catches verbatim, base64, hex and PEM copies; a deliberately obfuscated copy is out of scope. No Supabase CLI command uploads signing keys, so a hosted project trusts this key only if a person imports it: the JWKS check sees that and fails closed, but only when a deploy runs. scripts/supabase-remote-init.mjs provisions a brand-new project, which generates its own keys, and its initial push is not gated.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

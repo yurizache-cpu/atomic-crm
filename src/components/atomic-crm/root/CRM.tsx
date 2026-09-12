@@ -5,12 +5,10 @@ import type {
   LayoutComponent,
 } from "ra-core";
 import { CustomRoutes, localStorageStore, Resource } from "ra-core";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Route } from "react-router";
 import { QueryClient } from "@tanstack/react-query";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
-import { QUERY_CACHE_STORAGE_KEY } from "../providers/queryCacheKey";
+import { purgePersistedQueryCache } from "../providers/queryCacheKey";
 import { Admin } from "@/components/admin/admin";
 import { ForgotPasswordPage } from "@/components/supabase/forgot-password-page";
 import { SetPasswordPage } from "@/components/supabase/set-password-page";
@@ -145,6 +143,12 @@ export const CRM = ({
     img.src = `https://atomic-crm-telemetry.marmelab.com/atomic-crm-telemetry?domain=${window.location.hostname}`;
   }, [disableTelemetry]);
 
+  // Earlier builds persisted every viewed CRM record to localStorage. Nothing
+  // reads that key any more, so nothing would ever expire it: remove it.
+  useEffect(() => {
+    purgePersistedQueryCache();
+  }, []);
+
   // Seed the store with CRM prop values if not already stored
   // (backwards compatibility for prop-based config)
   useEffect(() => {
@@ -274,61 +278,66 @@ const MobileAdmin = (
     layout?: LayoutComponent;
   },
 ) => {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: {
-        gcTime: 1000 * 60 * 60 * 24, // 24 hours
-        networkMode: "offlineFirst",
-      },
-      mutations: {
-        networkMode: "offlineFirst",
-      },
-    },
-  });
-  const asyncStoragePersister = createAsyncStoragePersister({
-    storage: localStorage,
-    // Passed explicitly rather than left to the library default, so the key the
-    // auth provider removes on logout cannot drift from the key written here.
-    key: QUERY_CACHE_STORAGE_KEY,
-  });
+  // IN MEMORY ONLY. This client used to sit under a PersistQueryClientProvider
+  // that wrote the whole cache to localStorage: every contact, note, email
+  // address and do_not_contact flag the user had viewed, kept for 24 hours
+  // across browser restarts. That was upstream's mobile "offline mode". This
+  // product has no offline requirement, and for a psychology clinic those
+  // records are other people's clinical data under the LGPD (SEC-1BS-01,
+  // docs/SECURITY_AUDIT_1BS_REPORT.md). eslint.config.js bans the persister
+  // packages and CRM.security.test.tsx measures browser storage directly.
+  //
+  // `offlineFirst` still lets a screen already loaded in this tab survive a
+  // dropped connection. The cache dies with the tab, and ra-core's logout calls
+  // `queryClient.clear()`. `useState` rather than a bare `new`: a client built
+  // during render is replaced, and its cache discarded, on every re-render.
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            gcTime: 1000 * 60 * 60 * 24, // 24 hours, in memory
+            networkMode: "offlineFirst",
+          },
+          mutations: {
+            networkMode: "offlineFirst",
+          },
+        },
+      }),
+  );
 
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister: asyncStoragePersister }}
+    <Admin
+      queryClient={queryClient}
+      layout={props.layout ?? MobileLayout}
+      dashboard={props.dashboard ?? MobileDashboard}
+      {...props}
     >
-      <Admin
-        queryClient={queryClient}
-        layout={props.layout ?? MobileLayout}
-        dashboard={props.dashboard ?? MobileDashboard}
-        {...props}
+      <CustomRoutes noLayout>
+        <Route path={SetPasswordPage.path} element={<SetPasswordPage />} />
+        <Route
+          path={ForgotPasswordPage.path}
+          element={<ForgotPasswordPage />}
+        />
+        <Route path={OAuthConsentPage.path} element={<OAuthConsentPage />} />
+      </CustomRoutes>
+      <CustomRoutes>
+        <Route
+          path={SettingsPageMobile.path}
+          element={<SettingsPageMobile />}
+        />
+        <Route path={ChangelogPage.path} element={<ChangelogPage />} />
+      </CustomRoutes>
+      <Resource
+        name="contacts"
+        list={ContactListMobile}
+        show={ContactShow}
+        recordRepresentation={contacts.recordRepresentation}
       >
-        <CustomRoutes noLayout>
-          <Route path={SetPasswordPage.path} element={<SetPasswordPage />} />
-          <Route
-            path={ForgotPasswordPage.path}
-            element={<ForgotPasswordPage />}
-          />
-          <Route path={OAuthConsentPage.path} element={<OAuthConsentPage />} />
-        </CustomRoutes>
-        <CustomRoutes>
-          <Route
-            path={SettingsPageMobile.path}
-            element={<SettingsPageMobile />}
-          />
-          <Route path={ChangelogPage.path} element={<ChangelogPage />} />
-        </CustomRoutes>
-        <Resource
-          name="contacts"
-          list={ContactListMobile}
-          show={ContactShow}
-          recordRepresentation={contacts.recordRepresentation}
-        >
-          <Route path=":id/notes/:noteId" element={<NoteShowPage />} />
-        </Resource>
-        <Resource name="companies" show={CompanyShow} />
-        <Resource name="tasks" list={MobileTasksList} />
-      </Admin>
-    </PersistQueryClientProvider>
+        <Route path=":id/notes/:noteId" element={<NoteShowPage />} />
+      </Resource>
+      <Resource name="companies" show={CompanyShow} />
+      <Resource name="tasks" list={MobileTasksList} />
+    </Admin>
   );
 };

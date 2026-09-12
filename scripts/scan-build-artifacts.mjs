@@ -16,14 +16,27 @@
 //
 // NO REAL SECRET IS STORED HERE. The rules are patterns and variable names, and
 // the tests use synthetic fixtures. Matches are reported by type, location and a
-// sha256 fingerprint — never by value.
+// sha256 fingerprint — never by value, and for private key material not even by
+// a redacted prefix.
+//
+// ONE CHECK IS NOT A CLASS. The committed development signing key
+// (supabase/signing_keys.json, SEC-1BS-04) is also looked for by its own bytes:
+// a private component copied into a plain string constant has no `kty` and no
+// PEM header, so it would pass every class rule below. The bytes stay inside
+// `scripts/dev-signing-key.mjs`; this file only asks it yes-or-no questions.
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
+import { loadDevSigningKeys } from "./dev-signing-key.mjs";
 
-/** Extensions worth reading. Images and fonts cannot carry a usable literal. */
-const TEXTUAL = /\.(js|mjs|cjs|css|html|json|map|txt|webmanifest)$/i;
+/**
+ * Formats that cannot carry a usable literal. Everything else is read, whatever
+ * its extension or lack of one: a list of extensions WORTH reading once let a
+ * private key through as `.well-known/jwks`, `dev.jwk` and `keys.pem`.
+ */
+const BINARY =
+  /\.(png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|pdf|zip|gz|br|tgz|mp3|mp4|webm|mov|wasm)$/i;
 
 /** Roles that must never appear as a JWT `role` claim in a browser artifact. */
 const FORBIDDEN_JWT_ROLES = new Set([
@@ -31,6 +44,12 @@ const FORBIDDEN_JWT_ROLES = new Set([
   "supabase_admin",
   "postgres",
 ]);
+
+/** How far either side of a JWK `d` member to look for its `kty`. */
+const JWK_WINDOW = 400;
+
+/** What a finding shows in place of private key material. */
+const WITHHELD = "<withheld: private key material>";
 
 const decodeJwtRole = (token) => {
   try {
@@ -82,6 +101,20 @@ const RULES = [
     describe: () => "PEM private key block",
   },
   {
+    id: "private-jwk",
+    severity: "critical",
+    // The private member of a JSON Web Key, as JSON or as the object literal a
+    // bundler turns an imported .json file into. `verify` insists on a `kty`
+    // nearby, so an unrelated `d:"…"` is not a finding.
+    pattern: /(?:"d"|\bd)\s*:\s*["'`][A-Za-z0-9_-]{32,}["'`]/g,
+    verify: (_match, content, index) =>
+      /["']?\bkty["']?\s*:/.test(
+        content.slice(Math.max(0, index - JWK_WINDOW), index + JWK_WINDOW),
+      ),
+    withholdValue: true,
+    describe: () => "JSON Web Key carrying its private component",
+  },
+  {
     id: "github-token",
     severity: "critical",
     pattern:
@@ -120,6 +153,13 @@ const UNWANTED_ARTIFACTS = [
     describe: () =>
       "rollup-plugin-visualizer report: publishes the full module graph, every source path and dependency inventory",
   },
+  {
+    id: "signing-keys-file",
+    severity: "critical",
+    match: (rel) => /(^|\/)signing_keys\.json$/i.test(rel),
+    describe: () =>
+      "a Supabase signing key file: JWT signing keys are server-side secrets and never belong in a published build",
+  },
 ];
 
 const fingerprint = (value) =>
@@ -139,13 +179,21 @@ function* walk(dir) {
   }
 }
 
-export function scanDirectory(dir) {
+/**
+ * @param {string} dir
+ * @param {{devSigningKeys?: ReturnType<typeof loadDevSigningKeys>}} [options]
+ *   `devSigningKeys` defaults to the repository's own development key. Tests
+ *   pass a synthetic key set, or `null` for none.
+ */
+export function scanDirectory(dir, { devSigningKeys } = {}) {
   const findings = [];
   if (!existsSync(dir)) {
     throw new Error(
       `no build to scan at "${dir}". Run \`npm run build\` first — a gate that silently passes on a missing build protects nothing.`,
     );
   }
+  const devKeys =
+    devSigningKeys === undefined ? loadDevSigningKeys() : devSigningKeys;
 
   let scanned = 0;
   for (const file of walk(dir)) {
@@ -162,7 +210,7 @@ export function scanDirectory(dir) {
       }
     }
 
-    if (!TEXTUAL.test(file)) continue;
+    if (BINARY.test(file)) continue;
     scanned += 1;
     const content = readFileSync(file, "utf8");
 
@@ -173,17 +221,35 @@ export function scanDirectory(dir) {
         const value = match[0];
         if (seen.has(value)) continue;
         seen.add(value);
-        if (rule.verify && !rule.verify(value)) continue;
+        if (rule.verify && !rule.verify(value, content, match.index)) continue;
         findings.push({
           rule: rule.id,
           severity: rule.severity,
           file: rel,
           detail: rule.describe(value),
           // Never the value itself.
-          redacted: redact(value),
+          redacted: rule.withholdValue ? WITHHELD : redact(value),
           sha256: fingerprint(value),
         });
       }
+    }
+
+    if (devKeys?.containsPrivateMaterial(content)) {
+      findings.push({
+        rule: "dev-signing-key",
+        severity: "critical",
+        file: rel,
+        detail:
+          "the committed DEVELOPMENT signing key's private component: a token it signs as service_role bypasses RLS on any project that trusts it",
+      });
+    } else if (devKeys?.containsPublicKey(content)) {
+      findings.push({
+        rule: "dev-signing-key-public",
+        severity: "high",
+        file: rel,
+        detail:
+          "the committed DEVELOPMENT signing key's public component: this build carries, and so may trust, the development key set",
+      });
     }
   }
 

@@ -101,7 +101,8 @@ supabase-remote-init:
 	npm run supabase:remote:init
 	$(MAKE) supabase-deploy
 
-supabase-deploy:
+supabase-deploy: ## refuses first if the linked project trusts the committed development key
+	node scripts/dev-signing-key.mjs --linked
 	npx supabase db push
 	npx supabase functions deploy
 
@@ -146,14 +147,14 @@ doc-build:
 doc-preview: doc-build
 	@(cd doc && npm run preview)
 
-doc-deploy:
-	@(cd doc && npx gh-pages -b gh-pages -d dist -e doc -m "Deploy docs" --remove doc)
+doc-deploy: ## publishes through scripts/publish-pages.mjs, which scans doc/dist first
+	@(cd doc && node ../scripts/publish-pages.mjs -b gh-pages -d dist -e doc -m "Deploy docs" --remove doc)
 
 registry-build: ## build the shadcn registry
 	npm run registry:build
 
 registry-deploy: registry-build ## Deploy the shadcn registry (Automatically done by CI/CD pipeline)
-	@(cd public/r && npx gh-pages -b gh-pages -d ./ -s atomic-crm.json -e r -m "Deploy registry" --remove r)
+	@(cd public/r && node ../../scripts/publish-pages.mjs -b gh-pages -d ./ -s atomic-crm.json -e r -m "Deploy registry" --remove r)
 
 registry-gen: ## Generate the shadcn registry (ran automatically by a pre-commit hook)
 	npm run registry:gen

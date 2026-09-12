@@ -17,7 +17,14 @@
 
 Also fixed: the production build was emitting `dist/stats.html` (a 1.6 MB module-graph report) into the directory `gh-pages` publishes wholesale. And a new CI gate now refuses any build containing a server-side credential.
 
-**Classification: SECURITY GATE PASSED.** See §37.
+**Classification: SECURITY GATE PASSED.** See §26.
+
+**Final closure (2026-09-12, §27).** The gate was accepted with two questions open, and both are now closed by code and measurement.
+
+1. **CRM records are no longer persisted in the browser at all.** The mobile persister was an inherited upstream "offline mode" that no product requirement asked for, so it was removed rather than allow-listed.
+2. **The development signing key is confined by executable guards.** They include a deploy-time check that asks the target project's own JWKS whether it trusts the key.
+
+An adversarial review of the closure found no Critical or High issue, and every gap it did find was fixed before the closure was signed off. All 39 mutations were caught. One new LOW finding is recorded: **SEC-1BS-13**, list filters the user types persist until logout.
 
 ---
 
@@ -106,14 +113,14 @@ No rewrite of history was performed or is recommended: the values are upstream's
 
 | Key | Contents | Cleared on logout? |
 | --- | --- | --- |
-| `REACT_QUERY_OFFLINE_CACHE` | **every CRM record the user viewed** | **was: NO** → now yes |
+| `REACT_QUERY_OFFLINE_CACHE` | **every CRM record the user viewed** | **was: NO** → now yes. *Closure (§27): no longer written at all, and purged at startup* |
 | `RaStore.auth.is_initialized` | boolean hint | yes |
 | `RaStore.auth.current_sale` | own `sales` row | yes |
 | `RaStore.*` (ra-core store) | UI preferences | n/a |
 | `sb-*-auth-token` (supabase-js) | session tokens | yes, by supabase-js |
 | sidebar cookie | UI state | n/a |
 
-`gcTime` is 24 hours and `localStorage` survives a browser restart. That is SEC-1BS-01.
+`gcTime` is 24 hours and `localStorage` survives a browser restart. That is SEC-1BS-01. *(Closed at the root in §27: the persister is removed.)*
 
 ---
 
@@ -276,7 +283,7 @@ Added: a **build secret gate** (§33) as a required step in the `🔨 Build` job
 **Evidence** `clearCache()` removed `RaStore.auth.is_initialized` and `RaStore.auth.current_sale` only. `PersistQueryClientProvider` writes the whole React Query cache to `localStorage` under `REACT_QUERY_OFFLINE_CACHE` (key confirmed present in the production bundle) with `gcTime: 24 h`.
 **Impact** Contacts, note bodies, email addresses, phone numbers, lead profiles and `do_not_contact` consent state remain readable on the device for up to 24 hours after logout, surviving browser restart. For an online psychology clinic this is third-party clinical data under the LGPD, retained after the user took the explicit action they would expect to clear it.
 **Reproduced** yes. **Fixed** yes — the key now lives in one module (`providers/queryCacheKey.ts`), is passed explicitly to the persister, and is removed on logout. **Regression test** `authProvider.security.test.ts` (2 tests, driving the real provider). **Mutation-verified**: removing the new line turns both tests red.
-**Residual** a session that *expires* rather than logging out does not pass through `logout`. Noted in §21.
+**Residual** a session that *expires* rather than logging out does not pass through `logout`. Noted in §21. *(Superseded by §27: nothing is persisted, so an expired session leaves no query cache behind. It does leave ra-core's store, including typed filters — SEC-1BS-13.)*
 
 ### SEC-1BS-02 — Bundle-visualizer report published — **LOW** — *fixed*
 
@@ -289,7 +296,7 @@ Added: a **build secret gate** (§33) as a required step in the `🔨 Build` job
 ### SEC-1BS-04 — Tracked private JWT signing key — **INFORMATIONAL now, HIGH if reused** — *accepted with a control*
 
 `supabase/signing_keys.json` holds an EC P-256 JWK **including the private component**, inherited from upstream (`d348cef1`, "development"). **Proven consequence:** a token signed with it claiming `role: service_role` is accepted by PostgREST and bypasses RLS entirely.
-Not exploitable against this system: it is upstream's public dev key, referenced only by `supabase/config*.toml` for the local CLI, shipped by no deploy path, and there is no hosted project. **Required control: never configure a hosted Supabase project with this key.** Hosted projects generate their own; do not override them.
+Not exploitable against this system: it is upstream's public dev key, referenced only by `supabase/config*.toml` for the local CLI, shipped by no deploy path, and there is no hosted project. **Required control: never configure a hosted Supabase project with this key.** Hosted projects generate their own; do not override them. *(Closure, §27.3: the control is now executable — `scripts/dev-signing-key.mjs`, the scanning publisher `scripts/publish-pages.mjs`, and a deploy-time check of the project's JWKS.)*
 
 ### SEC-1BS-05 — `.gitignore` un-ignores `supabase/functions/.env` — **LOW** — *documented*
 
@@ -332,11 +339,11 @@ Confirmed live: both created users get `administrator = false`, and `configurati
 
 ## 21. ACCEPTED RISKS
 
-SEC-1BS-03, -04, -05, -07, -08, -09, -10, -11, and the session-expiry residual of -01. Each is documented above with the condition that would change its severity. The one requiring an operational commitment rather than a code change is **SEC-1BS-04**.
+SEC-1BS-03, -04, -05, -07, -08, -09, -10, -11, and the session-expiry residual of -01. Each is documented above with the condition that would change its severity. The one requiring an operational commitment rather than a code change is **SEC-1BS-04**. *(Closure, §27: SEC-1BS-04 is now enforced by code, the -01 session-expiry residual no longer exists, and SEC-1BS-13 is added.)*
 
 ## 22. RECOMMENDATIONS (not done here, deliberately)
 
-1. **Never reuse `signing_keys.json` for a hosted project.** The only item on this list that is not optional.
+1. **Never reuse `signing_keys.json` for a hosted project.** The only item on this list that is not optional. *(Now enforced — §27.3.)*
 2. Disable `sourcemap` for the production build, or upload maps to an error-monitoring service instead of publishing them.
 3. Bump `dompurify` and `react-router` (patch/minor, both available) — defence in depth; neither is reachable today.
 4. Drop `cleanup_note_attachments` and its helper, or reattach them to a supported mechanism.
@@ -359,6 +366,10 @@ SEC-1BS-03, -04, -05, -07, -08, -09, -10, -11, and the session-expiry residual o
 | `providers/supabase/authProvider.security.test.ts` | 2 | SEC-1BS-01 |
 | `misc/Markdown.security.test.tsx` | 9 | the XSS boundary |
 | `scripts/test/scan-build-artifacts.test.mjs` | 16 | the build secret gate, incl. false-positive cases |
+| `root/CRM.security.test.tsx` *(closure)* | 4 | SI-19: no CRM record data in browser storage, on both admin trees |
+| `scripts/test/dev-signing-key.test.mjs` *(closure)* | 59 | SI-20: the development key stays in local tooling |
+| `scripts/test/publish-pages.test.mjs` *(closure)* | 8 | every Pages publish scans first |
+| `scripts/test/scan-build-artifacts.test.mjs` *(closure additions)* | +8 | private JWKs, the key's own bytes, extensionless files |
 
 Unit suite **945 passed / 2 skipped / 84 files** (was 918/2/81). Database suites 4/4 and driver-backed 32/32, from a clean `db reset`. Typecheck, lint and Prettier clean on every changed file.
 
@@ -387,3 +398,191 @@ Unit suite **945 passed / 2 skipped / 84 files** (was 918/2/81). Database suites
 - No Phase 0.5 / 1A / 1B guarantee was weakened: `pg_net` still absent, `security_invoker` still enforced (now in `ops` too), RLS suites green, `ops_worker` still has no `BYPASSRLS` and no write verb, migration guard green.
 
 **The classification rests on one commitment that is not enforced by code:** `supabase/signing_keys.json` must never be used for a hosted project. If that key is ever the signing key of a real deployment, this classification is void — anyone able to read the repository could mint a `service_role` token, and I proved that token is accepted.
+
+*(2026-09-12, final closure: that commitment is now enforced by code. See §27.)*
+
+---
+
+## 27. FINAL CLOSURE — the two questions left open
+
+**Date:** 2026-09-12 · **Baseline:** `8a896da3` (tree clean, in sync with `origin/feature/clinical-phase-1`, CI run 34709714015 green on every job except the pre-existing `e2e-test` and `Prettier`).
+
+The gate above was accepted with two questions outstanding: why CRM records were persisted in the browser at all, and whether the development signing key was protected by anything stronger than a sentence. Both are answered here, by code and measurement. The rest of the audit was not reopened.
+
+### 27.1 Question 1 — why was CRM data on disk?
+
+**It was an inherited feature, not a requirement.** The persister existed only in the `MobileAdmin` tree, and it was upstream Atomic CRM's mobile "offline mode" (`doc/src/content/docs/users/mobile-app.mdx`). Nothing in this product asks for offline access: the eight product documents in `docs/product/` (pt-BR), `ROADMAP.md`, `ARCHITECTURE.md`, `PHASE_1_HANDOFF.md` and `SECURITY.md` contain no such requirement, and `04-security-privacy.md` asks for the opposite — minimisation and short retention. `BASELINE_REPORT.md` §14 had listed the `MobileAdmin` tree as out of scope for Phase 0.5; that is superseded narrowly. The persistence is gone, and the tree and its resource set are untouched.
+
+**Removed, not allow-listed.** An allowlist needs something non-sensitive in the query cache that must survive a restart. There is nothing: the one candidate, the tenant configuration, is already persisted separately by ra-core's store.
+
+| Change | Where |
+| --- | --- |
+| `MobileAdmin` renders `<Admin queryClient>` directly: no `PersistQueryClientProvider`, no persister. The client is created once (`useState`), in memory. `networkMode: "offlineFirst"` stays, so a screen already open survives a dropped connection. | `root/CRM.tsx` |
+| A cache left by an earlier build is removed at startup. Nothing reads that key any more, so nothing else would ever expire it. Storage that throws (site data disabled) does not crash the app. | `providers/queryCacheKey.ts`, `root/CRM.tsx` |
+| Logout still removes the key (the original SEC-1BS-01 fix, retained), and ra-core's logout clears the in-memory client. | `providers/supabase/authProvider.ts` |
+| Importing any `@tanstack/*persist*` package from `src/` or `demo/` is a lint error. | `eslint.config.js` |
+| The user documentation no longer promises offline access to records. | `mobile-app.mdx` |
+
+**What browser storage holds now.** Measured on the real `<CRM>` root with a probe (the D0 run in §27.3), after clinic-shaped records had been viewed:
+
+| Storage | Key | Contents | Lifetime |
+| --- | --- | --- | --- |
+| localStorage | `RaStoreCRM.version` | ra-core store version | until logout |
+| localStorage | `RaStoreCRM.app.configuration` | tenant vocabulary: sectors, stages, note statuses, title, logos | until logout |
+| localStorage, on use | `RaStoreCRM.<resource>.listParams`, `…savedQueries`, column and theme preferences | UI state, **and list filters the user types** (SEC-1BS-13) | until logout |
+| localStorage, Supabase build only | `RaStore.auth.current_sale` | the signed-in user's **own** `sales` row | until logout |
+| localStorage, Supabase build only | `sb-*-auth-token` | the Supabase session | until sign-out |
+| Cache Storage | workbox precache | static assets only; `dist/sw.js` registers one `NavigationRoute` and no runtime caching | per deploy |
+| memory | React Query cache | the records viewed in this tab | the tab; cleared on logout |
+
+No contact, note, email address, lead profile or `do_not_contact` value appears in any of it.
+
+### 27.2 Proof for question 1
+
+| Test | Proves |
+| --- | --- |
+| `root/CRM.security.test.tsx` — mobile tree | after contacts, notes, an email address and a `do_not_contact` lead profile are loaded through the real query client, none of them is in localStorage **or** sessionStorage, and no key outside the ra-core store exists. It asserts the mobile navigation is mounted, so the "mobile" case cannot silently render the desktop tree. |
+| same — desktop tree | the same, for the other query client |
+| same — legacy purge | a cache written by an earlier build is gone after startup |
+| same — refused storage | the app still starts when the browser throws on storage access |
+| `authProvider.security.test.ts` (retained) | logout removes the key and leaves no contact data anywhere |
+| ESLint | the persister packages cannot be imported |
+
+Mutation results (§27.5): 11 of 11 persistence mutations caught. One is caught **only** by ESLint: an obfuscated persister writing under the permitted `RaStoreCRM.` prefix passes the storage test. That is the storage test's one blind spot, and the lint ban is what closes it.
+
+### 27.3 Question 2 — the development signing key
+
+**First, what can actually put the key into a hosted project?** Researched against the Supabase CLI source rather than assumed. **No CLI command uploads signing keys:** `SigningKeys` is `toml:"-"`, `config push` builds its auth body without it, and `link`, `db push` and `functions deploy` call no signing-key endpoint. A hosted project trusts a key only if a person imports it through the dashboard or the Management API (`POST /v1/projects/{ref}/config/auth/signing-keys`). It publishes the keys it trusts at `/auth/v1/.well-known/jwks.json` — the same endpoint both edge functions in this repository verify tokens against. So a guard that reads repository text cannot see the one real path. A guard that asks the project can.
+
+**The guard.** `scripts/dev-signing-key.mjs`, plus one publishing entry point. It identifies the key by its RFC 7638 thumbprint `CNdS5CVgQ-lJMyWfcK9MheIqmMJkQyQJw8_ZOzqKNVM` (public members only; checked against both the RFC's own example and `jose`). The public half is pinned in code, so removing the file cannot disarm it. No private material is printed anywhere — not in output, errors, tests or CI logs.
+
+| Rule | Refuses |
+| --- | --- |
+| `dev-key-material-copied` | the private component in any other tracked file: verbatim, base64, hex, or a PEM (including a PEM inside a string literal) |
+| `dev-key-public-copied` | the public component in any other tracked file, such as a function pinning the development JWKS |
+| `dev-key-referenced` | anything outside four allow-listed **lines** of local/test tooling naming the key file; MDX counts, since it is compiled |
+| `remote-config-uses-key-file` | a `[remotes.*]` (hosted branch) config pointing at a key file |
+| `dev-key-unidentifiable` / `dev-key-unpinned` | a guard that would pass vacuously |
+| `direct-pages-publish` | any GitHub Pages publish not made through `scripts/publish-pages.mjs`, which scans the directory and refuses on a finding: `npx gh-pages`, its binary, its API, Pages actions |
+| `deploy-without-key-check` | any `supabase db push`, `functions deploy`, `secrets set` or `config push` in a workflow job or make target not preceded by a **blocking** key check; a file whose order cannot be read fails closed |
+| `--project-ref` / `--linked` / `--remote` | a project whose JWKS lists the key (exit 1), or any failure to get an answer (exit 2) |
+
+The build scanner gained a private-JWK class rule and a rule for the key's own bytes (private → critical, public → high), refuses a published `signing_keys.json`, and now reads every non-binary file instead of a list of extensions.
+
+**Wired in.** `deploy.yml` checks `--project-ref "$SUPABASE_PROJECT_ID"` — the same ref `supabase link` uses — before any push, and both Pages publishes go through the scanning publisher. `make supabase-deploy` runs `--linked` first; `doc-deploy`, `registry-deploy` and `npm run ghpages:deploy` all go through the publisher. The repository guard runs in CI's test job and in deploy.yml's gate job.
+
+**Measured.**
+
+| Check | Result |
+| --- | --- |
+| repository guard on this tree | exit 0 |
+| `--remote` against the local e2e Auth server, which **does** trust the key | **exit 1**: fails, naming the thumbprint |
+| `--linked` with no linked project | exit 2, and says why |
+| the key planted into copies of the real production `dist`: key file copied, inlined object literal, bare private string, public JWKS | all 4 blocked; clean baseline passes; no key material in any output |
+| production build, demo build, registry output (`public/r`), doc sources | 0 findings each |
+| service worker | precaches static assets only |
+
+`doc/dist` itself was not built: `doc/` has no installed dependencies here. Its sources scan clean, and the publisher scans it at deploy time regardless.
+
+### 27.4 Adversarial review of this closure
+
+A read-only workflow of 12 agents (four lenses, each material finding checked by a separate agent trying to refute it) reviewed the first version. **No finding survived as Critical or High.** It did show that the first guard claimed more than it enforced, and every such gap was fixed before this section was written.
+
+| Finding (verified severity) | Resolution |
+| --- | --- |
+| The guard ignored the key's **public** half in tracked files (medium) | `dev-key-public-copied` |
+| Re-encoded copies (PEM, hex, base64) and extensionless files went undetected (low) | byte-level encodings and PEM parsing; the scanner reads every non-binary file |
+| `deploy-doc`, the makefile and `npm run ghpages:deploy` published unscanned; a regex over workflow lines failed open on `--dist`, Pages actions and a comment after `jobs:` (low) | replaced by one scanning publisher and `direct-pages-publish` |
+| The JWKS check could target a different project than the deploy; `make supabase-deploy` had no check; the check could be moved or made non-blocking unnoticed (low) | `--project-ref` from the same secret as `link`; `--linked` in the makefile; `deploy-without-key-check` |
+| The check passed if the key file was removed (low) | public half pinned; `dev-key-unpinned` |
+| The storage test measured the viewport, not the mounted tree (info) | asserts the mobile navigation |
+| Stale comments described the removed persister as live (low) | corrected, including CLAUDE.md |
+| SI-19 said "never" while its caveat listed persisted API responses (info) | restated as "no CRM record data" |
+| The storage test renders FakeRest, not the Supabase providers (info) | recorded in the SI-19 caveat |
+| Typed search filters persist until logout (info) | recorded as SEC-1BS-13 |
+
+### 27.5 Mutation testing — 39 / 39 caught
+
+Every mutation was applied to the working tree, run against the relevant guards, and reverted by restoring the file's original bytes (sha256-verified). `git status` was identical before and after.
+
+| # | Mutation | Caught by |
+| --- | --- | --- |
+| P1 | restore the original mobile persister | storage test (mobile + purge), ESLint |
+| P2 | persister under an innocuous key, obfuscated | storage test (key allowlist), ESLint |
+| P3 | persister to sessionStorage | storage test, ESLint |
+| P4 | obfuscated persister under `RaStoreCRM.` | **ESLint only** — the storage test's blind spot |
+| P5 | persister on the desktop tree | storage test (desktop), ESLint |
+| P6 | startup purge removed | purge test |
+| P7 | purge rethrows on refused storage | refused-storage test |
+| P8 | logout forgets the key | both retained logout tests |
+| P9 | P1, with the throttle wait removed | storage test — the wait is a margin, not load-bearing |
+| P10 | ESLint ban matches nothing | SI-19 invariant marker |
+| P11 | "mobile" case renders the desktop tree | mobile navigation assertion |
+| K1 / K1b / K1c | private key verbatim, as PEM, or public JWKS in an edge function | repository guard |
+| K2 | `[remotes.production.auth]` names the key file | repository guard |
+| K3 | a makefile target names the key file | repository guard |
+| K4 / K4b | `npx gh-pages` in deploy.yml or the makefile | `direct-pages-publish` |
+| K5 | the publisher skips its scan | publisher tests (5) |
+| K6 | key check removed from deploy.yml | SI-20 marker, repository guard |
+| K6b / K6c | key check made `continue-on-error`, or moved below `functions deploy` | repository guard **only** — the invariant marker stays green |
+| K6d | key check removed from `make supabase-deploy` | SI-20 marker, repository guard |
+| K7 | the frontend imports the key file | repository guard; build succeeds and `scan:build` blocks it (critical ×2, key material withheld) |
+| K8 | JWKS check never recognises the key | unit tests, **and the live e2e check exits 0** |
+| K9 / K9b | unreachable project passes; any string accepted as a project ref | unit tests |
+| K10 – K10d | copy, public-half, PEM or re-encoding detection disabled | unit tests |
+| K11 / K12 / K12b | scanner stops matching the key's bytes, private JWKs, or goes back to an extension list | scanner tests |
+| K13 / K13b | loader reads no private member; pinned key emptied | anti-vacuity rules, repository guard |
+| K14 / K14b | a check in another job counts; `\|\| true` counts as blocking | unit tests |
+| K15 | `[remotes.*]` rule disabled | unit test |
+
+### 27.6 New finding
+
+#### SEC-1BS-13 — List filters the user types persist until logout — **LOW** — *accepted, documented*
+
+**Evidence** Mobile and desktop lists keep their filter state in ra-core's localStorage store (`RaStoreCRM.contacts.listParams`). The contact search `q` matches name, email and phone, so a typed patient name or phone number is written to disk about 500 ms after typing. It is removed on logout (`resetStore`), but closing the browser is not a logout.
+**Why LOW and not fixed here** It is text the user typed, not a CRM response, and not stored "merely because the user viewed it" — the property this closure was asked to hold. Keeping filters in memory (`storeKey={false}` on patient-facing lists, or routing `*.listParams` and `*.savedQueries` to a memory store) removes remembered filters and saved queries. That is a product decision, not a security fix to slip into a gate closure.
+**Recommendation** Decide it before real clinicians use the app on shared devices.
+
+### 27.7 Validation
+
+| Gate | Result |
+| --- | --- |
+| Typecheck (`npm run typecheck`) | **clean** |
+| ESLint, whole repository | **clean** |
+| Unit suites, each project run alone | **1026 passed, 2 skipped, 0 failed, 87 files**: app 234 + 1 skipped (30 files), functions 416 (18), claude 376 + 1 skipped (39). Up from 945 / 2 / 84: the closure adds 81 tests. |
+| SQL database suites (`npm run test:db`, isolated e2e stack) | **4 / 4 passed** |
+| Driver-backed engine suites (`npm run test:db:engine`) | **32 / 32 passed** |
+| Production build + secret gate | **0 findings** in 18 text files; `dist/sw.js` registers one route |
+| Demo build + secret gate | **0 findings** in 13 text files |
+| Registry output and doc sources | 0 findings |
+| Prettier on every changed file | **clean** |
+| Mutation testing | **39 / 39** |
+| CI | **not yet run on this commit** — agents do not push (`.claude/rules/git-policy.md`) |
+
+A full-suite run started while the review agents were active produced 13 timeouts in `.claude/` hook tests, none in a changed file. The claude project run alone passed (344 passed, 1 skipped at that point; 376 passed, 1 skipped in the final run). This is the load sensitivity CLAUDE.md already documents, not a regression.
+
+No Phase 0.5 / 1A / 1B / 1B-S guarantee was weakened. The database suites, `security_invoker`, `pg_net` absence, the migration guard, BOLA/IDOR isolation, `merge_contacts`, `ops` invisibility, attachment privacy, the build secret gate, the source-map/stats fix and the XSS tests are all unchanged and green. SI-19 and SI-20 were added to `supabase/tests/securityInvariants.test.ts` and `docs/SECURITY_INVARIANTS.md`.
+
+### 27.8 The three statements the closure requires
+
+**A. Is sensitive CRM data still persisted in browser durable storage?**
+**No.** No build writes contacts, notes, email addresses, phone numbers, lead profiles, `do_not_contact` state or any other CRM record to localStorage, sessionStorage, IndexedDB or Cache Storage. The query cache is in memory, and dies with the tab and on logout. A device that ran an earlier build loses that build's cache on its next start or logout. What does remain on disk: the tenant's configuration vocabulary, the signed-in user's own `sales` row, the Supabase session, UI preferences, and **list filters the user types** (SEC-1BS-13).
+
+**B. Why that residual is accepted.**
+None of it is a record the user merely viewed. The configuration is tenant vocabulary, not personal data. The `sales` row is the operator's own profile, needed for authorisation hints. The session is how Supabase authentication works at all. The typed filters are the one item that can hold a patient's name. That is a real exposure on a shared device, which is why it is recorded as SEC-1BS-13 rather than waved through. It is LOW because it needs local access to a device whose user did not log out, and closing it is a product trade-off to make deliberately.
+
+**C. Development signing-key deployment guard status.**
+**Enforced by code, and verified.** The key's private or public component cannot enter another tracked file, nothing outside four local/test lines may name it, every Pages publish scans what it ships, and every Supabase push in `deploy.yml` or the makefile is preceded by a blocking check. That check asks the target project's own JWKS and refuses the key — measured to fail against a real Auth server that trusts it. **Limits, stated plainly:** a deliberately obfuscated copy is out of scope; a key imported through the dashboard is caught at the next deploy, not continuously; and `scripts/supabase-remote-init.mjs`'s initial push to a brand-new project (which generates its own keys) is not gated.
+
+### 27.9 Classification
+
+# SECURITY GATE PASSED
+
+- **Question 1 is resolved:** CRM record data is no longer persisted; proven on both admin trees, with 11 of 11 mutations caught.
+- **Question 2 is resolved:** the development key is confined by executable guards, including a deploy-time check against the real hosted answer; 28 of 28 mutations caught, plus a live negative against a server that trusts the key.
+- **An adversarial review found no Critical or High issue,** and every gap it did find was closed and mutation-verified.
+- **Every earlier security result remains green.**
+
+**One verification is still outstanding, and it is not mine to perform:** CI on the pushed commit. Agents do not push. The owner should push `feature/clinical-phase-1` and confirm that the same jobs pass as on `8a896da3` — database, test, typecheck, ESLint, build — with `e2e-test` and `Prettier` still the only pre-existing reds. If any of them fails, this classification must be revisited before Phase 1C.
+
+**Recommendation: proceed to Phase 1C.** Phase 1C has not been started.

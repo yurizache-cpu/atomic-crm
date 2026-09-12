@@ -126,8 +126,11 @@ jobs:
             - name: 🔨 Build
               run: npm run build:demo
 
-            - name: 📡 Deploy GitHub pages
-              run: npx gh-pages --remote production -d dist -b ${{ vars.DEPLOY_BRANCH || 'gh-pages' }}
+            # scripts/publish-pages.mjs scans dist and publishes only if the
+            # scan passes. check.yml scans a build too, but it runs BESIDE this
+            # workflow, not before it, so it protects nothing this job ships.
+            - name: 📡 Deploy GitHub pages (scans first)
+              run: node scripts/publish-pages.mjs --remote production -d dist -b ${{ vars.DEPLOY_BRANCH || 'gh-pages' }}
               env:
                   GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN || secrets.GITHUB_TOKEN }}
 
@@ -179,6 +182,18 @@ jobs:
 
             - name: 🔨 Build
               run: npm run build
+
+            # The repository commits upstream's DEVELOPMENT signing key, private
+            # half included, and a token it signs as service_role bypasses RLS.
+            # No CLI command uploads it, but a person can import it through the
+            # dashboard. Ask the project which keys it trusts before pushing
+            # anything to it. It is the SAME ref `supabase link` uses below, so
+            # the project checked is the project deployed. Exits non-zero if it
+            # cannot get an answer; `scripts/dev-signing-key.mjs` fails the gate
+            # job's tests if this step moves below a push or stops blocking.
+            - if: ${{ env.IS_SUPABASE_CONFIGURED }}
+              name: 🔒 Project does not trust the development signing key
+              run: node scripts/dev-signing-key.mjs --project-ref "$SUPABASE_PROJECT_ID"
 
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 🔗 Supabase Link
@@ -237,7 +252,7 @@ jobs:
               name: Supabase deployment skipped
               run: echo ':warning:Supabase deployment skipped' >> $GITHUB_STEP_SUMMARY
 
-            - name: 📡 Deploy GitHub pages
-              run: npx gh-pages --remote production -d dist -b ${{ vars.DEPLOY_BRANCH || 'gh-pages' }}
+            - name: 📡 Deploy GitHub pages (scans first)
+              run: node scripts/publish-pages.mjs --remote production -d dist -b ${{ vars.DEPLOY_BRANCH || 'gh-pages' }}
               env:
                   GITHUB_TOKEN: ${{ secrets.DEPLOY_TOKEN || secrets.GITHUB_TOKEN }}

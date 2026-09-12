@@ -76,10 +76,10 @@ function clearCache() {
   const storage = getLocalStorage();
   storage?.removeItem(IS_INITIALIZED_CACHE_KEY);
   storage?.removeItem(CURRENT_SALE_CACHE_KEY);
-  // The persisted React Query cache is the one that actually holds CRM records
-  // — contacts, notes, emails, consent state. Clearing only the two auth hints
-  // above left all of it on the device for `gcTime` (24h) after logout, across
-  // browser restarts. See providers/queryCacheKey.ts.
+  // A React Query cache persisted by an EARLIER build. Nothing writes this key
+  // any more (the persister was removed, SEC-1BS-01), but a device that ran
+  // such a build still holds every contact, note, email and consent flag it
+  // viewed. CRM.tsx purges it at startup too. See providers/queryCacheKey.ts.
   storage?.removeItem(QUERY_CACHE_STORAGE_KEY);
 }
 
