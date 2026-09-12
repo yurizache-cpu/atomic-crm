@@ -4,7 +4,6 @@
 
 // Setup type definitions for built-in Supabase Runtime APIs
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { addNoteToContact } from "./addNoteToContact.ts";
 import {
   getForwardedMailContent,
   stripSubjectForwardingPrefix,
@@ -14,6 +13,30 @@ import { getExpectedAuthorization } from "./getExpectedAuthorization.ts";
 import { getNoteContent } from "./getNoteContent.ts";
 import { extractAndUploadAttachments } from "./extractAndUploadAttachments.ts";
 import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
+import {
+  collectRecipientResults,
+  escalateUnrecordedFailure,
+  foldOutcomes,
+  httpStatusForOutcome,
+  isUsableIdempotencyKey,
+  ledgerStatusForOutcome,
+  SYNTHETIC_KEY_PREFIX,
+  type RecipientOutcome,
+  type RecipientResult,
+} from "./ingestionOutcome.ts";
+import { recordMessageFailure } from "./inboundEmailLedger.ts";
+import { ingestRecipient } from "./ingestRecipient.ts";
+
+// Inbound email is the only untrusted external channel that reaches this
+// database. It used to answer 200 to every ingestion failure — the return
+// value of `addNoteToContact` was discarded — so a lost message left no trace,
+// no retry and no alert. The semantics implemented here are
+// docs/design/postmark-ingestion.md:
+//
+//   ingested / duplicate -> 200
+//   permanently invalid  -> 200 + a durable ledger row holding the raw payload
+//   transient            -> 500, the only case Postmark should retry
+//   auth rejected        -> 401/405, before any processing
 
 const webhookUser = Deno.env.get("POSTMARK_WEBHOOK_USER");
 const webhookPassword = Deno.env.get("POSTMARK_WEBHOOK_PASSWORD");
@@ -29,30 +52,93 @@ if (!rawAuthorizedIPs) {
   throw new Error("Missing POSTMARK_WEBHOOK_AUTHORIZED_IPS env variable");
 }
 
+/** Cap on the body kept for a payload that is not valid JSON. */
+const MAX_UNPARSED_BODY_CHARS = 64_000;
+
 Deno.serve(async (req) => {
-  let response: Response | undefined;
+  const startedAt = Date.now();
 
-  response = checkRequestTypeAndHeaders(req);
-  if (response) return response;
+  const rejected = checkRequestTypeAndHeaders(req);
+  if (rejected) return rejected;
 
-  const json = await req.json();
-  response = checkBody(json);
-  if (response) return response;
+  // Read the body as text first. A payload that fails to parse still has to be
+  // recorded, and `req.json()` consumes the stream before we could keep it.
+  const rawBody = await req.text();
+  const json = parseJson(rawBody);
+  const payload: Record<string, unknown> = json ?? {
+    unparsed_body: rawBody.slice(0, MAX_UNPARSED_BODY_CHARS),
+  };
+  const messageId = getMessageId(json);
+
+  const finish = (
+    outcome: RecipientOutcome,
+    detail: { reason?: string; results?: RecipientResult[] } = {},
+  ) => {
+    const status = httpStatusForOutcome(outcome);
+    // One structured line per delivery (design §6). The states in the ledger
+    // are the queryable interface; this is the stream that points at them.
+    // Deliberate stdout logging, following the convention already used in
+    // supabase/functions/mcp/index.ts.
+    // eslint-disable-next-line no-console
+    console.log(
+      JSON.stringify({
+        event: "postmark.inbound",
+        message_id: messageId,
+        outcome,
+        status,
+        reason: detail.reason,
+        recipients: detail.results?.length ?? 0,
+        results: detail.results ?? [],
+        duration_ms: Date.now() - startedAt,
+      }),
+    );
+    return new Response(outcome, { status });
+  };
+
+  /** Records a failure that belongs to the delivery, not to one recipient. */
+  const failDelivery = async (
+    outcome: "permanent" | "transient",
+    reason: string,
+  ) => {
+    const recorded = await recordMessageFailure({
+      messageId,
+      payload,
+      status: ledgerStatusForOutcome(outcome),
+      detail: reason,
+    });
+    // A permanent failure we could not write down is a silent drop — exactly
+    // the bug being removed here — so it is escalated to transient and Postmark
+    // delivers again, giving the ledger another chance.
+    return finish(escalateUnrecordedFailure(outcome, recorded), { reason });
+  };
+
+  if (!json) {
+    return await failDelivery("permanent", "body is not valid JSON");
+  }
+
+  const bodyProblem = checkBody(json);
+  if (bodyProblem) return await failDelivery("permanent", bodyProblem);
 
   const { FromFull, Attachments } = json;
   let { ToFull, TextBody, Subject } = json;
 
   const salesEmail = (FromFull.Email || "").toLowerCase();
   if (!salesEmail) {
-    // Return a 403 to let Postmark know that it's no use to retry this request
-    // https://postmarkapp.com/developer/webhooks/inbound-webhook#errors-and-retries
-    return new Response(
-      `Could not extract sales email from FromFull: ${FromFull}`,
-      { status: 403 },
+    return await failDelivery(
+      "permanent",
+      "could not extract a sender email from FromFull",
     );
   }
 
   const allSales = await supabaseAdmin.from("sales").select("email");
+  if (allSales.error) {
+    // Previously `?? []`, which silently turned an unreachable database into
+    // "there are no sales users" and changed the forwarding decision below.
+    return await failDelivery(
+      "transient",
+      `could not read sales: ${allSales.error.message}`,
+    );
+  }
   const salesEmails =
     allSales.data?.map((s: { email: string }) => s.email) ?? [];
 
@@ -75,61 +161,61 @@ Deno.serve(async (req) => {
         (email: string) =>
           email !== INBOUND_EMAIL && !salesEmails?.includes(email),
       );
-    if (candidateEmails.length > 0) {
-      ToFull = [
-        {
-          Email: candidateEmails[0],
-          Name: "",
-        },
-      ];
-    } else {
-      // Return a 403 to let Postmark know that it's no use to retry this request
-      // https://postmarkapp.com/developer/webhooks/inbound-webhook#errors-and-retries
-      return new Response(
-        `Could not extract recipient email from transferred email body.`,
-        { status: 403 },
+    if (candidateEmails.length === 0) {
+      return await failDelivery(
+        "permanent",
+        "could not extract a recipient email from the forwarded email body",
       );
     }
+    ToFull = [
+      {
+        Email: candidateEmails[0],
+        Name: "",
+      },
+    ];
     TextBody = getForwardedMailContent(TextBody);
     Subject = stripSubjectForwardingPrefix(Subject);
   }
 
-  const noteContent = getNoteContent(Subject, TextBody);
-
-  const contacts = extractMailContactData(ToFull);
-
-  const attachments = await extractAndUploadAttachments(Attachments);
-
-  for (const {
-    firstName,
-    lastName,
-    email,
-    domain,
-    companyName,
-    website,
-  } of contacts) {
-    if (!email) {
-      // Return a 403 to let Postmark know that it's no use to retry this request
-      // https://postmarkapp.com/developer/webhooks/inbound-webhook#errors-and-retries
-      return new Response(`Could not extract email from ToFull: ${ToFull}`, {
-        status: 403,
-      });
-    }
-
-    await addNoteToContact({
-      salesEmail,
-      email,
-      domain,
-      firstName,
-      lastName,
-      noteContent,
-      attachments,
-      companyName,
-      website,
-    });
+  let attachments;
+  try {
+    attachments = await extractAndUploadAttachments(Attachments);
+  } catch (error) {
+    // Upload failures are recoverable. Before this, the throw escaped the
+    // handler, nothing was recorded, and the runtime answered for us.
+    return await failDelivery(
+      "transient",
+      `attachment upload failed: ${errorMessage(error)}`,
+    );
   }
 
-  return new Response("OK");
+  const noteContent = getNoteContent(Subject, TextBody);
+  const contacts = extractMailContactData(ToFull);
+
+  // Every recipient is visited and every outcome is kept. The rejected
+  // implementation returned from inside this loop, which discarded a
+  // transient recipient the moment a later one produced anything else.
+  const results = await collectRecipientResults(
+    contacts,
+    (contact) =>
+      ingestRecipient({
+        messageId,
+        payload,
+        salesEmail,
+        noteContent,
+        attachments,
+        contact,
+      }),
+    (contact, error) => ({
+      email: contact.email ?? "",
+      outcome: "transient",
+      detail: `unhandled error: ${errorMessage(error)}`,
+    }),
+  );
+
+  return finish(foldOutcomes(results.map((result) => result.outcome)), {
+    results,
+  });
 });
 
 const checkRequestTypeAndHeaders = (req: Request) => {
@@ -165,22 +251,60 @@ const checkRequestTypeAndHeaders = (req: Request) => {
 };
 
 // deno-lint-ignore no-explicit-any
-const checkBody = (json: any) => {
-  const { ToFull, FromFull, Subject, TextBody } = json;
+const parseJson = (rawBody: string): any | null => {
+  try {
+    const parsed = JSON.parse(rawBody);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+};
 
-  // In case of incorrect request data, we
-  // return a 403 to let Postmark know that it's no use to retry this request
-  // https://postmarkapp.com/developer/webhooks/inbound-webhook#errors-and-retries
-  if (!ToFull || !ToFull.length)
-    return new Response("Missing parameter: ToFull", { status: 403 });
-  if (!FromFull)
-    return new Response("Missing parameter: FromFull", { status: 403 });
-  if (!Subject)
-    return new Response("Missing parameter: Subject", { status: 403 });
-  if (!TextBody)
-    return new Response("Missing parameter: TextBody", {
-      status: 403,
-    });
+/**
+ * The idempotency key. Postmark supplies `MessageID` on every request and it is
+ * stable across its retries; nothing else in the payload is.
+ *
+ * A payload without one is permanently invalid, so it will never be retried and
+ * has nothing to deduplicate against. The synthetic key exists only so the
+ * durable record can still be written instead of the message vanishing.
+ */
+// deno-lint-ignore no-explicit-any
+const getMessageId = (json: any | null): string => {
+  const messageId = json?.MessageID;
+  return typeof messageId === "string" && messageId
+    ? messageId
+    : `${SYNTHETIC_KEY_PREFIX}${crypto.randomUUID()}`;
+};
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+/**
+ * Returns the reason the payload is permanently invalid, or undefined.
+ *
+ * It used to return a 403 Response directly. Permanent invalidity now answers
+ * 200 with a durable ledger row (design §2): both stop Postmark retrying, but
+ * only one of them leaves something to replay.
+ */
+// deno-lint-ignore no-explicit-any
+const checkBody = (json: any): string | undefined => {
+  const { ToFull, FromFull, Subject, TextBody, MessageID } = json;
+
+  // MessageID is checked HERE, not left to `getMessageId`'s synthetic fallback,
+  // and that distinction is the whole point. `unkeyed:<uuid>` is unique per
+  // DELIVERY, so a payload that reached the ingest path under one would be
+  // re-ingested on every Postmark redelivery — a duplicate note each time,
+  // which is precisely what the ledger exists to prevent. Failing here routes
+  // such a payload to `failDelivery("permanent", …)`: 200, a durable record
+  // under the synthetic key, and no work. The fallback then covers only the
+  // paths that never ingest (unparseable body, permanently-invalid payload).
+  if (!isUsableIdempotencyKey(MessageID)) {
+    return "missing parameter: MessageID";
+  }
+  if (!ToFull || !ToFull.length) return "missing parameter: ToFull";
+  if (!FromFull) return "missing parameter: FromFull";
+  if (!Subject) return "missing parameter: Subject";
+  if (!TextBody) return "missing parameter: TextBody";
 };
 
 /* To invoke locally:
@@ -272,7 +396,7 @@ const checkBody = (json: any) => {
         ]
       }'
 
-      
+
   To trigger the email forwarding feature, you can change the "To" and "ToFull" fields to have the INBOUND_EMAIL, and add an email address that is neither a sales nor the INBOUND_EMAIL, for example:
   curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/postmark' \
     --header 'Content-Type: application/json' \

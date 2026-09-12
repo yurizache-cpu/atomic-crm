@@ -24,7 +24,8 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "prepare": "husky",
-    "update-changelog": "gh api 'repos/{owner}/{repo}/releases' --paginate -q '.[] | \"## \\(.tag_name) - \\(.published_at[:10])\\n\\n\\(.body)\\n\"' > CHANGELOG.md"
+    "update-changelog": "gh api 'repos/{owner}/{repo}/releases' --paginate -q '.[] | \"## \\(.tag_name) - \\(.published_at[:10])\\n\\n\\(.body)\\n\"' > CHANGELOG.md",
+    "test:db": "node ./scripts/run-db-tests.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

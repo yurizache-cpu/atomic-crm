@@ -36,5 +36,43 @@ Concretely, for Phase 0.5:
 
 - ADR 0002's isolation claim is narrowed to "unreachable through PostgREST" and its test obligation doubles: both channels must be exercised.
 - The long-term direction is a **Tool Gateway** — explicit operations, least privilege, tenant scope, permission checks, risk classification, approval policy, audit log, structured inputs, and no arbitrary SQL. This ADR does not build it; it records that arbitrary SQL is not the interface agents get.
-- `SET TRANSACTION READ ONLY` does **not** constrain side effects that are not database writes. A network-capable function called from a SELECT is stopped by revoking EXECUTE, not here — see the extensions hardening in `06_grants.sql`.
+- `SET TRANSACTION READ ONLY` does **not** constrain side effects that are not database writes. A network-capable function called from a SELECT is stopped in the privilege layer, not here — see "Outbound network capability" below.
 - Outstanding and not fixed by this ADR: the missing audience check on `jwtVerify`, `get_schema` running without a role downgrade, `x-forwarded-host` trusted when building OAuth metadata, and full SQL statements (with personal data) logged verbatim.
+
+---
+
+## Addendum 2026-09-11 — Outbound network capability (Phase 0.5C)
+
+The Context above lists `SELECT extensions.http_get(…)` as an exfiltration path "that no amount of RLS constrains". Phase 0.5C resolved it. The two network extensions needed **opposite** answers, and the reason is ownership, not risk appetite.
+
+### Measured
+
+| schema | owner | `anon` USAGE | `authenticated` USAGE |
+| --- | --- | --- | --- |
+| `extensions` (the `http` extension) | `postgres` | closed by revoke | closed by revoke |
+| `net` (the `pg_net` extension) | `supabase_admin` | **was open** | **was open** |
+
+PostgreSQL lets only the **grantor** revoke a grant. `net.http_post`'s ACL is `anon=X/supabase_admin`; migrations run as `postgres`, which is not a member of `supabase_admin` and cannot `SET ROLE` to it. A `REVOKE` therefore succeeds syntactically and **does nothing**. Verified as `authenticated` before removal:
+
+```sql
+select net.http_get('http://127.0.0.1:1/exfil');  -- -> request_id 1, request queued
+```
+
+That is a working exfiltration primitive: syntactically read-only, satisfies RLS, posts rows off-box, and unaffected by `SET TRANSACTION READ ONLY` because it is not a write.
+
+### Decision
+
+**`http` is retained and contained. `pg_net` is removed.**
+
+- **`http`** — `public.get_avatar_for_email` uses `extensions.http_get` and its trigger is live; `service_role` (edge functions, server-side) legitimately needs egress. Containment works here *because postgres owns `extensions`*, so `revoke usage on schema extensions` is real. Measured cost: none — citext equality, ILIKE and INSERT all still work, because operators resolve by OID, not by a schema-name lookup.
+- **`pg_net`** — containment is **impossible** for this project: the grant is not ours to revoke. It was also unused. The repository's only reference is the dormant `public.cleanup_note_attachments`, whose four triggers the clinical profile does not install; probed on a clean database, inserting a `contact_note` left `net.http_request_queue` at zero rows, and `drop extension pg_net` succeeded without `CASCADE`. So the capability was deleted rather than fenced — `20260911235500_drop_pg_net.sql`, which refuses to run if any live trigger still calls it.
+
+This is deliberately **not** a privilege hack against the platform owner model. An `ALTER DEFAULT PRIVILEGES`/`REVOKE` dance against `supabase_admin` would have looked applied and changed nothing, which is the failure mode this repository has already hit twice.
+
+### Why this does not soften rule 3
+
+Decision item 3 above — *no AI agent receives arbitrary SQL execution* — is unchanged and is still the actual boundary. Removing `pg_net` narrows the blast radius of a hypothetical arbitrary-SQL path; it does not license one. Any future component that hands a model raw SQL reopens the question for every capability in the database, not just networking.
+
+### Standing consequence
+
+Reinstalling `pg_net` silently re-grants `anon` and `authenticated`, and no privilege change this project can make will close it again. It is therefore guarded by an executable assertion rather than by documentation: `supabase/tests/rls_tenant_isolation.sql` fails if the extension or the `net` schema reappears (`npm run test:db`). Restoring note attachments means re-answering this question, not re-adding the extension quietly.

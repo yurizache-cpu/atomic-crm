@@ -18,6 +18,7 @@ alter table public.favicons_excluded_domains enable row level security;
 alter table public.lead_profiles enable row level security;
 alter table public.acquisition_attributions enable row level security;
 alter table public.loss_reasons enable row level security;
+alter table public.inbound_emails enable row level security;
 
 -- Companies
 create policy "company_select_scoped" on public.companies for select to authenticated using (
@@ -190,4 +191,13 @@ create policy "acquisition_update_scoped" on public.acquisition_attributions for
   with check (public.is_active_sales_user() and public.can_access_contact(contact_id));
 create policy "acquisition_delete_scoped" on public.acquisition_attributions for delete to authenticated using (
   public.is_active_sales_user() and public.can_access_contact(contact_id)
+);
+
+-- Inbound email ledger. It holds raw message bodies, which is personal data
+-- under LGPD, so it is deliberately NOT scoped to the operator who owns the
+-- contact: only an owner/admin reads it, and only to triage failed ingestion.
+-- There is no insert/update/delete policy, and no write grant — the Postmark
+-- Edge Function writes it as service_role.
+create policy "inbound_email_select_owner" on public.inbound_emails for select to authenticated using (
+  public.is_admin()
 );

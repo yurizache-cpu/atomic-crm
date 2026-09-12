@@ -26,6 +26,12 @@ grant select, update on table public.lead_profiles to authenticated;
 grant select, insert, update, delete on table public.acquisition_attributions to authenticated;
 grant select, insert, update, delete on table public.loss_reasons to authenticated;
 
+-- Inbound email ledger: read-only, and the policy in 05_policies.sql narrows
+-- that to owners. No INSERT/UPDATE/DELETE for the browser — the Postmark Edge
+-- Function is the only writer and it runs as service_role, which the blanket
+-- `grant all ... to service_role` below already covers.
+grant select on table public.inbound_emails to authenticated;
+
 -- Views are read-only API resources. security_invoker views apply the caller's
 -- RLS policies on their source tables.
 grant select on table public.activity_log to authenticated;

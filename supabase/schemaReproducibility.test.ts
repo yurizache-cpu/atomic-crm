@@ -30,8 +30,12 @@ const stripComments = (sql: string) =>
 /** Tables the seed writes into, unqualified and lowercased. */
 const seededTables = [
   ...new Set(
-    [...stripComments(seed).matchAll(/insert\s+into\s+([a-z_."]+)/gi)].map((m) =>
-      m[1].replace(/"/g, "").replace(/^public\./i, "").toLowerCase(),
+    [...stripComments(seed).matchAll(/insert\s+into\s+([a-z_."]+)/gi)].map(
+      (m) =>
+        m[1]
+          .replace(/"/g, "")
+          .replace(/^public\./i, "")
+          .toLowerCase(),
     ),
   ),
 ];
@@ -67,7 +71,10 @@ describe("migrations are self-sufficient", () => {
 });
 
 describe("declarative schema vs migrations", () => {
-  const tablesDdl = readFileSync(join(HERE, "schemas", "01_tables.sql"), "utf8");
+  const tablesDdl = readFileSync(
+    join(HERE, "schemas", "01_tables.sql"),
+    "utf8",
+  );
 
   it("does not enumerate tenant vocabulary in CHECK constraints (ADR 0013)", () => {
     // The engine must stay domain-independent: a clinic's pipeline stage names
@@ -80,9 +87,10 @@ describe("declarative schema vs migrations", () => {
     ];
     const ddl = stripComments(tablesDdl).toLowerCase();
     for (const word of clinicVocabulary) {
-      expect(ddl, `"${word}" is tenant vocabulary and must not be in DDL`).not.toContain(
-        word,
-      );
+      expect(
+        ddl,
+        `"${word}" is tenant vocabulary and must not be in DDL`,
+      ).not.toContain(word);
     }
   });
 
@@ -90,7 +98,10 @@ describe("declarative schema vs migrations", () => {
     // `07_storage.sql` is DML, which `db diff` cannot emit. Its enforcement has
     // to be a hand-written migration, or the documented state and the real
     // database silently diverge — which is exactly what happened once.
-    const storage = readFileSync(join(HERE, "schemas", "07_storage.sql"), "utf8");
+    const storage = readFileSync(
+      join(HERE, "schemas", "07_storage.sql"),
+      "utf8",
+    );
     expect(storage).toMatch(/update\s+storage\.buckets/i);
     expect(migrationsSql).toMatch(/update\s+storage\.buckets/i);
   });
@@ -101,11 +112,14 @@ describe("declarative schema vs migrations", () => {
     for (const name of [
       "close_attachments_bucket",
       "revoke_network_extension_privileges",
+      "inbound_email_ledger",
     ]) {
       const file = migrationFiles.find((f) => f.includes(name));
       expect(file, `missing migration: ${name}`).toBeDefined();
       const sql = readFileSync(join(migrationsDir, file!), "utf8");
-      expect(sql, `${name} must assert its end state`).toMatch(/raise\s+exception/i);
+      expect(sql, `${name} must assert its end state`).toMatch(
+        /raise\s+exception/i,
+      );
     }
   });
 });

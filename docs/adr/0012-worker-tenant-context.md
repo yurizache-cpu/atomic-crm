@@ -1,6 +1,6 @@
 # ADR 0012 — Worker tenant context: scoped role + transaction-local GUC
 
-**Status:** Proposed · **Date:** 2026-09-11
+**Status:** **Proposed — mechanism verified, integration unverified** · **Date:** 2026-09-11 (verification added 2026-09-11, Phase 0.5C)
 **Decided by:** owner, Phase 0.5 brief (Q11) — design only; no engine code is built in Phase 0.5.
 
 ## Context
@@ -39,6 +39,37 @@ The owner's requirements are explicit: every tenant-scoped job carries a tenant 
 ## Consequences
 
 - The worker needs a migration creating `ops_worker` and its grants; the connection string for that role becomes a deployment secret, and it must never be the one the MCP function uses.
-- **Test obligation, and it is the acceptance criterion for ADR 0002:** two tenants' rows in one `ops` table; assert tenant A's context sees only A's rows; assert an **unset** GUC sees zero rows (not all rows); assert a job that sets tenant A cannot update a row of tenant B; assert the value does not survive into the next transaction on the same pooled connection. These require a live database and are therefore Docker-blocked today.
+- **Test obligation, and it is the acceptance criterion for ADR 0002:** two tenants' rows in one `ops` table; assert tenant A's context sees only A's rows; assert an **unset** GUC sees zero rows (not all rows); assert a job that sets tenant A cannot update a row of tenant B; assert the value does not survive into the next transaction on the same pooled connection. ~~These require a live database and are therefore Docker-blocked today.~~ **Partly discharged 2026-09-11 — see the addendum below.**
 - Pooling is safe only because the GUC is transaction-local. Any future code path that sets it outside a transaction reintroduces cross-tenant leakage, so that shape should be blocked in review.
 - This ADR specifies a mechanism; it builds nothing. `ops` does not exist yet, and Phase 0.5 does not create it.
+
+---
+
+## Addendum 2026-09-11 — What is now proven, and why the status is still Proposed (Phase 0.5C)
+
+Phase 0.5C's instruction was that this ADR must not be accepted until executable tests prove its properties. That created a deadlock: the acceptance criterion above is written against `ops.*`, and `ops` does not exist because Phase 0.5 must not build the engine. Left alone, the ADR would stay unfalsifiable indefinitely.
+
+`supabase/tests/worker_tenant_context.sql` (run by `npm run test:db`) breaks the deadlock by testing the **mechanism** rather than the engine. It builds a throwaway schema, role, table and policies with exactly the shape this ADR specifies, asserts against them, and rolls everything back — it creates no `ops` schema, no engine table and no persistent role, and it asserts that afterwards.
+
+### Proven
+
+| Property | ADR item | Result |
+| --- | --- | --- |
+| Worker role is not superuser and has no `BYPASSRLS`/`CREATEROLE`/`CREATEDB` | 1 | pass |
+| Explicit tenant context scopes reads to that tenant | 2, 4 | pass |
+| **Absent** context yields **zero** rows, not all rows | 5 | pass |
+| A malformed tenant id does not degrade to "see everything" | 5 | pass |
+| Unqualified `UPDATE`/`DELETE`/`INSERT` cannot cross the tenant boundary | 5 | pass |
+| `force row level security` binds the role that **owns** the table | 5 | pass |
+| Transaction-local context does not survive a **committed** transaction on a reused connection | 2 | pass |
+
+Each was mutation-tested — the assertion was shown to fail when the property is deliberately broken (unset GUC made to match all rows, `force` removed, `BYPASSRLS` granted, `with check` unscoped, `set_config` made connection-level). Two of those mutations initially went undetected and the suite was corrected; without mutation testing it would have shipped green and blind. Specifically, checking GUC leakage after a **rollback** proves nothing, because a plain `SET` is rolled back too — only the committed case discriminates.
+
+### Not proven — and this is why the status does not change
+
+1. **Tenant id derived from the leased job row** (item 3). This is the property that makes the context server-side rather than caller-supplied, and it is the heart of the design. It cannot be tested until a job table and a leasing path exist.
+2. **No production path sets the GUC outside a transaction.** A convention today, not an enforced constraint.
+3. **Engine components do not use `service_role`.** Not merely unproven — currently **false**. The edge functions run as `service_role`, which carries `BYPASSRLS`; `rls_tenant_isolation.sql` section 6 and `worker_tenant_context.sql` block F assert that bypass explicitly so that a green RLS suite can never be mistaken for worker isolation.
+4. **`postgres` itself carries `BYPASSRLS`** on Supabase (measured: `rolsuper=false`, `rolbypassrls=true`). Anything connecting as `postgres` — including every migration — is outside RLS. The `ops_worker` role must never be `postgres`.
+
+**Conclusion: Proposed.** The mechanism is no longer a hypothesis; the integration is entirely unbuilt. Accepting it requires items 1–3 above, which is Phase 1 work.
