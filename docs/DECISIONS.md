@@ -19,8 +19,9 @@ Index of ADRs under [`docs/adr/`](adr/). Each records context, decision, alterna
 | [0009](adr/0009-governance-envelope.md) | Governance envelope — risk as data, fail-closed default, confidence escalates but never skips review | Proposed | High — a gate retrofitted after agents act is a gate nobody trusts |
 | [0010](adr/0010-cost-control-and-kill-switch.md) | Cost ledger in-transaction, per-agent budgets, **fleet-wide kill switch** (scopes + semantics added in Phase 0.5) | Proposed | Low to build now, **unbounded to omit** |
 | [0011](adr/0011-mcp-trust-boundary.md) | The MCP function is **not** part of the production trust boundary; no agent gets arbitrary SQL | **Accepted** (owner, Q12) | Low — it constrains a component rather than shaping the engine |
-| [0012](adr/0012-worker-tenant-context.md) | Worker tenancy — scoped non-superuser role + transaction-local `app.tenant_id` GUC | Proposed (principle decided, Q11) | **Very high** — it is the mechanism ADR 0002 depends on |
+| [0012](adr/0012-worker-tenant-context.md) | Worker tenancy — scoped non-superuser role + transaction-local `app.tenant_id` GUC | Proposed — **mechanism verified 2026-09-11**, integration unbuilt | **Very high** — it is the mechanism ADR 0002 depends on |
 | [0013](adr/0013-pipeline-stages-are-configuration.md) | Pipeline stages are tenant configuration, not schema semantics | **Accepted** (owner, Q4) | Low **now**, high once migrated — which is why it was done before the first migration |
+| [0014](adr/0014-inbound-email-ledger-keys-on-recipient-email.md) | The inbound-email ledger keys on `(message_id, recipient_email)`, not `recipient_contact_id` | **Accepted** | Low — one table, one unique index |
 
 ### What changed in the reconciliation
 

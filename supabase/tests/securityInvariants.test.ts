@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -286,6 +286,50 @@ describe("every security invariant still has a live enforcement point", () => {
     // analysis — which is exactly the posture this phase was trying to leave.
     const live = INVARIANTS.filter((i) => i.provenBy.includes("live database"));
     expect(live.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("the ADR index cannot drift from the ADRs", () => {
+  // Not a security invariant, but the same failure mode and it bit this change:
+  // the Phase 1 handoff was drafted claiming two ADRs were Accepted that are
+  // still Proposed. A handoff that misstates which decisions are settled is how
+  // a future session builds on an unapproved foundation.
+  const ADR_DIR = join(ROOT, "docs", "adr");
+  const decisions = readFileSync(join(ROOT, "docs", "DECISIONS.md"), "utf8");
+  const adrFiles = readdirSync(ADR_DIR)
+    .filter((f) => /^\d{4}-.*\.md$/.test(f))
+    .sort();
+
+  it("indexes every ADR file", () => {
+    const unindexed = adrFiles.filter((f) => !decisions.includes(f));
+    expect(unindexed).toEqual([]);
+  });
+
+  it("agrees with each ADR on whether it is Accepted", () => {
+    const disagreements: string[] = [];
+    for (const file of adrFiles) {
+      const adr = readFileSync(join(ADR_DIR, file), "utf8");
+      const accepted = /\*\*Status:\*\*\s*\**\s*Accepted/.test(adr);
+      const row = decisions
+        .split("\n")
+        .find((line) => line.includes(file) && line.startsWith("|"));
+      if (!row) continue; // covered by the test above
+      // `| # | Decision | Status | Reversal cost |` -> split gives a leading and
+      // trailing empty cell, so the status column is index 3. A row that does
+      // not have that shape is a failure, not something to skip.
+      const cells = row.split("|");
+      if (cells.length < 5) {
+        disagreements.push(`${file}: malformed row in DECISIONS.md`);
+        continue;
+      }
+      const indexedAccepted = /Accepted/.test(cells[3]);
+      if (accepted !== indexedAccepted) {
+        disagreements.push(
+          `${file}: the ADR says ${accepted ? "Accepted" : "not Accepted"}, DECISIONS.md's status column says ${indexedAccepted ? "Accepted" : "not Accepted"}`,
+        );
+      }
+    }
+    expect(disagreements).toEqual([]);
   });
 });
 
