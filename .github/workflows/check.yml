@@ -199,3 +199,10 @@ jobs:
 
             - name: 🔨 Build
               run: npm run build
+
+            # A server-side credential in a browser artifact is unrecoverable
+            # once deployed: the bundle is public and the key is valid. The
+            # only thing keeping SERVICE_ROLE_KEY out is Vite's `VITE_` prefix
+            # rule, which one typo inverts silently.
+            - name: 🔒 No secrets in the production build
+              run: npm run scan:build

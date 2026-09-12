@@ -16,7 +16,11 @@ export default defineConfig({
     tailwindcss(),
     visualizer({
       open: process.env.NODE_ENV !== "CI",
-      filename: "./dist/stats.html",
+      // NOT inside `dist`. The deploy publishes that whole directory
+      // (`npx gh-pages -d dist`), so emitting here shipped the full module
+      // graph, every source path and the dependency inventory to a public
+      // host. `scripts/scan-build-artifacts.mjs` flags it if it comes back.
+      filename: "./node_modules/.cache/bundle-stats.html",
     }),
     createHtmlPlugin({
       minify: true,

@@ -10,6 +10,7 @@ import { Route } from "react-router";
 import { QueryClient } from "@tanstack/react-query";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persister";
+import { QUERY_CACHE_STORAGE_KEY } from "../providers/queryCacheKey";
 import { Admin } from "@/components/admin/admin";
 import { ForgotPasswordPage } from "@/components/supabase/forgot-password-page";
 import { SetPasswordPage } from "@/components/supabase/set-password-page";
@@ -286,6 +287,9 @@ const MobileAdmin = (
   });
   const asyncStoragePersister = createAsyncStoragePersister({
     storage: localStorage,
+    // Passed explicitly rather than left to the library default, so the key the
+    // auth provider removes on logout cannot drift from the key written here.
+    key: QUERY_CACHE_STORAGE_KEY,
   });
 
   return (

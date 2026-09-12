@@ -2,6 +2,7 @@ import type { AuthProvider } from "ra-core";
 import { supabaseAuthProvider } from "ra-supabase-core";
 
 import { canAccess } from "../commons/canAccess";
+import { QUERY_CACHE_STORAGE_KEY } from "../queryCacheKey";
 import { getSupabaseClient } from "./supabase";
 
 const getBaseAuthProvider = () =>
@@ -75,6 +76,11 @@ function clearCache() {
   const storage = getLocalStorage();
   storage?.removeItem(IS_INITIALIZED_CACHE_KEY);
   storage?.removeItem(CURRENT_SALE_CACHE_KEY);
+  // The persisted React Query cache is the one that actually holds CRM records
+  // — contacts, notes, emails, consent state. Clearing only the two auth hints
+  // above left all of it on the device for `gcTime` (24h) after logout, across
+  // browser restarts. See providers/queryCacheKey.ts.
+  storage?.removeItem(QUERY_CACHE_STORAGE_KEY);
 }
 
 export const getAuthProvider = (): AuthProvider => {
