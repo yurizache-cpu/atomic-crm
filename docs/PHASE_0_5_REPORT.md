@@ -649,8 +649,11 @@ A related guard was added after this section's own drafting failed the same way:
 | `npm run test:db` | 2 suites passed |
 | clean `db reset` ×2 consecutive | 34s, 34s — both exit 0, each followed by a green `test:db` |
 | `npm run test:db` with no database | exit 1 (fails closed) |
+| `--project app` stability | 3 consecutive isolated runs, 219 passed each |
 | security guards | 12 invariants, all enforcement points live; migration corpus replayed statically, end state matches the live database |
 | registry guard | 223 files valid; 7/7 mutations caught |
+
+**One flake, characterised rather than ignored.** A full-suite run executed *immediately after* `supabase db reset` produced 7 failures across 7 files, one test each. It did not reproduce: the next run was 810 passed, and the `app` project passed 3 consecutive isolated runs at 219 each. The `app` project runs in a real Chromium and is timing-sensitive, and that run overlapped Docker containers restarting and a database reset. **CI is not exposed to this interaction** — `test-app` and `database` are separate jobs on separate runners — but it is recorded here so a future session does not mis-diagnose the same shape as a regression. If it recurs on an unloaded machine, it is a real flake and needs quarantining.
 
 Mutation coverage across the phase: **33 deliberate breaks, 33 caught** (14 RLS, 5 worker-context, 10 invariant baseline, 7 registry, 2 Postmark — several only after the suites themselves were corrected, which is the point of running them), plus **16 independent attacks and 4 legitimate migrations** against the generated-migration guard (§17.3), driven from a separate harness rather than its own tests.
 
