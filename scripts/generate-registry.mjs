@@ -37,27 +37,36 @@ const excludedLibFiles = [
   "utils.ts",
 ];
 
+/**
+ * globSync RETURNS platform separators, so on Windows every emitted `path`
+ * became "src\components\atomic-crm\types.ts". registry.json is PUBLISHED
+ * content consumed by `shadcn add`, where a backslash path resolves nowhere —
+ * so a commit from a Windows machine would silently ship a broken registry.
+ * (The posix.join calls above fix the INPUT patterns; this fixes the output.)
+ */
+const toPosixPath = (p) => p.split(path.sep).join(path.posix.sep);
+
 const testFilePattern = "**/*.{test,spec}.*";
 const storyFilePattern = "**/*.stories.*";
 
 const atomicCrmComponents = globSync(
   path.posix.join(atomicCrmComponentsPath, "**", "*.ts*"),
   { ignore: [testFilePattern, storyFilePattern] },
-);
+).map(toPosixPath);
 const supabaseComponents = globSync(
   path.posix.join(supabaseComponentsPath, "**", "*.ts*"),
   { ignore: [testFilePattern, storyFilePattern] },
-);
-const hooks = globSync(path.posix.join(hooksPath, "**", "*.ts*")).filter(
-  (hook) => {
+).map(toPosixPath);
+const hooks = globSync(path.posix.join(hooksPath, "**", "*.ts*"))
+  .map(toPosixPath)
+  .filter((hook) => {
     return !excludedHooks.includes(path.basename(hook));
-  },
-);
-const libFiles = globSync(path.posix.join(libPath, "**", "*.ts*")).filter(
-  (file) => {
+  });
+const libFiles = globSync(path.posix.join(libPath, "**", "*.ts*"))
+  .map(toPosixPath)
+  .filter((file) => {
     return !excludedLibFiles.includes(path.basename(file));
-  },
-);
+  });
 const changelogPath = "CHANGELOG.md";
 
 const registryContent = JSON.parse(fs.readFileSync(registryPath, "utf-8"));
