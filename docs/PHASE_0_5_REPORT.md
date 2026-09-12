@@ -2,7 +2,9 @@
 
 **Date:** 2026-09-11 · **Branch:** `feature/clinical-phase-1` · **Base commit:** `729f5966`
 
-> **Status: NOT signed off — but for a different, much smaller reason than before.** The Docker blocker is resolved and every database guarantee in this report has now been executed against a live Postgres. Phase 0.5C found and fixed an **unauthenticated read of every contact record**, automated the RLS assertions, removed `pg_net`, and implemented the Postmark ledger. What remains is owner action (push/CI) and one tooling hazard that cannot be closed from inside this repository. Read [§16](#16-phase-05c--final-closure-2026-09-11) first; it supersedes the two notes below.
+> **Status: ENGINEERING BASELINE SIGNED OFF — one operational blocker remains (the branch has never been pushed and CI has never run).** Read [§17](#17-release-gate-2026-09-11) for the release gate and the final classification; [§16](#16-phase-05c--final-closure-2026-09-11) for how the engineering work was closed. The two notes below are superseded by both.
+>
+> _(Previous status, kept for provenance: NOT signed off — but for a different, much smaller reason than before.)_ The Docker blocker is resolved and every database guarantee in this report has now been executed against a live Postgres. Phase 0.5C found and fixed an **unauthenticated read of every contact record**, automated the RLS assertions, removed `pg_net`, and implemented the Postmark ledger. What remains is owner action (push/CI) and one tooling hazard that cannot be closed from inside this repository. Read [§16](#16-phase-05c--final-closure-2026-09-11) first; it supersedes the two notes below.
 >
 > **Update 2026-09-11 — Phase 0.5B attempted the verification and could not complete it.** Docker Desktop 4.89.0 is broken on this machine for a reason unrelated to this repository (socket creation produces files the system cannot access, across two independent subsystems; three antivirus products are stacked). Every non-destructive remediation available without administrator rights was attempted and failed. Work is checkpointed at commit `d3280333`. Full diagnosis, remediation options ranked by data-loss risk, and the revised signoff position: [PHASE_0_5B_DATABASE_VERIFICATION.md](PHASE_0_5B_DATABASE_VERIFICATION.md).
 
@@ -271,12 +273,12 @@ Full reconciliation in [DECISIONS.md](DECISIONS.md). Three are `Accepted` (0007,
 
 ## 14. Exact criteria for Phase 0.5 completion
 
-Phase 0.5 is done when **all** of these are true. **Updated 2026-09-11 after Phase 0.5C: 11 of 13.**
+Phase 0.5 is done when **all** of these are true. **Updated 2026-09-11 after Phase 0.5C: 11 of 13.** The release gate in [§17](#17-release-gate-2026-09-11) is authoritative over this table — it carries the final classification and separates the one remaining item into an *operational* blocker.
 
 | # | Criterion | Status |
 | --- | --- | --- |
 | 1 | typecheck, lint, and all three unit projects pass | ✅ **697 passed, 2 skipped, 0 failed** |
-| 2 | CI exercises all three unit projects | ✅ |
+| 2 | CI exercises all three unit projects | ✅ and extended: feature branches trigger it, plus a registry guard and a live-database job ([§17.2](#172-ci-release-gate)) |
 | 3 | A red build cannot deploy | ✅ configured; unproven until a push |
 | 4 | Read-only SQL enforced at both the parser and the database | ✅ both halves verified against a live Postgres |
 | 5 | `canAccess` denies unknown resources, with tests | ✅ |
@@ -519,3 +521,144 @@ The distinction matters. Every criterion that this repository can satisfy on its
 **The one thing that must not be skipped before Phase 1:** push the branch and let CI run. Seven commits' worth of work (soon eight) has never been executed by anything except this machine, and the phase's own premise is that "it passes here" is not evidence.
 
 **Do not begin the Company OS engine.** ADR 0012 is Proposed, not Accepted, and its integration properties — tenant context from the leased job row, and workers that are not `service_role` — are exactly what an engine would depend on.
+
+---
+
+# 17. Release gate (2026-09-11)
+
+Phase 0.5C closed the engineering work. This section is the release gate: prove a fresh environment would agree with the local guarantees, and separate what is still open into *engineering* and *operational*.
+
+## 17.1 Push — OPERATIONAL BLOCKER
+
+`git push -u origin feature/clinical-phase-1` was attempted and **refused by the coding environment's command classifier**. Not by git, not by the remote, not by credentials. `origin` is `https://github.com/yurizache-cpu/atomic-crm.git` and the branch has no upstream.
+
+This is an operational blocker, not a security or engineering one. The work is committed, the tree is clean, and the branch is 13 commits ahead of `origin/main` (14 once this report lands). The owner runs:
+
+```bash
+git push -u origin feature/clinical-phase-1
+```
+
+## 17.2 CI release gate
+
+Three gaps were found in the existing workflow, each of which would have made the first push useless or misleading.
+
+**1. `check.yml` would not have run at all.** It triggered on `push` to `main` and on `pull_request` only. Pushing `feature/clinical-phase-1` — the branch carrying the entire Phase 0.5 security baseline — produced **no CI run**, and the owner would have had to open a PR before getting any signal. Feature branches now run the gate on push.
+
+**2. Nothing executed the database guarantees.** Every database claim in this report was proven on exactly one machine. A `database` job now starts Supabase, runs `npm run test:db`, performs a clean `db reset`, and re-runs the suites afterwards — so a fresh environment proves both the security properties and the reproducibility. It matters that `npm run test:db` **fails** rather than skips when it cannot reach a database: a skipped security suite reads as a pass in every CI summary.
+
+**3. `registry.json` had no guard at all**, despite two separate Windows defects having already corrupted it silently. See §17.4.
+
+What the gate now covers:
+
+| Guarantee | Where |
+| --- | --- |
+| typecheck, lint | `check.yml` (and `deploy.yml`'s gate) |
+| app / functions / claude unit projects | `check.yml`, `deploy.yml` gate |
+| static security guards, security-invariant baseline | inside the `functions` project |
+| registry guard | inside the `claude` project — so it runs in the **deploy gate** too, and every deploy job carries `needs: gate`; the gh-pages publish path is gated by it |
+| RLS, tenant isolation, grant surface, egress | `database` job (live Supabase) |
+| clean reconstruction from scratch | `database` job (`db reset`, then the suites again) |
+
+**Honest limit: none of this has ever executed.** The workflow changes are syntactically valid (both files parse, 6 and 4 jobs respectively) but a CI run is the only thing that proves them. That is part of the operational blocker in §17.1, not a claim made here.
+
+**What the owner will see on the first run, checked rather than guessed:** the `lint` job runs `prettier` over `**/*.{js,json,ts,tsx,css,md,html}`, and **419 files fail that check today**. They are pre-existing; every file added in Phases 0.5 / 0.5B / 0.5C is prettier-clean (verified individually). This phase deliberately did not mass-format — an earlier attempt reformatted ~200 unrelated files and was reverted.
+
+`wearerequired/lint-action` defaults to `continue_on_error: true` and `auto_fix: false`, so **it annotates and does not fail the job**, and it will not commit a reformat. Expect a large annotation set on the first run, not a red gate. Note also that `deploy.yml`'s gate runs `npm run lint` directly — eslint only, no prettier — and that command is clean, so the deploy path is unaffected either way. Formatting the repository remains an open, owner-owned decision with no deadline attached.
+
+The `e2e-test` job is untouched and out of scope for this gate; it starts a full Supabase stack and the e2e suite is documented as red for reasons unrelated to Phase 0.5.
+
+## 17.3 The `db diff` security landmine — now a durable invariant
+
+This is the finding that produced most of the others, so it is stated as a rule rather than a note:
+
+> **DECLARATIVE SCHEMA != automatically trusted migration output.**
+
+`supabase db diff` cannot emit three things the declarative schema declares, and **all three have been live security holes in this repository**:
+
+| Declared | Emitted? | Consequence when it shipped |
+| --- | --- | --- |
+| `with (security_invoker = on)` on views | no — reloptions never emitted | two views executed as owner; `anon` read every contact over plain HTTP |
+| `alter default privileges … revoke … from anon` | no — not DDL it can emit | three new tables born with `GRANT ALL TO anon` |
+| `update storage.buckets set public = false` | no — DML | the attachments bucket stayed public in every migrated database |
+
+The current diff output is still dangerous: it emits `create extension pg_net` and recreates three views without `security_invoker`, regressing SI-01 and SI-02 together. **It must never be applied unreviewed**, and no attempt was made to force it empty by weakening the database — that would be optimising the tool at the cost of the guarantee.
+
+### Is acceptance actually prevented? Per requirement, with the guard named
+
+| Regression | Guard | Fails closed? | When it fires |
+| --- | --- | --- | --- |
+| **A.** pg_net reintroduced | `rls_tenant_isolation.sql` §8 raises if the extension *or* the `net` schema exists | yes — the runner exits 1 when it cannot reach a database, so it cannot be skipped into a pass | the `database` CI job, on every push and PR |
+| **B.** a view exposed without `security_invoker` | `rls_tenant_isolation.sql` §7 raises for any view readable by an application role whose reloptions lack it — written over the **catalogue**, so a view added later is covered without editing the test | yes | same |
+| **C.** inappropriate anon / authenticated grants | same suite: `anon` must hold **no** privilege in `public`, and `authenticated` no `TRUNCATE` / `TRIGGER` / `REFERENCES`; also asserted inside `20260911235000` itself, so the migration refuses to apply | yes | same, plus every `db reset` |
+| **D.** an existing security assertion removed | `securityInvariants.test.ts` fails **by invariant id** when an enforcement file disappears or its assertion is renamed away | yes — a missing file is a failure, not a skip | every unit-test run, no Docker needed |
+
+A and B and C are proven at the layer that cannot be argued with — the database itself, after the migration is applied — and D is proven statically. The weakness worth naming: **A–C fire on apply, not on review.** A generated migration that regresses them is caught by CI before merge, not by a check at the moment someone runs `db diff`. That is why the rule above is stated as a rule and carried in `CLAUDE.md`, `SECURITY_INVARIANTS.md` and the Phase 1 handoff: the human step is load-bearing, and pretending otherwise would be the more dangerous claim.
+
+A purely static reviewer for generated SQL was explored and is **not** claimed here. Scanning migration text for these constructs is defeatable by quoting, casing, line breaks and `do $$ ... $$` blocks, and `20260911232039_pending_delta.sql` genuinely does contain views created without `security_invoker` — remediated by the later migration — so a per-file scan would either red-flag committed history forever or need an allowlist that itself becomes the hole. The catalogue-level assertions above are the version that cannot be talked around.
+
+## 17.4 Registry and ADR 0008
+
+ADR 0008 is **left Proposed** — it is not required for Phase 1 and it is the owner's decision. What was confirmed and made durable instead:
+
+- ✅ **The Windows separator defect is fixed, twice over.** The first fix corrected the glob *patterns* (`path.posix.join`); a second defect remained in the *output*, because `globSync` returns platform separators regardless — every entry read `src\components\atomic-crm\types.ts`, which `shadcn add` cannot resolve. `toPosixPath` now normalises every glob result.
+- ✅ **The committed registry is valid**: 223 files, zero backslash paths, every path exists on disk, nothing published from `src/components/ui/` or `src/components/admin/`.
+- ✅ **The deliberate staleness is documented** and the guard asserts that documentation still exists.
+- ✅ **An unapproved registry cannot be published silently.** `.husky/pre-commit` regenerates `registry.json` on every commit, so the working copy is perpetually dirty and a careless `git add -A` would stage it. The guard fails if the fork's own components appear while ADR 0008 is Proposed, and it also fails if ADR 0008's **status changes** — so deciding that ADR forces a deliberate revisit rather than silently widening what gets published. Because the guard lives in the `claude` project, it runs in `deploy.yml`'s gate, and the gh-pages publish is `needs: gate`.
+
+Mutation-verified: 7 deliberate breaks (backslash path, dangling path, unapproved component, inbound shadcn file, generator de-normalised, generator reverted to `path.join`, ADR status flipped) — all caught.
+
+## 17.5 Security baseline for future agents
+
+`supabase/tests/securityInvariants.test.ts` is now the canonical, executable list of 12 invariants; [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) is its readable index and CLAUDE.md points at it rather than restating it.
+
+The problem it solves: the guards were spread across SQL migrations, two database suites, three vitest projects and an edge function, and **nothing tied any guard to the property it existed to protect**. Removing one was invisible. Each invariant now names its enforcement points, and the test fails **by invariant id** if a file disappears or its assertion is renamed away. A second test fails if the document and the code drift in either direction — including a *softened sentence* in the document while the code still claims the stronger property.
+
+Mutation-verified: 10 deliberate breaks — assertions removed, guards renamed, a migration deleted, the document softened, an invariant row dropped, the `db diff` rule deleted — all caught.
+
+A related guard was added after this section's own drafting failed the same way: the Phase 1 handoff was written claiming ADRs 0009 and 0010 were Accepted. Both are Proposed. `DECISIONS.md` is now asserted to index every ADR file and to agree with each on whether it is Accepted.
+
+## 17.6 Final local validation
+
+| Check | Result |
+| --- | --- |
+| `git status` | clean; 13 commits ahead of `origin/main`; no upstream |
+| `npm run typecheck` | clean |
+| `npm run lint` | clean |
+| `--project app` | 219 passed, 1 skipped |
+| `--project functions` | 223 passed |
+| `--project claude` | 285 passed, 1 skipped |
+| **all projects** | **727 passed, 2 skipped, 0 failed** (71 files) |
+| `npm run test:db` | 2 suites passed |
+| clean `db reset` ×2 consecutive | 34s, 34s — both exit 0, each followed by a green `test:db` |
+| `npm run test:db` with no database | exit 1 (fails closed) |
+| security guards | 12 invariants, all enforcement points live |
+| registry guard | 223 files valid; 7/7 mutations caught |
+
+Mutation coverage across the phase: **33 deliberate breaks, 33 caught** (14 RLS, 5 worker-context, 10 invariant baseline, 7 registry, 2 Postmark — several only after the suites themselves were corrected, which is the point of running them).
+
+## 17.7 Final classification
+
+# READY FOR PHASE 1
+
+**Phase 0.5 engineering baseline is signed off.**
+
+### Engineering blockers: none
+
+Every property this repository can prove on its own is proven, executed rather than asserted, and guarded against silent removal. The worst defect of the phase — an unauthenticated read of every patient contact record — is closed and cannot recur without a test going red.
+
+### Operational blockers: one
+
+**The branch has never been pushed and CI has never executed.** Two consequences, both operational:
+
+1. Every commit of this phase's security work exists on one disk.
+2. The CI changes in §17.2 — including the `database` job that is the whole point of this gate — are unproven. They parse; they have never run.
+
+Clearing it is a single command by the owner (§17.1), after which the first CI run is the evidence this phase cannot produce for itself.
+
+### Accepted risks carried into Phase 1
+
+Unchanged from §16.7, and the two that will shape Phase 1's design: `service_role` (and `postgres`) carry `BYPASSRLS`, so no current component is tenant-isolated; and `supabase db diff` output regresses security if applied unreviewed.
+
+### Recommendation
+
+Push, watch the first CI run, then begin the single slice in [PHASE_1_HANDOFF.md](PHASE_1_HANDOFF.md) §5 — discharging ADR 0012's three remaining properties, and nothing else. Do not begin the Company OS engine: ADR 0012 is Proposed, and ADR 0002 cannot be accepted until it is.
