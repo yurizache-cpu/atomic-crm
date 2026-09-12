@@ -154,7 +154,11 @@ export async function resetFixtures(admin: Pool): Promise<void> {
  * "12 workers leased 11 jobs from a queue of 6". CI happens to reset the
  * database between the two, which would have hidden this; a local run does not.
  */
-export async function cleanupFixtures(admin: Pool): Promise<void> {
+export async function cleanupFixtures(admin: Pool | undefined): Promise<void> {
+  // `afterAll` runs even when `beforeAll` threw, and then there is no pool.
+  // Without this the real failure (a database that could not be reached) was
+  // buried under "Cannot read properties of undefined (reading 'query')".
+  if (!admin) return;
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],

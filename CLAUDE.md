@@ -78,12 +78,12 @@ Verified 2026-09-10, **re-verified 2026-09-11 against `729f5966`**. Do not mista
 ```bash
 npm run typecheck                       # the ONLY real type gate
 npm run lint
-npx vitest run --config vitest.config.ts            # all three projects
+npx vitest run --config vitest.config.ts            # app + functions + claude; needs NO Docker
 npx vitest run --config vitest.config.ts --project app
 npx playwright install                  # only needed on a fresh clone; Chromium 1223 is already installed here
 docker info                             # preflight: start Docker Desktop before any Supabase work
 npm run test:db                         # RLS + tenant-isolation SQL suites; needs the isolated stack below
-npm run test:db:engine                  # worker runtime through the real pg pool; needs the same stack
+npm run test:db:engine                  # worker runtime through the real pg pool (vitest.db.config.ts)
 npm run worker:provision                # create ops_worker_login; needs OPS_WORKER_PASSWORD
 npm run worker                          # run the worker; needs OPS_WORKER_DATABASE_URL
 npx supabase start --workdir .supabase-e2e   # ALWAYS use this workdir - see below

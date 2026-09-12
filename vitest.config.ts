@@ -12,6 +12,13 @@ import react from "@vitejs/plugin-react";
 //                  installed npm equivalents. Aliases are scoped to this project.
 // Run everything with `npm run test:unit:app`, or a single suite with
 // `npm run test:unit:claude` / `npm run test:unit:functions` (neither boots a browser).
+//
+// NOTHING HERE NEEDS DOCKER, and that is a rule rather than a coincidence.
+// The driver-backed worker suites need a live Postgres and a provisioned
+// LOGIN role, so they live in `vitest.db.config.ts` and run via
+// `npm run test:db:engine`. Putting them here once was enough to break CI:
+// `test:unit:app` passes no --project filter, so every project in this file
+// runs in a job that has no database.
 export default defineConfig({
   test: {
     projects: [
@@ -127,39 +134,14 @@ export default defineConfig({
           // the edge functions, so it runs in this project rather than a fourth.
           include: ["supabase/**/*.test.ts", "engine/**/*.test.ts"],
           // `*.dbtest.ts` needs a live Postgres and a provisioned worker
-          // role; it runs in the "engine-db" project, in the database CI
-          // job. Listed explicitly even though the include glob already
-          // misses it, so the separation survives a change to that glob.
+          // role; those suites live in `vitest.db.config.ts` and run in the
+          // database CI job. Listed explicitly even though the include glob
+          // already misses it, so the separation survives a change to it.
           exclude: [
             "**/node_modules/**",
             ".supabase-e2e/**",
             "engine/**/*.dbtest.ts",
           ],
-        },
-      },
-      {
-        // The driver-backed suites. These need a running Supabase and the
-        // worker LOGIN role, so they are NOT part of `npm run test:unit:*` —
-        // a unit run must never depend on Docker. CI runs them in the
-        // `database` job, next to the SQL suites they complement.
-        //
-        // Sequential, single-fork: several assert on the exact contents of
-        // ops.jobs and public.inbound_emails, and two suites racing over the
-        // same two tenants would prove nothing about either.
-        test: {
-          name: "engine-db",
-          environment: "node",
-          include: ["engine/**/*.dbtest.ts"],
-          testTimeout: 120000,
-          hookTimeout: 120000,
-          // Sequential and single-fork: several suites assert on the exact
-          // contents of ops.jobs and public.inbound_emails, so two files
-          // racing over the same two tenants would prove nothing about
-          // either. `poolOptions` was removed in Vitest 4 -- these are
-          // top-level options now, and the old nesting was silently inert.
-          fileParallelism: false,
-          pool: "forks",
-          singleFork: true,
         },
       },
     ],
