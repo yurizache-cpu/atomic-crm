@@ -84,3 +84,12 @@ So the slice is: the `ops` schema, the `ops_worker` role and its grants, one job
 Why this first: every engine table depends on the tenancy decision, ADR 0002 cannot be accepted until ADR 0012 is, and ADR 0012 cannot be accepted until these three properties are executable. Building anything else first means building it on a Proposed foundation and migrating it later.
 
 **Do not start it until the branch is pushed and CI is green.** That is the one outstanding operational item, and it is the difference between "it passes here" and "it is reproducible".
+
+---
+
+## 6. Superseded 2026-09-12 — that slice was built
+
+Section 5's slice is Phase 1A, and it is done: `ops` schema, `ops_worker`, the job table, `ops.current_tenant_id()`, leasing with `FOR UPDATE SKIP LOCKED`, and the leased-row assertion. Phase 1B then built the process that consumes it. [ADR 0012](adr/0012-worker-tenant-context.md) is **Accepted**, so [ADR 0002](adr/0002-tenancy-model.md)'s blocker is lifted.
+
+Read [PHASE_1A_REPORT.md](PHASE_1A_REPORT.md) then [PHASE_1B_REPORT.md](PHASE_1B_REPORT.md). This document is kept as the dated record of what was handed over; do not plan from section 5.
+

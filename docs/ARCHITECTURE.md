@@ -279,7 +279,7 @@ The repository is the persistent project memory. Conversation history is not.
 
 ---
 
-## 11. Phase 1A as built (2026-09-12)
+## 13. Phase 1A as built (2026-09-12)
 
 Sections 3 and 8 describe the intended runtime. What exists now is its **database half**, and only that:
 
@@ -301,3 +301,61 @@ ops.tenants ── ops.jobs ── ops.job_events
 `engine/worker/runOneJob.ts` is the application-side counterpart: one unit of work, database client injected, no driver dependency and no daemon. It encodes the ordering invariant — *trusted leased row → tenant established server-side → execute → settle* — and refuses to run a handler if the session's tenant disagrees with the lease.
 
 **Not built, deliberately:** the always-on process, a scheduler, handlers, retry policy beyond attempts-and-backoff, an outbox, and anything agent-shaped. See [PHASE_1A_REPORT.md](PHASE_1A_REPORT.md) for what is verified and what is not.
+
+---
+
+## 14. Phase 1B as built (2026-09-12)
+
+Section 13 described a database half with no process. There is now a process.
+
+```
+  ops.enqueue_job  (service_role: an edge function, an operator, a scheduler)
+          |
+          v
+  ops.jobs  ──────────────────────────────────────────────── the source of truth
+          |
+          |  TX1   set local role ops_worker
+          |        ops.lease_job(worker_id, seconds)   -> COMMIT
+          |        (attempts += 1, lease is now visible and can go stale)
+          v
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ worker process            engine/worker/main.ts                 │
+  │   boot: assertWorkerIdentity()   <- refuses postgres/service_role│
+  │   loop: reaper tick | heartbeat | runOneJob                      │
+  └─────────────────────────────────────────────────────────────────┘
+          |
+          |  TX2   set local role ops_worker
+          |        ops.resume_lease(worker_id, job_id)  -> tenant context
+          |        registry[job.kind]                   -> handler or REFUSE
+          |        handler(job, capabilities)           <- no client, no SQL
+          |        ops.complete_job(job_id, detail)     -> COMMIT
+          v
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ TX3 (only on failure)  classify -> ops.settle_job_failure        │
+  │      TX2 rolled back, so partial work is gone; the reason is not │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+| Piece | File | Note |
+| --- | --- | --- |
+| Driver adapter | `engine/db/workerDatabase.ts` | The **only** module that imports `pg`. One checked-out client per transaction; `pool.query()` is not expressible. |
+| Database port | `engine/db/types.ts` | Driver-free, so handlers and their tests never depend on `pg`. |
+| Boot gate | `engine/db/workerIdentity.ts` | Refuses an identity that would make RLS decorative. |
+| Ordering invariant | `engine/worker/runOneJob.ts` | The three transactions above, and every refusal between them. |
+| Loop | `engine/worker/runWorker.ts` | Poll, heartbeat, reaper tick, backoff, graceful stop. Signals are the caller's job. |
+| Registry | `engine/worker/handlerRegistry.ts` + `registry.ts` | A `Map`, so there is no prototype chain for a kind like `toString` to resolve against. |
+| Capabilities | `engine/worker/capabilities.ts` | Built per job from the handler's declared list. Frozen. |
+| Failure taxonomy | `engine/worker/failures.ts` | `transient` / `permanent` / `security` / `unknown`, by error type then SQLSTATE. Default is `unknown`, never `transient`. |
+| The one handler | `engine/handlers/postmarkLedgerRetention.ts` | LGPD retention for `public.inbound_emails`. |
+| Deployment step | `scripts/provision-worker-role.mjs` | Creates the LOGIN role. Not a migration: a password in a migration is a secret in git. |
+
+**What is deliberately absent.** No broker, no scheduler service, no leader election, no Redis, no Kafka, no Temporal, no container orchestration. `FOR UPDATE SKIP LOCKED` is the entire concurrency mechanism and it is enough at this scale. Still a modular monolith.
+
+**Recovery does not wait for business traffic.** The loop runs a reaper tick on its own clock, independent of whether anything is queued. `pg_cron` was evaluated and measured to work here (it is in `shared_preload_libraries`), and rejected: it would add an extension to a baseline whose whole posture is that an extension is a capability decision, to buy recovery while the entire fleet is down — a state in which nothing needs recovering anyway. The residual gap is a worker that is alive but wedged, which the heartbeat makes visible.
+
+**Running it.**
+
+```bash
+npm run worker:provision      # once per environment; needs OPS_WORKER_PASSWORD
+npm run worker                # needs OPS_WORKER_DATABASE_URL
+```

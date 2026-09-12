@@ -310,6 +310,14 @@ const INVARIANTS: Invariant[] = [
         file: "engine/worker/runOneJob.ts",
         marker: /tenant context mismatch/,
       },
+      {
+        // The SQL suites prove this with psql. That says nothing about the
+        // application driver, which keeps sockets in a pool and hands the same
+        // backend to unrelated transactions.
+        file: "engine/worker/pooling.dbtest.ts",
+        marker:
+          /leaves no context behind on a reused connection, and it IS reused/,
+      },
     ],
     caveat:
       "Measured: a worker CAN set any GUC (set_config is executable by PUBLIC), so a bare app.tenant_id would make tenancy an assertion by the worker. Binding it to the lease means the job PAYLOAD -- where LLM output arrives in Phase 1B -- can never influence it. Against a fully malicious worker PROCESS the bound is ops_worker's grants, not one tenant.",
@@ -333,6 +341,79 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The allowlist governs one channel. A direct libpq connection ignores it -- see ADR 0011.",
+  },
+  // -- Phase 1B: the production worker runtime ------------------------------
+  {
+    id: "SI-16",
+    statement:
+      "The worker PROCESS refuses to start unless its database identity is a non-superuser, non-BYPASSRLS role that can assume ops_worker.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "engine/db/workerIdentity.ts",
+        marker: /Refusing to start: the worker's database identity/,
+      },
+      {
+        // The gate is useless if the entry point stops calling it.
+        file: "engine/worker/main.ts",
+        marker: /assertWorkerIdentity\(await db\.identity\(\)\)/,
+      },
+      {
+        file: "scripts/provision-worker-role.mjs",
+        marker:
+          /login noinherit nosuperuser nocreatedb nocreaterole nobypassrls/,
+      },
+      {
+        file: "engine/worker/pooling.dbtest.ts",
+        marker: /is not a superuser, carries no BYPASSRLS/,
+      },
+    ],
+    caveat:
+      "This is a BOOT gate because the failure it catches is invisible at runtime: a worker connected as postgres or service_role runs every job correctly and leaks every tenant. The login role is NOINHERIT, so `set local role ops_worker` is load-bearing rather than decorative.",
+  },
+  {
+    id: "SI-17",
+    statement:
+      "An unknown job kind fails closed and permanently. The runtime never dispatches on a name a payload supplies, and never loads code from one.",
+    provenBy: ["unit test", "live database"],
+    enforcedBy: [
+      {
+        file: "engine/worker/handlerRegistry.ts",
+        marker: /No dynamic import/,
+      },
+      {
+        file: "engine/worker/handlerRegistry.test.ts",
+        marker: /does not resolve inherited object properties/,
+      },
+      {
+        file: "engine/worker/workerRuntime.dbtest.ts",
+        marker: /names an object prototype member/,
+      },
+    ],
+    caveat:
+      'The registry is a Map, so there is no prototype chain for a kind like "toString" to resolve against. On a plain object literal that lookup returns a function.',
+  },
+  {
+    id: "SI-18",
+    statement:
+      "A capability reaching from ops into public takes its tenant from the live lease, refuses any tenant that does not own this deployment's CRM, and clamps its parameters to a hard floor.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260912160000_ops_worker_runtime.sql",
+        marker: /does not own this deployment CRM/,
+      },
+      {
+        file: "engine/worker/capabilities.ts",
+        marker: /tenant argument would hand tenancy back to the caller/,
+      },
+      {
+        file: "engine/worker/workerRuntime.dbtest.ts",
+        marker: /floors a retention window the payload tried to shorten/,
+      },
+    ],
+    caveat:
+      "public.* carries no tenant column and never will (ADR 0002), so `ops.tenants.owns_local_crm` is the whole bridge. The retention floor is in the DATABASE, not the handler, so it holds against a handler that never validated anything.",
   },
 ];
 

@@ -80,6 +80,11 @@ const VIEWS_SHAPE = {
   schema: "string",
   declared: "array",
   ignoredSchemas: "array",
+  // Schemas whose views MUST carry security_invoker, and whose new tables
+  // must enable RLS in the migration that creates them. Wider than
+  // `schema`, which additionally governs the DECLARED-view cross-check
+  // against supabase/schemas/03_views.sql and stays "public".
+  enforcedSchemas: "array",
 };
 const EXTENSIONS_SHAPE = {
   allowed: "array",

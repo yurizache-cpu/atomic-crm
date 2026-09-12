@@ -76,6 +76,10 @@ const FROZEN = {
   ],
   /** Empty on purpose: one entry silences every view in a schema at once. */
   ignoredSchemas: [] as string[],
+  /** Schemas whose views must carry security_invoker and whose new tables
+   *  must enable RLS. `ops` joined the list in Phase 1B; REMOVING a schema
+   *  here is the fail-open move, which is why the list is pinned. */
+  enforcedSchemas: ["public", "ops"],
 };
 
 const run = (
@@ -138,6 +142,7 @@ describe("the guard actually ran", () => {
     expect(Object.keys(seal)).toHaveLength(FROZEN.sealedFiles);
     expect(declaration.views.declared).toEqual(FROZEN.declaredViews);
     expect(declaration.views.ignoredSchemas).toEqual(FROZEN.ignoredSchemas);
+    expect(declaration.views.enforcedSchemas).toEqual(FROZEN.enforcedSchemas);
     expect(declaration.extensions.forbidden).toEqual(
       FROZEN.forbiddenExtensions,
     );

@@ -120,3 +120,19 @@ The canonical, executable list is [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.m
 **The one measurement that shaped the design.** A worker can set any GUC — `set_config` is executable by PUBLIC, and a probe confirmed a worker role setting a tenant GUC and reading another tenant's row. So tenancy is not carried in a GUC the worker writes; it is resolved from an `ops.jobs` row that is leased, unexpired and owned by that worker. The bound, stated plainly: against a fully malicious worker *process* the limit is `ops_worker`'s grants, not one tenant. Against the threat that actually matters — a bug that forgets the context, or a tenant taken from the job **payload**, which is where LLM output arrives in Phase 1B — tenancy is unreachable.
 
 Proven by `supabase/tests/ops_execution_core.sql` and `jobLeasingConcurrency.mjs` (`npm run test:db`), mutation-verified 10/10. Unchanged and still open: the edge functions run as `service_role` (SI-06).
+
+---
+
+## 8. Phase 1B — the production worker runtime (2026-09-12)
+
+Phase 1A proved the substrate. Phase 1B runs a real process against it, and three things changed as a result.
+
+**The worker's identity is now checked at boot, not assumed.** `ops_worker` is `NOLOGIN` and holds no credential, so a deployment must create a login role — `scripts/provision-worker-role.mjs` creates `ops_worker_login`: LOGIN, **NOINHERIT**, member of `ops_worker`, no `BYPASSRLS`. NOINHERIT is the part that matters: the login role holds nothing directly, so `set local role ops_worker` in the runtime is load-bearing rather than decorative, and deleting it fails with `permission denied for schema ops` instead of silently running with whatever the login role carried. The process refuses to start if its identity is `postgres`, `service_role`, a superuser, carries `BYPASSRLS`, or cannot assume `ops_worker` — because that failure is otherwise **invisible**: every job runs correctly and every tenant leaks (SI-16).
+
+**Tenant isolation is now proven through the application driver.** The Phase 1A suites used `psql`, which says nothing about a connection pool. The runtime's own suite runs with `pg` at `max: 1`, asserts `pg_backend_pid()` is identical across transactions, and then shows that a transaction with no lease sees zero rows on that same backend. The adapter deliberately does **not** `RESET ALL` between checkouts: a reset would hide whether the transaction-local guarantee actually holds.
+
+**A defect in the Phase 1A transaction shape was found and fixed.** Leasing and executing in one transaction meant a crashed worker left no trace — the lease rolled back and `attempts` returned to its previous value, so a job that crashes the worker was re-leased forever and lease expiry had nothing to recover. The lease now commits in its own transaction, and `ops.resume_lease` re-reads the trusted row under the same checks to re-install the context. See [ADR 0012](adr/0012-worker-tenant-context.md)'s Phase 1B addendum.
+
+**The first capability sets the shape for every later one.** A handler receives a capability object holding exactly what its registry entry declared — never a database client, never SQL. `ops.purge_inbound_email_ledger` is `SECURITY DEFINER`, takes **no tenant argument**, resolves the tenant from the live lease, refuses any tenant that does not own this deployment's CRM, and floors the retention window in the database so a payload cannot talk it into deleting recent data (SI-18). This is the earliest form of the Tool Gateway. It is deliberately not that yet.
+
+**Unchanged and still open:** edge functions run as `service_role` (SI-06); `net.http_get` remains reachable by `authenticated` (SI-02's residue, ADR 0011). `pg_net` is still absent and was **not** reintroduced to schedule recovery — the reaper runs on the worker's own timer instead.

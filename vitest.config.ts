@@ -126,7 +126,35 @@ export default defineConfig({
           // `engine/` is the server-side Company OS code; it is Node, like
           // the edge functions, so it runs in this project rather than a fourth.
           include: ["supabase/**/*.test.ts", "engine/**/*.test.ts"],
-          exclude: ["**/node_modules/**", ".supabase-e2e/**"],
+          // `*.dbtest.ts` needs a live Postgres and a provisioned worker
+          // role; it runs in the "engine-db" project, in the database CI
+          // job. Listed explicitly even though the include glob already
+          // misses it, so the separation survives a change to that glob.
+          exclude: [
+            "**/node_modules/**",
+            ".supabase-e2e/**",
+            "engine/**/*.dbtest.ts",
+          ],
+        },
+      },
+      {
+        // The driver-backed suites. These need a running Supabase and the
+        // worker LOGIN role, so they are NOT part of `npm run test:unit:*` —
+        // a unit run must never depend on Docker. CI runs them in the
+        // `database` job, next to the SQL suites they complement.
+        //
+        // Sequential, single-fork: several assert on the exact contents of
+        // ops.jobs and public.inbound_emails, and two suites racing over the
+        // same two tenants would prove nothing about either.
+        test: {
+          name: "engine-db",
+          environment: "node",
+          include: ["engine/**/*.dbtest.ts"],
+          testTimeout: 120000,
+          hookTimeout: 120000,
+          fileParallelism: false,
+          pool: "forks",
+          poolOptions: { forks: { singleFork: true } },
         },
       },
     ],

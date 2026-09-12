@@ -110,3 +110,32 @@ A fourth database identity exists, and it is the first one in this project desig
 Row scoping in `ops` is by **tenant**, resolved from the live lease — not by `sales_id` as in `public.*`, and not from a GUC the caller writes. See [ADR 0012](adr/0012-worker-tenant-context.md).
 
 The static migration guard treats `ops_worker` as a **scrutinised** role rather than an exempt one: it is deliberately not in `BYPASS_ROLES`, and a migration granting it a write verb is rejected before it applies.
+
+---
+
+## 9. How the worker actually connects (Phase 1B, 2026-09-12)
+
+`ops_worker` is `NOLOGIN` by design: a password in a migration is a secret in git. A deployment therefore runs one extra step.
+
+| | |
+| --- | --- |
+| Script | `scripts/provision-worker-role.mjs` (also `npm run worker:provision`) |
+| Creates | `ops_worker_login` — LOGIN, **NOINHERIT**, `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS`, member of `ops_worker` |
+| Holds directly | **nothing.** Every privilege is reached by `set local role ops_worker` for the duration of one transaction, exactly as PostgREST reaches `authenticated`. |
+| Credential | `OPS_WORKER_PASSWORD` from the environment, interpolated into SQL delivered on **stdin** — never `psql -v`, which would put it in `argv` where `ps` can read it. |
+| Runtime | `OPS_WORKER_DATABASE_URL`. Never the `postgres` or `service_role` connection string; the process refuses to boot on those. |
+
+**Supabase hosting, measured rather than assumed.** The project's `postgres` role is `rolcreaterole = true`, so `create role ... login` works over an ordinary connection — no dashboard step. What does *not* work is `alter role ... nosuperuser | nobypassrls`: naming either attribute requires the caller to **be** a superuser, and Supabase's `postgres` is `rolsuper = false`. The rotation path therefore sets only what it may set, and the script's verification block **refuses** a pre-existing role that carries either attribute rather than silently trying to strip it.
+
+**New grants to `ops_worker` in Phase 1B**, all functions, still no write verb on any table:
+
+| Function | Why it is safe to expose |
+| --- | --- |
+| `ops.resume_lease(text, uuid)` | Verifies leased + unexpired + owned-by-caller before installing any context. A forged or stolen job id yields no context, so the transaction sees nothing. |
+| `ops.settle_job_failure(uuid, text, text)` | Verifies the lease. The **database** decides retry vs terminal from `attempts`, which the worker cannot write. |
+| `ops.complete_job(uuid, text)` | The Phase 1A function plus a detail line. Same lease check. |
+| `ops.worker_heartbeat(text, text)` / `ops.worker_stopped(text)` | Write only `ops.worker_instances`, which carries no tenant data and has RLS enabled, forced, and **no policy at all**. |
+| `ops.reap_expired_leases()` | Can only touch leases that have **already** expired, so it cannot steal live work — and the worker could already trigger it indirectly through `ops.lease_job`. |
+| `ops.purge_inbound_email_ledger(integer, integer)` | The one capability that reaches `public`. Tenant from the live lease; refuses any tenant without `owns_local_crm`; retention window floored at 30 days in the database. |
+
+`ops.enqueue_job` remains **closed** to the worker. Nothing in Phase 1B needed continuation jobs, and capability added before it is needed is capability nobody reviewed.

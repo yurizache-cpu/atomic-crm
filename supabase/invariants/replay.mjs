@@ -170,7 +170,8 @@ function checkFileEndState({ fileState, file, declaration }) {
   // relation an application role reads with no policy applied — while looking
   // entirely ordinary in a diff.
   for (const [key, line] of fileState.tables) {
-    if (key.split(".")[0] !== declaration.views.schema) continue;
+    if (!declaration.views.enforcedSchemas.includes(key.split(".")[0]))
+      continue;
     if (fileState.rlsEnabled.has(key)) continue;
     findings.push(
       finding(
@@ -185,7 +186,7 @@ function checkFileEndState({ fileState, file, declaration }) {
 
   for (const [key, value] of fileState.views) {
     const schema = key.split(".")[0];
-    if (schema !== declaration.views.schema) {
+    if (!declaration.views.enforcedSchemas.includes(schema)) {
       if (declaration.views.ignoredSchemas.includes(schema)) continue;
       findings.push(
         finding(
@@ -193,7 +194,7 @@ function checkFileEndState({ fileState, file, declaration }) {
           "view-security-invoker",
           file,
           lineOf(key),
-          `${key} is a view outside schema "${declaration.views.schema}". Silently ignoring another schema would be fail-open — PostgREST exposes whatever config.toml lists, today ["public", "storage", "graphql_public"]. List the schema in views.ignoredSchemas deliberately, or declare it.`,
+          `${key} is a view outside the enforced schemas (${declaration.views.enforcedSchemas.join(", ")}). Silently ignoring another schema would be fail-open — PostgREST exposes whatever config.toml lists, today ["public", "storage", "graphql_public"]. Add the schema to views.enforcedSchemas so its views are held to the same security_invoker rule, or list it in views.ignoredSchemas deliberately.`,
         ),
       );
       continue;

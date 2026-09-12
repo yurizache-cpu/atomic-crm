@@ -1,6 +1,6 @@
 # ADR 0012 — Worker tenant context: scoped role + transaction-local GUC
 
-**Status:** **Proposed — IMPLEMENTED AND VERIFIED in Phase 1A; recommended for acceptance by the owner** · **Date:** 2026-09-11 (implemented 2026-09-12)
+**Status:** **Accepted** (owner decision, Phase 1B brief §0 — accepted WITH the Phase 1A addendum, not as originally written) · **Date:** 2026-09-11 (implemented 2026-09-12, accepted 2026-09-12)
 **Decided by:** owner, Phase 0.5 brief (Q11) — design only; no engine code is built in Phase 0.5.
 
 ## Context
@@ -127,4 +127,36 @@ Items 1, 2, 5 and 6 stand as written.
 
 ### Recommendation
 
-**Accept** — the mechanism in this addendum, not the two superseded items above. Every property the ADR set out to guarantee is now enforced by the database and proven by mutation-verified tests. The status stays `Proposed` here because this repository marks an ADR `Accepted` only on an owner decision ([DECISIONS.md](../DECISIONS.md)), never on architectural merit alone.
+**Accepted 2026-09-12 by the owner**, explicitly *with* this addendum and explicitly *not* reverting to the original pure-GUC design. The accepted properties are: the ordinary worker identity is not `service_role`; `ops_worker` has no `BYPASSRLS`; tenant identity derives from a trusted live lease; the job payload cannot choose tenancy; a free-form worker-controlled tenant GUC is not trusted; transaction-local context disappears when the transaction ends; a missing, invalid, expired or mismatched lease fails closed; cross-tenant access stays denied; worker privileges stay least-privilege. Items 2 (superseded by revision 1) and 4 (superseded by revision 2) of the original Decision are **not** part of what was accepted.
+
+---
+
+## Addendum 2026-09-12 — one correction the production runtime forced (Phase 1B)
+
+Accepting this ADR did not end the measuring. Building the real worker exposed a defect in how Phase 1A *applied* it — not in the mechanism, in the transaction boundary around it.
+
+### The defect
+
+Phase 1A ran lease + execute + settle in **one** transaction. That is atomic, and it was wrong for a production runtime. Verified directly: leasing inside a transaction and rolling it back leaves the job `status = queued, attempts = 0`. So a worker that dies mid-job leaves **no trace at all**, and two things follow:
+
+1. **A job that reliably crashes the worker is a poison pill.** `attempts` never rises, `max_attempts` never retires it, and it is re-leased forever.
+2. **"Died before leasing" and "died just after leasing" are indistinguishable**, so lease expiry — the mechanism this ADR relies on for recovery — has nothing to recover.
+
+### The correction
+
+Phase 1B commits the lease in its own transaction and executes in a second. The tenant must survive that boundary **without** travelling through application memory, or item 3's guarantee dies with it. `ops.resume_lease(worker_id, job_id)` is how: it re-reads the trusted row under exactly the checks `ops.current_tenant_id()` applies — leased, unexpired, owned by that worker — and re-installs the transaction-local context. A worker naming a job it does not hold gets no context and therefore sees nothing.
+
+The handler's writes and the job's **settlement** still share one transaction, so "did the work but did not record it" remains impossible. A *failure* is recorded in a third transaction, because the second has to roll back to discard partial work and a rolled-back transaction cannot also record why.
+
+This strengthens item 3 rather than weakening it: the job row used for execution is now read **inside** the execution transaction, under the lease check, instead of being carried across a boundary by the worker.
+
+### Also proven in Phase 1B
+
+| Property | Result |
+| --- | --- |
+| Transaction-local context does not leak across a **pooled `pg` connection** — same `pg_backend_pid()`, no context, zero rows | pass |
+| The worker process refuses to boot as `postgres` / `service_role` / superuser / `BYPASSRLS` | pass |
+| The login role is `NOINHERIT`, so `set local role ops_worker` is load-bearing (without it: `permission denied for schema ops`) | pass |
+| A worker holding a live lease still cannot read or write **any** `public` table directly | pass |
+| A committed lease survives a killed process and is recovered by a reaper tick alone | pass |
+| A repeatedly-crashing job reaches `failed` at `max_attempts` instead of looping | pass |

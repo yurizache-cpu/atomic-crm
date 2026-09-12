@@ -140,6 +140,15 @@ jobs:
             - name: 🔒 RLS, tenant isolation and grant surface
               run: npm run test:db
 
+            # The worker runtime against a real Postgres, through the real
+            # `pg` pool and the real constrained login role. The SQL suites
+            # above cannot cover this: they prove the DATABASE's behaviour with
+            # psql, and say nothing about whether the application driver's
+            # connection reuse carries a tenant from one job into the next.
+            # Spawns real worker processes for the concurrency cases.
+            - name: ⚙️ Worker runtime, pooling and concurrency
+              run: npm run test:db:engine
+
             # Proves the database can be rebuilt from the repository alone. The
             # seed once inserted into a table no migration created, so a clean
             # reconstruction was impossible and nothing caught it.

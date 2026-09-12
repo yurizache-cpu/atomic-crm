@@ -3,6 +3,7 @@
   "sealedThrough": "20260912090000",
   "views": {
     "schema": "public",
+    "enforcedSchemas": ["public", "ops"],
     "declared": [
       "activity_log",
       "companies_summary",

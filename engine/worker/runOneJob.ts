@@ -1,8 +1,7 @@
-// The worker's one unit of work: lease, execute, settle — in that order, in one
-// transaction.
+// The worker's one unit of work.
 //
-// This module exists to make the ORDERING INVARIANT hard to get wrong, because
-// getting it wrong is how tenancy leaks:
+// THE ORDERING INVARIANT, which this module exists to make hard to get wrong,
+// because getting it wrong is how tenancy leaks:
 //
 //     trusted leased row -> tenant established server-side -> execute -> settle
 //
@@ -10,48 +9,44 @@
 //
 //     payload -> tenant
 //
-// It takes no database driver. `TxClient` is injected, so this is testable in
-// plain Node and commits the project to no client library before ADR 0001 is
-// accepted. The caller owns BEGIN/COMMIT: every statement below must run in one
-// transaction, because the tenant context installed by `ops.lease_job()` is
-// transaction-local and dies with it. That is the property, not a limitation.
+// THREE TRANSACTIONS, and each boundary is load-bearing:
+//
+//   TX1  lease, and COMMIT it.
+//        Phase 1A leased and executed in one transaction. Measured consequence:
+//        a worker that dies mid-job rolls the lease back too, so `attempts`
+//        never rises and a job that crashes the worker is re-leased forever.
+//        Committing the lease is what makes `max_attempts` and the reaper mean
+//        anything.
+//
+//   TX2  resume the lease, run the handler, settle SUCCESS.
+//        The handler's writes and the job's completion share one transaction,
+//        so "did the work but did not record it" stays impossible. The tenant
+//        is re-read from the database here by `ops.resume_lease` — it is NOT
+//        carried over from TX1 in application memory, because a tenant that
+//        travels through the worker is a tenant the worker could change.
+//
+//   TX3  settle FAILURE, only if TX2 threw.
+//        It must be a separate transaction: TX2 has to roll back to discard the
+//        handler's partial writes, and a rolled-back transaction cannot also
+//        record why. If TX3 itself fails, nothing is lost — the lease expires
+//        and the reaper retires or requeues the job.
 
-/** The narrowest thing this module needs: something that can run SQL. */
-export interface TxClient {
-  query<TRow = Record<string, unknown>>(
-    sql: string,
-    params?: readonly unknown[],
-  ): Promise<{ rows: TRow[] }>;
-}
-
-/** A row of `ops.jobs`, as handed back by `ops.lease_job()`. */
-export interface LeasedJob {
-  id: string;
-  tenant_id: string;
-  kind: string;
-  payload: unknown;
-  attempts: number;
-  max_attempts: number;
-}
-
-/**
- * A unit of work. It receives the job and the SAME transaction, already scoped
- * to the job's tenant by RLS.
- *
- * It is deliberately NOT given the tenant id as something to pass around: the
- * tenant is ambient and enforced by the database, so a handler cannot widen it
- * by forgetting an argument or by trusting a field of the payload.
- */
-export type JobHandler = (job: LeasedJob, tx: TxClient) => Promise<void>;
+import type { TxClient, WorkerDatabase } from "../db/types.ts";
+import { grantCapabilities } from "./capabilities.ts";
+import { classifyError, describeError, type FailureClass } from "./failures.ts";
+import { resolveHandler, type HandlerRegistry } from "./handlerRegistry.ts";
+import type { LeasedJob } from "./job.ts";
+import { silentLogger, type WorkerLogger } from "./log.ts";
+import { PermanentError, SecurityError } from "./failures.ts";
 
 export type JobOutcome =
   /** The queue had nothing available. */
   | "idle"
   /** The handler ran and the job is settled. */
   | "succeeded"
-  /** The handler threw; the job is queued again for another attempt. */
+  /** The handler failed and the job is queued again for another attempt. */
   | "retry"
-  /** The handler threw and the job has no attempts left, or is unrunnable. */
+  /** The handler failed terminally, or the job is unrunnable. */
   | "failed";
 
 export interface RunOneJobResult {
@@ -60,7 +55,9 @@ export interface RunOneJobResult {
   tenantId?: string;
   kind?: string;
   attempt?: number;
-  error?: string;
+  failureClass?: FailureClass;
+  detail?: string;
+  durationMs?: number;
 }
 
 export interface RunOneJobOptions {
@@ -68,28 +65,33 @@ export interface RunOneJobOptions {
   workerId: string;
   /** How long the lease is held. Longer than the slowest handler. */
   leaseSeconds?: number;
-  /** Keyed by `ops.jobs.kind`. A kind with no handler is a permanent failure. */
-  handlers: Readonly<Record<string, JobHandler>>;
+  registry: HandlerRegistry;
+  log?: WorkerLogger;
+  /** Injected only by tests that need to crash between transactions. */
+  onLeased?: (job: LeasedJob) => Promise<void>;
 }
 
 const DEFAULT_LEASE_SECONDS = 60;
 
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 /**
- * Leases one job and runs it to settlement. Returns rather than throws for
- * ordinary failures, so a worker loop does not need to distinguish "this job
- * failed" from "the database is gone".
+ * Assumes the least-privileged identity for the rest of the transaction.
  *
- * MUST be called inside a transaction the caller opened.
+ * The worker connects as a LOGIN role that is merely a MEMBER of `ops_worker`,
+ * exactly as PostgREST reaches `authenticated`. This statement is what actually
+ * puts RLS in force; without it the transaction runs with whatever the login
+ * role carries.
  */
+const assumeWorkerRole = (tx: TxClient) =>
+  tx.query("set local role ops_worker");
+
 export async function runOneJob(
-  tx: TxClient,
+  db: WorkerDatabase,
   {
     workerId,
     leaseSeconds = DEFAULT_LEASE_SECONDS,
-    handlers,
+    registry,
+    log = silentLogger,
+    onLeased,
   }: RunOneJobOptions,
 ): Promise<RunOneJobResult> {
   if (!workerId.trim()) {
@@ -98,85 +100,231 @@ export async function runOneJob(
     );
   }
 
-  // Drop to the least-privileged identity for the whole transaction. The worker
-  // process may connect as a role that merely has membership in ops_worker —
-  // exactly how PostgREST reaches `authenticated` — so this is what actually
-  // puts RLS in force.
-  await tx.query("set local role ops_worker");
+  // --- TX1: lease, and commit it. -----------------------------------------
+  const job = await db.withTransaction(async (tx) => {
+    await assumeWorkerRole(tx);
+    const leased = await tx.query<LeasedJob>(
+      "select * from ops.lease_job($1, $2)",
+      [workerId, leaseSeconds],
+    );
+    const row = leased.rows[0];
+    return row?.id ? row : null;
+  });
 
-  const leased = await tx.query<LeasedJob>(
-    "select * from ops.lease_job($1, $2)",
-    [workerId, leaseSeconds],
-  );
-  const job = leased.rows[0];
-  if (!job?.id) return { outcome: "idle" };
-
-  // The tenant is READ BACK from the database rather than taken from the row we
-  // were handed. They should agree; asserting it is what turns a silent context
-  // bug into a refusal. If `ops.lease_job` ever stops installing the context —
-  // or something clears it — this is the line that notices.
-  const context = await tx.query<{ tenant_id: string | null }>(
-    "select ops.current_tenant_id() as tenant_id",
-  );
-  const activeTenant = context.rows[0]?.tenant_id ?? null;
-  if (activeTenant !== job.tenant_id) {
-    await tx.query("select ops.fail_job($1, $2, $3)", [
-      job.id,
-      `tenant context mismatch: lease says ${job.tenant_id}, session says ${activeTenant ?? "none"}`,
-      null,
-    ]);
-    return {
-      outcome: "failed",
-      jobId: job.id,
-      tenantId: job.tenant_id,
-      kind: job.kind,
-      attempt: job.attempts,
-      error: "tenant context mismatch",
-    };
+  if (!job) {
+    log("worker.idle", { workerId });
+    return { outcome: "idle" };
   }
 
-  const handler = handlers[job.kind];
-  if (!handler) {
-    // Unrunnable, and retrying cannot help. Recorded rather than dropped.
-    await tx.query("select ops.fail_job($1, $2, $3)", [
-      job.id,
-      `no handler registered for kind "${job.kind}"`,
-      null,
-    ]);
-    return {
-      outcome: "failed",
-      jobId: job.id,
-      tenantId: job.tenant_id,
-      kind: job.kind,
-      attempt: job.attempts,
-      error: `no handler for "${job.kind}"`,
-    };
-  }
-
-  try {
-    await handler(job, tx);
-  } catch (error) {
-    const detail = messageOf(error);
-    await tx.query("select ops.fail_job($1, $2)", [job.id, detail]);
-    // `ops.fail_job` requeues while attempts remain and retires the job
-    // otherwise; report which happened rather than guessing.
-    const willRetry = job.attempts < job.max_attempts;
-    return {
-      outcome: willRetry ? "retry" : "failed",
-      jobId: job.id,
-      tenantId: job.tenant_id,
-      kind: job.kind,
-      attempt: job.attempts,
-      error: detail,
-    };
-  }
-
-  await tx.query("select ops.complete_job($1)", [job.id]);
-  return {
-    outcome: "succeeded",
+  log("job.leased", {
+    workerId,
     jobId: job.id,
     tenantId: job.tenant_id,
     kind: job.kind,
     attempt: job.attempts,
-  };
+    maxAttempts: job.max_attempts,
+  });
+
+  // A seam for the crash tests, and for nothing else. It runs between the
+  // committed lease and the execution transaction — the exact window in which a
+  // real worker dying must leave a recoverable stale lease.
+  if (onLeased) await onLeased(job);
+
+  const startedAt = Date.now();
+
+  // --- TX2: resume, execute, settle success. -------------------------------
+  try {
+    const detail = await db.withTransaction(async (tx) => {
+      await assumeWorkerRole(tx);
+
+      const resumed = await tx.query<LeasedJob>(
+        "select * from ops.resume_lease($1, $2)",
+        [workerId, job.id],
+      );
+      const trusted = resumed.rows[0];
+      if (!trusted?.id) {
+        // The lease is gone: expired, reaped, or never ours. Another worker may
+        // already hold this job, so doing the work now would double-apply it.
+        throw new SecurityError(
+          "lease could not be resumed; it is expired or not held by this worker",
+        );
+      }
+
+      // The tenant is READ BACK from the database rather than trusted from the
+      // row we hold. They must agree. If `ops.resume_lease` ever stops
+      // installing the context — or something clears it — this is the line that
+      // notices, and it notices BEFORE the handler runs.
+      const context = await tx.query<{ tenant_id: string | null }>(
+        "select ops.current_tenant_id() as tenant_id",
+      );
+      const activeTenant = context.rows[0]?.tenant_id ?? null;
+      if (
+        activeTenant !== trusted.tenant_id ||
+        activeTenant !== job.tenant_id
+      ) {
+        throw new SecurityError(
+          `tenant context mismatch: lease says ${trusted.tenant_id}, session says ${activeTenant ?? "none"}`,
+        );
+      }
+
+      const handler = resolveHandler(registry, trusted.kind);
+      if (!handler) {
+        // Unrunnable, and no amount of retrying registers a handler.
+        throw new PermanentError(
+          `no handler registered for kind "${trusted.kind}"`,
+        );
+      }
+      log("job.handler_selected", {
+        workerId,
+        jobId: trusted.id,
+        kind: trusted.kind,
+      });
+
+      log("job.attempt_started", {
+        workerId,
+        jobId: trusted.id,
+        tenantId: trusted.tenant_id,
+        kind: trusted.kind,
+        attempt: trusted.attempts,
+      });
+
+      const capabilities = grantCapabilities(tx, handler.capabilities);
+      const handlerDetail = await handler.run(trusted, capabilities);
+
+      const settled = await tx.query<{ ok: boolean }>(
+        "select ops.complete_job($1, $2) as ok",
+        [trusted.id, handlerDetail ?? null],
+      );
+      if (settled.rows[0]?.ok !== true) {
+        // The lease expired while the handler ran. Throwing here rolls the
+        // handler's writes back, which is the only safe answer: the job may
+        // already be running somewhere else.
+        throw new SecurityError(
+          "the lease expired before the job could be completed; the work was rolled back",
+        );
+      }
+      return handlerDetail ?? undefined;
+    });
+
+    const durationMs = Date.now() - startedAt;
+    log("job.attempt_completed", {
+      workerId,
+      jobId: job.id,
+      tenantId: job.tenant_id,
+      kind: job.kind,
+      attempt: job.attempts,
+      durationMs,
+      detail: detail ?? undefined,
+    });
+    return {
+      outcome: "succeeded",
+      jobId: job.id,
+      tenantId: job.tenant_id,
+      kind: job.kind,
+      attempt: job.attempts,
+      durationMs,
+      detail: detail ?? undefined,
+    };
+  } catch (error) {
+    const failureClass = classifyError(error);
+    const detail = describeError(error);
+    const durationMs = Date.now() - startedAt;
+
+    log("job.attempt_failed", {
+      workerId,
+      jobId: job.id,
+      tenantId: job.tenant_id,
+      kind: job.kind,
+      attempt: job.attempts,
+      durationMs,
+      failureClass,
+      detail,
+    });
+
+    // --- TX3: record the failure. TX2's writes are already discarded. ------
+    const settlement = await settleFailure(db, {
+      workerId,
+      jobId: job.id,
+      failureClass,
+      detail,
+      log,
+    });
+
+    const outcome: JobOutcome = settlement === "retry" ? "retry" : "failed";
+    log(outcome === "retry" ? "job.retry_scheduled" : "job.terminal_failure", {
+      workerId,
+      jobId: job.id,
+      tenantId: job.tenant_id,
+      kind: job.kind,
+      attempt: job.attempts,
+      failureClass,
+      detail,
+    });
+    return {
+      outcome,
+      jobId: job.id,
+      tenantId: job.tenant_id,
+      kind: job.kind,
+      attempt: job.attempts,
+      failureClass,
+      detail,
+      durationMs,
+    };
+  }
+}
+
+/**
+ * Records a failure in its own transaction.
+ *
+ * Returns what the database decided: 'retry', 'failed', or 'refused' when the
+ * lease was already gone. A failure to record is NOT escalated — the lease
+ * expires and the reaper settles the job, which is strictly safer than leaving
+ * the worker in a loop trying to write a row it cannot write.
+ */
+async function settleFailure(
+  db: WorkerDatabase,
+  {
+    workerId,
+    jobId,
+    failureClass,
+    detail,
+    log,
+  }: {
+    workerId: string;
+    jobId: string;
+    failureClass: FailureClass;
+    detail: string;
+    log: WorkerLogger;
+  },
+): Promise<"retry" | "failed" | "refused"> {
+  try {
+    return await db.withTransaction(async (tx) => {
+      await assumeWorkerRole(tx);
+      const resumed = await tx.query<{ id: string | null }>(
+        "select id from ops.resume_lease($1, $2)",
+        [workerId, jobId],
+      );
+      if (!resumed.rows[0]?.id) {
+        log("job.settlement_refused", {
+          workerId,
+          jobId,
+          detail: "lease gone before the failure could be recorded",
+        });
+        return "refused";
+      }
+      const settled = await tx.query<{ result: string }>(
+        "select ops.settle_job_failure($1, $2, $3) as result",
+        [jobId, failureClass, detail],
+      );
+      const result = settled.rows[0]?.result;
+      return result === "retry" || result === "failed" ? result : "refused";
+    });
+  } catch (error) {
+    log("job.settlement_refused", {
+      workerId,
+      jobId,
+      detail: describeError(error),
+    });
+    return "refused";
+  }
 }
