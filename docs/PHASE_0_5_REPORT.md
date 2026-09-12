@@ -532,7 +532,7 @@ Phase 0.5C closed the engineering work. This section is the release gate: prove 
 
 `git push -u origin feature/clinical-phase-1` was attempted and **refused by the coding environment's command classifier**. Not by git, not by the remote, not by credentials. `origin` is `https://github.com/yurizache-cpu/atomic-crm.git` and the branch has no upstream.
 
-This is an operational blocker, not a security or engineering one. The work is committed, the tree is clean, and the branch is 13 commits ahead of `origin/main` (14 once this report lands). The owner runs:
+This is an operational blocker, not a security or engineering one. The work is committed and the tree is clean. The owner runs:
 
 ```bash
 git push -u origin feature/clinical-phase-1
@@ -621,7 +621,7 @@ A related guard was added after this section's own drafting failed the same way:
 
 | Check | Result |
 | --- | --- |
-| `git status` | clean; 13 commits ahead of `origin/main`; no upstream |
+| `git status` | clean; ahead of `origin/main` by every commit of this phase (`git rev-list --count origin/main..HEAD`); no upstream |
 | `npm run typecheck` | clean |
 | `npm run lint` | clean |
 | `--project app` | 219 passed, 1 skipped |
