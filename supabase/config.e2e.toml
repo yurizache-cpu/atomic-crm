@@ -25,6 +25,26 @@ shadow_port = 54340
 # server_version;` on the remote database to check.
 major_version = 15
 
+# Kept in step with supabase/config.toml deliberately. `make start-supabase-e2e`
+# overwrites .supabase-e2e/supabase/config.toml from THIS file, so a missing
+# [db.migrations] block here means `supabase db diff --workdir .supabase-e2e`
+# silently stops reading the declarative schemas and emits a diff that would
+# drop most of the schema. The two files must not drift on this block.
+[db.migrations]
+schema_paths = [
+  "./schemas/01_tables.sql",
+  "./schemas/02_functions.sql",
+  "./schemas/03_views.sql",
+  "./schemas/04_triggers.sql",
+  "./schemas/05_policies.sql",
+  "./schemas/06_grants.sql",
+  # 07_storage.sql is deliberately NOT listed. It is DML against
+  # `storage.buckets` plus cross-schema policy drops, which `db diff` cannot
+  # emit; including it would produce a phantom diff on every run. Its intent is
+  # enforced by the hand-written migration
+  # `20260911120000_close_attachments_bucket.sql` instead.
+]
+
 [db.pooler]
 enabled = false
 # Port to use for the local connection pooler.
