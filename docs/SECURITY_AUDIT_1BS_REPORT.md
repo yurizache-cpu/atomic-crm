@@ -2,6 +2,7 @@
 ## Frontend exposure, API attack surface and data-leak audit
 
 **Date:** 2026-09-12 · **Baseline:** `cf6054c8` (Phase 1B, tree clean, in sync with `origin/feature/clinical-phase-1`)
+**CI:** [run 34709371204](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34709371204) on `75a73519` — database, test, typecheck, ESLint, build all green, and the new `No secrets in the production build` step passed. `e2e-test` and `Prettier` remain red, unchanged from before this audit.
 **Environment:** isolated `atomic-crm-e2e` stack only (API `127.0.0.1:54341`, DB `54342`). The `atomic-crm-demo` stack belongs to a second working copy and was not touched.
 
 ---
