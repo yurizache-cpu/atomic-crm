@@ -1,7 +1,8 @@
 # PHASE 1B FINAL SIGNOFF
 ## Production worker runtime, recovery, and the first deterministic handler
 
-**Date:** 2026-09-12 · **Branch:** `feature/clinical-phase-1` · **Commits:** `37f9a528` (build), `7989d6a0` (driver-backed run + fixes)
+**Date:** 2026-09-12 · **Branch:** `feature/clinical-phase-1` · **Commits:** `37f9a528` (build), `7989d6a0` (driver-backed run + fixes), `54116f54` (CI fix)
+**CI:** [run 34704880023](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34704880023) on `54116f54`
 
 ---
 
@@ -259,7 +260,7 @@ Two harnesses. Both verify a green baseline first and restore every file — and
 
 It is in the `database` job rather than `test-app` because it needs a live Postgres and spawns real processes; the unit jobs must never depend on Docker.
 
-Run **34704536139** on `7989d6a0` — results in §21.
+Results in §21.
 
 The two pre-existing red checks (legacy `e2e-test`, and Prettier's ~419 files) are untouched. **No new formatting debt:** every file this phase added or changed passes `prettier --check`.
 
@@ -323,7 +324,31 @@ A sixth change is preventive rather than corrective: the fixture now **refuses t
 
 ## 21. CI result
 
-*(Filled in below from run 34704536139 on `7989d6a0`.)*
+[Run 34704880023](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34704880023) on `54116f54`:
+
+| Job | |
+| --- | --- |
+| 🗄️ Database security & reproducibility | **PASS** |
+| 🔎 Test (app + functions + claude) | **PASS** |
+| 🏷️ Typecheck | **PASS** |
+| 🔬 ESLint · ESLint | **PASS** |
+| 🔨 Build | **PASS** |
+| e2e-test | FAIL — pre-existing |
+| Prettier | FAIL — pre-existing |
+
+The database job's steps, in order, all green: `🐘 Start Supabase` → `🔒 RLS, tenant isolation and grant surface` → **`⚙️ Worker runtime, pooling and concurrency`** → `♻️ Clean reconstruction from scratch` → `🔒 Same guarantees after the reset`.
+
+So the pooling proof, the real multi-process concurrency, the crash/recovery cases and the idempotency cases all executed **on a fresh Linux runner**, against a database built from the repository alone — including the graceful-shutdown case driven by a **real SIGTERM**, which win32 cannot deliver (§9).
+
+**The two failures are pre-existing and unchanged.** Verified by comparison: run 34692769127 on the Phase 1A commit `e546e7a5`, before any Phase 1B work, failed exactly `e2e-test` and `Prettier` and nothing else.
+
+### One new defect CI found, and it was mine
+
+The first Phase 1B run (34704536139) failed `🔎 Unit Tests on App`. Diagnosis: `test:unit:app` is a bare `vitest --config vitest.config.ts` with **no `--project` filter**, so adding the `engine-db` project to that file silently dragged the driver-backed suites into a job with no database.
+
+Fixed structurally rather than by narrowing the script. This repository's rule is that a unit run never needs Docker, so the suites that cannot run without it now live in `vitest.db.config.ts`. Keeping them in the default config made the mistake *possible*; moving them makes it *unrepresentable*. Reproduced and verified locally by running the exact CI command: 81 files, 918 tests, no `dbtest` file collected.
+
+Worth noting what this says about the evidence: the database job passed on that same run. The runtime was never wrong — the failure was in how the suites were wired into the build, which is precisely the class of defect that only a clean remote environment finds.
 
 ## 22. ADR changes
 
@@ -341,3 +366,27 @@ Exactly one slice, and it is not agents:
 3. **The kill switch and cost ledger** (ADR 0010). The roadmap's sequencing rule is unchanged and binding: **no agent before these exist.**
 
 Do **not** start LLM integration, the Tool Gateway proper, or the domain model until (3) is done.
+
+---
+
+## Classification
+
+# READY FOR PHASE 1C
+
+Against the four conditions set for this signoff:
+
+| Condition | |
+| --- | --- |
+| The real suites with `pg` passed | ✅ 32 cases, 3 files, green locally and in CI |
+| Real pooling was proven | ✅ same `pg_backend_pid()` across transactions, zero rows and no context on the reused connection, and mutation S5 proves the suite is sensitive to the guarantee |
+| CI validated the new path | ✅ run 34704880023 — the `⚙️ Worker runtime, pooling and concurrency` step green on a fresh Linux runner |
+| No tenant/security guarantee weakened | ✅ nothing regressed, and the `security_invoker` guard was **widened** to `ops`; 25/25 mutations caught |
+
+**Phase 1B engineering baseline is signed off.**
+
+Two honest qualifications, neither of which blocks the classification:
+
+1. **`e2e-test` and `Prettier` are still red**, exactly as they were on the Phase 1A commit. No new formatting debt was added; every file this phase touched passes `prettier --check`.
+2. **The graceful-shutdown signal wiring is proven on Linux only.** On win32 `SIGTERM` is `TerminateProcess` and no handler can run — a property of the platform, not of the worker. The behaviour itself is proven on both.
+
+Phase 1C is **not** started. See §23 for the recommended scope; the sequencing rule stands — no agent before the kill switch and cost ledger exist.
