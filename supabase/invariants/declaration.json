@@ -1,0 +1,42 @@
+{
+  "purpose": "What the migration set is allowed to describe. The shape is validated by supabase/invariants/declaration.mjs, so an unknown or mis-typed key throws rather than silently disabling a domain. Read supabase/tests/migrationInvariants.test.ts before changing anything here: sealedThrough, views.declared, views.ignoredSchemas and extensions.forbidden are ALSO pinned as literals in that test file, so widening the trust root is a diff in a .test.ts, never a quiet edit to a data file.",
+  "sealedThrough": "20260912090000",
+  "views": {
+    "schema": "public",
+    "declared": [
+      "activity_log",
+      "companies_summary",
+      "contacts_summary",
+      "init_state"
+    ],
+    "ignoredSchemas": []
+  },
+  "extensions": {
+    "allowed": [
+      "citext",
+      "http",
+      "pgjwt",
+      "pgcrypto",
+      "uuid-ossp",
+      "pg_graphql",
+      "pg_stat_statements",
+      "pgsodium",
+      "supabase_vault",
+      "plpgsql"
+    ],
+    "forbidden": [
+      "pg_net",
+      "dblink",
+      "postgres_fdw",
+      "file_fdw",
+      "plpython3u",
+      "plperlu",
+      "plsh"
+    ],
+    "allowedSchemas": ["extensions", "graphql", "vault", "pg_catalog"]
+  },
+  "storage": {
+    "buckets": ["attachments"]
+  },
+  "overrides": []
+}

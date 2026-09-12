@@ -246,9 +246,22 @@ const INVARIANTS: Invariant[] = [
         file: "docs/SECURITY_INVARIANTS.md",
         marker: /DECLARATIVE SCHEMA != automatically trusted migration output/,
       },
+      {
+        // Until 2026-09-11 this invariant's ONLY enforcement point was the
+        // marker above — a sentence in a markdown file. It now has a guard that
+        // replays every migration in order and rejects a diff that regresses
+        // SI-01, SI-02 or SI-11. Listing it here is what makes DELETING that
+        // guard fail by name, which is the whole purpose of this file.
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker: /a security-regressing migration is REJECTED/,
+      },
+      {
+        file: "supabase/invariants/declaration.json",
+        marker: /"pg_net"/,
+      },
     ],
     caveat:
-      "`supabase db diff` currently emits `create extension pg_net` and recreates three views without security_invoker. Applying it unreviewed regresses SI-01 and SI-02.",
+      "`supabase db diff` currently emits `create extension pg_net` and recreates three views without security_invoker. Applying it unreviewed regresses SI-01 and SI-02. The guard rejects that output statically, with no Docker; it does not and cannot prove a running database is correct — that is `rls_tenant_isolation.sql`'s job.",
   },
 ];
 

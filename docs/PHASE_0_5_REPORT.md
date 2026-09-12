@@ -587,14 +587,32 @@ The current diff output is still dangerous: it emits `create extension pg_net` a
 
 | Regression | Guard | Fails closed? | When it fires |
 | --- | --- | --- | --- |
-| **A.** pg_net reintroduced | `rls_tenant_isolation.sql` §8 raises if the extension *or* the `net` schema exists | yes — the runner exits 1 when it cannot reach a database, so it cannot be skipped into a pass | the `database` CI job, on every push and PR |
-| **B.** a view exposed without `security_invoker` | `rls_tenant_isolation.sql` §7 raises for any view readable by an application role whose reloptions lack it — written over the **catalogue**, so a view added later is covered without editing the test | yes | same |
+| **A.** pg_net reintroduced | static: the corpus replay rejects any end state containing a forbidden extension. Live: `rls_tenant_isolation.sql` §8 raises if the extension *or* the `net` schema exists | yes — an unclassifiable statement throws; the live runner exits 1 rather than skipping | every unit-test run (no Docker), **and** the `database` CI job |
+| **B.** a view exposed without `security_invoker` | static: the replay tracks every view's reloption through create / replace / alter / rename / drop and rejects an end state where a declared view is not `security_invoker = on`. Live: `rls_tenant_isolation.sql` §7, over the catalogue | yes | same |
 | **C.** inappropriate anon / authenticated grants | same suite: `anon` must hold **no** privilege in `public`, and `authenticated` no `TRUNCATE` / `TRIGGER` / `REFERENCES`; also asserted inside `20260911235000` itself, so the migration refuses to apply | yes | same, plus every `db reset` |
 | **D.** an existing security assertion removed | `securityInvariants.test.ts` fails **by invariant id** when an enforcement file disappears or its assertion is renamed away | yes — a missing file is a failure, not a skip | every unit-test run, no Docker needed |
 
-A and B and C are proven at the layer that cannot be argued with — the database itself, after the migration is applied — and D is proven statically. The weakness worth naming: **A–C fire on apply, not on review.** A generated migration that regresses them is caught by CI before merge, not by a check at the moment someone runs `db diff`. That is why the rule above is stated as a rule and carried in `CLAUDE.md`, `SECURITY_INVARIANTS.md` and the Phase 1 handoff: the human step is load-bearing, and pretending otherwise would be the more dangerous claim.
+Each of A–D is now covered at **two** layers: statically at review time with no Docker, and again against the live database after apply. The live assertions are written over the **catalogue** rather than over a fixed list, so a view or table added later is covered without editing them.
 
-A purely static reviewer for generated SQL was explored and is **not** claimed here. Scanning migration text for these constructs is defeatable by quoting, casing, line breaks and `do $$ ... $$` blocks, and `20260911232039_pending_delta.sql` genuinely does contain views created without `security_invoker` — remediated by the later migration — so a per-file scan would either red-flag committed history forever or need an allowlist that itself becomes the hole. The catalogue-level assertions above are the version that cannot be talked around.
+### Correcting an earlier conclusion in this section
+
+An earlier draft of this report stated that a purely static reviewer for generated SQL "was explored and is not claimed", on the grounds that text scanning is defeatable by quoting, casing and `do $$ … $$` blocks, and that `20260911232039_pending_delta.sql` genuinely does contain views created without `security_invoker` — so a scan would either red-flag committed history forever or need an allowlist that becomes the hole itself.
+
+**That reasoning is correct about per-file scanning and wrong as a conclusion.** An adversarial design round produced a third option that avoids both objections: **replay the ordered migration corpus to an end state** and judge *that*, with per-statement hazard rules applied only to files outside a sha256 seal over the audited history. The committed set is clean precisely *because* `20260911235000` repairs `20260911232039` — which is the property that actually matters, and the one a per-file rule cannot express.
+
+`supabase/invariants/` + `supabase/tests/migrationInvariants.test.ts` implement it. Verified **independently of its own 83 tests**, by driving `analyze()` from a separate harness:
+
+- **End state reproduces the live database exactly.** Statically: all four views `security_invoker = true`; extensions `citext, http, pgjwt`. That is byte-for-byte the measurement taken against a live Postgres in §16.1 and §16.3.
+- **16 of 16 attacks rejected**, including the four written specifically to defeat a text scanner: casing and quoting (`CREATE   OR   REPLACE   VIEW   "public"."contacts_summary"`), a comment inside the statement head (`create /* x */ or replace view …`), `with (security_invoker = off)` stated explicitly, and a view created through `execute` inside a `do $$ … $$` block. Also rejected: the verbatim output `supabase db diff` emits today, `grant all`/`grant select` to `anon`, `grant truncate` to `authenticated`, `grant … to public`, `alter default privileges … to anon`, `alter view … reset (security_invoker)`, a materialized view standing in for a protected one, and `grant … on all tables in schema`.
+- **Fail-closed on the unknown:** an unrecognised statement head throws rather than being ignored.
+- **4 of 4 legitimate migrations accepted**, including the repository's own documented repair pattern (`create or replace view …` followed by `alter view … set (security_invoker = on)`). A guard that blocked that would have been deleted the first time `db diff` re-emitted a view.
+
+### Two gaps in the static layer, named rather than smoothed over
+
+- **RLS policy predicates are not evaluated.** `create policy p on public.contacts for select to authenticated using (true)` passes the static guard — confirmed by the same harness — and it is a total cross-tenant hole that `db diff` can emit. It is caught by `rls_tenant_isolation.sql` at apply time (mutation 4 in §16.2 is exactly this case), so the layers compose; but review-time coverage of policy *predicates* does not exist.
+- **`alter table … owner to` is not modelled.** A table owner bypasses RLS unless `force row level security` is set, and no table in this repository sets it.
+
+Neither weakens what is claimed above. Both are the reason the live-database job in §17.2 is not optional.
 
 ## 17.4 Registry and ADR 0008
 
@@ -625,16 +643,16 @@ A related guard was added after this section's own drafting failed the same way:
 | `npm run typecheck` | clean |
 | `npm run lint` | clean |
 | `--project app` | 219 passed, 1 skipped |
-| `--project functions` | 223 passed |
+| `--project functions` | 306 passed |
 | `--project claude` | 285 passed, 1 skipped |
-| **all projects** | **727 passed, 2 skipped, 0 failed** (71 files) |
+| **all projects** | **810 passed, 2 skipped, 0 failed** (73 files) |
 | `npm run test:db` | 2 suites passed |
 | clean `db reset` ×2 consecutive | 34s, 34s — both exit 0, each followed by a green `test:db` |
 | `npm run test:db` with no database | exit 1 (fails closed) |
-| security guards | 12 invariants, all enforcement points live |
+| security guards | 12 invariants, all enforcement points live; migration corpus replayed statically, end state matches the live database |
 | registry guard | 223 files valid; 7/7 mutations caught |
 
-Mutation coverage across the phase: **33 deliberate breaks, 33 caught** (14 RLS, 5 worker-context, 10 invariant baseline, 7 registry, 2 Postmark — several only after the suites themselves were corrected, which is the point of running them).
+Mutation coverage across the phase: **33 deliberate breaks, 33 caught** (14 RLS, 5 worker-context, 10 invariant baseline, 7 registry, 2 Postmark — several only after the suites themselves were corrected, which is the point of running them), plus **16 independent attacks and 4 legitimate migrations** against the generated-migration guard (§17.3), driven from a separate harness rather than its own tests.
 
 ## 17.7 Final classification
 

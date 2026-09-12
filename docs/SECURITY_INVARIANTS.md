@@ -39,7 +39,7 @@ Every generated migration is reviewed before it is accepted. Run `supabase db di
 | SI-09 | Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins. | unit test | `merge_contacts/mergeLeadProfile.ts` + 12 tests |
 | SI-10 | Inbound email ingestion is idempotent and fails closed: no unconditional 200, a durable record for every failure, and a synthetic key never reaches the ingest path. | unit test, migration assertion | `postmark/ingestionOutcome.ts`, `migrations/20260912090000_inbound_email_ledger.sql` |
 | SI-11 | anon holds no privilege on any table or view in public, and authenticated holds no TRUNCATE, TRIGGER or REFERENCES anywhere. | live database, migration assertion | `rls_tenant_isolation.sql`, `migrations/20260911235000_…` |
-| SI-12 | The declarative schema is not an automatically trusted migration. Generated output must be reviewed, and a generated migration that regresses security is rejected. | static guard | this document, and the review discipline above |
+| SI-12 | The declarative schema is not an automatically trusted migration. Generated output must be reviewed, and a generated migration that regresses security is rejected. | static guard | `supabase/tests/migrationInvariants.test.ts` + `supabase/invariants/` — replays every migration in order, with no Docker, and rejects a diff that regresses SI-01 / SI-02 / SI-11 |
 
 ---
 

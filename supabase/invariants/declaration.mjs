@@ -1,0 +1,126 @@
+// Loading the corpus, and validating the declaration before any of it is
+// trusted.
+//
+// Both exist for the same reason: this repository has shipped three checks that
+// silently no-opped and looked applied (`make registry-gen` exiting 127 under
+// `sh -e`, the `import.meta.url` main-guards on Windows, REVOKE EXECUTE on
+// supabase_admin-owned functions). A mis-keyed declaration — say `extenstions`
+// — would be the fourth, disabling a whole domain while every test stayed green.
+
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+
+import { InvariantError } from "./sqlStatements.mjs";
+
+export const MIGRATION_FILENAME = /^(\d{14})_[A-Za-z0-9_-]+\.sql$/;
+
+/**
+ * Read every migration in apply order, with the ordering property ASSERTED
+ * rather than assumed: filename sort equals apply order only if every name
+ * carries a 14-digit timestamp and those timestamps strictly increase.
+ *
+ * @param {string} dir
+ * @returns {{file: string, sql: string, timestamp: string, sha256: string}[]}
+ */
+export function loadMigrationCorpus(dir) {
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort();
+  if (files.length === 0) {
+    throw new InvariantError(
+      `no .sql files in ${dir}. An empty corpus would make every assertion vacuously true — the exact "the check silently did nothing and looked applied" shape this repository has already shipped three times.`,
+    );
+  }
+  let previous = "";
+  return files.map((file) => {
+    const m = MIGRATION_FILENAME.exec(file);
+    if (!m) {
+      throw new InvariantError(
+        `${file}: migration filenames must be <14-digit timestamp>_<name>.sql. Without that, filename sort is not apply order and the replay models the wrong sequence.`,
+      );
+    }
+    if (m[1] <= previous) {
+      throw new InvariantError(
+        `${file}: timestamp ${m[1]} does not strictly follow ${previous}. Filename sort is no longer apply order.`,
+      );
+    }
+    previous = m[1];
+    const sql = readFileSync(join(dir, file), "utf8");
+    return {
+      file,
+      sql,
+      timestamp: m[1],
+      sha256: createHash("sha256").update(sql, "utf8").digest("hex"),
+    };
+  });
+}
+
+const DECLARATION_SHAPE = {
+  purpose: "string?",
+  sealedThrough: "string",
+  views: "object",
+  extensions: "object",
+  storage: "object",
+  overrides: "array",
+};
+const VIEWS_SHAPE = {
+  schema: "string",
+  declared: "array",
+  ignoredSchemas: "array",
+};
+const EXTENSIONS_SHAPE = {
+  allowed: "array",
+  forbidden: "array",
+  allowedSchemas: "array",
+};
+const STORAGE_SHAPE = { buckets: "array" };
+const OVERRIDE_SHAPE = {
+  invariantId: "string",
+  adr: "string",
+  migrationFile: "string",
+  reason: "string",
+};
+
+function checkShape(object, shape, where) {
+  for (const [key, type] of Object.entries(shape)) {
+    const optional = type.endsWith("?");
+    const want = optional ? type.slice(0, -1) : type;
+    if (!(key in object)) {
+      if (optional) continue;
+      throw new InvariantError(
+        `${where}: missing key "${key}". A missing domain key would silently disable a whole class of check.`,
+      );
+    }
+    const value = object[key];
+    const actual = Array.isArray(value) ? "array" : typeof value;
+    if (actual !== want) {
+      throw new InvariantError(
+        `${where}: "${key}" must be ${want}, got ${actual}`,
+      );
+    }
+  }
+  for (const key of Object.keys(object)) {
+    if (!(key in shape)) {
+      throw new InvariantError(
+        `${where}: unknown key "${key}". A typo like "extenstions" must not quietly turn a domain off.`,
+      );
+    }
+  }
+}
+
+/** Validate `declaration.json` structurally. Throws; never warns. */
+export function validateDeclaration(declaration) {
+  checkShape(declaration, DECLARATION_SHAPE, "declaration.json");
+  checkShape(declaration.views, VIEWS_SHAPE, "declaration.json#views");
+  checkShape(
+    declaration.extensions,
+    EXTENSIONS_SHAPE,
+    "declaration.json#extensions",
+  );
+  checkShape(declaration.storage, STORAGE_SHAPE, "declaration.json#storage");
+  for (const entry of declaration.overrides) {
+    checkShape(entry, OVERRIDE_SHAPE, "declaration.json#overrides[]");
+  }
+  return declaration;
+}
