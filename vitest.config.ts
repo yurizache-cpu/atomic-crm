@@ -62,6 +62,10 @@ export default defineConfig({
             // Harness hook tests are Node-only (they import node:fs / node:path
             // and spawn subprocesses); they run under the "claude" project below.
             ".claude/**",
+            // Same reason: repository tooling tests read the filesystem, which
+            // the browser-mode runner cannot do. This project has no `include`,
+            // so anything not excluded here is picked up by the default glob.
+            "scripts/**",
           ],
           server: {
             deps: {
@@ -74,7 +78,11 @@ export default defineConfig({
         test: {
           name: "claude",
           environment: "node",
-          include: [".claude/**/*.test.mjs"],
+          // `.claude/` is the agent harness; `scripts/` is the repository's own
+          // Node tooling. Both are node-side .mjs with the same needs, and this
+          // project already runs in CI and in deploy.yml's gate, so widening it
+          // is cheaper than a fourth project plus a fourth script and CI step.
+          include: [".claude/**/*.test.mjs", "scripts/**/*.test.mjs"],
           // These tests spawn `node` subprocesses and do real git/worktree work,
           // so they need more headroom than the default 5s.
           testTimeout: 30000,
