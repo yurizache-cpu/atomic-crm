@@ -498,7 +498,7 @@ Semantics now: ingested/duplicate → 200; permanently invalid → 200 **plus** 
 
 - **`supabase db diff` is not empty, and applying it would REGRESS security.** It emits 7 statements: re-create `pg_net`, and drop/recreate three views **without `security_invoker`** — because `migra` never emits view reloptions, which is the same mechanism that caused the defect in §16.1. The end state in a migrated database is correct and verified; the *generator* is not fixable from here. **Never apply the next `db diff` output unreviewed.** Both regressions are caught by `npm run test:db`.
 - **The `net` schema cannot be revoked, only dropped.** If `pg_net` is ever reinstalled it is silently reachable by `anon` again and no privilege change this project can make will close it.
-- **The branch has never been pushed and no CI run has ever executed.** Owner action.
+- **The branch has never been pushed and no CI run has ever executed.** Owner action. `git push -u origin feature/clinical-phase-1` was attempted at the end of Phase 0.5C and **refused by the environment's command classifier**, not by git and not by the remote. This is an operational blocker outside the repository, not a code blocker: the branch is committed, the working tree is clean, and it is 9 commits ahead of `origin/main`. The owner runs the push.
 - **Postmark design §7 items 4–8** need the Edge Function runtime driven end-to-end.
 
 ### DEFERRED — deliberately not done in Phase 0.5
