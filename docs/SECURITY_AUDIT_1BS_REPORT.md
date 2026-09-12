@@ -3,6 +3,7 @@
 
 **Date:** 2026-09-12 · **Baseline:** `cf6054c8` (Phase 1B, tree clean, in sync with `origin/feature/clinical-phase-1`)
 **CI:** [run 34709371204](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34709371204) on `75a73519` — database, test, typecheck, ESLint, build all green, and the new `No secrets in the production build` step passed. `e2e-test` and `Prettier` remain red, unchanged from before this audit.
+**Closure CI:** [run 34714300298](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34714300298) on `fabc718e`, the §27 closure commit. Database, test, typecheck, ESLint, build and the secret gate are all green. `e2e-test` and `Prettier` are red, identical to the baseline. See §27.9.
 **Environment:** isolated `atomic-crm-e2e` stack only (API `127.0.0.1:54341`, DB `54342`). The `atomic-crm-demo` stack belongs to a second working copy and was not touched.
 
 ---
@@ -17,7 +18,7 @@
 
 Also fixed: the production build was emitting `dist/stats.html` (a 1.6 MB module-graph report) into the directory `gh-pages` publishes wholesale. And a new CI gate now refuses any build containing a server-side credential.
 
-**Classification: SECURITY GATE PASSED.** See §26.
+**Classification: SECURITY GATE PASSED — CI VERIFIED.** See §26 and §27.9.
 
 **Final closure (2026-09-12, §27).** The gate was accepted with two questions open, and both are now closed by code and measurement.
 
@@ -557,7 +558,7 @@ Every mutation was applied to the working tree, run against the relevant guards,
 | Registry output and doc sources | 0 findings |
 | Prettier on every changed file | **clean** |
 | Mutation testing | **39 / 39** |
-| CI | **not yet run on this commit** — agents do not push (`.claude/rules/git-policy.md`) |
+| CI | **green on every job the closure touches**: [run 34714300298](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34714300298) on `fabc718e`. The owner pushed the commit; agents do not push (`.claude/rules/git-policy.md`). See §27.9. |
 
 A full-suite run started while the review agents were active produced 13 timeouts in `.claude/` hook tests, none in a changed file. The claude project run alone passed (344 passed, 1 skipped at that point; 376 passed, 1 skipped in the final run). This is the load sensitivity CLAUDE.md already documents, not a regression.
 
@@ -576,13 +577,27 @@ None of it is a record the user merely viewed. The configuration is tenant vocab
 
 ### 27.9 Classification
 
-# SECURITY GATE PASSED
+# SECURITY GATE PASSED — CI VERIFIED
 
 - **Question 1 is resolved:** CRM record data is no longer persisted; proven on both admin trees, with 11 of 11 mutations caught.
 - **Question 2 is resolved:** the development key is confined by executable guards, including a deploy-time check against the real hosted answer; 28 of 28 mutations caught, plus a live negative against a server that trusts the key.
 - **An adversarial review found no Critical or High issue,** and every gap it did find was closed and mutation-verified.
 - **Every earlier security result remains green.**
 
-**One verification is still outstanding, and it is not mine to perform:** CI on the pushed commit. Agents do not push. The owner should push `feature/clinical-phase-1` and confirm that the same jobs pass as on `8a896da3` — database, test, typecheck, ESLint, build — with `e2e-test` and `Prettier` still the only pre-existing reds. If any of them fails, this classification must be revisited before Phase 1C.
+**CI verified (2026-09-12).** The owner pushed `fabc718e` to `feature/clinical-phase-1`. [Run 34714300298](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34714300298) (workflow `✅ Check`, push event, attempt 1) ran on exactly that SHA. Every job this closure touches is green:
+
+| Job | Result | What it carries for this closure |
+| --- | --- | --- |
+| 🗄️ Database security & reproducibility | **success** (216 s) | all four steps: RLS, tenant isolation and grant surface; worker runtime, pooling and concurrency; clean reconstruction from scratch; the same guarantees after the reset |
+| 🔎 Test | **success** (98 s) | `app` project: `CRM.security.test.tsx` (SI-19). `functions` project: `securityInvariants.test.ts`, including the SI-19 and SI-20 markers. `claude` project, which includes `scripts/**/*.test.mjs`: the `dev-signing-key`, `publish-pages` and `scan-build-artifacts` tests, among them the repository guard run as a command against the checked-out tree |
+| 🏷️ Typecheck | **success** | |
+| 🔬 ESLint (job and check-run) | **success**, no issues | includes the `@tanstack/*persist*` import ban |
+| 🔨 Build | **success** | `No secrets in the production build` passed with the new private-JWK and key-byte rules |
+| `e2e-test` | failure, **pre-existing** | same failed step (`Run Playwright tests`), same exit code 2, same 375 s as on `8a896da3` |
+| `Prettier` check-run | failure, **pre-existing** | the same two files as on `8a896da3` (`dataImport/sampleCsv.test.ts`, `providers/commons/canAccess.test.ts`), neither touched by this closure. All files the closure changed pass Prettier locally. |
+
+Job by job, no conclusion changed from [run 34709714015](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34709714015) on `8a896da3`. The only other annotations are GitHub's Node.js 20 deprecation warnings on the actions.
+
+**Limits of this evidence.** The job logs need repository admin rights and were not read. Which test files each step ran comes from `vitest.config.ts`, not from the logs; a file that fails to collect fails its step. `deploy.yml` runs only on pushes to `main`, so neither its gate job nor the live `--project-ref` JWKS check ran here. CI proves the check's unit tests and the repository guard that pins its position in `deploy.yml`. Its live negative is still the local measurement in §27.3.
 
 **Recommendation: proceed to Phase 1C.** Phase 1C has not been started.
