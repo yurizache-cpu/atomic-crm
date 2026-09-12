@@ -10,11 +10,11 @@
 // the end state of the table, which cannot tell a job that ran once from a job
 // that ran twice and was settled once.
 
-import { spawn, type ChildProcessByStdio } from "node:child_process";
-import type { Readable } from "node:stream";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import {
+  cleanupFixtures,
   adminPool,
   enqueue,
   provisionWorkerRole,
@@ -40,6 +40,7 @@ beforeAll(async () => {
 }, 60_000);
 
 afterAll(async () => {
+  await cleanupFixtures(admin);
   await admin?.end();
 });
 
@@ -47,8 +48,8 @@ beforeEach(async () => {
   await resetFixtures(admin);
 });
 
-/** stdin is 'ignore', so this is NOT a ChildProcessWithoutNullStreams. */
-type WorkerProcess = ChildProcessByStdio<null, Readable, Readable>;
+/** stdin is piped so the parent can ask for a graceful stop portably. */
+type WorkerProcess = ChildProcessWithoutNullStreams;
 
 interface SpawnedWorker {
   child: WorkerProcess;
@@ -66,7 +67,7 @@ function spawnWorker(
       OPS_WORKER_ID: workerId,
       ...env,
     },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   }) as WorkerProcess;
 
   let stdout = "";
@@ -91,6 +92,25 @@ function spawnWorker(
   });
 
   return { child, done };
+}
+
+/**
+ * Asks a worker to stop the way an operator would.
+ *
+ * On POSIX that is SIGTERM, which is what `main.ts` wires in production. On
+ * win32 `child.kill("SIGTERM")` is TerminateProcess — measured: the handler
+ * never runs and the child exits with code null — so the equivalent stdin
+ * channel is used instead. Both reach the same AbortSignal; only the signal
+ * wiring itself goes unproven on Windows, and CI is Linux.
+ */
+const USES_REAL_SIGNAL = process.platform !== "win32";
+
+function requestStop(worker: SpawnedWorker): void {
+  if (USES_REAL_SIGNAL) {
+    worker.child.kill("SIGTERM");
+  } else {
+    worker.child.stdin.write("stop" + String.fromCharCode(10));
+  }
 }
 
 describe("two real worker processes over one queue", () => {
@@ -246,7 +266,7 @@ describe("graceful shutdown", () => {
 
     // Let it lease and start the handler, then ask it to stop mid-job.
     await new Promise((resolve) => setTimeout(resolve, 900));
-    worker.child.kill("SIGTERM");
+    requestStop(worker);
     const report = await worker.done;
 
     // It did not abandon the work.
@@ -281,9 +301,14 @@ describe("graceful shutdown", () => {
       WORKER_RUN_MS: "30000",
       WORKER_HANDLER_DELAY_MS: "5000",
     });
+    // This process is killed on purpose, so `done` WILL reject. Observing it
+    // here is what stops Vitest reporting an unhandled rejection that would
+    // then be attributed to whichever test happened to be running.
+    const killed = worker.done.catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 1200));
     worker.child.kill("SIGKILL");
     await new Promise((resolve) => worker.child.once("close", resolve));
+    await killed;
 
     const { rows } = await admin.query<{
       status: string;

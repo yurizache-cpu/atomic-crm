@@ -13,6 +13,7 @@ import { createRegistry } from "./handlerRegistry.ts";
 import { PermanentError, TransientError } from "./failures.ts";
 import { runOneJob } from "./runOneJob.ts";
 import {
+  cleanupFixtures,
   adminPool,
   clearLedger,
   countLedger,
@@ -42,7 +43,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.close();
-  await clearLedger(admin);
+  await cleanupFixtures(admin);
   await admin?.end();
 });
 
@@ -276,15 +277,34 @@ describe("leases cannot be forged, stolen or outlived", () => {
     ]);
     const jobId = await enqueue(admin, TENANT_A, RETENTION);
 
+    // The lease is taken and COMMITTED, exactly as the runtime's TX1 does.
+    //
+    // An earlier version of this test expired the lease from the admin
+    // connection while the leasing transaction was still open. That hangs
+    // forever and Postgres never reports it: `ops.lease_job` leaves an
+    // uncommitted UPDATE on the row, the admin UPDATE blocks on that row lock,
+    // and the leasing transaction is waiting on the admin query rather than on
+    // a lock — so the deadlock detector has nothing to detect. Modelling the
+    // real flow removes the overlap entirely.
+    await db.withTransaction(async (tx) => {
+      await tx.query("set local role ops_worker");
+      await tx.query("select * from ops.lease_job($1, $2)", [WORKER, 60]);
+    });
+
+    await admin.query(
+      "update ops.jobs set lease_expires_at = now() - interval '1 second' where id = $1",
+      [jobId],
+    );
+
     const outcome = await db
       .withTransaction(async (tx) => {
         await tx.query("set local role ops_worker");
-        await tx.query("select * from ops.lease_job($1, $2)", [WORKER, 60]);
-        // Expire it out from under the transaction.
-        await admin.query(
-          "update ops.jobs set lease_expires_at = now() - interval '1 second' where id = $1",
-          [jobId],
+        // A dead lease installs no context at all.
+        const resumed = await tx.query<{ id: string | null }>(
+          "select id from ops.resume_lease($1, $2)",
+          [WORKER, jobId],
         );
+        if (resumed.rows[0]?.id) return "LEASE RESUMED";
         try {
           await tx.query("select ops.purge_inbound_email_ledger(90, 100)");
           return "ALLOWED";
@@ -298,15 +318,26 @@ describe("leases cannot be forged, stolen or outlived", () => {
     expect(await countLedger(admin)).toBe(1);
   }, 30_000);
 
-  it("refuses the capability with no lease at all", async () => {
+  it("refuses the capability with no lease at all, and says so", async () => {
+    // The REASON is asserted, not just the SQLSTATE. Mutation-found: deleting
+    // the no-lease guard entirely still produced 42501, because the
+    // `owns_local_crm` check rejects a NULL tenant too. Defence in depth is
+    // working — but a test that only reads the code cannot tell the two guards
+    // apart, so removing either one looked identical. Asserting the message
+    // makes each guard individually falsifiable.
     const outcome = await db
       .withTransaction(async (tx) => {
         await tx.query("set local role ops_worker");
         await tx.query("select ops.purge_inbound_email_ledger(90, 100)");
-        return "ALLOWED";
+        return { code: "ALLOWED", message: "" };
       })
-      .catch((error) => (error as { code?: string }).code ?? "error");
-    expect(outcome).toBe("42501");
+      .catch((error) => ({
+        code: (error as { code?: string }).code ?? "error",
+        message: (error as { message?: string }).message ?? "",
+      }));
+
+    expect(outcome.code).toBe("42501");
+    expect(outcome.message).toMatch(/no live lease, so no tenant/);
   }, 30_000);
 
   it("cannot settle a job it does not hold", async () => {

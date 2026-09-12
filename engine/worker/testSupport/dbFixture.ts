@@ -33,23 +33,73 @@ export const WORKER_URL =
 /**
  * Runs the real deployment script.
  *
- * Idempotent, so every suite may call it. Uses a direct admin connection rather
- * than `docker exec`, so the same call works locally and on a CI runner.
+ * Idempotent, so every suite may call it. If `provision-worker-role.mjs` breaks,
+ * these suites must fail — that is the point of using it rather than a shortcut.
+ *
+ * Two paths, because `psql` is on PATH on a CI runner and generally is not on a
+ * developer's Windows machine: set `SUPABASE_DB_CONTAINER` and the script goes
+ * through `docker exec`; leave it unset and it uses `ADMIN_DATABASE_URL`.
  */
 export function provisionWorkerRole(): void {
+  const container = process.env.SUPABASE_DB_CONTAINER;
   execFileSync("node", ["scripts/provision-worker-role.mjs"], {
     env: {
       ...process.env,
       ADMIN_DATABASE_URL: ADMIN_URL,
       OPS_WORKER_PASSWORD: WORKER_PASSWORD,
-      SUPABASE_DB_CONTAINER: "",
+      ...(container ? { SUPABASE_DB_CONTAINER: container } : {}),
     },
-    stdio: ["ignore", "ignore", "pipe"],
+    stdio: ["ignore", "ignore", "inherit"],
   });
 }
 
+/** The migration that must be applied for any of these suites to mean anything. */
+const REQUIRED_MIGRATION = "20260912160000";
+
+/**
+ * Refuses to run against the wrong database.
+ *
+ * This repository has TWO Supabase stacks on one machine: the default
+ * `atomic-crm-demo` on 54322, which belongs to a second working copy, and the
+ * isolated `atomic-crm-e2e` on 54342. The default port here is 54322 because
+ * that is correct in CI, where only one stack exists — which means a developer
+ * who forgets `SUPABASE_DB_PORT` points these suites at someone else's database.
+ *
+ * Without this check the symptom would be a confusing cascade of "relation
+ * ops.jobs does not exist". With it, the first failure says what is wrong.
+ */
+export async function assertTargetDatabase(admin: Pool): Promise<void> {
+  const { rows } = await admin.query<{ version: string | null }>(
+    `select max(version) as version from supabase_migrations.schema_migrations`,
+  );
+  const applied = rows[0]?.version ?? "none";
+  if (applied < REQUIRED_MIGRATION) {
+    throw new Error(
+      `Refusing to run: ${ADMIN_URL.replace(/:[^:@/]*@/, ":***@")} is at migration ${applied}, ` +
+        `but ${REQUIRED_MIGRATION} (the Phase 1B worker runtime) is required. ` +
+        "This is almost certainly the wrong stack — the isolated e2e stack is on port 54342 " +
+        "(npx supabase start --workdir .supabase-e2e), and 54322 is the other working copy's " +
+        "atomic-crm-demo. Set SUPABASE_DB_PORT.",
+    );
+  }
+}
+
+/**
+ * The fixture's own connection. Never the runtime's.
+ *
+ * `statement_timeout` is not tuning: a fixture query that blocks on a row lock
+ * held by an open worker transaction waits FOREVER, and Postgres reports
+ * nothing — the worker side is waiting on the application, not on a lock, so
+ * the deadlock detector has nothing to detect. That shape hung a 10-minute test
+ * run to no purpose. A timeout turns it into a failing test with a legible
+ * error, which is what a harness should do with a mistake in itself.
+ */
 export function adminPool(): Pool {
-  return new Pool({ connectionString: ADMIN_URL, max: 2 });
+  return new Pool({
+    connectionString: ADMIN_URL,
+    max: 2,
+    statement_timeout: 15_000,
+  });
 }
 
 /**
@@ -73,6 +123,7 @@ export const TENANT_B = "b0000000-0000-4000-8000-00000000000b";
  * not touch public.*" is a real case rather than a hypothetical one.
  */
 export async function resetFixtures(admin: Pool): Promise<void> {
+  await assertTargetDatabase(admin);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],
@@ -92,6 +143,32 @@ export async function resetFixtures(admin: Pool): Promise<void> {
        set owns_local_crm = excluded.owns_local_crm, slug = excluded.slug`,
     [TENANT_A, TENANT_B],
   );
+}
+
+/**
+ * Removes everything these suites created. Call it from `afterAll`.
+ *
+ * Not optional hygiene. `ops.jobs` is shared, and the SQL suites in
+ * `supabase/tests/` assert on counts across the WHOLE table — one leased row
+ * left behind by a driver-backed suite made `jobLeasingConcurrency.mjs` report
+ * "12 workers leased 11 jobs from a queue of 6". CI happens to reset the
+ * database between the two, which would have hidden this; a local run does not.
+ */
+export async function cleanupFixtures(admin: Pool): Promise<void> {
+  await admin.query(
+    `delete from ops.job_events where tenant_id = any($1::uuid[])`,
+    [[TENANT_A, TENANT_B]],
+  );
+  await admin.query(`delete from ops.jobs where tenant_id = any($1::uuid[])`, [
+    [TENANT_A, TENANT_B],
+  ]);
+  await admin.query(
+    `delete from ops.worker_instances where worker_id like 'dbtest-%'`,
+  );
+  await admin.query(`delete from ops.tenants where id = any($1::uuid[])`, [
+    [TENANT_A, TENANT_B],
+  ]);
+  await clearLedger(admin);
 }
 
 /** Enqueues as service_role would: through the one function that may create work. */

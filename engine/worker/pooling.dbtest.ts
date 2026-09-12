@@ -19,6 +19,7 @@ import type { WorkerDatabase } from "../db/types.ts";
 import { createRegistry } from "./handlerRegistry.ts";
 import { runOneJob } from "./runOneJob.ts";
 import {
+  cleanupFixtures,
   adminPool,
   enqueue,
   provisionWorkerRole,
@@ -46,6 +47,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db?.close();
+  await cleanupFixtures(admin);
   await admin?.end();
 });
 
@@ -185,22 +187,33 @@ describe("tenant context does not survive the transaction that set it", () => {
     );
     await enqueue(admin, TENANT_A, KIND, {}, { idempotencyKey: "vis-a" });
 
-    // Lease A's job and, inside that same scoped transaction, count what the
-    // worker can see. B's queued job exists and must be invisible.
-    const visible = await db.withTransaction(async (tx) => {
+    // Lease whatever the queue hands over and, inside that same scoped
+    // transaction, count what the worker can see. Both tenants have a queued
+    // job; exactly one of them must be visible, and it must be the leased one.
+    //
+    // The leased tenant is READ BACK rather than assumed. An earlier version
+    // asserted tenant A and failed against B — `ops.lease_job` orders by
+    // priority, then available_at, then created_at, and B's job was enqueued
+    // first. That failure was the test's assumption, not the isolation: the
+    // transaction did see exactly one tenant. Pinning the queue's ordering here
+    // would test the scheduler, which is a different property and has its own
+    // suite.
+    const leased = await db.withTransaction(async (tx) => {
       await tx.query("set local role ops_worker");
-      await tx.query("select * from ops.lease_job($1, $2)", [
-        "dbtest-pool",
-        60,
-      ]);
+      const job = await tx.query<{ tenant_id: string }>(
+        "select tenant_id::text from ops.lease_job($1, $2)",
+        ["dbtest-pool", 60],
+      );
       const { rows } = await tx.query<{ tenant_id: string; n: string }>(
         "select tenant_id::text, count(*)::text as n from ops.jobs group by tenant_id",
       );
-      return rows;
+      return { tenant: job.rows[0].tenant_id, visible: rows };
     });
 
-    expect(visible).toHaveLength(1);
-    expect(visible[0].tenant_id).toBe(TENANT_A);
+    expect([TENANT_A, TENANT_B]).toContain(leased.tenant);
+    expect(leased.visible).toHaveLength(1);
+    expect(leased.visible[0].tenant_id).toBe(leased.tenant);
+    expect(leased.visible[0].n).toBe("1");
   }, 30_000);
 });
 

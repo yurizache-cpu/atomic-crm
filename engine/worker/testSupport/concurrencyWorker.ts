@@ -62,9 +62,25 @@ const db = createWorkerDatabase({ connectionString, max: 2 });
 const controller = new AbortController();
 
 // SIGTERM is how the parent asks for a graceful stop, exactly as an operator or
-// an orchestrator would.
+// an orchestrator would — and it is what `main.ts` wires in production.
 process.once("SIGTERM", () => controller.abort());
 process.once("SIGINT", () => controller.abort());
+
+// A second, equivalent stop channel, because signals are not portable.
+// MEASURED on win32: `child.kill("SIGTERM")` is TerminateProcess, so the
+// handler above NEVER RUNS and the child dies with exit code null. That is a
+// property of the platform's process model, not of the worker — so the test
+// drives this channel on Windows and the real signal on POSIX. Both reach the
+// same `controller.abort()`, so the behaviour under test is identical; only the
+// signal *wiring* is proven on POSIX alone (i.e. in CI).
+// Attaching a "data" listener is enough to put stdin into flowing mode.
+// `resume()` would ALSO hold the event loop open forever, so the process
+// would never exit after the loop ended and the parent would wait on `close`
+// until it timed out -- measured, and it turned 3 passing tests into 5
+// timeouts. `unref()` is not available for every stdin kind either, so the
+// handle is released explicitly in the `finally` below instead.
+process.stdin.on("data", () => controller.abort());
+
 const timer = setTimeout(() => controller.abort(), runMs);
 
 try {
@@ -92,4 +108,7 @@ try {
 } finally {
   clearTimeout(timer);
   await db.close();
+  // Release stdin, or its open handle keeps this process alive after the
+  // loop has finished and the parent never sees `close`.
+  process.stdin.destroy();
 }

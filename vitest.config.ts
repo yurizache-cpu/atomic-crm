@@ -152,9 +152,14 @@ export default defineConfig({
           include: ["engine/**/*.dbtest.ts"],
           testTimeout: 120000,
           hookTimeout: 120000,
+          // Sequential and single-fork: several suites assert on the exact
+          // contents of ops.jobs and public.inbound_emails, so two files
+          // racing over the same two tenants would prove nothing about
+          // either. `poolOptions` was removed in Vitest 4 -- these are
+          // top-level options now, and the old nesting was silently inert.
           fileParallelism: false,
           pool: "forks",
-          poolOptions: { forks: { singleFork: true } },
+          singleFork: true,
         },
       },
     ],
