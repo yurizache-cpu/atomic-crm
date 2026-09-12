@@ -2,7 +2,7 @@
 ## Production worker runtime, recovery, and the first deterministic handler
 
 **Date:** 2026-09-12 · **Branch:** `feature/clinical-phase-1` · **Commits:** `37f9a528` (build), `7989d6a0` (driver-backed run + fixes), `54116f54` (CI fix)
-**CI:** [run 34704880023](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34704880023) on `54116f54`
+**CI:** [run 34704880023](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34704880023) on `54116f54` (the last code commit) and [run 34705326375](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34705326375) on `f34262a3` — both green on everything Phase 1B touches.
 
 ---
 
@@ -339,6 +339,8 @@ A sixth change is preventive rather than corrective: the fixture now **refuses t
 The database job's steps, in order, all green: `🐘 Start Supabase` → `🔒 RLS, tenant isolation and grant surface` → **`⚙️ Worker runtime, pooling and concurrency`** → `♻️ Clean reconstruction from scratch` → `🔒 Same guarantees after the reset`.
 
 So the pooling proof, the real multi-process concurrency, the crash/recovery cases and the idempotency cases all executed **on a fresh Linux runner**, against a database built from the repository alone — including the graceful-shutdown case driven by a **real SIGTERM**, which win32 cannot deliver (§9).
+
+**Re-run on the final commit.** [Run 34705326375](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34705326375) on `f34262a3` returned the same verdict — database, test, typecheck, ESLint and build all green, `e2e-test` and `Prettier` red. That commit and this sentence are documentation only, so the chain stops here rather than regressing: the last commit to change any code or configuration is `54116f54`, and both runs agree about it.
 
 **The two failures are pre-existing and unchanged.** Verified by comparison: run 34692769127 on the Phase 1A commit `e546e7a5`, before any Phase 1B work, failed exactly `e2e-test` and `Prettier` and nothing else.
 
