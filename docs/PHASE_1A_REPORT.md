@@ -192,7 +192,7 @@ Two guard defects were fixed, both found by using it:
 - `e2e-test` — red before Phase 0.5 for unrelated reasons.
 - The **Prettier check run** — 419 pre-existing files fail it. A correction to [PHASE_0_5_REPORT §17.2](PHASE_0_5_REPORT.md): `continue_on_error: true` keeps the *job* green, but the *check run* is still marked failure, so the overall run shows red. Formatting the repository remains an open, owner-owned decision.
 
-Everything Phase 1A touches is green in CI, including the database job on a fresh Linux runner.
+Everything Phase 1A touches is green in CI, including the database job on a fresh Linux runner: [run 3](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34692769127) on `e546e7a5` -- Build, ESLint, Typecheck, all three unit projects, and the database job all pass. That job applies the `ops` migration, runs the three SQL suites **and** the concurrency suite against real simultaneous connections, so leasing, tenant isolation and context non-persistence are proven off this machine.
 
 ## 16. Recommended scope for Phase 1B
 
