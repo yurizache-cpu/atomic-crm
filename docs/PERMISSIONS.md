@@ -12,7 +12,7 @@
 | PostgREST grants (`06_grants.sql`) | Which roles may touch which tables at all | **Yes** |
 | RLS policies (`05_policies.sql`) | Which *rows* a principal may see and change | **Yes — the authoritative one** |
 | Edge function checks | Per-endpoint authorization | Yes, where implemented |
-| MCP function | — | **Explicitly not** ([ADR 0011](adr/0011-mcp-trust-boundary.md)) |
+| ~~MCP function~~ | — | **Removed 2026-09-13** and kept out of the committed deploy paths ([ADR 0011](adr/0011-mcp-trust-boundary.md), SI-03) |
 
 **The rule:** if a permission is not expressed in RLS or a grant, it is not enforced. Anything the frontend alone prevents is a convenience.
 
@@ -25,7 +25,7 @@
 | `anon` | Revoked. Default privileges also revoke tables, sequences and function execute. |
 | `authenticated` | `usage` on `public`; per-table grants; row visibility then narrowed by RLS |
 | `service_role` | `all` on all tables/sequences/functions — used by edge functions only, never reachable from a browser |
-| `postgres` | Superuser. **The MCP function's pool defaults to it** — see the open risk in [SECURITY.md](SECURITY.md) |
+| `postgres` | ~~Superuser.~~ Not a superuser on Supabase (`rolsuper=false`), but `BYPASSRLS` *(corrected 2026-09-13)*. ~~**The MCP function's pool defaults to it**~~ The MCP function that pooled as it was removed on 2026-09-13 — see [SECURITY.md](SECURITY.md) |
 
 Default privileges revoke from `anon`/`authenticated` for future objects, so a newly created table is not accidentally world-readable. That is the correct deny-by-default shape and it should be preserved.
 
@@ -56,10 +56,10 @@ The declarative model is the intended one and it has a bootstrap deadlock: signu
 
 Two consequences that matter:
 
-1. **There is no tenant axis.** `sales_id` answers "which user", never "which company". `public.companies` means *CRM customer account*, not tenant. Multi-tenancy is [ADR 0002](adr/0002-tenancy-model.md) and does not exist.
+1. **There is no tenant axis.** `sales_id` answers "which user", never "which company". `public.companies` means *CRM customer account*, not tenant. Multi-tenancy is [ADR 0002](adr/0002-tenancy-model.md) and does not exist. *(2026-09-13: still true of `public.*`. The engine's tenant axis exists in `ops` since Phase 1A; `ops.companies` is an organisational entity inside a tenant, never a tenant or an isolation boundary, and businesses that need independent isolation are separate tenants — ADR 0015 owner addendum.)*
 2. **Every helper resolves through `auth.uid()`**, i.e. an end-user JWT claim. That is fine for a browser session and **cannot work for a background worker**, which holds no JWT — the reason for [ADR 0012](adr/0012-worker-tenant-context.md).
 
-No table uses `force row level security`, so the table owner bypasses every policy.
+No table uses `force row level security`, so the table owner bypasses every policy. *(2026-09-13: true of `public.*`. Every `ops` table has used FORCE since Phase 1A, which binds only an owner without `BYPASSRLS`, not `postgres`.)*
 
 ---
 
@@ -80,11 +80,11 @@ Why it mattered: the old default granted access to every resource nobody had tho
 
 ## 6. Designed, not built
 
-- **Tenant scoping for the engine** — scoped non-superuser role + transaction-local `app.tenant_id` GUC, read by one SECURITY DEFINER helper, with NULL matching no rows. [ADR 0012](adr/0012-worker-tenant-context.md).
+- ~~**Tenant scoping for the engine** — scoped non-superuser role + transaction-local `app.tenant_id` GUC, read by one SECURITY DEFINER helper, with NULL matching no rows.~~ *(Built 2026-09-12 in a different shape: the tenant is resolved from a live lease, never from a GUC the worker writes; see the Phase 1A section below.)* [ADR 0012](adr/0012-worker-tenant-context.md), Accepted 2026-09-12.
 - **Autonomy levels 0–4**, risk `LOW|MEDIUM|HIGH|CRITICAL` as seeded data, maker→checker→approver, and **unmatched action → CRITICAL → refused**. [ADR 0009](adr/0009-governance-envelope.md).
 - **Kill switch** with global/company/department/agent/integration scopes, deny-wins, fail-closed on an unreadable switch. [ADR 0010](adr/0010-cost-control-and-kill-switch.md).
 
-None of these exists in code. They are recorded so the first phase that needs them builds them rather than rediscovering the requirement.
+None of these exists in code. They are recorded so the first phase that needs them builds them rather than rediscovering the requirement. *(2026-09-13: the engine tenant scoping above does, since Phase 1A.)*
 
 ---
 

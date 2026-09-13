@@ -94,7 +94,7 @@ A link restricts deleting its job, so any future job retention must decide what 
 - The `waiting → failed` edge exists; `waiting → completed` does not (work resumes, then completes).
 - A data-only restore of Company OS rows must run in replica mode, or the emission triggers either refuse it (no provenance) or duplicate its events.
 - Deactivating a company refuses new departments, agents, tasks and execution requests under it, but existing tasks can still be assigned and moved through their lifecycle, so open work can be closed out. Stopping work is the kill switch's job, not company status.
-- `ops.events.seq` is one identity across tenants, so a reader of one tenant's events could infer other tenants' event volume from the gaps. Nothing but the owner reads events in 1C; a per-tenant cursor belongs with the consumer design in Phase 1D. **Binding since 2026-09-13:** `seq` is internal only, and a tenant-scoped or opaque cursor must be designed before any tenant-facing reader exists (owner addendum, decision 5).
+- `ops.events.seq` is one identity across tenants, so a reader of one tenant's events could infer other tenants' event volume from the gaps. Nothing but the owner reads events in 1C; a per-tenant cursor belongs with the consumer design in Phase 1D. **Binding since 2026-09-13:** `seq` is internal only, and a tenant-scoped or opaque cursor must be designed before any tenant-facing reader exists (owner addendum, decision 5). **Extended 2026-09-13:** the same rule covers `ops.job_events.id` and any future global monotonic sequence (owner clarification below).
 - Platform roles outside this project's grants — members of `pg_read_all_data`, and `supabase_read_only_user` — can read `ops` as they can read everything. That is a hosting-level privilege, not a Company OS grant, and the static guard rejects any migration granting them more.
 - ADRs 0002, 0003 and this one should be accepted or amended before Phase 1D builds agent runs on them. *(2026-09-13: this record was accepted with the owner addendum below. ADRs 0002 and 0003 were reconciled with it on 2026-09-13 and remain Proposed, so they must still be accepted or amended before Phase 1D builds agent runs on them.)*
 
@@ -127,6 +127,19 @@ A link restricts deleting its job, so any future job retention must decide what 
 
 **What this changes in Phase 1C: no schema and no code.**
 - The seed models one business in one tenant.
-- No application role (`anon`, `authenticated`, `service_role`, `ops_worker`) can read `ops.events`. The owner can; hosting-level read roles hold SELECT and read its rows only if they also carry `BYPASSRLS`, which the repository has not measured. No code path reads it, and the MCP function's `postgres` pool has not been tested against `ops` (ADR 0002, 2026-09-13 addendum §6).
+- No application role (`anon`, `authenticated`, `service_role`, `ops_worker`) can read `ops.events`. The owner can; hosting-level read roles hold SELECT and read its rows only if they also carry `BYPASSRLS`, which the repository has not measured. No code path reads it, and the MCP function's `postgres` pool has not been tested against `ops` (ADR 0002, 2026-09-13 addendum §6). *(Later 2026-09-13: the MCP function is removed; ADR 0011 addendum.)*
 - Trigger-derived payloads carry ids, statuses, organisational labels and structural task fields, never task titles, descriptions, notes, messages or CRM content. No application role can call `ops.record_event`: EXECUTE is revoked from PUBLIC and granted to no role, so only its owner and superusers can.
 - The worker already refuses to boot as `postgres`, `service_role`, a superuser or a `BYPASSRLS` role (ADR 0012, Phase 1B addendum).
+
+---
+
+## Owner clarification 2026-09-13 — global monotonic identifiers
+
+**GLOBAL MONOTONIC IDENTIFIERS ARE INTERNAL ONLY.** Owner decision 5 above named `ops.events.seq`. On 2026-09-13 the owner extended the same protection to `ops.job_events.id` and to any future global monotonic sequence.
+
+- They may remain internal database identifiers.
+- They must not become tenant-facing cursors, pagination offsets or tokens, event positions, counters or observable activity indicators, where that would let a tenant infer another tenant's activity or the global volume.
+- Before any tenant-facing event or job-event reader exists, Phase 1D or a later dedicated phase must define a tenant-scoped cursor, or an opaque cursor or token.
+- `ops.job_events` keeps its bigint primary key. The decision does not require changing a key unless a real need is proven.
+
+Its executable form is SI-26: the static migration guard and the migration and database assertions keep every application role away from these tables, so no tenant-facing reader can be granted without changing a guard.

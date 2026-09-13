@@ -820,6 +820,36 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "Static: a person seeding by hand, or a command assembled from string fragments, is outside it. So is a seeded local database dumped and restored elsewhere. Local supabase start and db reset, and the CI local stacks, still seed on purpose. The seed also carries reference data a hosted project needs (loss_reasons, favicons_excluded_domains), so providing that remotely needs its own explicit path, and none exists yet.",
   },
+  {
+    id: "SI-26",
+    statement:
+      "Global monotonic identifiers (ops.events.seq, ops.job_events.id and any future sequence shared across tenants) are internal only: anon and authenticated cannot reach schema ops, no application role holds a privilege on a Company OS table, and the static migration guard rejects any grant on ops to anon, authenticated or PUBLIC and any bypass-role grant beyond the pinned set.",
+    provenBy: ["static guard", "migration assertion", "live database"],
+    enforcedBy: [
+      {
+        file: "docs/adr/0015-company-os-domain-core.md",
+        marker: /GLOBAL MONOTONIC IDENTIFIERS ARE INTERNAL ONLY/,
+      },
+      {
+        file: "supabase/invariants/rules.mjs",
+        marker: /ops is backend-only \(SI-15, SI-21\)/,
+      },
+      {
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker: /ops-grant:supabase_read_only_user:ops\\\.events:select/,
+      },
+      {
+        file: "supabase/migrations/20260912200000_company_domain_core.sql",
+        marker: /role % can reach schema ops/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /A1: Company OS table reachable by an application role/,
+      },
+    ],
+    caveat:
+      "It guards grants, not what code does with a value. ops_worker reads ops.job_events.id under the lease-bound policy and is not tenant-facing. A worker capability, edge function or future API that reads a global sequence through ops_worker, service_role or the owner and returns it to a tenant is outside it and is a review event under ADR 0015's owner clarification. A tenant-scoped or opaque cursor must be designed before any tenant-facing event or job-event reader exists.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

@@ -32,7 +32,7 @@ Consequences for this ADR, which do not change the decision:
 
 - **The decision stands and is, if anything, reinforced.** The worker leasing jobs from Postgres with `FOR UPDATE SKIP LOCKED` **pulls**; it never needed the database to push. The hop was cited as evidence, not as a dependency.
 - **Database-initiated outbound calls are no longer available and must not be reintroduced casually.** Any future design that wants the database to call out — a webhook trigger, a notification, a Supabase Database Webhook — is reopening a channel that `anon` can also use. That is a decision with an ADR attached, not an implementation detail. It is guarded by an executable assertion: `supabase/tests/rls_tenant_isolation.sql` fails if `pg_net` or the `net` schema reappears.
-- **The worker's identity is constrained by [ADR 0012](0012-worker-tenant-context.md), which is still Proposed.** Its mechanism is now verified in isolation, but the worker must not run as `service_role` (carries `BYPASSRLS`) and must not run as `postgres` (also carries `BYPASSRLS` on Supabase — measured). Both are outside RLS entirely, so either choice would make the tenant model decorative.
+- **The worker's identity is constrained by [ADR 0012](0012-worker-tenant-context.md), ~~which is still Proposed~~ *(Accepted 2026-09-12)*.** Its mechanism is now verified in isolation, but the worker must not run as `service_role` (carries `BYPASSRLS`) and must not run as `postgres` (also carries `BYPASSRLS` on Supabase — measured). Both are outside RLS entirely, so either choice would make the tenant model decorative.
 
 ---
 

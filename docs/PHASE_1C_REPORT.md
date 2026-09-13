@@ -579,7 +579,7 @@ Not changed: ADR 0008 (still unresolved) and ADR 0012 (Accepted, untouched).
 10. **Probe coverage gaps:** the probe holds no signed-in `authenticated` JWT, and no hosted gateway is measured.
 11. **Local-network protection depends on a machine setting.** A Docker Desktop reset or upgrade can undo it; `check:local-exposure` and the `test:db` warning detect that.
 12. **The mutation harness is session tooling, not committed.** Its method and per-mutation evidence are recorded here, but CI does not re-run mutations.
-13. ~~**ADRs 0002, 0003 and 0015 are still Proposed.**~~ **Corrected 2026-09-13:** ADR 0015 is Accepted with the owner addendum; ADRs 0002 and 0003 are still Proposed.
+13. ~~**ADRs 0002, 0003 and 0015 are still Proposed.**~~ **Corrected 2026-09-13:** ADR 0015 is Accepted with the owner addendum; ADRs 0002 and 0003 are still Proposed. *(Later 2026-09-13: 0003 accepted as reconciled.)*
 14. **CI has no passing end-to-end test.** Every Playwright test fails or is skipped, and did before Phase 1C too (9 failed, 1 skipped, identical on `7d41efff` and `e160debb`; §22). No UI flow is regression-tested in CI: login, onboarding, the contact list and its account-manager filter, bulk tagging and task creation. Phase 1C changes no file under `src/` or `e2e/`, but its migration and seed do reach that job.
 
 ---
@@ -588,7 +588,7 @@ Not changed: ADR 0008 (still unresolved) and ADR 0012 (Accepted, untouched).
 
 Deterministic throughout: no LLM, prompt, provider, memory, WhatsApp, Ads, browser automation or UI. ROADMAP's sequencing rule holds: **no agent before the kill switch and cost ledger.**
 
-1. **Review gate:** accept or amend ADRs 0002, 0003 and 0015 before anything builds on them. *(2026-09-13: 0015 accepted; 0002 and 0003 reconciled, still Proposed.)*
+1. **Review gate:** accept or amend ADRs 0002, 0003 and 0015 before anything builds on them. *(2026-09-13: 0015 accepted; 0002 and 0003 reconciled, still Proposed.)* *(Later: 0003 accepted; 0002 waits on a `merge_contacts` pool test.)*
 2. **Kill switch** (ADR 0010):
    - global, tenant, company, department and agent scopes; deny-wins; fail-closed;
    - enforced at lease time through `ops.task_jobs`;
@@ -601,6 +601,9 @@ Deterministic throughout: no LLM, prompt, provider, memory, WhatsApp, Ads, brows
    - kill switch and budget checked on that path.
 5. **Event delivery:** decide the consumer model ~~(per-tenant cursor versus global `seq`)~~ and build one deterministic consumer. *(Narrowed 2026-09-13, ADR 0015 owner decision 5: `seq` is internal only, so any tenant-facing consumer, cursor or Agent Runtime reader needs a tenant-scoped or opaque cursor, designed first.)*
 6. **Carry-over:** decide ADR 0008's registry publication scope.
+7. **Correlation id trust model** *(added 2026-09-13, owner)*: decide how `correlation_id` is validated and trusted. Every domain function accepts a caller-supplied `correlation_id` today, and `ops.events` stores it unvalidated.
+8. **Domain mutation idempotency** *(added 2026-09-13, owner)*: a retried `create_task`, `record_event` or other domain operation must not duplicate business work. Today only job creation is idempotent; the Company OS create functions are not.
+9. **Tenant-facing event cursor** *(added 2026-09-13, owner)*: design a tenant-scoped or opaque cursor before any tenant-facing event or job-event reader exists. `ops.events.seq` and `ops.job_events.id` stay internal (ADR 0015 owner clarification, SI-26).
 
 Explicitly **not** in Phase 1D: the approval engine (ADR 0009), principals and a human operator API (ADR 0004), a Tool Gateway beyond capability objects, any UI.
 
@@ -633,4 +636,4 @@ Everything else the signoff requires was measured locally on 2026-09-13:
 - **Suites:** all database, driver-backed and unit suites, typecheck, lint, build and the secret scan are green, and Prettier passes on every changed file it checks (§20; the repository-wide check has 2 pre-existing failures, §22).
 - **Local network:** the exposure is closed and its regression check committed.
 
-**Phase 1D has not started.** ~~The owner's architectural review of ADR 0015, together with ADRs 0002 and 0003 (Appendix A, item 1), is still required before anything is built on them.~~ **Updated 2026-09-13:** the owner accepted Phase 1C and ADR 0015, with an addendum. The review of ADRs 0002 and 0003 is still required before anything is built on them, and ADR 0002 is blocked on ADR 0011 item 4.
+**Phase 1D has not started.** ~~The owner's architectural review of ADR 0015, together with ADRs 0002 and 0003 (Appendix A, item 1), is still required before anything is built on them.~~ **Updated 2026-09-13:** the owner accepted Phase 1C and ADR 0015, with an addendum. The review of ADRs 0002 and 0003 is still required before anything is built on them, and ADR 0002 is blocked on ADR 0011 item 4. *(Later 2026-09-13, pre-1D closure: ADR 0003 accepted; the MCP function removed; ADR 0002 now blocked on the `merge_contacts` owner-session pool instead.)*

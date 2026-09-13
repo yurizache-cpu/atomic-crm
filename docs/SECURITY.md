@@ -30,18 +30,20 @@ These are enforcement rules, not preferences. Each one exists because this repos
 | Boundary | Enforced by | State |
 | --- | --- | --- |
 | Browser → `public.*` | PostgREST + RLS policies | In place; RLS rewritten to per-`sales_id` scoping, **unmigrated** |
-| Browser → engine (`ops.*`) | Schema left out of the PostgREST allowlist | Designed ([ADR 0002](adr/0002-tenancy-model.md)); `ops` does not exist yet |
-| MCP function → database | A superuser pool, downgraded per transaction | **Not a production trust boundary** — see [ADR 0011](adr/0011-mcp-trust-boundary.md) |
-| Worker → tenant data | Scoped role + transaction-local GUC | Designed only ([ADR 0012](adr/0012-worker-tenant-context.md)); no worker exists |
+| Browser → engine (`ops.*`) | Schema left out of the PostgREST allowlist and search path; `anon` and `authenticated` hold no USAGE on `ops` | ~~Designed; `ops` does not exist yet~~ Built and probed since Phases 1A and 1C (SI-15, SI-21) — [ADR 0002](adr/0002-tenancy-model.md) |
+| ~~MCP function → database~~ | ~~A superuser pool, downgraded per transaction~~ | **Removed 2026-09-13** and kept out of the committed deploy paths (SI-03) — see [ADR 0011](adr/0011-mcp-trust-boundary.md) |
+| Worker → tenant data | `ops_worker` (NOLOGIN, no `BYPASSRLS`), tenant resolved from a live lease ~~Scoped role + transaction-local GUC~~ | Built and tested since Phases 1A and 1B (SI-13, SI-14, SI-16) — [ADR 0012](adr/0012-worker-tenant-context.md), Accepted 2026-09-12 |
 | Frontend resource gating | `canAccess` | Deny-by-default since Phase 0.5; **UX only, never the boundary** |
 
-The load-bearing correction of Phase 0.5: ADR 0002 claimed the engine would be "unreachable from any browser by construction". That was **false** — the MCP function holds a direct libpq superuser connection that ignores the PostgREST allowlist entirely. The claim is now narrowed to "unreachable *through PostgREST*", and the second channel is governed by ADR 0011.
+The load-bearing correction of Phase 0.5: ADR 0002 claimed the engine would be "unreachable from any browser by construction". That was **false** — the MCP function holds a direct libpq superuser connection that ignores the PostgREST allowlist entirely. The claim is now narrowed to "unreachable *through PostgREST*", and the second channel is governed by ADR 0011. *(2026-09-13: `postgres` is `BYPASSRLS`, not a superuser, on Supabase; and the MCP function was removed, so that second channel no longer exists — ADR 0011 addendum, SI-03.)*
 
 ---
 
 ## 3. What Phase 0.5 closed
 
 ### Arbitrary SQL (`validateSql`)
+
+*(2026-09-13: the function this section describes is removed; see ADR 0011's addendum. The section stays as the Phase 0.5 record.)*
 
 - **Was:** `WITH x AS (SELECT 1) DELETE FROM contacts` passed the read-only gate. The classifier walked a `WITH` node's CTE bindings but never the statement the `WITH` was attached to, so the collected types were `{with, select}`. **Reproduced against the pinned parser before changing anything.**
 - **Now, two independent layers:**
@@ -76,10 +78,10 @@ Ranked by what an attacker or an accident reaches first.
 | **`SELECT extensions.http_get(…)`** — SSRF/exfiltration from inside the database via a legal read-only statement. `SET TRANSACTION READ ONLY` does not stop it (it is not a database write). | Workstream D; needs `REVOKE EXECUTE` and a live database to verify |
 | **`merge_contacts` destroys `do_not_contact`** and all acquisition attribution — the new FKs cascade and the function re-points only `tasks` and `contact_notes`. LGPD-relevant. | Workstream E |
 | **Postmark webhook returns 200 on every ingestion failure** — no retry, no durable record, silent data loss. | Workstream F |
-| **MCP `jwtVerify` has no audience check** — any token this project issued is accepted (confused deputy). | Open |
-| **MCP `get_schema` runs without the role downgrade** on the superuser connection. | Open |
-| **MCP logs full SQL statements** including names, emails and note text — an uncontrolled secondary store of personal data under LGPD. | Open |
-| **`x-forwarded-host` is trusted** when building OAuth metadata and the 401 challenge. | Open |
+| **MCP `jwtVerify` has no audience check** — any token this project issued is accepted (confused deputy). | ~~Open~~ Closed 2026-09-13: the function is removed |
+| **MCP `get_schema` runs without the role downgrade** on the superuser connection. | ~~Open~~ Closed 2026-09-13: the function is removed |
+| **MCP logs full SQL statements** including names, emails and note text — an uncontrolled secondary store of personal data under LGPD. | ~~Open~~ Closed 2026-09-13: the function is removed |
+| **`x-forwarded-host` is trusted** when building OAuth metadata and the 401 challenge. | ~~Open~~ Closed 2026-09-13: only the removed MCP function built that metadata |
 | **Secrets are committed by design** — `.gitignore` un-ignores `supabase/functions/.env`; an EC private signing key is tracked in `supabase/signing_keys.json`; `.env.development` and `.env.e2e` match no ignore pattern at all. | Open; needs rotation, which is its own change |
 | **`delete_note_attachments`** lets any authenticated user delete any file via the service role. | Open |
 | **`users`/`patchUser` ordering** mutates auth email and ban state before the owner check. | Open |
@@ -115,7 +117,7 @@ The canonical, executable list is [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.m
 - **SI-14** — tenant context is derived from a **live lease**, never asserted by the worker, and dies with the transaction.
 - **SI-15** — `ops` is unreachable by `anon`/`authenticated` and absent from the PostgREST allowlist.
 
-**The trust boundary moved.** Before Phase 1A, anything running server-side ran as `service_role`, which carries `BYPASSRLS` — so "background work" and "full database access" were the same thing. The worker is now `ops_worker`: `NOLOGIN`, no `BYPASSRLS`, `SELECT` on three `ops` tables, `EXECUTE` on three lease-checking functions, and nothing at all in `public`.
+**The trust boundary moved.** Before Phase 1A, anything running server-side ran as `service_role`, which carries `BYPASSRLS` — so "background work" and "full database access" were the same thing. The worker is now `ops_worker`: `NOLOGIN`, no `BYPASSRLS`, `SELECT` on three `ops` tables, `EXECUTE` on three lease-checking functions, and nothing at all in `public`. *(2026-09-13: that was Phase 1A. Since Phase 1B `ops_worker` has SELECT on `tenants`, `jobs`, `job_events` and `queue_metrics`, and EXECUTE on the eleven functions pinned by `company_domain_core.sql` A4, three of which check no lease: `worker_heartbeat`, `worker_stopped` and `reap_expired_leases`. It still holds no privilege in `public`.)*
 
 **The one measurement that shaped the design.** A worker can set any GUC — `set_config` is executable by PUBLIC, and a probe confirmed a worker role setting a tenant GUC and reading another tenant's row. So tenancy is not carried in a GUC the worker writes; it is resolved from an `ops.jobs` row that is leased, unexpired and owned by that worker. The bound, stated plainly: against a fully malicious worker *process* the limit is `ops_worker`'s grants, not one tenant. Against the threat that actually matters — a bug that forgets the context, or a tenant taken from the job **payload**, which is where LLM output arrives in Phase 1B — tenancy is unreachable.
 
@@ -159,7 +161,7 @@ The organisational model — companies, departments, agents, tasks and events �
 | C1C-SEAM-03 | No test showed that a lease owned by another worker, or an expired lease, reads nothing from the domain tables. | Cases C6 and C7 in `company_domain_core.sql`. |
 | C1C-SEAM-04 | The Data API probe had no GraphQL check, no secret key, no per-credential positive control, a bare-RPC check that could never fail, and never read the live search path. | All added; the check that could never fail was removed. |
 
-**Recorded, not changed.** `ops.events` rows are never updated, but the owner can delete them: erasure needs that. Platform read roles (`pg_read_all_data`, `supabase_read_only_user`) can read `ops`, as they can read everything. `events.seq` is one identity across tenants. An oversize idempotency key used to surface as a btree error; it is now bounded at 200 characters and refused with `OS400`.
+**Recorded, not changed.** `ops.events` rows are never updated, but the owner can delete them: erasure needs that. Platform read roles (`pg_read_all_data`, `supabase_read_only_user`) can read `ops`, as they can read everything. `events.seq` is one identity across tenants. An oversize idempotency key used to surface as a btree error; it is now bounded at 200 characters and refused with `OS400`. *(2026-09-13, owner: `events.seq`, `job_events.id` and every future global monotonic identifier are internal only; SI-26.)*
 
 **Found in passing, outside Phase 1C's surface: the local stacks were reachable from the network.** Measured 2026-09-12 on both local Supabase stacks:
 

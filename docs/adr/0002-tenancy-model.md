@@ -45,7 +45,7 @@ What that does **not** discharge, for this ADR specifically:
 
 ## Addendum 2026-09-13 — reconciled with ADR 0012, ADR 0015 and the owner decisions (after Phase 1C)
 
-This record was re-read against the repository after Phases 1A–1C, against [ADR 0012](0012-worker-tenant-context.md) as accepted, and against [ADR 0015](0015-company-os-domain-core.md) with its owner addendum. Claims that were false are corrected in place above; this addendum states what the tenancy model now is. **Status stays Proposed:** the MCP channel (§6) is still open.
+This record was re-read against the repository after Phases 1A–1C, against [ADR 0012](0012-worker-tenant-context.md) as accepted, and against [ADR 0015](0015-company-os-domain-core.md) with its owner addendum. Claims that were false are corrected in place above; this addendum states what the tenancy model now is. **Status stays Proposed:** the MCP channel (§6) is still open. *(Later 2026-09-13: the MCP channel is closed; see the second 2026-09-13 addendum. The status still stays Proposed, for the reason given there.)*
 
 ### 1. Tenant is the only isolation boundary
 
@@ -81,7 +81,7 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 
 ### 4. Identities outside the boundary
 
-- The owner, `postgres`, runs migrations and the seed (locally, and on a hosted project provisioned by `scripts/supabase-remote-init.mjs`; see §5) and, in Phase 1C, the Company OS services. `service_role` holds the enqueue exception. Hosting-level read roles (`pg_read_all_data` members, `supabase_read_only_user`) hold SELECT on `ops`; every policy names only `ops_worker`, so such a role reads every tenant's rows only if it also carries `BYPASSRLS`, which the repository has not measured.
+- The owner, `postgres`, runs migrations and the seed (locally, and on a hosted project provisioned by `scripts/supabase-remote-init.mjs`; see §5) and, in Phase 1C, the Company OS services. `service_role` holds the enqueue exception. Hosting-level read roles (`pg_read_all_data` members, `supabase_read_only_user`) hold SELECT on `ops`; every policy names only `ops_worker`, so such a role reads every tenant's rows only if it also carries `BYPASSRLS`, which the repository has not measured. *(Later 2026-09-13: remote initialisation no longer pushes the seed; SI-25.)*
 - `postgres` and `service_role` carry `BYPASSRLS`, so neither RLS nor FORCE binds them. No isolation claim in this record covers them.
 - Neither is ever an ordinary Company OS agent or worker identity (ADR 0015 owner decision 7). The worker refuses to boot as `postgres`, `supabase_admin`, `service_role`, a superuser or a `BYPASSRLS` role (SI-16).
 
@@ -91,13 +91,13 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 - "Tenant one" is data: at most one `ops.tenants` row may carry `owns_local_crm`, enforced by a unique partial index (Phase 1B). No migration, seed or provisioning script creates that row, and the seeded `dev` tenant leaves the flag false; only the driver-backed test fixture (`engine/worker/testSupport/dbFixture.ts`) marks its test tenant `dbtest-a`. On a migrated or seeded database, therefore, `ops.purge_inbound_email_ledger` refuses every tenant until an operator marks one.
 - A capability reaching `public.*` takes its tenant from the lease and refuses a tenant without `owns_local_crm` (SI-18); today that is `ops.purge_inbound_email_ledger`. Company-scoped work must never reach `public.*` on `owns_local_crm` alone (ADR 0015 §2).
 - `public.*` will not gain a tenant axis under this decision, so `rls_tenant_isolation.sql` stays pointed at `sales_id`. There is nothing to re-point.
-- `scripts/supabase-remote-init.mjs` provisions one Atomic CRM project. It is not tenant provisioning, but it is not tenant-free either: it runs `supabase db push --include-roles --include-seed`, and because `config.toml` declares no `[db.seed]`, that pushes the default seed, `supabase/seed.sql` (inferred from the CLI's default seed path; not executed). The seed creates the `dev` development tenant with one company, three departments and two agents, contradicting its own comment that a hosted project never runs it. The script sets no `owns_local_crm` and creates no `ops_worker` login. Project per tenant remains an option for hard isolation.
+- `scripts/supabase-remote-init.mjs` provisions one Atomic CRM project. It is not tenant provisioning, but it is not tenant-free either: it runs `supabase db push --include-roles --include-seed`, and because `config.toml` declares no `[db.seed]`, that pushes the default seed, `supabase/seed.sql` (inferred from the CLI's default seed path; not executed). The seed creates the `dev` development tenant with one company, three departments and two agents, contradicting its own comment that a hosted project never runs it. The script sets no `owns_local_crm` and creates no `ops_worker` login. Project per tenant remains an option for hard isolation. *(Later 2026-09-13: the seed flag is removed, so a hosted project no longer receives the development tenant; SI-25. The seed's reference data is an open decision.)*
 
 ### 6. Channels
 
 - **Data API.** REST and RPC resolve only in the exposed schemas (`config.toml:11`); GraphQL reflects the extra search path (`config.toml:13`); the authenticator's `pgrst.*` settings can override both. `ops` is on neither. `opsDataApiExposure.mjs` (SI-15) attacks both channels with five credentials: 340 requests, none reached `ops`, green in CI run 34770182266. `deploy.yml` pushes no API settings, so a hosted project must be checked in that project.
 - **Direct connections.** The reach of `anon`, `authenticated`, `service_role` and `ops_worker` into `ops` is bounded by the privileges in §3, which migrations and suites assert. The identities in §4 are not bounded by them.
-- **The MCP function: open.** [ADR 0011](0011-mcp-trust-boundary.md) item 4 required it to be removed, restricted to a role with no rights on `ops`, or kept out of production before `ops` existed. None of the three happened:
+- **The MCP function: open.** [ADR 0011](0011-mcp-trust-boundary.md) item 4 required it to be removed, restricted to a role with no rights on `ops`, or kept out of production before `ops` existed. None of the three happened: *(Closed 2026-09-13 by removing the function; see the second 2026-09-13 addendum.)*
   - `supabase/functions/mcp/index.ts` still falls back to a `postgres` pool, and the repository neither sets nor checks the production `SUPABASE_DB_URL`;
   - `deploy.yml` deploys it with every other function;
   - its `query`, `mutate` and `complete_task` tools run SQL through one helper that downgrades to `authenticated` per transaction, and `authenticated` holds no USAGE on `ops`; `get_schema` reads only `public` metadata, without the downgrade;
@@ -116,4 +116,37 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 | Worker reads isolated by a live lease | `ops_execution_core.sql` and `runOneJob.ts` (SI-14); `pooling.dbtest.ts` for context not surviving a pooled connection | met, CI run 34770182266 |
 | Company OS privileges and structure | `company_domain_core.sql` (SI-21, SI-22) | met, same run |
 | No Data API reach into `ops` | `opsDataApiExposure.mjs` (SI-15) | met, same run |
-| No MCP reach into `ops` | ADR 0011 item 4 discharged, and a test through that channel | **not met** |
+| No MCP reach into `ops` | ADR 0011 item 4 discharged, and a test through that channel | ~~**not met**~~ met 2026-09-13 by removal; SI-03's static guard replaces a runtime test through a channel that no longer exists (CI pending) |
+
+---
+
+## Addendum 2026-09-13 (later) — MCP channel closed; the status stays Proposed
+
+**Owner decision:** the generic MCP SQL function is not a production Company OS channel. It was removed on 2026-09-13 ([ADR 0011](0011-mcp-trust-boundary.md) addendum), and `scripts/production-scope.mjs` keeps it out of the committed deploy paths (SI-03). The development seed no longer reaches a hosted project through a committed path (SI-25).
+
+**Re-evaluated against the repository after the removal.** Every way code in this repository reaches the database:
+
+| Channel | Reach into `ops` | Proven by |
+| --- | --- | --- |
+| Data API, REST and GraphQL | none: `ops` is off the exposed schemas and the search path, and `anon` and `authenticated` hold no USAGE on it | `opsDataApiExposure.mjs` (SI-15) |
+| Edge functions over supabase-js (`users`, `update_password`, `delete_note_attachments`, `postmark`) | none: PostgREST, Auth and Storage only; the one RPC is `public.get_user_id_by_email` | SI-15, which attacks `service_role` too |
+| `merge_contacts`, over the shared Postgres pool | none as written: the session logs in as `postgres`, runs `SET LOCAL ROLE authenticated`, then fixed Kysely queries on `public` tables, and `authenticated` holds no USAGE on `ops` | **nothing tests it**; SI-03 only keeps other functions off the pool and refuses raw SQL other than literals, compiled queries and the one reviewed interpolation |
+| Worker | lease-bound, as `ops_worker` | SI-13, SI-14, SI-16 |
+| Owner (`postgres`) | everything; never an ordinary agent or worker identity | ADR 0015 owner decision 7 |
+| MCP function | removed | SI-03 (static) |
+
+**Why it stays Proposed.** This record's two-channel test obligation (2026-09-11 addendum) requires an isolation test through the raw-connection channel as well as the Data API. After the removal, that channel is `merge_contacts`: deployed, invoked by signed-in users, and logged in as a `BYPASSRLS` role. It cannot reach `ops` today only because of what its own code does, and no test reproduces its connection shape. Two things would let this record be accepted:
+1. a database test that connects as `postgres`, runs `SET LOCAL ROLE authenticated`, asserts `permission denied for schema ops`, and asserts the role is restored after COMMIT on the reused connection — or moving `merge_contacts` off the owner-session pool;
+2. a green CI run on the commits that removed the MCP function and added SI-03 and SI-25.
+
+Recorded for that decision: `merge_contacts` builds `set_config('request.jwt.claim.sub', …)` by interpolating the authenticated user id into the SQL on that session. A parameterised call would remove the question.
+
+**Acceptance criterion, restated again.**
+
+| Criterion | State |
+| --- | --- |
+| Worker reads isolated by a live lease | met, CI run 34770182266 |
+| Company OS privileges and structure | met, same run |
+| No Data API reach into `ops` | met, same run |
+| No MCP reach into `ops` | met by removal and SI-03; CI pending |
+| Owner-session pool (`merge_contacts`) tested against `ops` | **not met** |

@@ -29,7 +29,7 @@ Because nothing was ever applied, the safe path is **not** a reversing migration
 
 ### Stage configuration model (designed, deliberately NOT built in Phase 0.5)
 
-The owner's requirements — company-scoped, ordered, stable ids, editable labels, activation/deactivation — need a tenant discriminator to be *company*-scoped, and no tenant concept exists yet (see [ADR 0002](0002-tenancy-model.md); `public.companies` means *CRM customer account*, not tenant). Building tenant-scoped pipeline tables now would either hardcode single-tenancy or pre-empt Phase 2.
+The owner's requirements — company-scoped, ordered, stable ids, editable labels, activation/deactivation — need a tenant discriminator to be *company*-scoped, and no tenant concept exists yet (see [ADR 0002](0002-tenancy-model.md); `public.companies` means *CRM customer account*, not tenant). Building tenant-scoped pipeline tables now would either hardcode single-tenancy or pre-empt Phase 2. *(2026-09-13: a tenant concept now exists, `ops.tenants`, since Phase 1A. Since Phase 1C, `ops.companies` is an organisational entity inside a tenant, never a tenant or an isolation boundary, and businesses that need independent data isolation are separate tenants (ADR 0015 owner addendum).)*
 
 So the shape is recorded and deferred:
 

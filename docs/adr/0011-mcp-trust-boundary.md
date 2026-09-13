@@ -7,13 +7,13 @@
 
 `supabase/functions/mcp/index.ts` exposes two tools — `query` (arbitrary SELECT) and `mutate` (arbitrary INSERT/UPDATE/DELETE) — to any holder of a signature-valid Supabase JWT. Verified properties of the current implementation:
 
-- The pool connects with `SUPABASE_DB_URL`, defaulting to `postgresql://postgres:postgres@db:5432/postgres` — **superuser** (`index.ts:22-25`).
+- The pool connects with `SUPABASE_DB_URL`, defaulting to `postgresql://postgres:postgres@db:5432/postgres` — ~~**superuser**~~ `postgres` *(corrected 2026-09-13: on Supabase `postgres` is `rolsuper=false`, `rolbypassrls=true`, so it bypasses RLS all the same)* (`index.ts:22-25`).
 - `query`/`mutate` downgrade to `authenticated` per transaction via `set_config('role', …, true)`, so RLS *is* enforced on those two paths. `get_schema` does **not** downgrade, and returns the full public schema map on the raw connection.
 - `jwtVerify` is called with `{ issuer }` and no audience check, so any token this project issued is accepted.
 - The read-only gate was bypassable: a CTE attached to DML (`WITH x AS (SELECT 1) DELETE FROM contacts`) collected `{with, select}` and passed. **Reproduced 2026-09-11**; fixed in the same change as this ADR.
 - A plain `SELECT extensions.http_get(…)` is a legal read-only statement, giving outbound HTTP from inside the database — an SSRF/exfiltration path that no amount of RLS constrains.
 
-The consequence that forces this decision: [ADR 0002](0002-tenancy-model.md) claimed the engine would be "unreachable from any browser by construction" because `ops` is off the PostgREST allowlist. A raw libpq superuser connection makes that claim false. One component therefore invalidates the isolation story of the whole platform.
+The consequence that forces this decision: [ADR 0002](0002-tenancy-model.md) claimed the engine would be "unreachable from any browser by construction" because `ops` is off the PostgREST allowlist. A raw libpq ~~superuser~~ `postgres` (`BYPASSRLS`) connection makes that claim false. One component therefore invalidates the isolation story of the whole platform.
 
 ## Decision
 
@@ -76,3 +76,28 @@ Decision item 3 above — *no AI agent receives arbitrary SQL execution* — is 
 ### Standing consequence
 
 Reinstalling `pg_net` silently re-grants `anon` and `authenticated`, and no privilege change this project can make will close it again. It is therefore guarded by an executable assertion rather than by documentation: `supabase/tests/rls_tenant_isolation.sql` fails if the extension or the `net` schema reappears (`npm run test:db`). Restoring note attachments means re-answering this question, not re-adding the extension quietly.
+
+---
+
+## Addendum 2026-09-13 — the function is removed (owner decision, pre-1D closure)
+
+**Owner decision:** the generic MCP SQL function must not be a production Company OS channel. The future interface is an explicit Tool Gateway with allowlisted operations; it is not built yet.
+
+**Dependency analysis.** Nothing in the Company OS used the function: `engine/`, `scripts/`, `e2e/`, `.github/` and the harness configuration held no reference to it. Its only consumers were a settings-screen section that displayed its URL, the matching en/fr messages, and one user documentation page. `[auth.oauth_server]` is disabled, so a remote AI client had no supported way to obtain a token for it in this fork.
+
+**What was done.**
+1. `supabase/functions/mcp/` is deleted: `index.ts`, `taskListUi.ts`, `validateSql.ts` and its test. So are its `[functions.mcp]` configuration, the settings section and its messages, the documentation page and its navigation entry, and the `CRM_BASE_URL` variable only it read. Decision item 4 is discharged by removal, the first of its three options.
+2. `scripts/production-scope.mjs`, with `scripts/production-scope-commands.mjs`, refuses the committed ways back that it can read:
+   - a function directory outside the reviewed allowlist of five, or a second functions tree;
+   - function configuration for an unlisted function, or away from its canonical paths, and any module map or package manifest but a reviewed function's own `deno.json`;
+   - an import that leaves `supabase/functions/`, a computed module name, or an external module not reviewed for the file that loads it, which is how an MCP server library or a SQL parser would arrive;
+   - function source that names a known MCP server or SQL parser, hands a raw SQL call anything but a literal, a reviewed interpolation or a query Kysely compiled, or reaches the shared Postgres pool from anywhere but `merge_contacts`;
+   - a function deploy outside `deploy.yml` and the makefile, one that names no function or an unlisted one, one no blocking scope check precedes, a remote CLI command against another workdir, or a committed Management API deploy call;
+   - code that calls `/functions/v1/mcp` or invokes `mcp`.
+
+   It reads JavaScript and TypeScript with the TypeScript parser. `deploy.yml` and the makefile run it before deploying and name their functions explicitly. `scripts/test/production-scope.test.mjs` and `scripts/test/production-scope-functions.test.mjs` attack it by reintroducing each path, including into the real `deploy.yml`, makefile and `config.toml`, and replay every bypass that three adversarial reviews found in earlier versions.
+3. SI-03 now points at that guard. SI-07, whose only subject was the function's read path, is retired.
+
+**What does not change.** Decision item 3 stands: no AI agent receives arbitrary SQL execution. The Context and the outstanding items above describe a function that no longer exists; they stay as the record of why it was removed.
+
+**Not covered.** The guard reads committed files. It cannot see a person running the CLI by hand, a command or module name assembled where no literal shows it, SQL reaching the database through a method other than the raw ones it names, or code outside `supabase/functions` that is not a deploy path; a function that executes caller-supplied SQL must still fail review under item 3. A hosted project that had already received the function would keep it until it is deleted there. No hosted project exists.
