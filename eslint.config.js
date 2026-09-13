@@ -95,5 +95,60 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    // The engine boundary, mechanically (ADR 0005, CLAUDE.md rule 1). Engine code
+    // never depends on the CRM adapter's internals: no react-admin, no Supabase
+    // client, nothing from the SPA. And execution never depends on the domain —
+    // the dependency runs domain -> execution (ADR 0015).
+    files: ["engine/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["ra-core", "ra-*", "react-admin", "@supabase/*"],
+              message:
+                "Engine code must not depend on the CRM adapter's internals (ADR 0005).",
+            },
+            {
+              group: ["**/src/**", "@/*"],
+              message: "Engine code must not import from the SPA.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: [
+      "engine/worker/**/*.ts",
+      "engine/db/**/*.ts",
+      "engine/handlers/**/*.ts",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["ra-core", "ra-*", "react-admin", "@supabase/*"],
+              message:
+                "Engine code must not depend on the CRM adapter's internals (ADR 0005).",
+            },
+            {
+              group: ["**/src/**", "@/*"],
+              message: "Engine code must not import from the SPA.",
+            },
+            {
+              group: ["**/domain/**", "../domain/*"],
+              message:
+                "Execution must not depend on the Company OS domain; the dependency runs domain -> execution (ADR 0015).",
+            },
+          ],
+        },
+      ],
+    },
+  },
   storybook.configs["flat/recommended"],
 );

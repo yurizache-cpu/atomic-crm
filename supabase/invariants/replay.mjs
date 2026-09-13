@@ -184,6 +184,31 @@ function checkFileEndState({ fileState, file, declaration }) {
     );
   }
 
+  // An ops trigger dropped and never re-created, or brought back in a mode that
+  // replica mode silences. The per-statement half is handleDropTrigger.
+  for (const [key, line] of fileState.droppedTriggers) {
+    findings.push(
+      finding(
+        `trigger-dropped:${key}`,
+        "trigger-dropped",
+        file,
+        line,
+        `${key} is dropped and not re-created at top level in the same migration. In ops, triggers carry invariants — the task state machine, column immutability, lifecycle events and their immutability — so the drop removes the invariant for every later write.`,
+      ),
+    );
+  }
+  for (const [key, line] of fileState.pendingAlways) {
+    findings.push(
+      finding(
+        `trigger-not-always:${key}`,
+        "trigger-not-always",
+        file,
+        line,
+        `${key} was ENABLE ALWAYS, and this migration drops or replaces it without enabling it always again. A re-created trigger fires only in ORIGIN mode, so session_replication_role = replica silences it.`,
+      ),
+    );
+  }
+
   for (const [key, value] of fileState.views) {
     const schema = key.split(".")[0];
     if (!declaration.views.enforcedSchemas.includes(schema)) {
@@ -377,6 +402,7 @@ export function analyze({ corpus, declaration, seal, repoRoot }) {
   const strippedByFile = new Map();
   const context = {
     isKnownView: (key) => declaredViews.has(key) || globalState.views.has(key),
+    isAlwaysTrigger: (key) => globalState.alwaysTriggers.has(key),
     provesRemoval(file, catalogues, name) {
       const text = strippedByFile.get(file) ?? "";
       if (!/raise\s+exception/.test(text)) return false;
@@ -478,7 +504,11 @@ export function analyze({ corpus, declaration, seal, repoRoot }) {
 export function checkDeclarativeViews(sql, declaration) {
   const findings = [];
   const state = createState();
-  const context = { isKnownView: () => false, provesRemoval: () => false };
+  const context = {
+    isKnownView: () => false,
+    provesRemoval: () => false,
+    isAlwaysTrigger: () => false,
+  };
   for (const statement of splitStatements(
     sql,
     "supabase/schemas/03_views.sql",

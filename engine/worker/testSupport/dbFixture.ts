@@ -54,7 +54,7 @@ export function provisionWorkerRole(): void {
 }
 
 /** The migration that must be applied for any of these suites to mean anything. */
-const REQUIRED_MIGRATION = "20260912160000";
+const REQUIRED_MIGRATION = "20260912200000";
 
 /**
  * Refuses to run against the wrong database.
@@ -76,7 +76,7 @@ export async function assertTargetDatabase(admin: Pool): Promise<void> {
   if (applied < REQUIRED_MIGRATION) {
     throw new Error(
       `Refusing to run: ${ADMIN_URL.replace(/:[^:@/]*@/, ":***@")} is at migration ${applied}, ` +
-        `but ${REQUIRED_MIGRATION} (the Phase 1B worker runtime) is required. ` +
+        `but ${REQUIRED_MIGRATION} (the Phase 1C company domain core) is required. ` +
         "This is almost certainly the wrong stack — the isolated e2e stack is on port 54342 " +
         "(npx supabase start --workdir .supabase-e2e), and 54322 is the other working copy's " +
         "atomic-crm-demo. Set SUPABASE_DB_PORT.",
@@ -117,6 +117,35 @@ export const TENANT_A = "a0000000-0000-4000-8000-00000000000a";
 export const TENANT_B = "b0000000-0000-4000-8000-00000000000b";
 
 /**
+ * Removes every Company OS row of the given tenants, in foreign-key order.
+ *
+ * Every Company OS table references ops.tenants ON DELETE RESTRICT, and
+ * ops.task_jobs references ops.jobs the same way — so ONE leftover company,
+ * event or link would make the next suite's `delete from ops.tenants` (or
+ * `delete from ops.jobs`) fail with 23503, and the single-fork engine run would
+ * go red in a file that never touched the domain. Self-referencing rows (a
+ * task's parent) go in one statement, which the foreign key allows.
+ */
+export async function deleteCompanyOsRows(
+  admin: Pool,
+  tenantIds: readonly string[],
+): Promise<void> {
+  for (const table of [
+    "task_jobs",
+    "events",
+    "tasks",
+    "agents",
+    "departments",
+    "companies",
+  ]) {
+    await admin.query(
+      `delete from ops.${table} where tenant_id = any($1::uuid[])`,
+      [tenantIds],
+    );
+  }
+}
+
+/**
  * Creates the two tenants and clears anything a previous run left.
  *
  * Tenant A owns the local CRM; B deliberately does not, so "a tenant that may
@@ -124,6 +153,7 @@ export const TENANT_B = "b0000000-0000-4000-8000-00000000000b";
  */
 export async function resetFixtures(admin: Pool): Promise<void> {
   await assertTargetDatabase(admin);
+  await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],
@@ -159,6 +189,7 @@ export async function cleanupFixtures(admin: Pool | undefined): Promise<void> {
   // Without this the real failure (a database that could not be reached) was
   // buried under "Cannot read properties of undefined (reading 'query')".
   if (!admin) return;
+  await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],

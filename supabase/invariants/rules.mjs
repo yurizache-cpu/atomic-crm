@@ -7,21 +7,27 @@
 
 import {
   AUTHENTICATED_PRIVILEGES,
+  OPS_BYPASS_ROLE_GRANTS,
   OPS_WORKER_PRIVILEGES,
   BYPASS_ROLES,
   MATVIEW,
   UNKNOWN,
   indexAtDepth,
+  isOpsObject,
   parseAlterRelation,
   parseCreateExtension,
+  parseCreateTrigger,
   parseCreateView,
+  parseDropCascade,
   parseDropExtension,
+  parseDropTrigger,
   parseDropView,
   parseGrant,
   qualify,
   relKey,
   splitAtDepth,
 } from "./parse.mjs";
+import { stripSqlComments } from "./sqlStatements.mjs";
 
 /**
  * @typedef {object} Finding
@@ -47,6 +53,12 @@ export function createState() {
     /** tables created in this scope -> line, for the RLS pairing rule */
     tables: new Map(),
     rlsEnabled: new Set(),
+    /** ops triggers ("schema.table:trigger") dropped and not re-created -> line */
+    droppedTriggers: new Map(),
+    /** ops triggers that must be enabled ALWAYS again before end of file -> line */
+    pendingAlways: new Map(),
+    /** ops triggers currently ENABLE ALWAYS */
+    alwaysTriggers: new Set(),
     /** object key -> line / file of the statement that last touched it */
     lines: new Map(),
     files: new Map(),
@@ -131,6 +143,25 @@ function handleAlterRelation(ctx) {
     ctx.state.rlsEnabled.add(key);
     return true;
   }
+  if (alter.kind === "trigger-weakened") {
+    if (alter.rel.schema === "ops") {
+      ctx.at(
+        `trigger-weakened:${key}`,
+        "trigger-weakened",
+        `${key} has a trigger disabled, or enabled in a mode that is silent under session_replication_role = replica. In ops, triggers carry invariants — the task state machine, column immutability, and event rows that are never rewritten — so switching one off removes the invariant for every later write with no statement naming it. Only \`enable always trigger\` is accepted.`,
+      );
+    }
+    return true;
+  }
+  if (alter.kind === "trigger-always") {
+    // Inside a DO block the statement may never run, so it tightens nothing.
+    if (alter.rel.schema === "ops" && !ctx.fromDo) {
+      const triggerKey = `${key}:${alter.trigger}`;
+      ctx.state.alwaysTriggers.add(triggerKey);
+      ctx.state.pendingAlways.delete(triggerKey);
+    }
+    return true;
+  }
   if (alter.kind === "set-invoker") {
     // `alter table <view> set (security_invoker = …)` is legal: ALTER TABLE
     // accepts reloption SET/RESET on a view. Both designs reviewed for this
@@ -181,6 +212,72 @@ function handleDropView(ctx) {
   return true;
 }
 
+/**
+ * `drop trigger` switches an ops invariant off as surely as `disable trigger`,
+ * with no ALTER to find. A drop is credited only when the same migration
+ * re-creates the trigger at top level and, if it was ENABLE ALWAYS, enables it
+ * always again: the drop-if-exists / create / enable-always shape a re-runnable
+ * migration uses. What is still outstanding is judged at end of file.
+ *
+ * Not modelled: `create or replace function` rewriting a guard function's body.
+ * That leaves every trigger in place and is caught by the SQL suites, which
+ * exercise each guard, not by this static pass.
+ */
+function handleDropTrigger(ctx) {
+  const drop = parseDropTrigger(ctx.masked);
+  if (!drop) return false;
+  if (drop.unclassifiable) {
+    UNREADABLE(
+      ctx,
+      "unclassifiable-drop-trigger",
+      "a DROP TRIGGER whose trigger or table cannot be determined",
+    );
+    return true;
+  }
+  if (drop.rel.schema !== "ops") return true;
+  const key = `${relKey(drop.rel)}:${drop.trigger}`;
+  ctx.state.droppedTriggers.set(key, ctx.statement.line);
+  if (ctx.context.isAlwaysTrigger?.(key)) {
+    ctx.state.pendingAlways.set(key, ctx.statement.line);
+  }
+  ctx.state.alwaysTriggers.delete(key);
+  return true;
+}
+
+function handleCreateTrigger(ctx) {
+  const create = parseCreateTrigger(ctx.masked);
+  if (!create) return false;
+  if (create.unclassifiable) {
+    UNREADABLE(
+      ctx,
+      "unclassifiable-create-trigger",
+      "a CREATE TRIGGER whose trigger or table cannot be determined",
+    );
+    return true;
+  }
+  if (create.rel.schema !== "ops") return true;
+  const key = `${relKey(create.rel)}:${create.trigger}`;
+  // Inside a DO block the creation may never run, so it re-creates nothing.
+  // A REPLACE there may still run, so it still counts against the firing mode.
+  if (!ctx.fromDo) ctx.state.droppedTriggers.delete(key);
+  // CREATE OR REPLACE TRIGGER resets the firing mode to ORIGIN (measured).
+  if (create.replace && ctx.context.isAlwaysTrigger?.(key)) {
+    ctx.state.pendingAlways.set(key, ctx.statement.line);
+    ctx.state.alwaysTriggers.delete(key);
+  }
+  return true;
+}
+
+function handleDropCascade(ctx) {
+  if (!parseDropCascade(ctx.masked)) return false;
+  ctx.at(
+    `drop-cascade:ops:${ctx.statement.file}:${ctx.statement.line}`,
+    "drop-cascade",
+    "DROP … CASCADE reaching ops. CASCADE removes every dependent object without a statement naming it: dropping a guard function drops each trigger that calls it, and dropping a table drops the policies and foreign keys that reference it. Drop the dependents explicitly so each removal is reviewed.",
+  );
+  return false; // the drop itself is still modelled by the handlers below
+}
+
 function handleCreateExtension(ctx) {
   const ext = parseCreateExtension(ctx.masked);
   if (!ext) return false;
@@ -221,6 +318,35 @@ function handleDropExtension(ctx) {
 }
 
 function grantFindingsForRole(ctx, grant, role) {
+  // `ops` is backend-only. Checked BEFORE the bypass-role exemption, because in
+  // `ops` a grant to a bypass role is not "nothing new": service_role holds no
+  // table privilege there at all (asserted by ops_execution_core.sql), so a
+  // grant would be the first unfiltered, every-tenant read of engine data.
+  if (isOpsObject(grant.object)) {
+    if (BYPASS_ROLES.has(role)) {
+      for (const privilege of grant.privileges) {
+        if (
+          OPS_BYPASS_ROLE_GRANTS.has(`${role} ${privilege} ${grant.object}`)
+        ) {
+          continue;
+        }
+        ctx.at(
+          `ops-grant:${role}:${grant.object}:${privilege}`,
+          "ops-grant",
+          `GRANT ${privilege.toUpperCase()} on ${grant.object} TO ${role}. ${role} carries BYPASSRLS, so this is unfiltered access to every tenant's rows in ops, not a scoped one. The only bypass-role grants ops permits are pinned, privilege by privilege, in OPS_BYPASS_ROLE_GRANTS (supabase/invariants/parse.mjs) and in migrationInvariants.test.ts; Company OS data has no service_role path (SI-21).`,
+        );
+      }
+      return;
+    }
+    if (role === "authenticated") {
+      ctx.at(
+        `ops-grant:authenticated:${grant.object}`,
+        "ops-grant",
+        `GRANT on ${grant.object} TO authenticated. ops is backend-only (SI-15, SI-21): no end-user role reaches it, and its RLS policies resolve the tenant from a worker lease that an end user never holds.`,
+      );
+      return;
+    }
+  }
   if (BYPASS_ROLES.has(role)) return; // already a full bypass; stated, not hidden
   if (role === "anon" || role === "public") {
     ctx.at(
@@ -321,6 +447,44 @@ function handleDefaultPrivileges(ctx) {
     return true;
   }
   const roles = splitAtDepth(ctx.masked.slice(toAt + 4).replace(/;$/, ""), ",");
+
+  // Default privileges reach every FUTURE object with no statement naming it.
+  // In ops that is the whole attack: `grant select on tables to service_role`
+  // would make every Company OS table added later readable by a BYPASSRLS role.
+  // No `in schema` clause means every schema the grantor creates objects in,
+  // ops included.
+  const scope = /\bin\s+schema\s+(.+?)\s+grant\b/.exec(ctx.masked);
+  const reachesOps =
+    !scope || splitAtDepth(scope[1], ",").some((s) => s === "ops");
+  const onAt = indexAtDepth(ctx.masked, " on ", grantAt);
+  const privileges =
+    onAt === -1
+      ? ["all"]
+      : splitAtDepth(ctx.masked.slice(grantAt + 7, onAt), ",").map((p) =>
+          p.replace(/\s+privileges$/, "").trim(),
+        );
+  for (const role of roles) {
+    if (!reachesOps) break;
+    if (BYPASS_ROLES.has(role) || role === "authenticated") {
+      ctx.at(
+        `default-privileges:ops:${role}`,
+        "default-privileges",
+        `ALTER DEFAULT PRIVILEGES${scope ? ` IN SCHEMA ${scope[1]}` : " (no schema: every schema, ops included)"} … GRANT … TO ${role} makes every FUTURE ops object reachable by ${role} with no statement naming it. ops is backend-only (SI-15, SI-21).`,
+      );
+      continue;
+    }
+    if (role === "ops_worker") {
+      for (const privilege of privileges) {
+        if (OPS_WORKER_PRIVILEGES.has(privilege)) continue;
+        ctx.at(
+          `default-privileges:ops:ops_worker:${privilege}`,
+          "default-privileges",
+          `ALTER DEFAULT PRIVILEGES … GRANT ${privilege.toUpperCase()} … TO ops_worker gives the worker a write verb on every FUTURE ops table (SI-13).`,
+        );
+      }
+    }
+  }
+
   for (const role of roles) {
     if (role !== "anon" && role !== "authenticated" && role !== "public") {
       continue;
@@ -361,11 +525,56 @@ function handleStorage(ctx) {
   return false;
 }
 
+/**
+ * `set` is inert except for two settings. Read from the comment-stripped RAW
+ * text, not the masked text, because masking blanks string literals and
+ * `set search_path to 'ops'` must not read as `to ''`.
+ */
+function handleSet(ctx) {
+  if (!/^set\b/.test(ctx.masked)) return false;
+  const text = (
+    ctx.statement.raw
+      ? stripSqlComments(ctx.statement.raw, ctx.statement.file)
+      : ctx.masked
+  )
+    .replace(/\s+/g, " ")
+    .trim();
+  const m =
+    /^set\s+(?:local\s+|session\s+)?([a-z_][a-z0-9_.]*)\s*(?:=|\bto\b)\s*(.*?);?$/.exec(
+      text,
+    );
+  if (!m) return true; // SET ROLE, SET TRANSACTION …: outside this model
+  const [, name, value] = m;
+  const where = `${ctx.statement.file}:${ctx.statement.line}`;
+  if (
+    name === "session_replication_role" &&
+    !/^'?(origin|default)'?$/.test(value.trim())
+  ) {
+    ctx.at(
+      `session-replication-role:${where}`,
+      "session-replication-role",
+      `SET session_replication_role = ${value}. In replica mode no ORIGIN trigger and no foreign-key check fires for the rest of the session, so rows written after this statement are never validated: cross-tenant references, illegal task states and unrecorded lifecycle events can all be stored.`,
+    );
+  }
+  if (name === "search_path" && /(^|[\s,'"])ops([\s,'"]|$)/.test(value)) {
+    ctx.at(
+      `search-path:ops:${where}`,
+      "search-path",
+      `SET search_path to include ops. Unqualified names in later statements then resolve into ops, while this guard qualifies them as public.* — so an ops grant or an ops table without RLS would be judged as public. Schema-qualify ops objects instead.`,
+    );
+  }
+  return true;
+}
+
 const HANDLERS = [
+  handleSet,
+  handleDropCascade,
   handleCreateTable,
   handleCreateView,
   handleAlterRelation,
   handleDropView,
+  handleDropTrigger,
+  handleCreateTrigger,
   handleCreateExtension,
   handleDropExtension,
   handleGrant,

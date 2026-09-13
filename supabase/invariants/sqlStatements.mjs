@@ -360,10 +360,13 @@ export const HEADS = [
   // Security-relevant: a new table with no RLS is a relation an application
   // role can read with no policy applied.
   { head: "create table", re: /^create\s+table\b/, security: true },
+  // Security-relevant since Phase 1C: ops invariants live in triggers. Creating
+  // one is what credits a drop; dropping one, or CASCADE-dropping a function,
+  // table, schema, type or sequence it depends on, removes the invariant.
   {
     head: "create trigger",
     re: /^create\s+(or\s+replace\s+)?trigger\b/,
-    security: false,
+    security: true,
   },
   { head: "create type", re: /^create\s+type\b/, security: false },
   { head: "do", re: /^do\b/, security: true },
@@ -374,21 +377,25 @@ export const HEADS = [
     security: true,
   },
   { head: "drop view", re: /^drop\s+view\b/, security: true },
-  { head: "drop function", re: /^drop\s+function\b/, security: false },
+  { head: "drop function", re: /^drop\s+function\b/, security: true },
   { head: "drop index", re: /^drop\s+index\b/, security: false },
   { head: "drop policy", re: /^drop\s+policy\b/, security: false },
-  { head: "drop schema", re: /^drop\s+schema\b/, security: false },
-  { head: "drop sequence", re: /^drop\s+sequence\b/, security: false },
-  { head: "drop table", re: /^drop\s+table\b/, security: false },
-  { head: "drop trigger", re: /^drop\s+trigger\b/, security: false },
-  { head: "drop type", re: /^drop\s+type\b/, security: false },
+  { head: "drop schema", re: /^drop\s+schema\b/, security: true },
+  { head: "drop sequence", re: /^drop\s+sequence\b/, security: true },
+  { head: "drop table", re: /^drop\s+table\b/, security: true },
+  { head: "drop trigger", re: /^drop\s+trigger\b/, security: true },
+  { head: "drop type", re: /^drop\s+type\b/, security: true },
   { head: "grant", re: /^grant\b/, security: true },
   { head: "revoke", re: /^revoke\b/, security: true },
   { head: "insert into", re: /^insert\s+into\b/, security: true },
   { head: "update", re: /^update\b/, security: true },
   { head: "delete from", re: /^delete\s+from\b/, security: false },
   { head: "select", re: /^select\b/, security: false },
-  { head: "set", re: /^set\b/, security: false },
+  // Security-relevant since Phase 1C: `set session_replication_role = replica`
+  // turns off every ORIGIN trigger and every foreign-key check for the rest of
+  // the session, and `set search_path to ops` makes unqualified names in later
+  // statements resolve into ops while this guard reads them as public.*.
+  { head: "set", re: /^set\b/, security: true },
   { head: "analyze", re: /^analyze\b/, security: false },
 ];
 

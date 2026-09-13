@@ -45,6 +45,39 @@ export const BYPASS_ROLES = new Set([
  */
 export const OPS_WORKER_PRIVILEGES = new Set(["select", "execute", "usage"]);
 
+/**
+ * `ops` is backend-only (SI-15, SI-21). Two grants in it reach a bypass role,
+ * both from Phase 1A and both deliberate: `service_role` may reach the schema
+ * and may create work through `ops.enqueue_job`, and nothing else.
+ *
+ * Every OTHER grant on an `ops` object to a bypass role is a finding. Without
+ * this the guard exempted them entirely — `grant select on ops.companies to
+ * service_role` passed statically, and `service_role` carries BYPASSRLS, so
+ * that one line would be unfiltered access to every tenant's company data. The
+ * migrations' own assertions only run when THOSE migrations apply, so a later
+ * one would not re-check.
+ *
+ * Keys are `<role> <privilege> <object>` exactly as parseGrant emits them. The
+ * privilege is part of the key on purpose: the Phase 1A grant is USAGE on the
+ * schema, and a key without it would also admit CREATE or ALL — a BYPASSRLS
+ * role creating objects inside the backend-only schema.
+ */
+export const OPS_BYPASS_ROLE_GRANTS = new Set([
+  "service_role usage ops",
+  "service_role execute ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)",
+]);
+
+/** True when a GRANT's object list names anything in schema `ops`. */
+export function isOpsObject(object) {
+  return splitAtDepth(object, ",").some(
+    (part) =>
+      part === "ops" ||
+      part.startsWith("ops.") ||
+      /^schema\s+ops$/.test(part) ||
+      /\bin\s+schema\s+ops$/.test(part),
+  );
+}
+
 export const AUTHENTICATED_PRIVILEGES = new Set([
   "select",
   "insert",
@@ -230,6 +263,20 @@ export function parseAlterRelation(masked) {
   if (/^(enable|force)\s+row\s+level\s+security\b/.test(rest)) {
     return { kind: "rls-enabled", rel, isTable };
   }
+  // Phase 1C moved invariants into triggers: the task state machine, column
+  // immutability, and "facts are never rewritten". `disable trigger` switches
+  // one off; `enable replica trigger` and a plain `enable trigger` both leave it
+  // silent under session_replication_role = replica — the plain form DOWNGRADES
+  // a trigger created `enable always`. Only `enable always trigger` tightens.
+  // `enable always trigger <name>` is the one tightening form. The name is kept
+  // so a later drop of that trigger knows it must come back ALWAYS.
+  const always = /^enable\s+always\s+trigger\s+([a-z_][a-z0-9_$]*)/.exec(rest);
+  if (always) {
+    return { kind: "trigger-always", rel, trigger: always[1], isTable };
+  }
+  if (/^(disable\s+trigger|enable\s+(replica\s+)?trigger)\b/.test(rest)) {
+    return { kind: "trigger-weakened", rel, isTable };
+  }
   if (/^rename\s+to\b/.test(rest)) {
     // `rename to` ONLY. `alter view … rename column` is real, at
     // 20260115150819_snake_case_renaming.sql:2, and misreading it as a relation
@@ -274,6 +321,62 @@ export function parseAlterRelation(masked) {
   // table owner (who bypasses RLS unless FORCE ROW LEVEL SECURITY is set), is
   // outside this model. Stated as a known gap, not silently assumed away.
   return { kind: "ignored", rel, isTable };
+}
+
+const TRIGGER_NAME = "([a-z_][a-z0-9_$]*)";
+
+/** `drop trigger [if exists] <name> on <table> [cascade | restrict]` */
+export function parseDropTrigger(masked) {
+  if (!/^drop\s+trigger\b/.test(masked)) return null;
+  const m = new RegExp(
+    `^drop\\s+trigger\\s+(if\\s+exists\\s+)?${TRIGGER_NAME}\\s+on\\s+`,
+  ).exec(masked);
+  const nameToken = m ? readName(masked, m[0].length) : null;
+  const rel = nameToken ? qualify(nameToken.raw) : null;
+  if (!rel) return { unclassifiable: true };
+  return { kind: "drop-trigger", trigger: m[2], rel };
+}
+
+/**
+ * `create [or replace] [constraint] trigger <name> <timing> <events> on <table>`
+ * and then one of the clauses that may follow the table. Anchoring on that
+ * clause keeps `update of a, b` from being read as the table.
+ */
+export function parseCreateTrigger(masked) {
+  if (!/^create\s+(or\s+replace\s+)?(constraint\s+)?trigger\b/.test(masked)) {
+    return null;
+  }
+  const m = new RegExp(
+    `^create\\s+(or\\s+replace\\s+)?(constraint\\s+)?trigger\\s+${TRIGGER_NAME}\\s`,
+  ).exec(masked);
+  const on = m
+    ? /\son\s+([a-z0-9_$.]+)\s+(for|referencing|from|not|deferrable|initially|when|execute)\b/.exec(
+        masked.slice(m[0].length - 1),
+      )
+    : null;
+  const rel = on ? qualify(on[1]) : null;
+  if (!rel) return { unclassifiable: true };
+  return {
+    kind: "create-trigger",
+    trigger: m[3],
+    rel,
+    replace: Boolean(m[1]),
+  };
+}
+
+/**
+ * `drop … cascade` naming an ops object or the ops schema. CASCADE removes
+ * dependents that no statement names: dropping a guard function this way drops
+ * every trigger that calls it.
+ */
+export function parseDropCascade(masked) {
+  if (!/^drop\s/.test(masked) || !/\scascade\s*;?\s*$/.test(masked)) {
+    return null;
+  }
+  const reachesOps =
+    /(^|[\s,(])ops\./.test(masked) ||
+    /^drop\s+schema\s+(if\s+exists\s+)?([a-z0-9_$]+\s*,\s*)*ops\b/.test(masked);
+  return reachesOps ? { kind: "drop-cascade" } : null;
 }
 
 /** `drop [materialized] view [if exists] a, b [cascade]` */

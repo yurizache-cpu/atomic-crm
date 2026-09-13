@@ -13,6 +13,7 @@ import {
   loadMigrationCorpus,
   validateDeclaration,
 } from "../invariants/replay.mjs";
+import { OPS_BYPASS_ROLE_GRANTS } from "../invariants/parse.mjs";
 
 // THE GUARD AGAINST A SECURITY-REGRESSING MIGRATION (SI-12).
 //
@@ -80,6 +81,13 @@ const FROZEN = {
    *  must enable RLS. `ops` joined the list in Phase 1B; REMOVING a schema
    *  here is the fail-open move, which is why the list is pinned. */
   enforcedSchemas: ["public", "ops"],
+  /** The only grants on `ops` objects a BYPASSRLS role may hold (Phase 1A).
+   *  Adding one hands a bypass role unfiltered access to engine data, which is
+   *  why it is a diff in this file and not only in parse.mjs. */
+  opsBypassRoleGrants: [
+    "service_role usage ops",
+    "service_role execute ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)",
+  ],
 };
 
 const run = (
@@ -147,6 +155,9 @@ describe("the guard actually ran", () => {
       FROZEN.forbiddenExtensions,
     );
     expect(declaration.extensions.allowed).not.toContain("pg_net");
+    expect([...OPS_BYPASS_ROLE_GRANTS].sort()).toEqual(
+      [...FROZEN.opsBypassRoleGrants].sort(),
+    );
   });
 
   it("asserts apply order rather than assuming it", () => {
@@ -393,6 +404,177 @@ const REJECTED: Array<[string, string, RegExp]> = [
     "a schema-wide grant to the engine worker",
     "grant select on all tables in schema ops to ops_worker;",
     /^grant:ops_worker:all tables in schema ops$/,
+  ],
+  // --- Phase 1C: ops is backend-only for EVERY Data API role. ---------------
+  // Bypass roles used to be exempt from the grant rules everywhere. In ops that
+  // exemption was a hole: service_role holds no table privilege there, so a
+  // grant is not "nothing new" but the first unfiltered read of every tenant.
+  [
+    "a read on an ops table granted to service_role (BYPASSRLS)",
+    "grant select on table ops.companies to service_role;",
+    /^ops-grant:service_role:ops\.companies:select$/,
+  ],
+  [
+    "every ops table granted to service_role",
+    "grant all on all tables in schema ops to service_role;",
+    /^ops-grant:service_role:all tables in schema ops:all$/,
+  ],
+  [
+    "an ops function other than enqueue_job granted to service_role",
+    "grant execute on function ops.lease_job(text, integer) to service_role;",
+    /^ops-grant:service_role:ops\.lease_job\(text, integer\):execute$/,
+  ],
+  [
+    "an ops table granted to another bypass role",
+    "grant select on ops.events to supabase_read_only_user;",
+    /^ops-grant:supabase_read_only_user:ops\.events:select$/,
+  ],
+  [
+    // The pinned Phase 1A grant is USAGE. An exception keyed on role + object
+    // alone also admitted CREATE and ALL: a BYPASSRLS role creating objects in
+    // the backend-only schema.
+    "CREATE on the ops schema to service_role, beside its pinned USAGE",
+    "grant create on schema ops to service_role;",
+    /^ops-grant:service_role:ops:create$/,
+  ],
+  [
+    "ALL on the ops schema to service_role",
+    "grant all on schema ops to service_role;",
+    /^ops-grant:service_role:ops:all$/,
+  ],
+  [
+    "default privileges handing every future ops table to service_role",
+    "alter default privileges in schema ops grant select on tables to service_role;",
+    /^default-privileges:ops:service_role$/,
+  ],
+  [
+    "default privileges with no schema, which reach ops too",
+    "alter default privileges grant execute on functions to service_role;",
+    /^default-privileges:ops:service_role$/,
+  ],
+  [
+    "default privileges giving the worker a write verb on future ops tables",
+    "alter default privileges in schema ops grant insert on tables to ops_worker;",
+    /^default-privileges:ops:ops_worker:insert$/,
+  ],
+  [
+    "default privileges reaching future ops objects for authenticated",
+    "alter default privileges in schema ops grant select on tables to authenticated;",
+    /^default-privileges:ops:authenticated$/,
+  ],
+  [
+    "disabling a trigger that carries an ops invariant",
+    "alter table ops.tasks disable trigger tasks_guard_update;",
+    /^trigger-weakened:ops\.tasks$/,
+  ],
+  [
+    "a replica-mode trigger in ops, silent under session_replication_role",
+    "alter table ops.events enable replica trigger events_refuse_update;",
+    /^trigger-weakened:ops\.events$/,
+  ],
+  [
+    "downgrading an ALWAYS trigger in ops to ORIGIN",
+    "alter table ops.tasks enable trigger tasks_guard_update;",
+    /^trigger-weakened:ops\.tasks$/,
+  ],
+  [
+    // `disable trigger` was the only spelling the first rule knew. A drop
+    // removes the same invariant with no ALTER at all (Phase 1C adversarial pass).
+    "dropping an ALWAYS guard trigger outright",
+    "drop trigger tasks_guard_update on ops.tasks;",
+    /^trigger-dropped:ops\.tasks:tasks_guard_update$/,
+  ],
+  [
+    "dropping a guard trigger inside a DO block",
+    `do ${D}${D} begin drop trigger if exists events_refuse_update on ops.events; end ${D}${D};`,
+    /^trigger-dropped:ops\.events:events_refuse_update$/,
+  ],
+  [
+    // A creation inside a DO block credits nothing, but a REPLACE there can
+    // still run and reset the firing mode. Found by mutation G9: DO bodies did
+    // not surface `create trigger` at all, so this went unseen.
+    "CREATE OR REPLACE TRIGGER on an ALWAYS guard inside a DO block",
+    `do ${D}${D} begin create or replace trigger tasks_guard_update before update on ops.tasks for each row execute function ops.guard_task_update(); end ${D}${D};`,
+    /^trigger-not-always:ops\.tasks:tasks_guard_update$/,
+  ],
+  [
+    "a drop re-created only inside a DO block, which may never run",
+    [
+      "drop trigger if exists events_refuse_update on ops.events;",
+      `do ${D}${D} begin if false then create trigger events_refuse_update before update on ops.events for each row execute function ops.refuse_update(); end if; end ${D}${D};`,
+    ].join("\n"),
+    /^trigger-dropped:ops\.events:events_refuse_update$/,
+  ],
+  [
+    "an ALWAYS guard trigger re-created, but left to fire only in ORIGIN mode",
+    [
+      "drop trigger if exists tasks_guard_update on ops.tasks;",
+      "create trigger tasks_guard_update before update on ops.tasks for each row execute function ops.guard_task_update();",
+    ].join("\n"),
+    /^trigger-not-always:ops\.tasks:tasks_guard_update$/,
+  ],
+  [
+    // Measured: pg_trigger.tgenabled goes from 'A' to 'O'.
+    "CREATE OR REPLACE TRIGGER on an ALWAYS guard, which resets it to ORIGIN",
+    "create or replace trigger tasks_guard_update before update on ops.tasks for each row execute function ops.guard_task_update();",
+    /^trigger-not-always:ops\.tasks:tasks_guard_update$/,
+  ],
+  [
+    "a guard function dropped with CASCADE, taking its triggers with it",
+    "drop function ops.guard_task_update() cascade;",
+    /^drop-cascade:ops:/,
+  ],
+  [
+    "the same CASCADE inside a DO block",
+    `do ${D}${D} begin drop function if exists ops.refuse_update() cascade; end ${D}${D};`,
+    /^drop-cascade:ops:/,
+  ],
+  [
+    "switching off foreign keys and triggers for the session",
+    "set session_replication_role = replica;",
+    /^session-replication-role:/,
+  ],
+  [
+    "the same, quoted and transaction-local",
+    "set local session_replication_role to 'replica';",
+    /^session-replication-role:/,
+  ],
+  [
+    // qualify() reads an unqualified name as public.*, so under this
+    // search_path an ops grant or an ops table without RLS is judged as public.
+    "a search_path that sends unqualified names into ops",
+    "set search_path to ops, public;",
+    /^search-path:ops:/,
+  ],
+  [
+    "the same search_path, quoted",
+    "set search_path = 'ops';",
+    /^search-path:ops:/,
+  ],
+  [
+    "a read on an ops table granted to authenticated",
+    "grant select on ops.companies to authenticated;",
+    /^ops-grant:authenticated:ops\.companies$/,
+  ],
+  [
+    "the ops schema granted to authenticated",
+    "grant usage on schema ops to authenticated;",
+    /^ops-grant:authenticated:ops$/,
+  ],
+  [
+    "an ops function granted to authenticated",
+    "grant execute on function ops.create_task(uuid) to authenticated;",
+    /^ops-grant:authenticated:ops\.create_task\(uuid\)$/,
+  ],
+  [
+    "ops hidden in a multi-schema grant",
+    "grant usage on schema public, ops to authenticated;",
+    /^ops-grant:authenticated:public, ops$/,
+  ],
+  [
+    "an ops grant inside a DO block",
+    `do ${D}${D} begin grant select on ops.tasks to service_role; end ${D}${D};`,
+    /^ops-grant:service_role:ops\.tasks:select$/,
   ],
   [
     "today's db diff output",
@@ -681,6 +863,56 @@ const ACCEPTED: Array<[string, string]> = [
       "create policy note_select on public.patient_notes for select to authenticated using (public.is_admin());",
       "grant select, insert, update, delete on table public.patient_notes to authenticated;",
       "grant usage on sequence public.patient_notes_id_seq to authenticated;",
+    ].join("\n"),
+  ],
+  [
+    // Phase 1A's two deliberate bypass-role grants in ops, and nothing more.
+    "the two pinned service_role grants in ops",
+    [
+      "grant usage on schema ops to service_role;",
+      "grant execute on function ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text) to service_role;",
+    ].join("\n"),
+  ],
+  [
+    "a bypass-role grant outside ops is still exempt",
+    "grant select on table public.contacts to supabase_read_only_user;",
+  ],
+  [
+    "default privileges scoped to public for a bypass role are unchanged",
+    "alter default privileges in schema public grant select on tables to service_role;",
+  ],
+  [
+    // What a Phase 1C migration does: guard triggers survive replica mode.
+    "tightening an ops trigger to ALWAYS",
+    "alter table ops.tasks enable always trigger tasks_guard_update;",
+  ],
+  [
+    // The re-runnable shape 20260912200000 uses for every ops trigger. A rule
+    // that refused it would be deleted the first time a guard is re-created.
+    "dropping, re-creating and re-tightening an ALWAYS guard trigger",
+    [
+      "drop trigger if exists tasks_guard_update on ops.tasks;",
+      "create trigger tasks_guard_update before update on ops.tasks for each row execute function ops.guard_task_update();",
+      "alter table ops.tasks enable always trigger tasks_guard_update;",
+    ].join("\n"),
+  ],
+  [
+    "re-creating an ORIGIN emission trigger, which replica mode is meant to skip",
+    [
+      "drop trigger if exists tasks_emit_changed on ops.tasks;",
+      "create trigger tasks_emit_changed after update of status, assigned_agent_id on ops.tasks for each row when (old.status is distinct from new.status) execute function ops.emit_lifecycle_event();",
+    ].join("\n"),
+  ],
+  [
+    "a trigger dropped outside ops",
+    "drop trigger if exists on_contact_notes_deleted_delete_note_attachments on public.contact_notes;",
+  ],
+  [
+    "restoring the default replication role, and inert settings",
+    [
+      "set session_replication_role = origin;",
+      "set local lock_timeout = '5s';",
+      `set search_path to ${Q}${Q};`,
     ].join("\n"),
   ],
   [

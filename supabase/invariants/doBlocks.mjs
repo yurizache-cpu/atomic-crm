@@ -27,6 +27,13 @@ const BODY_HAZARD_VERBS = [
   /\bdrop\s+extension\b/,
   /\bdrop\s+(materialized\s+)?view\b/,
   /\balter\s+(materialized\s+view|view|table)\b/,
+  // Phase 1C: ops invariants live in triggers, and a drop removes one as surely
+  // as `alter table … disable trigger`. `create or replace trigger` resets an
+  // ALWAYS trigger to ORIGIN. CASCADE removes them with no statement naming
+  // them (views are excluded here: `drop view` above already surfaces it).
+  /\bdrop\s+trigger\b/,
+  /\bcreate\s+(or\s+replace\s+)?trigger\b/,
+  /\bdrop\s+(function|procedure|table|schema|type|domain|sequence)\b.*\bcascade\b/,
   /\balter\s+default\s+privileges\b/,
   /\bgrant\b/,
   /\bupdate\s+storage\.buckets\b/,

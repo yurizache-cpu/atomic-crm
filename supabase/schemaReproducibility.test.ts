@@ -94,6 +94,23 @@ describe("declarative schema vs migrations", () => {
     }
   });
 
+  it.each(migrationFiles.filter((file) => file >= "20260912120000"))(
+    "engine migration %s names no particular tenant's business (CLAUDE.md rule 2)",
+    (file) => {
+      // The engine must run a clinic today and a 3D-printing business later.
+      // Department names, company names and agent roles are seed data; a word
+      // like these in executable engine DDL is the `deals` CHECK mistake again.
+      const sql = stripComments(
+        readFileSync(join(migrationsDir, file), "utf8"),
+      ).toLowerCase();
+      // Whole words only: PL/pgSQL's own `get diagnostics` must not read as a
+      // clinical term — a guard that cries wolf on correct SQL gets deleted.
+      expect(sql).not.toMatch(
+        /\b(psycholog\w*|clinics?|clinical|patients?|therap(y|ies|ist|ists|eutic)|diagnos(is|es)|appointments?|reception)\b/,
+      );
+    },
+  );
+
   it("keeps the storage lockdown out of the declarative schema's diffable surface", () => {
     // `07_storage.sql` is DML, which `db diff` cannot emit. Its enforcement has
     // to be a hand-written migration, or the documented state and the real
@@ -113,6 +130,9 @@ describe("declarative schema vs migrations", () => {
       "close_attachments_bucket",
       "revoke_network_extension_privileges",
       "inbound_email_ledger",
+      "ops_execution_core",
+      "ops_worker_runtime",
+      "company_domain_core",
     ]) {
       const file = migrationFiles.find((f) => f.includes(name));
       expect(file, `missing migration: ${name}`).toBeDefined();

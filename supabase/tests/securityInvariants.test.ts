@@ -325,8 +325,8 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-15",
     statement:
-      "The ops schema is unreachable by anon and authenticated, and is absent from the PostgREST allowlist.",
-    provenBy: ["migration assertion", "static guard"],
+      "The ops schema is unreachable by anon and authenticated, is absent from the PostgREST allowlist, and no PostgREST request reaches it with any credential, service_role included.",
+    provenBy: ["live database", "migration assertion", "static guard"],
     enforcedBy: [
       {
         file: "supabase/migrations/20260912120000_ops_execution_core.sql",
@@ -338,9 +338,27 @@ const INVARIANTS: Invariant[] = [
         // so adding a schema is a deliberate, reviewable diff.
         marker: /schemas = \["public", "storage", "graphql_public"\]/,
       },
+      {
+        // Phase 1C: a REQUEST, not a config file. Every ops relation and
+        // function in the live catalogue, through Kong over REST and GraphQL,
+        // with no key, the publishable key, the anon JWT, the service_role JWT
+        // and the secret key, each behind a positive control.
+        file: "supabase/tests/opsDataApiExposure.mjs",
+        marker: /none reached ops/,
+      },
+      {
+        // Phase 1C: bypass roles were exempt from the grant rules everywhere,
+        // so `grant select on ops.x to service_role` passed statically.
+        file: "supabase/invariants/rules.mjs",
+        marker: /"ops-grant"/,
+      },
+      {
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker: /a read on an ops table granted to service_role \(BYPASSRLS\)/,
+      },
     ],
     caveat:
-      "The allowlist governs one channel. A direct libpq connection ignores it -- see ADR 0011.",
+      "The allowlist governs one channel. A direct libpq connection ignores it -- see ADR 0011. The probe attacks the Data API only, over REST and GraphQL, and asserts the live PostgREST search path excludes ops; it holds no signed-in authenticated JWT, because minting one needs the development signing key (SI-20) or a sign-up that writes. On the LOCAL CLI stack three unauthenticated paths run SQL as postgres -- Kong POST /pg/query, Studio POST /api/platform/pg-meta/default/query, and Postgres with the default password -- and Docker Desktop publishes them on every interface, IPv6 included, unless its Port binding behavior is Localhost only (measured 2026-09-12): a local-development exposure this invariant does not cover, detected by npm run check:local-exposure. A hosted project's gateway is not measured by anything here. The probe never writes: every REST write and RPC attempt carries an unparseable body, which a closed schema refuses with 406 before parsing and an open one rejects with 400 without executing, and the GraphQL request is introspection only.",
   },
   // -- Phase 1B: the production worker runtime ------------------------------
   {
@@ -484,6 +502,181 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "Catches verbatim, base64, hex and PEM copies; a deliberately obfuscated copy is out of scope. No Supabase CLI command uploads signing keys, so a hosted project trusts this key only if a person imports it: the JWKS check sees that and fails closed, but only when a deploy runs. scripts/supabase-remote-init.mjs provisions a brand-new project, which generates its own keys, and its initial push is not gated.",
+  },
+  // -- Phase 1C: the Company OS domain core ----------------------------------
+  {
+    id: "SI-21",
+    statement:
+      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or function, no ops function is executable by PUBLIC, and every Company OS function is SECURITY INVOKER.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "static guard",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /A1: Company OS table reachable by an application role/,
+      },
+      {
+        // The whole EXECUTE surface of the application roles in ops, pinned: a
+        // function born reachable, or a grant nobody reviewed, fails by name.
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /A4: the ops EXECUTE surface drifted from the pinned set/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /B: a leased worker reached Company OS data or services/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /E8: an EXECUTE grant alone let a worker write Company OS data/,
+      },
+      {
+        file: "supabase/migrations/20260912200000_company_domain_core.sql",
+        marker: /ops function\(s\) executable by PUBLIC/,
+      },
+      {
+        file: "supabase/invariants/rules.mjs",
+        marker: /default-privileges:ops:/,
+      },
+      {
+        file: "engine/domain/companyOs.dbtest.ts",
+        marker: /refuses a leased worker at the privilege layer/,
+      },
+      {
+        // A native permission failure is a misconfigured connection — never
+        // dressed up as a domain refusal the caller would handle and move past.
+        file: "engine/domain/errors.test.ts",
+        marker: /leaves a native permission failure alone/,
+      },
+    ],
+    caveat:
+      "The owner (postgres) is outside this boundary by design, exactly as it is for RLS. The lease-bound read policies on the Company OS tables are declared with NO grant and are proven only through a grant that exists inside a rolled-back transaction: policy-shape evidence for a future reader, not a live read path. PostgreSQL gives every new function EXECUTE to PUBLIC and the Phase 1A per-schema default-privilege revoke does not remove it (measured), so each function is revoked explicitly and the pinned per-run EXECUTE set is what catches a forgotten one.",
+  },
+  {
+    id: "SI-22",
+    statement:
+      "Tenant and company consistency is structural: every reference between Company OS rows carries tenant_id and company_id through a composite foreign key or an insert guard, org units cannot be re-parented, and an id outside the caller's tenant scope is not found before any of its state is read — so no role but the owner can store a cross-tenant or cross-company row.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D1 a tenant-A department in a tenant-B company/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D4 a tenant-A task assigned a tenant-B agent \(foreign key\)/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D8 a parent-task cycle in one multi-row INSERT/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D11 moving a department to another tenant/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /E4 tenant B''s inactive agent through tenant A/,
+      },
+      {
+        file: "supabase/migrations/20260912200000_company_domain_core.sql",
+        marker: /composite foreign key\(s\) missing/,
+      },
+    ],
+    caveat:
+      "The owner can DISABLE TRIGGER and, on Supabase, set session_replication_role = replica, which skips foreign-key checks and ORIGIN triggers; the UPDATE-path guards are ENABLE ALWAYS so replica mode does not silence them, but insert validation and foreign keys are not. A company is an organisational partition inside a tenant, NOT an isolation boundary: businesses that need isolation from each other must be separate tenants, and a capability reached from company-scoped work must authorise against a company-level binding.",
+  },
+  {
+    id: "SI-23",
+    statement:
+      "Task status changes only along the declared state machine and a closed task is immutable, for every role but the owner; every lifecycle change writes exactly one event in the same statement, a change without declared provenance is refused, lifecycle facts cannot be recorded directly, and events are never updated.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /F1: illegal task transition accepted/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /F2 a task born completed/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /G1: a lifecycle operation did not emit exactly its one event/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /G4: a mutation survived the failure of its event/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /G6 a raw insert forging company.status_changed/,
+      },
+      {
+        // The function's own check, proven with the table guard off: the two
+        // layers raise the same SQLSTATE, so G6 alone cannot tell them apart.
+        file: "supabase/tests/company_domain_core.sql",
+        marker:
+          /G6b record_event forging task.completed with the table guard off/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D12: replica mode silenced the closed-task guard/,
+      },
+      {
+        file: "engine/domain/companyOs.dbtest.ts",
+        marker: /on every task transition, in both directions/,
+      },
+      {
+        // The guards are triggers; a migration that drops one without
+        // re-creating it, or brings an ALWAYS one back as ORIGIN, is refused.
+        file: "supabase/invariants/replay.mjs",
+        marker: /"trigger-dropped"/,
+      },
+      {
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker: /dropping an ALWAYS guard trigger outright/,
+      },
+    ],
+    caveat:
+      "The provenance settings are a tripwire, not an authority: any role can write a GUC, and only the owner holds DML. The reserved-namespace check is likewise a tripwire against the owner. engine/domain/taskStateMachine.ts authorises nothing; the trigger is the only enforcement point, and a driver-backed test asserts the two relations are equal.",
+  },
+  {
+    id: "SI-24",
+    statement:
+      "A task can request execution only for an allowlisted job kind — none in Phase 1C — and the job's tenant is the task row's, never the payload's; a task never adopts a job it did not request, and a cross-tenant task/job link cannot be stored.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /H1: a non-allowlisted kind was enqueued/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /H2: a task job took its tenant from the payload/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /H4: the bridge adopted a job its task did not request/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /D10 linking a tenant-A task to a tenant-B job/,
+      },
+      {
+        file: "supabase/migrations/20260912200000_company_domain_core.sql",
+        marker: /Phase 1C ships no executable task kind/,
+      },
+      {
+        file: "engine/domain/companyOs.dbtest.ts",
+        marker: /that every kind a task may request has a registered handler/,
+      },
+    ],
+    caveat:
+      "The only registered handler, postmark.ledger_retention, is tenant-wide CRM maintenance, so it is deliberately NOT task-executable: a company-scoped task must not be able to trigger it. The bridge's success path is proven through an allowlist replaced inside a rolled-back transaction. Settling a job never changes a task.",
   },
 ];
 
