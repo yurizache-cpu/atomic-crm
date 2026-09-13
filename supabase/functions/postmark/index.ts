@@ -77,8 +77,7 @@ Deno.serve(async (req) => {
     const status = httpStatusForOutcome(outcome);
     // One structured line per delivery (design §6). The states in the ledger
     // are the queryable interface; this is the stream that points at them.
-    // Deliberate stdout logging, following the convention already used in
-    // supabase/functions/mcp/index.ts.
+    // Deliberate stdout logging: one JSON object per line.
     // eslint-disable-next-line no-console
     console.log(
       JSON.stringify({

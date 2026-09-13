@@ -88,20 +88,131 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-03",
     statement:
-      "Arbitrary SQL is not a capability any agent receives. The MCP query/mutate path is development tooling, explicitly outside the production trust boundary.",
-    provenBy: ["unit test"],
+      "Arbitrary SQL is not a capability any deployed edge function offers: the generic MCP SQL function is removed; edge functions are a reviewed allowlist in one canonical tree at canonical configuration paths, loading only reviewed modules; no function names a known MCP server or SQL parser, and a raw SQL call receives only a literal, a reviewed interpolation or a query Kysely compiled; and only deploy.yml and the makefile deploy functions, by name, after a blocking scope check.",
+    provenBy: ["static guard", "unit test"],
     enforcedBy: [
       {
         file: "docs/adr/0011-mcp-trust-boundary.md",
         marker: /No AI agent receives arbitrary SQL execution/i,
       },
       {
-        file: "supabase/functions/mcp/validateSql.test.ts",
-        marker: /describe\(/,
+        file: "scripts/production-scope.mjs",
+        marker: /"function-not-allowlisted"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"functions-tree-outside-canonical"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-config-not-allowlisted"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-config-path-not-canonical"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-import-map-unreadable"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-dependency-unreviewed"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-imports-outside-functions"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-dynamic-import"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"generic-sql-endpoint"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"raw-sql-non-literal"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"postgres-pool-consumer"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /by absolute path/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"functions-deploy-all"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"functions-deploy-unlisted"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"functions-deploy-unresolvable"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"functions-deploy-outside-pipeline"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"supabase-workdir-remote"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"deploy-before-scope-check"/,
+      },
+      {
+        file: "scripts/source-facts.mjs",
+        marker: /export function moduleLoads/,
+      },
+      {
+        file: "scripts/source-facts.mjs",
+        marker: /export function methodCalls/,
+      },
+      {
+        file: "scripts/source-facts.mjs",
+        marker: /export function literalVectors/,
+      },
+      {
+        file: "scripts/test/production-scope-functions.test.mjs",
+        marker:
+          /refuses the function directory coming back with its MCP server/,
+      },
+      {
+        file: "scripts/test/production-scope-functions.test.mjs",
+        marker: /reads every way a module is loaded/,
+      },
+      {
+        file: "scripts/test/production-scope-functions.test.mjs",
+        marker:
+          /refuses caller input handed to a raw SQL call, however it is spelled/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker: /refuses a scope check that cannot stop the deploy/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
+          /refuses deploying functions from anywhere but deploy\.yml and the makefile/,
+      },
+      {
+        file: ".github/workflows/deploy.yml",
+        marker: /^\s*run: node scripts\/production-scope\.mjs\s*$/m,
+      },
+      {
+        file: "makefile",
+        marker: /^\tnode scripts\/production-scope\.mjs\s*$/m,
       },
     ],
     caveat:
-      "This is an architectural decision backed by a validator, not a mechanism. The validator is defence in depth; the boundary is not shipping the tool.",
+      "Static: it reads committed files other than prose, its own modules and tests, and reviewed fixtures, and covers edge functions and their deploy paths. Out of reach: a person running the CLI by hand; a command or module name assembled where no literal shows it; SQL reaching the database through a method other than the raw ones it names, or caller-chosen identifiers handed to a query builder; whether a reviewed interpolation's variable still holds the verified caller's id; code outside supabase/functions, such as an engine module or a database function executing dynamic SQL; and a function a hosted project already serves, which a named deploy never deletes. PRODUCTION_FUNCTIONS, REVIEWED_FUNCTION_DEPENDENCIES and REVIEWED_SQL_INTERPOLATIONS are the review points, and a function that executes caller-supplied SQL must not pass review (ADR 0011 item 3).",
   },
   {
     id: "SI-04",
@@ -153,20 +264,10 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "ACCEPTED RISK today: the edge functions DO run as service_role. Both suites assert the bypass explicitly so a green RLS run cannot be mistaken for worker isolation. Closing it is ADR 0012's integration work.",
   },
-  {
-    id: "SI-07",
-    statement:
-      "The SQL read path is read-only in the database itself, not only in the parser.",
-    provenBy: ["unit test"],
-    enforcedBy: [
-      {
-        file: "supabase/functions/mcp/index.ts",
-        marker: /SET TRANSACTION READ ONLY/,
-      },
-    ],
-    caveat:
-      "It does not constrain side effects that are not writes — that is why SI-02 exists.",
-  },
+  // SI-07 (retired 2026-09-13): "The SQL read path is read-only in the database
+  // itself, not only in the parser." Its only subject was the MCP function's
+  // query tool, removed with the function; SI-03 now holds the stronger
+  // property that no such path exists. The id is not reused.
   {
     id: "SI-08",
     statement: "The attachments storage bucket is private.",
@@ -677,6 +778,47 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The only registered handler, postmark.ledger_retention, is tenant-wide CRM maintenance, so it is deliberately NOT task-executable: a company-scoped task must not be able to trigger it. The bridge's success path is proven through an allowlist replaced inside a rolled-back transaction. Settling a job never changes a task.",
+  },
+  // -- Pre-1D closure: production scope ---------------------------------------
+  {
+    id: "SI-25",
+    statement:
+      "The development seed never reaches a remote project through a committed path: no tracked file outside prose, the guard and reviewed fixtures pushes it with the CLI's include-seed flag, resets a linked or non-loopback database, changes the seed paths, or names a seed SQL file outside a reviewed list of local uses.",
+    provenBy: ["static guard", "unit test"],
+    enforcedBy: [
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"remote-seed"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"remote-db-reset"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"seed-file-reference"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /changes the seed files a reset applies/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker: /refuses a remote reset, however it is spelled/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
+          /refuses a seed file named anywhere outside the reviewed local uses/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
+          /refuses changed seed paths, an inline seed table and a remote seed table/,
+      },
+    ],
+    caveat:
+      "Static: a person seeding by hand, or a command assembled from string fragments, is outside it. So is a seeded local database dumped and restored elsewhere. Local supabase start and db reset, and the CI local stacks, still seed on purpose. The seed also carries reference data a hosted project needs (loss_reasons, favicons_excluded_domains), so providing that remotely needs its own explicit path, and none exists yet.",
   },
 ];
 

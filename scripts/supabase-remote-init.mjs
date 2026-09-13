@@ -218,6 +218,11 @@ async function linkProject({ projectRef, databasePassword }) {
   });
 }
 
+// Migrations and roles only. The development seed is local and CI data
+// (owner decision 2026-09-13): it must never populate a hosted project,
+// and scripts/production-scope.mjs fails the build if a remote path pushes it
+// again. Seeding a remote staging project needs its own explicit,
+// environment-specific path; none exists.
 async function setupDatabase({ databasePassword }) {
   await execa(
     "npx",
@@ -227,7 +232,6 @@ async function setupDatabase({ databasePassword }) {
       "push",
       "--linked",
       "--include-roles",
-      "--include-seed",
       "--password",
       databasePassword,
     ],

@@ -101,10 +101,11 @@ supabase-remote-init:
 	npm run supabase:remote:init
 	$(MAKE) supabase-deploy
 
-supabase-deploy: ## refuses first if the linked project trusts the committed development key
+supabase-deploy: ## refuses first if the linked project trusts the committed development key, or if the deploy leaves production scope
 	node scripts/dev-signing-key.mjs --linked
+	node scripts/production-scope.mjs
 	npx supabase db push
-	npx supabase functions deploy
+	npx supabase functions deploy delete_note_attachments merge_contacts postmark update_password users
 
 test-unit: test-app test-functions 
 

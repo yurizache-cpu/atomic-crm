@@ -91,7 +91,6 @@ export default defineConfig({
             "users/merging-contacts",
             "users/inbound-email",
             "users/mobile-app",
-            "users/mcp-server",
           ],
         },
         {

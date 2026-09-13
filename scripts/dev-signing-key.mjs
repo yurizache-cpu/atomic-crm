@@ -58,6 +58,7 @@ import { createHash, createPrivateKey } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { moduleLoads, parseSource } from "./source-facts.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -220,6 +221,29 @@ const GUARD_FILES = new Set([
   "scripts/test/scan-build-artifacts.test.mjs",
 ]);
 /**
+ * The production-scope guard's test quotes the deploy commands it refuses, as
+ * fixtures. It is exempt from the deploy-order rule only, by path, and only
+ * while every module it loads is on FIXTURE_IMPORTS and no module name is
+ * computed, so it cannot gain an unreviewed way to run a command. Every
+ * signing-key rule still applies to it.
+ */
+const DEPLOY_RULE_FIXTURE_FILES = new Set([
+  "scripts/test/production-scope.test.mjs",
+]);
+const FIXTURE_IMPORTS = new Set([
+  "./production-scope-helpers.mjs",
+  "vitest",
+  "../dev-signing-key.mjs",
+  "../production-scope.mjs",
+]);
+const loadsOnlyFixtureImports = (path, content) => {
+  const { imports, computed } = moduleLoads(parseSource(path, content));
+  return (
+    computed.length === 0 &&
+    imports.every(({ specifier }) => FIXTURE_IMPORTS.has(specifier))
+  );
+};
+/**
  * Every other permitted mention, LINE BY LINE, so that a new line in an
  * otherwise-permitted file (a deploy target in the makefile, a remote in
  * config.toml) is still a violation.
@@ -345,7 +369,7 @@ const indentOf = (line) => line.match(/^\s*/)[0].length;
 const isComment = (line) => line.trim().startsWith("#");
 
 /** A step that cannot fail cannot refuse anything. `${{ a || b }}` is not a fallback. */
-const isBlocking = (text, { makefile }) => {
+export const isBlocking = (text, { makefile }) => {
   const code = text.replace(/\$\{\{[\s\S]*?\}\}/g, "");
   if (/\|\|/.test(code)) return false;
   if (/continue-on-error:\s*(?!false\b)\S/.test(code)) return false;
@@ -354,7 +378,7 @@ const isBlocking = (text, { makefile }) => {
 };
 
 /** A workflow as jobs of steps, or null when it has no readable `jobs:` block. */
-function workflowUnits(lines) {
+export function workflowUnits(lines) {
   const jobsAt = lines.findIndex((line) => /^jobs:\s*(?:#.*)?$/.test(line));
   if (jobsAt === -1) return null;
 
@@ -408,7 +432,7 @@ function workflowUnits(lines) {
 }
 
 /** A makefile as targets of recipe lines. */
-function makefileUnits(lines) {
+export function makefileUnits(lines) {
   const units = [];
   let target = null;
   lines.forEach((line, i) => {
@@ -433,7 +457,14 @@ function makefileUnits(lines) {
  * violation, not a pass.
  */
 function deployWithoutKeyCheck(path, content) {
-  if (ANY_MARKDOWN.test(path) || GUARD_FILES.has(path)) return [];
+  if (
+    ANY_MARKDOWN.test(path) ||
+    GUARD_FILES.has(path) ||
+    (DEPLOY_RULE_FIXTURE_FILES.has(path) &&
+      loadsOnlyFixtureImports(path, content))
+  ) {
+    return [];
+  }
   const lines = content.split(/\r?\n/);
   const pushLines = lines.flatMap((line, i) =>
     !isComment(line) && SUPABASE_PUSH.test(line) ? [i + 1] : [],

@@ -605,6 +605,37 @@ describe("the repository guard: pushing to Supabase", () => {
       check("package.json", '{ "scripts": { "deploy": "supabase db push" } }'),
     ).toEqual(["deploy-without-key-check package.json:1"]);
   });
+
+  it("exempts only the production-scope test's fixtures, by path, and only while it loads reviewed modules", () => {
+    const fixture = 'const DEPLOY_ALL = "npx supabase functions deploy";\n';
+    const TEST = "scripts/test/production-scope.test.mjs";
+    expect(check(TEST, fixture)).toEqual([]);
+    expect(
+      check(TEST, `import { execSync } from "node:child_process";\n${fixture}`),
+    ).toEqual([`deploy-without-key-check ${TEST}:2`]);
+    // Any other module, or a module name no review can read, ends the
+    // exemption; a quotation of such a load inside a string does not.
+    for (const load of [
+      "await import(`node:child_process`);",
+      'createRequire(import.meta.url)("child_process");',
+      'import { $ } from "zx/core";',
+      'const cp = require("node:child_process");',
+      'export { spawn } from "node:child_process";',
+    ]) {
+      expect(check(TEST, `${load}\n${fixture}`)).toEqual([
+        `deploy-without-key-check ${TEST}:2`,
+      ]);
+    }
+    expect(
+      check(
+        TEST,
+        `const quoted = 'await import("node:child_process")';\n${fixture}`,
+      ),
+    ).toEqual([]);
+    expect(check("scripts/production-scope.mjs", fixture)).toEqual([
+      "deploy-without-key-check scripts/production-scope.mjs:1",
+    ]);
+  });
 });
 
 describe("this repository", () => {

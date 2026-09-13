@@ -110,7 +110,6 @@ export const SettingsPageMobile = () => {
             <ProfileSection />
             <PreferencesSection />
             <InboundEmailSection />
-            <McpServerSection />
             <AboutSection />
           </div>
 
@@ -469,28 +468,6 @@ const InboundEmailSection = () => {
       </p>
       <ItemGroup className="rounded-lg border overflow-hidden">
         <CopyPasteRow value={import.meta.env.VITE_INBOUND_EMAIL} />
-      </ItemGroup>
-    </div>
-  );
-};
-
-const McpServerSection = () => {
-  const translate = useTranslate();
-
-  return (
-    <div>
-      <SectionLabel>
-        {translate("crm.profile.mcp.title", { _: "MCP Server" })}
-      </SectionLabel>
-      <p className="text-sm text-muted-foreground mb-2 px-1">
-        {translate("crm.profile.mcp.description", {
-          _: "Use this URL to connect your AI assistant to your CRM data via the Model Context Protocol (MCP).",
-        })}
-      </p>
-      <ItemGroup className="rounded-lg border overflow-hidden">
-        <CopyPasteRow
-          value={`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/mcp`}
-        />
       </ItemGroup>
     </div>
   );

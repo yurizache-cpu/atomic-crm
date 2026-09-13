@@ -195,6 +195,13 @@ jobs:
               name: 🔒 Project does not trust the development signing key
               run: node scripts/dev-signing-key.mjs --project-ref "$SUPABASE_PROJECT_ID"
 
+            # The generic MCP SQL function was removed (ADR 0011, owner decision
+            # 2026-09-13) and the development seed is local data. This
+            # refuses a deploy that would publish a function outside the reviewed
+            # allowlist or push the development seed to this project.
+            - name: 🔒 Production scope (reviewed functions only, no development seed)
+              run: node scripts/production-scope.mjs
+
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 🔗 Supabase Link
               run: npx supabase link --project-ref $SUPABASE_PROJECT_ID
@@ -212,9 +219,12 @@ jobs:
                   npx supabase secrets set VITE_INBOUND_EMAIL=${{ env.VITE_INBOUND_EMAIL }}
                   npx supabase secrets set VITE_ATTACHMENTS_BUCKET=${{ env.VITE_ATTACHMENTS_BUCKET }}
 
+            # Named, never bare: a bare deploy publishes every directory under
+            # supabase/functions. Every name must be in PRODUCTION_FUNCTIONS
+            # (scripts/production-scope.mjs), or the gate fails.
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 📡 Deploy supabase functions
-              run: npx supabase functions deploy
+              run: npx supabase functions deploy delete_note_attachments merge_contacts postmark update_password users
 
             - if: ${{ !env.SUPABASE_ACCESS_TOKEN }}
               name: Check SUPABASE_ACCESS_TOKEN secret
