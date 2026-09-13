@@ -84,7 +84,7 @@ Two consequences are recorded rather than deferred:
 - A capability reached from company-scoped work must authorise against a company-level binding, never against `ops.tenants.owns_local_crm` alone.
 - That flag stays tenant-level in 1C, because no capability yet needs company-level CRM resolution.
 
-FireForge 3D is onboarded as data (a company, departments and agents in a tenant), with no migration.
+~~FireForge 3D is onboarded as data (a company, departments and agents in a tenant), with no migration.~~ **Corrected 2026-09-13 (ADR 0015 owner addendum):** FireForge 3D is not onboarded. When it is, it is data in its own tenant (a tenant row, then its company, departments and agents), with no migration.
 
 ## 4. Company model
 
@@ -177,7 +177,7 @@ Events are **derived from state, never asserted** (ADR 0015 §7). AFTER triggers
   - G6c calls the function in replica mode.
 - **Integrity:** an event's subject and cause must live in its own tenant and company (G7). An `ENABLE ALWAYS` trigger refuses every UPDATE (G5, D12).
 - **Not append-only against the owner:** DELETE is unguarded, because erasure and retention need it.
-- **Order and payload:** `seq` is an identity column. Payloads are JSON objects of at most 16 KB and hold no free text a human typed (G9).
+- **Order and payload:** `seq` is an identity column. Payloads are JSON objects of at most 16 KB and ~~hold no free text a human typed~~ carry no task title or description (G9). *(Narrowed 2026-09-13: lifecycle payloads do carry organisational labels, `slug`, `name` and an agent's `role`, and `ops.record_event` accepts any object, with EXECUTE granted to no role.)*
 - **The outbox is `ops.events` itself**, written in the domain transaction; no Kafka, no queue. Delivery order across commits and consumer cursors are Phase 1D decisions.
 
 Events are not the audit log and do not duplicate it: execution audit is `ops.job_events`, unchanged.
@@ -554,7 +554,7 @@ The commit recording this verification touches only `CLAUDE.md` and this report,
 
 | ADR | Change |
 | --- | --- |
-| [0015](adr/0015-company-os-domain-core.md) | **New, Proposed.** Schema location, tenant/company boundary, composite keys, backend-only INVOKER authority and the future wrapper contract, agents as configuration, the task state machine, derived events, the bridge. Updated after the adversarial pass (plan-cache scope, delete semantics, bridge concurrency, consequences). |
+| [0015](adr/0015-company-os-domain-core.md) | **New, Proposed.** *(Accepted by the owner 2026-09-13, with an addendum.)* Schema location, tenant/company boundary, composite keys, backend-only INVOKER authority and the future wrapper contract, agents as configuration, the task state machine, derived events, the bridge. Updated after the adversarial pass (plan-cache scope, delete semantics, bridge concurrency, consequences). |
 | [0004](adr/0004-principal-model.md) | Addendum: `ops.agents` precedes principals, with a shared-key mapping. |
 | [0010](adr/0010-cost-control-and-kill-switch.md) | Addendum: tenant versus company scopes; `agents.status` is not the kill switch; scope resolution at lease time through `ops.task_jobs`; a kill-switch refusal must not consume an attempt. |
 | [DECISIONS.md](DECISIONS.md) | Row for 0015. |
@@ -579,7 +579,7 @@ Not changed: ADR 0008 (still unresolved) and ADR 0012 (Accepted, untouched).
 10. **Probe coverage gaps:** the probe holds no signed-in `authenticated` JWT, and no hosted gateway is measured.
 11. **Local-network protection depends on a machine setting.** A Docker Desktop reset or upgrade can undo it; `check:local-exposure` and the `test:db` warning detect that.
 12. **The mutation harness is session tooling, not committed.** Its method and per-mutation evidence are recorded here, but CI does not re-run mutations.
-13. **ADRs 0002, 0003 and 0015 are still Proposed.**
+13. ~~**ADRs 0002, 0003 and 0015 are still Proposed.**~~ **Corrected 2026-09-13:** ADR 0015 is Accepted with the owner addendum; ADRs 0002 and 0003 are still Proposed.
 14. **CI has no passing end-to-end test.** Every Playwright test fails or is skipped, and did before Phase 1C too (9 failed, 1 skipped, identical on `7d41efff` and `e160debb`; §22). No UI flow is regression-tested in CI: login, onboarding, the contact list and its account-manager filter, bulk tagging and task creation. Phase 1C changes no file under `src/` or `e2e/`, but its migration and seed do reach that job.
 
 ---
@@ -588,7 +588,7 @@ Not changed: ADR 0008 (still unresolved) and ADR 0012 (Accepted, untouched).
 
 Deterministic throughout: no LLM, prompt, provider, memory, WhatsApp, Ads, browser automation or UI. ROADMAP's sequencing rule holds: **no agent before the kill switch and cost ledger.**
 
-1. **Review gate:** accept or amend ADRs 0002, 0003 and 0015 before anything builds on them.
+1. **Review gate:** accept or amend ADRs 0002, 0003 and 0015 before anything builds on them. *(2026-09-13: 0015 accepted; 0002 and 0003 reconciled, still Proposed.)*
 2. **Kill switch** (ADR 0010):
    - global, tenant, company, department and agent scopes; deny-wins; fail-closed;
    - enforced at lease time through `ops.task_jobs`;
@@ -599,7 +599,7 @@ Deterministic throughout: no LLM, prompt, provider, memory, WhatsApp, Ads, brows
    - reached through a SECURITY DEFINER worker capability that resolves tenant, company and task from the lease;
    - worker SELECT on domain tables only if that handler reads them;
    - kill switch and budget checked on that path.
-5. **Event delivery:** decide the consumer model (per-tenant cursor versus global `seq`) and build one deterministic consumer.
+5. **Event delivery:** decide the consumer model ~~(per-tenant cursor versus global `seq`)~~ and build one deterministic consumer. *(Narrowed 2026-09-13, ADR 0015 owner decision 5: `seq` is internal only, so any tenant-facing consumer, cursor or Agent Runtime reader needs a tenant-scoped or opaque cursor, designed first.)*
 6. **Carry-over:** decide ADR 0008's registry publication scope.
 
 Explicitly **not** in Phase 1D: the approval engine (ADR 0009), principals and a human operator API (ADR 0004), a Tool Gateway beyond capability objects, any UI.
@@ -633,4 +633,4 @@ Everything else the signoff requires was measured locally on 2026-09-13:
 - **Suites:** all database, driver-backed and unit suites, typecheck, lint, build and the secret scan are green, and Prettier passes on every changed file it checks (§20; the repository-wide check has 2 pre-existing failures, §22).
 - **Local network:** the exposure is closed and its regression check committed.
 
-**Phase 1D has not started.** The owner's architectural review of ADR 0015, together with ADRs 0002 and 0003 (Appendix A, item 1), is still required before anything is built on them.
+**Phase 1D has not started.** ~~The owner's architectural review of ADR 0015, together with ADRs 0002 and 0003 (Appendix A, item 1), is still required before anything is built on them.~~ **Updated 2026-09-13:** the owner accepted Phase 1C and ADR 0015, with an addendum. The review of ADRs 0002 and 0003 is still required before anything is built on them, and ADR 0002 is blocked on ADR 0011 item 4.

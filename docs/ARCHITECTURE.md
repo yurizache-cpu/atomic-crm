@@ -103,7 +103,7 @@ This also avoids rewriting the 43 inherited `public` policies, and it means tena
 
 **Organization** — `tenants`, `companies`, `departments`, `agents`, `principals`.
 
-> **Corrected 2026-09-12 (Phase 1C).** This line used to read "`companies` (tenants …) — the engine table is `ops.tenants`", treating company and tenant as one entity. They are two: `ops.tenants` is the **isolation boundary**, and `ops.companies` is a **business entity inside a tenant** — one tenant may hold a clinic and, later, a 3D-printing business. A company is an organisational partition, not an isolation boundary. `ops.companies` is still NOT `public.companies` (CRM customer account). Agents are configuration rows in `ops.agents`; `principals` is deferred with a shared-key mapping. See [ADR 0015](adr/0015-company-os-domain-core.md) and §15.
+> **Corrected 2026-09-12 (Phase 1C).** This line used to read "`companies` (tenants …) — the engine table is `ops.tenants`", treating company and tenant as one entity. They are two: `ops.tenants` is the **isolation boundary**, and `ops.companies` is a **business entity inside a tenant** — ~~one tenant may hold a clinic and, later, a 3D-printing business~~ *(corrected 2026-09-13, ADR 0015 owner addendum: a tenant may hold several companies structurally, but businesses that need independent data isolation are separate tenants; the psychology clinic is one tenant and FireForge 3D another)*. A company is an organisational partition, not an isolation boundary. `ops.companies` is still NOT `public.companies` (CRM customer account). Agents are configuration rows in `ops.agents`; `principals` is deferred with a shared-key mapping. See [ADR 0015](adr/0015-company-os-domain-core.md) and §15.
 
 **Principals (D4).** One table, `kind in ('human','agent','service')`. An agent is configuration, not a running process: role, instructions, tools, permissions, model policy, budget, memory policy, department. A `sales` row is created only when an agent must act *through* the CRM adapter, and the mapping is recorded so "agent X acted on behalf of Y" is expressible.
 
@@ -370,7 +370,7 @@ The organisational model, deterministic, with no agent able to run. [ADR 0015](a
 
 ```
 ops.tenants                          the isolation boundary (1A)
-  └─ ops.companies                   a business entity; a tenant may hold several
+  └─ ops.companies                   an organisational entity; never an isolation boundary
        ├─ ops.departments            an organisational unit of one company
        │    └─ ops.agents            configuration + identity of a virtual employee
        ├─ ops.tasks                  business work (parent -> child, same company)

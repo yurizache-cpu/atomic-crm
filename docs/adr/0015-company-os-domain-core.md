@@ -1,6 +1,6 @@
 # ADR 0015 — Company OS domain core
 
-**Status:** Proposed · **Date:** 2026-09-12
+**Status:** **Accepted** (owner decision 2026-09-13, WITH the owner addendum at the end of this record) · **Date:** 2026-09-12 (accepted 2026-09-13)
 **Implemented by:** `supabase/migrations/20260912200000_company_domain_core.sql`, `engine/domain/`
 
 ## Context
@@ -19,7 +19,7 @@ Several of the choices below are expensive to reverse once agents and tenants de
 
 ### 2. Tenant is the isolation boundary; company is not
 
-A tenant may hold several companies (a clinic now, a 3D-printing business later). A company is an **organisational partition inside a tenant, not a data-isolation boundary**: businesses that must not see each other's data are separate tenants. Consequently, any capability reached from company-scoped work must authorise against a company-level binding — never against the tenant-level `ops.tenants.owns_local_crm` alone.
+A tenant may hold several companies ~~(a clinic now, a 3D-printing business later)~~. *(Corrected 2026-09-13 by owner decisions 3 and 4 in the addendum: a clinic and a 3D-printing business need independent data isolation, so each is its own tenant; several companies in one tenant are organisation only.)* A company is an **organisational partition inside a tenant, not a data-isolation boundary**: businesses that must not see each other's data are separate tenants. Consequently, any capability reached from company-scoped work must authorise against a company-level binding — never against the tenant-level `ops.tenants.owns_local_crm` alone.
 
 `owns_local_crm` stays a tenant-level boolean in 1C, decided deliberately as Phase 1B asked: no capability needs company-level CRM resolution yet, and the proper model is a company ↔ CRM-adapter binding `(crm_provider, crm_entity, crm_id)` ([ADR 0003](0003-identifier-strategy.md)) when one first does.
 
@@ -62,9 +62,9 @@ AFTER triggers write exactly one event per change in the same statement — `com
 
 Provenance, correlation and causation travel in transaction-local settings the domain functions push and pop around their DML (save and restore, so nested calls compose); the emitting trigger refuses a change with no declared provenance. That is a tripwire, not an authority: any role can write a GUC, and only the owner holds DML. `company`, `department`, `agent`, `task` and `job` are reserved namespaces that `ops.record_event` and direct inserts cannot use.
 
-An event is never rewritten: an `ENABLE ALWAYS` trigger refuses every UPDATE, replica mode included. It is **not** append-only against the owner: DELETE is unguarded, because the only role holding it is the owner, and tenant erasure (LGPD) and retention need it. Events carry an identity `seq` for in-transaction order and hold no free text a human typed (task titles and descriptions never enter an event payload).
+An event is never rewritten: an `ENABLE ALWAYS` trigger refuses every UPDATE, replica mode included. It is **not** append-only against the owner: DELETE is unguarded, because the only role holding it is the owner, and tenant erasure (LGPD) and retention need it. Events carry an identity `seq` for in-transaction order and ~~hold no free text a human typed~~ (task titles and descriptions never enter an event payload). *(Narrowed 2026-09-13: no trigger-derived payload includes a task title or description, but lifecycle payloads do carry organisational labels, a company's, department's or agent's `slug` and `name` and an agent's `role`, and `ops.record_event` stores any JSON object of at most 16 KB, unfiltered; its EXECUTE is revoked from PUBLIC and granted to no role.)*
 
-Events are business facts, not the audit log: execution audit stays in `ops.job_events`. The events table written in the domain transaction is the durable outbox; delivery order across commits and consumer cursors are a Phase 1D decision.
+Events are business facts, not the audit log: execution audit stays in `ops.job_events`. The events table written in the domain transaction is the durable outbox; delivery order across commits and consumer cursors are a Phase 1D decision. **Narrowed 2026-09-13 (owner addendum, decision 5):** any tenant-facing cursor must be tenant-scoped or opaque; `seq` is internal only.
 
 ### 8. Task ≠ job, and the bridge points one way
 
@@ -89,11 +89,44 @@ A link restricts deleting its job, so any future job retention must decide what 
 ## Consequences
 
 - Company OS writes are isolated by function code, grants and composite keys — not by RLS — on every path that exists in 1C. The DoD's "missing/malformed tenant context fails closed" holds on the function path (no scope, unknown scope, malformed scope) and, for the lease-bound policies, only as shape evidence through a transaction-scoped grant: a lease owned by another worker, an expired lease and no lease all read nothing.
-- Onboarding FireForge 3D is data: a company, departments and agents in a tenant. No migration.
+- ~~Onboarding FireForge 3D is data: a company, departments and agents in a tenant.~~ **Corrected 2026-09-13 by the owner addendum:** onboarding FireForge 3D is data in **its own tenant** — a tenant row, then its company, departments and agents. No migration.
 - Every future ops function must be revoked from PUBLIC explicitly, and the pinned EXECUTE set in `company_domain_core.sql` must be updated in the same change that grants anything — a deliberate, reviewable diff.
 - The `waiting → failed` edge exists; `waiting → completed` does not (work resumes, then completes).
 - A data-only restore of Company OS rows must run in replica mode, or the emission triggers either refuse it (no provenance) or duplicate its events.
 - Deactivating a company refuses new departments, agents, tasks and execution requests under it, but existing tasks can still be assigned and moved through their lifecycle, so open work can be closed out. Stopping work is the kill switch's job, not company status.
-- `ops.events.seq` is one identity across tenants, so a reader of one tenant's events could infer other tenants' event volume from the gaps. Nothing but the owner reads events in 1C; a per-tenant cursor belongs with the consumer design in Phase 1D.
+- `ops.events.seq` is one identity across tenants, so a reader of one tenant's events could infer other tenants' event volume from the gaps. Nothing but the owner reads events in 1C; a per-tenant cursor belongs with the consumer design in Phase 1D. **Binding since 2026-09-13:** `seq` is internal only, and a tenant-scoped or opaque cursor must be designed before any tenant-facing reader exists (owner addendum, decision 5).
 - Platform roles outside this project's grants — members of `pg_read_all_data`, and `supabase_read_only_user` — can read `ops` as they can read everything. That is a hosting-level privilege, not a Company OS grant, and the static guard rejects any migration granting them more.
-- ADRs 0002, 0003 and this one should be accepted or amended before Phase 1D builds agent runs on them.
+- ADRs 0002, 0003 and this one should be accepted or amended before Phase 1D builds agent runs on them. *(2026-09-13: this record was accepted with the owner addendum below. ADRs 0002 and 0003 were reconciled with it on 2026-09-13 and remain Proposed, so they must still be accepted or amended before Phase 1D builds agent runs on them.)*
+
+---
+
+## Addendum 2026-09-13 — owner decisions recorded on acceptance
+
+**Accepted by the owner on 2026-09-13, with the decisions below.** They bind Phase 1D and every later phase. Where one narrows a statement above, that statement is corrected in place and points here.
+
+1. **Tenant is the security and isolation boundary.** Nothing else in the Company OS is one.
+2. **Company is an organisational entity only.** It is not a security boundary. No guard, grant, policy or capability may be described as isolating one company from another inside a tenant, or relied on to do so.
+3. **Businesses that need independent data isolation are separate tenants.** The psychology clinic is one tenant, and FireForge 3D is another. They must not be modelled as two companies inside the same tenant.
+4. **A tenant may still hold several companies structurally.** The composite keys of Decision section 3 support it. That is organisation, and it must never be read as security isolation between those companies.
+5. **`ops.events.seq` is internal only.** It is one identity across all tenants, so its gaps reveal the global event count, other tenants' activity and their relative volume. Before Phase 1D creates any tenant-facing event consumer, polling API, cursor, Agent Runtime reader or event subscription, a tenant-scoped or opaque cursor mechanism must be designed. No tenant may be able to infer from sequence gaps:
+   - the global event count;
+   - another tenant's activity;
+   - another tenant's relative event volume.
+
+   `seq` is never exposed to a tenant, directly or as a cursor.
+6. **Event payloads follow data minimisation.** Events are not a second CRM or clinical datastore.
+   - **Prefer:** identifiers, the event type, structural metadata and references.
+   - **Do not copy:** message bodies, notes, emails, clinical information or sensitive CRM records.
+
+   The only exception is a future event that explicitly requires such content, and only once its retention and security policy has been defined.
+7. **Database owner privileges stay outside the tenant isolation boundary.** The database owner (`postgres`) and `service_role` must never become an ordinary Company OS agent or worker identity.
+
+**Reconciliation notes (not owner decisions).**
+- Decision section 7's Phase 1C rule, no task title or description in a trigger-derived payload, is narrower than owner decision 6: lifecycle payloads also carry organisational labels (`slug`, `name`, an agent's `role`), and `ops.record_event` accepts any object. Owner decision 6 therefore has to be enforced by whatever wrapper first exposes `record_event`, and by every new event type.
+- Under owner decision 7, ordinary execution runs as `ops_worker` under a live lease ([ADR 0012](0012-worker-tenant-context.md)). A future runtime caller reaches the domain only through the wrapper contract of Decision section 4, which takes its tenant from a lease or a membership, never from an argument.
+
+**What this changes in Phase 1C: no schema and no code.**
+- The seed models one business in one tenant.
+- No application role (`anon`, `authenticated`, `service_role`, `ops_worker`) can read `ops.events`. The owner can; hosting-level read roles hold SELECT and read its rows only if they also carry `BYPASSRLS`, which the repository has not measured. No code path reads it, and the MCP function's `postgres` pool has not been tested against `ops` (ADR 0002, 2026-09-13 addendum §6).
+- Trigger-derived payloads carry ids, statuses, organisational labels and structural task fields, never task titles, descriptions, notes, messages or CRM content. No application role can call `ops.record_event`: EXECUTE is revoked from PUBLIC and granted to no role, so only its owner and superusers can.
+- The worker already refuses to boot as `postgres`, `service_role`, a superuser or a `BYPASSRLS` role (ADR 0012, Phase 1B addendum).
