@@ -75,6 +75,47 @@ if (!isContainerRunning()) {
   process.exit(1);
 }
 
+// A local stack is administrative infrastructure: Kong's /pg/ route and Studio's
+// query route run arbitrary SQL as postgres with no key, and Postgres takes the
+// default password. The suites below prove nothing about who ELSE can reach it,
+// so say it here and again after the summary. Not fatal: the fix is a Docker
+// Desktop setting this script cannot apply (CLAUDE.md, "Local Supabase must
+// stay on loopback"). A CI runner has no LAN peers, so CI skips it, and says so.
+const exposureWarning = (() => {
+  if (process.env.GITHUB_ACTIONS === "true" || process.env.CI === "true") {
+    process.stdout.write("Local exposure check skipped on a CI runner.\n");
+    return null;
+  }
+  if (!CONTAINER.startsWith("supabase_db_")) {
+    process.stdout.write(
+      `Local exposure check skipped: ${CONTAINER} is not a Supabase CLI container. Run \`npm run check:local-exposure\`.\n`,
+    );
+    return null;
+  }
+  const exposure = run(process.execPath, [
+    resolve(process.cwd(), "scripts", "local-exposure.mjs"),
+    "--project",
+    CONTAINER.slice("supabase_db_".length),
+  ]);
+  // Exit 0 alone is not trusted: an entry point whose main guard stopped
+  // matching also exits 0, silently.
+  if (exposure.ok && /^OK: /m.test(exposure.stdout)) {
+    process.stdout.write(exposure.stdout);
+    return null;
+  }
+  console.error(
+    [
+      "",
+      "WARNING: this Supabase stack is reachable from other devices, or that could not be verified.",
+      `${exposure.stdout}${exposure.stderr}`.trimEnd() ||
+        "The exposure check printed nothing.",
+      "See `npm run check:local-exposure` and CLAUDE.md before trusting this machine's network.",
+      "",
+    ].join("\n"),
+  );
+  return "WARNING: this Supabase stack is reachable from other devices, or that could not be verified (details above).";
+})();
+
 const suites = readdirSync(TESTS_DIR)
   .filter((f) => f.endsWith(".sql"))
   .sort();
@@ -157,7 +198,10 @@ const total = suites.length + scriptSuites.length;
 
 if (failed > 0) {
   console.error(`\n${failed} of ${total} database suite(s) failed.`);
+  if (exposureWarning) console.error(exposureWarning);
   process.exit(1);
 }
 
 process.stdout.write(`\n${total} database suite(s) passed.\n`);
+// Repeated last, so `npm run test:db | tail` cannot hide it on a green run.
+if (exposureWarning) console.error(exposureWarning);
