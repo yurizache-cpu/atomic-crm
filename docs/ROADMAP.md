@@ -258,4 +258,6 @@ A phase is complete when its work is: **working, tested, logged, permission-cont
 
 [ADR 0012](adr/0012-worker-tenant-context.md) is **Accepted** as of 2026-09-12 — with its Phase 1A addendum, not as originally written.
 
-Phases 1C onward are unchanged and unstarted. The sequencing rule still holds: **no agent before the kill switch and cost ledger exist.**
+**Phase 1C — the Company OS domain core — built, awaiting architectural review.** The organisational half of *Phase 2 — Engine foundation*, still with no model, prompt, tool or UI: tenant → company → department → agent → task → event, in `ops`, deterministic. Companies are data inside a tenant; agents are configuration only; tasks follow an 11-edge state machine enforced in the database; every lifecycle change writes exactly one event in the same statement; a task → job bridge exists with an **empty** allowlist, so no task can cause execution. Backend-only: no application role holds any privilege on it. Proven by a SQL attack suite, driver-backed tests, a static-guard extension and database mutation testing; an adversarial pass on the new surface found no Critical, High or Medium. See [PHASE_1C_REPORT.md](PHASE_1C_REPORT.md) and [ADR 0015](adr/0015-company-os-domain-core.md), which is **Proposed**.
+
+Phase 1D has not started and waits on that review. The sequencing rule still holds: **no agent before the kill switch and cost ledger exist.**

@@ -101,7 +101,9 @@ This also avoids rewriting the 43 inherited `public` policies, and it means tena
 
 ### Core entities
 
-**Organization** — `companies` (tenants; note the name collision with `public.companies`, which means *CRM customer account* — the engine table is `ops.tenants`), `departments`, `principals`.
+**Organization** — `tenants`, `companies`, `departments`, `agents`, `principals`.
+
+> **Corrected 2026-09-12 (Phase 1C).** This line used to read "`companies` (tenants …) — the engine table is `ops.tenants`", treating company and tenant as one entity. They are two: `ops.tenants` is the **isolation boundary**, and `ops.companies` is a **business entity inside a tenant** — one tenant may hold a clinic and, later, a 3D-printing business. A company is an organisational partition, not an isolation boundary. `ops.companies` is still NOT `public.companies` (CRM customer account). Agents are configuration rows in `ops.agents`; `principals` is deferred with a shared-key mapping. See [ADR 0015](adr/0015-company-os-domain-core.md) and §15.
 
 **Principals (D4).** One table, `kind in ('human','agent','service')`. An agent is configuration, not a running process: role, instructions, tools, permissions, model policy, budget, memory policy, department. A `sales` row is created only when an agent must act *through* the CRM adapter, and the mapping is recorded so "agent X acted on behalf of Y" is expressible.
 
@@ -359,3 +361,41 @@ Section 13 described a database half with no process. There is now a process.
 npm run worker:provision      # once per environment; needs OPS_WORKER_PASSWORD
 npm run worker                # needs OPS_WORKER_DATABASE_URL
 ```
+
+---
+
+## 15. Phase 1C as built (2026-09-12)
+
+The organisational model, deterministic, with no agent able to run. [ADR 0015](adr/0015-company-os-domain-core.md) records every decision below and the alternatives rejected.
+
+```
+ops.tenants                          the isolation boundary (1A)
+  └─ ops.companies                   a business entity; a tenant may hold several
+       ├─ ops.departments            an organisational unit of one company
+       │    └─ ops.agents            configuration + identity of a virtual employee
+       ├─ ops.tasks                  business work (parent -> child, same company)
+       │    └─ ops.task_jobs ──────► ops.jobs     domain -> execution, never the reverse
+       └─ ops.events                 durable facts, derived from the rows above
+```
+
+| Distinction | What keeps it |
+| --- | --- |
+| Tenant ≠ Company | `tenant_id` on every row; a company is a partition inside a tenant, not an isolation boundary |
+| Agent ≠ Worker | `ops.agents` is configuration; the worker is a process and holds no privilege on it |
+| Task ≠ Job | separate tables; the bridge is `ops.task_jobs`, owned by the domain; creating a task enqueues nothing |
+| Event ≠ Audit log | `ops.events` holds business facts; execution audit stays in `ops.job_events` |
+
+| Piece | Where | Note |
+| --- | --- | --- |
+| Tables, guards, events, services | `supabase/migrations/20260912200000_company_domain_core.sql` | Hand-written, idempotent, 13 end-state assertions |
+| Integrity | composite foreign keys + guard triggers | Cross-tenant and cross-company rows unstorable for every role but the owner |
+| State machine | `ops.task_status_transitions()` + `tasks_guard_update` (ENABLE ALWAYS) | 11 edges; a closed task is immutable |
+| Events | `ops.emit_lifecycle_event()` | Exactly one fact per change, in the same statement; reserved lifecycle namespaces |
+| Services | `ops.create_company`, `set_company_status`, `create_department`, `set_department_status`, `create_agent`, `set_agent_status`, `create_task`, `assign_task`, `transition_task`, `record_event`, `request_task_execution` | SECURITY INVOKER, explicit authorised tenant scope, owner-only EXECUTE |
+| Bridge | `ops.request_task_execution` + `ops.task_jobs` | Tenant from the task row; empty kind allowlist; task-scoped idempotency; inserts its own job so a concurrently enqueued key is refused, never adopted |
+| Typed boundary | `engine/domain/companyOs.ts`, `errors.ts`, `taskStateMachine.ts` | Typed inputs and errors; authorises nothing; a native 42501 is never disguised |
+| Dev bootstrap | `supabase/seed.sql` | A development tenant with one company, three departments, two agents — tenant vocabulary lives in seed data only |
+
+**Who can touch it.** Nobody but the owner in Phase 1C. No `anon`, `authenticated`, `service_role` or `ops_worker` privilege on any table or function, no PUBLIC EXECUTE, and a pinned per-run EXECUTE set that fails by name if that changes. The lease-bound read policies on every domain table have no grant behind them; they fix the scope of a future worker read before it exists.
+
+**Deliberately absent.** No model, prompt, tool, memory, approval, review, UI or CRM link; no `risk_level`, task input/result, company settings or agent configuration blob; no executable task kind (the allowlist is empty); no worker access to domain data. The kill switch and cost ledger ([ADR 0010](adr/0010-cost-control-and-kill-switch.md)) are still owed before any agent can run.

@@ -8,7 +8,7 @@ Read this before doing anything. The repository is the project memory; conversat
 | --- | --- |
 | **What this is** | An AI Company OS being built **on top of** a fork of [Atomic CRM](https://github.com/marmelab/atomic-crm). Companies, departments, AI employees, workflows, events, tasks, decisions, reviews, approvals, permissions, risk policy, cost accounting and audit trails as first-class data. |
 | **First tenant** | An online psychology clinic (Brazil, LGPD). A later tenant may be a 3D-printing business. |
-| **Current phase** | **Phase 1B complete and signed off; security gate 1B-S PASSED, and its two open questions closed 2026-09-12 (report §27). READY FOR PHASE 1C.** Read [docs/SECURITY_AUDIT_1BS_REPORT.md](docs/SECURITY_AUDIT_1BS_REPORT.md) and [docs/PHASE_1B_REPORT.md](docs/PHASE_1B_REPORT.md), then [docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md). A real worker process leases, dispatches through a typed registry, executes ONE deterministic handler, settles, retries with bounded backoff and reaps stale leases on its own clock; it connects as `ops_worker_login` (NOINHERIT, no BYPASSRLS) and **refuses to boot** as postgres/service_role. The 1B-S audit found no Critical/High: anon obtains nothing, cross-user BOLA/IDOR all fail closed, and the one MEDIUM (CRM cache surviving logout) is closed at the root: no build persists CRM records in the browser any more, and the development signing key is confined by executable guards (39/39 mutations caught). 1026 unit tests + 4 SQL suites + 32 driver-backed cases. [ADR 0012](docs/adr/0012-worker-tenant-context.md) is **Accepted**. **No agents, no LLM, no domain model, no UI - Phase 1C has not started.** |
+| **Current phase** | **Phase 1C, the Company OS domain core: built and verified locally 2026-09-13. NOT READY FOR PHASE 1D until CI has run on the pushed commits.** Read [docs/PHASE_1C_REPORT.md](docs/PHASE_1C_REPORT.md), then [docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md) and [ADR 0015](docs/adr/0015-company-os-domain-core.md), which is Proposed. **What exists:** tenant → company → department → agent → task → event, in `ops`. **Integrity:** composite keys make cross-tenant and cross-company rows unstorable. **Tasks:** an 11-edge state machine lives in an `ENABLE ALWAYS` trigger. **Events:** every lifecycle change writes exactly one, in the same statement. **Execution:** a task → job bridge exists with an **empty** allowlist, so no task can cause execution. **Access:** backend-only; no application role holds any privilege on it. **Evidence:** 41/41 database mutations caught by their named assertion; the Data API probe (REST and GraphQL, 5 credentials) reaches nothing in `ops`; 1129 unit tests, 6 database suites and 42 driver-backed cases. **Local stacks:** they stay on loopback only because Docker Desktop's Port binding behavior is "Localhost only" (see Known issues). Earlier phases: [docs/PHASE_1B_REPORT.md](docs/PHASE_1B_REPORT.md), [docs/SECURITY_AUDIT_1BS_REPORT.md](docs/SECURITY_AUDIT_1BS_REPORT.md). **No agents, no LLM, no UI. Phase 1D has not started; it waits on CI and on architectural review.** |
 | **Start here** | **[docs/SECURITY_INVARIANTS.md](docs/SECURITY_INVARIANTS.md)** (the properties that must hold, each with the guard that proves it) → [docs/PHASE_0_5_REPORT.md](docs/PHASE_0_5_REPORT.md) → [docs/BASELINE_REPORT.md](docs/BASELINE_REPORT.md) → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) → [docs/SECURITY.md](docs/SECURITY.md) → [docs/PERMISSIONS.md](docs/PERMISSIONS.md) → [docs/ROADMAP.md](docs/ROADMAP.md) → [docs/DECISIONS.md](docs/DECISIONS.md) |
 
 ## The five rules that override convenience
@@ -27,6 +27,31 @@ Verified 2026-09-10, **re-verified 2026-09-11 against `729f5966`**. Do not mista
 - ⚠️ **Docker works, but broke once in a way worth knowing.** Docker Desktop failed to start with `rename ...sock -> ...sock.stale: The file cannot be accessed by the system` across two independent subsystems. Probable cause: **three stacked antivirus products** (Norton 360 running, Kaspersky, Defender) and their filesystem minifilters. If it recurs, add AV exclusions for `%LOCALAPPDATA%\Docker`, `%LOCALAPPDATA%\docker-secrets-engine` and `%ProgramData%\Docker` before anything else. Always run `docker info` first.
 - ✅ **`.husky/pre-commit` no longer blocks commits** (fixed 2026-09-11). It called `make registry-gen`, `make` is absent, and `.husky/_/h:17` runs the hook under `sh -e` — so it aborted at line 1 with code 127 and `npx lint-staged` never ran. The hook now calls `npm run registry:gen` and prettier directly. **`make` is still not installed: use `npm run` / `npx` directly, never `make`.**
 - ⚠️ **`registry.json` is deliberately left stale.** `npm run registry:gen` was silently destroying it on Windows (223 files → 1: `path.join` emits backslashes and `glob` treats `\` as an escape). That is fixed in `scripts/generate-registry.mjs`, and so is a **second Windows defect found 2026-09-11**: `globSync` RETURNS platform separators, so every emitted `path` read `src\components\atomic-crm\types.ts` — published content that `shadcn add` cannot resolve. The first fix corrected the glob *patterns*; this one corrects the *output* (`toPosixPath`). The generator is now correct — but running it adds `LeadCommercialPanel.tsx` to the **published** registry, which is the exposure [ADR 0008](docs/adr/0008-fork-posture.md) exists to decide. Your next commit will regenerate it via the hook. Settle ADR 0008 first, or drop the `registry:gen` line from the hook.
+- ✅ **Local Supabase must stay on loopback — mitigated and verified 2026-09-12.** The Supabase CLI publishes every port with no host address, and Docker Desktop's default ("Open") then listens on every interface, IPv4 and IPv6. Before the fix, both local stacks answered on the LAN address, the WSL adapter and this machine's global IPv6 addresses, with three unauthenticated ways to run SQL as `postgres`:
+  - Kong `POST /pg/query` (54341);
+  - Studio `POST /api/platform/pg-meta/default/query` (54343);
+  - Postgres itself (54342, default password).
+
+  **The fix, applied on this machine:** Docker Desktop → Settings → Resources → Network → **Port binding behavior → "Localhost only"**, then recreate each stack: `npx supabase stop --workdir .supabase-e2e`, then `start`.
+  - **Effect on existing containers:** on Docker Desktop 4.89 the running containers were already rebound to `127.0.0.1`/`[::1]` as soon as the setting was applied. Recreate them anyway, then run the check.
+  - **Verified after the change:**
+    - every published port listens only on `127.0.0.1` and `[::1]`;
+    - the SQL paths still answer locally;
+    - every LAN, WSL, link-local and global IPv6 address refuses;
+    - the WSL VM cannot connect;
+    - containers still reach the host through `host.docker.internal`;
+    - `db reset`, `test:db` (6/6) and `test:db:engine` (42/42) pass.
+  - **What it costs:** Docker now refuses an explicit `-p 0.0.0.0:…` publish for every project on this machine ("for local-only port binding, the host IP must be a loopback address").
+
+  **What does not work, measured:**
+  - A network created with `com.docker.network.bridge.host_binding_ipv4=127.0.0.1` and passed via `--network-id` (Supabase's own documented recipe): Docker Desktop still published on `0.0.0.0` and `[::]`.
+  - daemon.json `"ip"`: it applies only to Docker's default `bridge` network.
+  - A Windows Defender Firewall rule is not a dependable substitute here. Norton 360 and Kaspersky are registered firewalls, and traffic from the WSL VM reached every port despite Defender's "block inbound" default.
+
+  **Detect a regression:** run `npm run check:local-exposure` (exit 0 loopback-only, 1 exposed, 2 unverified). `npm run test:db` prints a warning before its suites and again after its summary whenever its stack is exposed; a CI runner (`CI=true`) skips it.
+- ⚠️ **Git Bash rewrites container paths.** `docker exec … psql -f /tmp/x.sql` has `/tmp/…` converted to a Windows path and fails. Pipe SQL on stdin, or prefix the command with `MSYS_NO_PATHCONV=1`.
+- ⚠️ **`.supabase-e2e/supabase/migrations/` and `.supabase-e2e/supabase/seed.sql` are COPIES.** Editing a migration or the seed under `supabase/` changes nothing in the e2e stack until you copy it across. A reset without re-syncing silently measures the old schema.
+- ⚠️ **`npm run test:db:engine` needs the e2e stack named locally:** `SUPABASE_DB_CONTAINER=supabase_db_atomic-crm-e2e SUPABASE_DB_PORT=54342`. Without them it defaults to port 54322 — the other working copy's database — and on this machine fails at provisioning (`spawnSync psql ENOENT`) before any test runs. CI needs neither: it has one stack.
 
 **Custody and CI:**
 - **The branch is pushed, and CI runs on it.** `check.yml` triggers on `feature/**`, and the Phase 1B and 1B-S reports cite their runs. Agents still never push (`.claude/rules/git-policy.md`), so a commit an agent makes has no CI result until the owner pushes it.
@@ -86,7 +111,8 @@ npx vitest run --config vitest.config.ts --project app
 npx playwright install                  # only needed on a fresh clone; Chromium 1223 is already installed here
 docker info                             # preflight: start Docker Desktop before any Supabase work
 npm run test:db                         # RLS + tenant-isolation SQL suites; needs the isolated stack below
-npm run test:db:engine                  # worker runtime through the real pg pool (vitest.db.config.ts)
+npm run test:db:engine                  # worker runtime + Company OS services through the real pg pool; locally prefix SUPABASE_DB_CONTAINER=supabase_db_atomic-crm-e2e SUPABASE_DB_PORT=54342
+npm run check:local-exposure            # exit 1 if any local Supabase port is reachable beyond loopback; 2 if it cannot tell
 npm run worker:provision                # create ops_worker_login; needs OPS_WORKER_PASSWORD
 npm run worker                          # run the worker; needs OPS_WORKER_DATABASE_URL
 npx supabase start --workdir .supabase-e2e   # ALWAYS use this workdir - see below

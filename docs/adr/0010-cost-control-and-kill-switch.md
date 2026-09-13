@@ -60,3 +60,19 @@ The integration scope is the one that matters most in an incident: the usual rea
 - A kill switch checked per-run pre-flight is one more read per run; keep it in a single row a worker can cache briefly, and accept a bounded delay in *arming*, never in *enforcing*.
 - Tripping the switch is an incident with an audit trail: who tripped it, when, why, what was refused while it was active.
 - Cost by agent / department / task / workflow / model must be queryable from day one of the runtime — the dashboards the brief names are then a view, not a migration.
+
+---
+
+## Addendum 2026-09-12 — `company` no longer means tenant (Phase 1C)
+
+The scope table above has a row "`company` (tenant)". Since Phase 1C those are two different things ([ADR 0015](0015-company-os-domain-core.md)): a **tenant** is the isolation boundary, and a **company** (`ops.companies`) is an organisational partition inside a tenant, of which one tenant may hold several. The kill switch therefore needs both scopes:
+
+| Scope | Stops |
+| --- | --- |
+| `tenant` | every autonomous action of one tenant, across all its companies |
+| `company` | one company's automation inside a tenant |
+
+Department and agent scopes now name real rows (`ops.departments`, `ops.agents`). Two constraints Phase 1C adds for whoever builds this:
+
+- **`ops.agents.status` is not the kill switch.** It is lifecycle configuration (`active | inactive`), changed without the audit and deny-wins semantics this ADR requires.
+- **Enforcing a company, department or agent scope at lease time** needs the job's organisational context, which only `ops.task_jobs` holds. Resolving it there is allowed. A refusal must be recorded as a settlement that does **not** consume one of the job's attempts — today every lease increments `attempts`, so a scoped stop would otherwise retire a job to `failed` within its backoff window instead of leaving it resumable.

@@ -22,6 +22,7 @@ Index of ADRs under [`docs/adr/`](adr/). Each records context, decision, alterna
 | [0012](adr/0012-worker-tenant-context.md) | Worker tenancy — scoped non-superuser role, tenant resolved from a **live lease** | **Accepted 2026-09-12** — with the Phase 1A addendum; the original pure-GUC design is superseded | **Very high** — it is the mechanism ADR 0002 depends on |
 | [0013](adr/0013-pipeline-stages-are-configuration.md) | Pipeline stages are tenant configuration, not schema semantics | **Accepted** (owner, Q4) | Low **now**, high once migrated — which is why it was done before the first migration |
 | [0014](adr/0014-inbound-email-ledger-keys-on-recipient-email.md) | The inbound-email ledger keys on `(message_id, recipient_email)`, not `recipient_contact_id` | **Accepted** | Low — one table, one unique index |
+| [0015](adr/0015-company-os-domain-core.md) | Company OS domain core — companies, departments, agents, tasks and events in `ops`; composite-key integrity; backend-only SECURITY INVOKER services; lifecycle events derived by triggers; a task→job bridge with an empty allowlist | Proposed | High — the organisational model every agent will operate on |
 
 ### What changed in the reconciliation
 

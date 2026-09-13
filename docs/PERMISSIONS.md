@@ -139,3 +139,46 @@ The static migration guard treats `ops_worker` as a **scrutinised** role rather 
 | `ops.purge_inbound_email_ledger(integer, integer)` | The one capability that reaches `public`. Tenant from the live lease; refuses any tenant without `owns_local_crm`; retention window floored at 30 days in the database. |
 
 `ops.enqueue_job` remains **closed** to the worker. Nothing in Phase 1B needed continuation jobs, and capability added before it is needed is capability nobody reviewed.
+
+---
+
+## 10. The Company OS domain (Phase 1C, 2026-09-12)
+
+`ops.companies`, `ops.departments`, `ops.agents`, `ops.tasks`, `ops.events` and `ops.task_jobs`, and the functions that change them. [ADR 0015](adr/0015-company-os-domain-core.md).
+
+| Role | Tables | Functions |
+| --- | --- | --- |
+| `anon`, `authenticated` | nothing (no USAGE on `ops` at all) | nothing |
+| `service_role` | nothing | nothing new — still only `ops.enqueue_job` from Phase 1A |
+| `ops_worker` | **nothing** — not even SELECT | nothing |
+| `postgres` (owner) | everything | everything |
+| PUBLIC | — | **nothing**: every function is revoked explicitly, because PostgreSQL's default is EXECUTE to PUBLIC and the Phase 1A per-schema revoke does not remove it (measured) |
+
+**This is a privilege boundary.** In Phase 1C the only reader and writer is the owner: the driver-backed tests and the dev seed. No operator tool ships. The first runtime caller — a worker capability or a human API — gets a SECURITY DEFINER wrapper that takes no tenant argument and resolves it itself, never a postgres connection string.
+
+**Every Company OS function is SECURITY INVOKER** and takes an explicit `p_tenant_id`: the scope the caller is already authorised for. Every other id is untrusted and must resolve inside that scope, otherwise the answer is "not found" (`OS404`) whether or not it exists elsewhere. INVOKER is what keeps a future EXECUTE grant harmless: the grantee would still hit `42501` on the tables.
+
+**Read policies with no grant.** Each domain table has `for select to ops_worker using (tenant_id = ops.current_tenant_id())`, the same lease binding as every `ops` policy, and no SELECT grant. The day a worker needs a read, the grant is one line and the scope already exists.
+
+**Domain refusals have their own SQLSTATEs**, so a native permission failure is never mistaken for one:
+
+| SQLSTATE | Meaning |
+| --- | --- |
+| `OS400` | invalid argument (including a change with no declared event provenance) |
+| `OS401` | no tenant scope |
+| `OS403` | refused: a job kind that is not task-executable, or a reserved lifecycle event namespace |
+| `OS404` | not found in this tenant or company |
+| `OS409` | invalid state: inactive entity, closed task, illegal transition, immutable column, idempotency conflict |
+
+**The task → job bridge needs no new grant.** `ops.request_task_execution` inserts its job into `ops.jobs` itself, with its caller's privileges (today only the owner), instead of calling `ops.enqueue_job`: that function's idempotent path returns whichever job holds the key, and a concurrent `service_role` enqueue under a task's namespaced key was measured being adopted. The bridge refuses the resulting unique violation with `OS409` and writes the same `enqueued` row in `ops.job_events`. `service_role`'s one `ops` capability, `ops.enqueue_job`, is unchanged.
+
+The static migration guard now also rejects, before anything applies:
+
+- any grant on an `ops` object to `authenticated` or to a bypass role, beyond the two pinned Phase 1A `service_role` grants, keyed by privilege;
+- `ALTER DEFAULT PRIVILEGES` that would reach future `ops` objects;
+- disabling or downgrading an `ops` trigger;
+- dropping an `ops` trigger without re-creating it at top level in the same migration, and re-enabling it `ALWAYS` if it was;
+- `CREATE OR REPLACE TRIGGER` on an `ALWAYS` trigger without re-enabling it, because the replacement fires in ORIGIN mode (measured);
+- any `DROP … CASCADE` that reaches `ops`;
+- `SET session_replication_role`;
+- a `search_path` that sends unqualified names into `ops`.

@@ -20,3 +20,11 @@
 - Delegation is first-class: audit rows record actor, on-behalf-of, and the authority relied on.
 - An agent is **configuration + policy**, never a running process. When work exists an `agent_run` is created; when idle it costs nothing.
 - Per-agent permissions, autonomy level, budget and memory policy hang off `principals`.
+
+---
+
+## Addendum 2026-09-12 — Phase 1C: `ops.agents` precedes `ops.principals`
+
+Phase 1C created `ops.agents` as a standalone table of agent configuration and identity ([ADR 0015](0015-company-os-domain-core.md)), and `ops.tasks.assigned_agent_id` references it. No `ops.principals` table exists yet, and this ADR's decision is **not** superseded — it is deferred to the phase that first needs a non-agent actor (a human assignee, an approver) or per-principal permissions.
+
+The intended mapping, recorded now so it is not decided by accident: **a shared key**. When principals land, an agent's principal row uses the agent's id, so no task, event or link is remapped. Making a task assignable to a human will then be a change to what `assigned_agent_id` may reference, not a new column on a table with immutable history.
