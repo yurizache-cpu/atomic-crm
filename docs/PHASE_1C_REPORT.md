@@ -4,6 +4,8 @@
 
 **Dates:** built 2026-09-12, signoff pass 2026-09-13 · **Branch:** `feature/clinical-phase-1` · **Base:** `7d41efff` · **Commits:** see §22
 
+**CI:** **VERIFIED** — [run 34770182266](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34770182266) on `e160debb`. Green: database security and reproducibility, the Phase 1C SQL suites, the Data API `ops` probe, the worker runtime, unit tests, typecheck, ESLint, build, the secret scan and the migration/security guards. `e2e-test` and Prettier are red, identical to the baseline [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`, so the run's overall conclusion is `failure`, as the baseline's was. See §22.
+
 Phase 1C gives the Company OS its first organisational model. It is deterministic end to end: no LLM, no prompt, no model provider, no agent memory, no Tool Gateway, no WhatsApp, no Ads, no browser automation, no approval engine, no UI. [ADR 0015](adr/0015-company-os-domain-core.md) records every decision and the alternatives rejected. SI-21 to SI-24 in [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) are the properties that must now hold.
 
 **How it was built.**
@@ -501,24 +503,52 @@ Inside those numbers: `company_domain_core.sql` has 70 refusal cases and 64 labe
 
 ## 22. CI status
 
-**Phase 1C has not run in CI.** Agents never push (`.claude/rules/git-policy.md`), so the new commits have no CI result until the owner pushes them:
+**CI VERIFIED.** Evidence: [run 34770182266](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34770182266) of `✅ Check` (push, attempt 1) on `e160debb`, 2026-09-13 16:58–17:05 UTC. Every check Phase 1C is responsible for is green. The only red checks are the two pre-existing ones, and each is identical to the baseline. The run's overall conclusion is therefore `failure`, as the baseline's was: the criterion for this verification was green, or red only on those two checks and unchanged.
 
-```bash
-git push origin feature/clinical-phase-1
-```
+**Baseline:** [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`, the commit Phase 1C starts from.
 
-Commits on `feature/clinical-phase-1` since `7d41efff`:
+Commits on `feature/clinical-phase-1` since `7d41efff`, pushed together:
 
 1. `57faa51a` — `security(local): detect local Supabase ports reachable beyond loopback`
-2. `feat(company-os): Phase 1C Company OS domain core` — migration, domain services, attack suites, static guard, invariants registry
-3. `docs: Phase 1C report, ADR 0015 and documentation` — this report, ADRs, architecture, permissions, security, roadmap, CLAUDE.md
+2. `0b0c438e` — `feat(company-os): Phase 1C Company OS domain core` — migration, domain services, attack suites, static guard, invariants registry
+3. `e160debb` — `docs: Phase 1C report, ADR 0015 and documentation` — this report, ADRs, architecture, permissions, security, roadmap, CLAUDE.md
 
-What CI will run on them (`check.yml`):
+A push runs `check.yml` once, on its head, so `57faa51a` and `0b0c438e` have no run of their own. The run on `e160debb` covers the cumulative change of all three; the intermediate commits have no independent CI result.
 
-- **Database job:** `npm run test:db`, all 6 suites including `company_domain_core.sql` and `opsDataApiExposure.mjs`, plus `npm run test:db:engine`, before and after a clean reset.
-- **Unit jobs:** the `app`, `functions` and `claude` projects, which include the exposure check's tests.
+### Required checks, read from the job logs
 
-Known pre-existing red checks, not introduced here: `e2e-test` and the repository-wide Prettier check. Any other red check must be classified before code changes.
+| Check | Job → step | Result | Evidence |
+| --- | --- | --- | --- |
+| Database security & reproducibility | `🗄️ Database security & reproducibility`, all steps | ✅ 3 m 42 s | `supabase start` and `supabase db reset --local` each applied every migration through `20260912200000_company_domain_core.sql` and seeded; `test:db` passed before and after the reset |
+| Phase 1C SQL/domain tests | `🔒 RLS, tenant isolation and grant surface`, `🔒 Same guarantees after the reset` | ✅ | `PASS company_domain_core.sql` both times; `6 database suite(s) passed` both times (baseline: 4) |
+| Data API `ops` exposure probe | the same two steps | ✅ | `PASS opsDataApiExposure.mjs` both times: "11 ops relations, 35 ops functions, 5 credentials: 340 Data API requests over REST and GraphQL, none reached ops" |
+| Worker/runtime regression tests | `⚙️ Worker runtime, pooling and concurrency` | ✅ | 4 files, **42 passed**: `workerRuntime` 21, `companyOs.dbtest` 10, `concurrency` 5, `pooling` 6 |
+| Unit tests | `🔎 Test`: app, functions, agent harness | ✅ | `test:unit:app` passes no `--project`, so it runs every project: 91 files, **1129 passed, 2 skipped**. The `functions` step: 21 files, 485 passed. The `claude` step: 40 files, 410 passed, 1 skipped |
+| Typecheck | `🏷️ Typecheck` | ✅ | exit 0; its only annotation is GitHub's Node.js 20 deprecation warning |
+| ESLint | `🔬 ESLint` job and `ESLint` check run | ✅ | "ESLint found no issues", 0 annotations |
+| Build | `🔨 Build` → `npm run build` | ✅ | exit 0 |
+| Secret build scan | `🔒 No secrets in the production build` | ✅ | "scanned 16 text file(s) in "dist": 0 blocking, 0 advisory." (§20's 18 is the local build) |
+| Migration/security guards | `functions` and `claude` steps; the migration's own assertions | ✅ | `migrationInvariants.test.ts` 131 tests (static guard and seal), `securityInvariants.test.ts` 32 (SI-01 to SI-24), `schemaReproducibility.test.ts` 8, `dev-signing-key.test.mjs` 59, `local-exposure.test.mjs` 34. `20260912200000_company_domain_core.sql` applied without error on start and on reset, so its 13 end-state assertions raised nothing |
+
+CI reports executed tests. §18's case counts (118 migration cases, 17 `engine/domain` unit cases) were counted from the source and are not the same measure as CI's 131 and 24 (7 + 6 + 11); every test in those files passed.
+
+### Red checks: classified before any change, neither a Phase 1C regression
+
+| Check | `7d41efff` (baseline) | `e160debb` (Phase 1C) | Classification |
+| --- | --- | --- | --- |
+| `e2e-test` | `Run Playwright tests` failed (`make` exit status 2): 10 tests, **9 failed, 1 skipped** | same step, same exit status: 10 tests, **9 failed, 1 skipped** | pre-existing, unchanged |
+| `Prettier` | 2 files: `dataImport/sampleCsv.test.ts`, `providers/commons/canAccess.test.ts` | the same 2 files | pre-existing, unchanged |
+
+**`e2e-test` needed more than a matching job name.** `make test-e2e-ci` copies `supabase/migrations` and `supabase/seed.sql` into a fresh stack, so the Phase 1C migration and seed do reach this job. The two logs were therefore compared test by test:
+
+- The same 5 tests, in 4 spec files, fail in both runs on all three attempts: `adminAccountManagerFilter.spec.ts:42` and `:79`, `bulkContactTags.spec.ts:3`, `onboarding.spec.ts:3` and `userAddingATask.spec.ts:42`. All 5 fail in `chromium`; the 4 other than `bulkContactTags` fail in `Mobile Chrome`.
+- `bulkContactTags` on `Mobile Chrome` is skipped in both.
+- The failure messages match too. In both logs every failure is a 5000 ms locator timeout, with identical counts: `getByRole('link', { name: 'Contacts' })` 15, `getByText('Welcome to Atomic CRM')` 6 and `getByText('Latest Activity')` 6, made up of 12 `locator.click` timeouts and 15 `toBeVisible` failures.
+- Phase 1C changes nothing under `src/` or `e2e/`. The step took 326 s, against the baseline's 331 s.
+
+**Prettier** flags the same two files in both runs, both older than Phase 1C, and no file that `7d41efff..e160debb` changes. CI's Prettier glob does not cover `.mjs` or `.sql`, so those files rest on the local check in §20.
+
+The commit recording this verification touches only `CLAUDE.md` and this report, and is not covered by run 34770182266. When the owner pushes it, its own run is expected to show the same two red checks and nothing else. The last commit to change code or configuration is `0b0c438e`, covered by the run above.
 
 ## 23. ADR changes
 
@@ -550,7 +580,7 @@ Not changed: ADR 0008 (still unresolved) and ADR 0012 (Accepted, untouched).
 11. **Local-network protection depends on a machine setting.** A Docker Desktop reset or upgrade can undo it; `check:local-exposure` and the `test:db` warning detect that.
 12. **The mutation harness is session tooling, not committed.** Its method and per-mutation evidence are recorded here, but CI does not re-run mutations.
 13. **ADRs 0002, 0003 and 0015 are still Proposed.**
-14. **No CI evidence yet** for the Phase 1C commits; the classification below is conditional on it.
+14. **CI has no passing end-to-end test.** Every Playwright test fails or is skipped, and did before Phase 1C too (9 failed, 1 skipped, identical on `7d41efff` and `e160debb`; §22). No UI flow is regression-tested in CI: login, onboarding, the contact list and its account-manager filter, bulk tagging and task creation. Phase 1C changes no file under `src/` or `e2e/`, but its migration and seed do reach that job.
 
 ---
 
@@ -578,18 +608,29 @@ Explicitly **not** in Phase 1D: the approval engine (ADR 0009), principals and a
 
 ## Classification
 
-# NOT READY FOR PHASE 1D
+# READY FOR PHASE 1D — CI VERIFIED
 
-**Blocked on one item only: CI has not run on the Phase 1C commits.** Agents do not push.
+**CI:** [run 34770182266](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34770182266) on `e160debb`, 2026-09-13. Every required check is green in the job logs (§22):
 
-Everything else the signoff requires is complete, and measured locally on 2026-09-13:
+- database security and reproducibility, before and after a clean reset;
+- the Phase 1C SQL/domain suites (`company_domain_core.sql`, 6 of 6 database suites);
+- the Data API `ops` exposure probe (340 requests, 5 credentials, none reached `ops`);
+- worker/runtime regression tests (42 passed);
+- unit tests (1129 passed, 2 skipped);
+- typecheck, ESLint and build;
+- the secret build scan (0 blocking, 0 advisory);
+- the migration and security guards.
+
+The only red checks, `e2e-test` and Prettier, are identical to the baseline [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`: the same 9 failed and 1 skipped Playwright tests, and the same 2 unformatted files. Neither is a Phase 1C regression.
+
+Everything else the signoff requires was measured locally on 2026-09-13:
 
 - **Mutation testing:** 41 / 41 caught by their named assertion, with every application and restore proven.
 - **M16:** reproduced, classified as a real gap, and closed.
 - **Test strength:** three further weaknesses found and fixed (M18's expectation, M14b, F1's literal oracle).
 - **No placeholders:** the report has none left.
 - **Clean resets:** every reset exited 0.
-- **Suites:** all database, driver-backed and unit suites, typecheck, lint, prettier, build and the secret scan are green.
+- **Suites:** all database, driver-backed and unit suites, typecheck, lint, build and the secret scan are green, and Prettier passes on every changed file it checks (§20; the repository-wide check has 2 pre-existing failures, §22).
 - **Local network:** the exposure is closed and its regression check committed.
 
-Phase 1C meets the bar for **READY FOR PHASE 1D** once the owner has pushed and CI is green, or red only on the already-known `e2e-test` and Prettier checks. The architectural review of ADR 0015 is still required before Phase 1D begins.
+**Phase 1D has not started.** The owner's architectural review of ADR 0015, together with ADRs 0002 and 0003 (Appendix A, item 1), is still required before anything is built on them.
