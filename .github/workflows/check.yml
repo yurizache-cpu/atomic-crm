@@ -149,6 +149,16 @@ jobs:
             - name: ⚙️ Worker runtime, pooling and concurrency
               run: npm run test:db:engine
 
+            # A hosted project is initialised from migrations alone: the
+            # development data never reaches it (SI-25). Replay exactly that, and
+            # prove the global reference data a production database needs is
+            # there without it, while nothing tenant-specific is.
+            - name: 🌱 Production-like replay (migrations only)
+              run: npx supabase db reset --local --no-seed
+
+            - name: 🔎 Reference data without the development data
+              run: node supabase/tests/referenceData.mjs --without-seed
+
             # Proves the database can be rebuilt from the repository alone. The
             # seed once inserted into a table no migration created, so a clean
             # reconstruction was impossible and nothing caught it.

@@ -606,6 +606,107 @@ describe("the repository guard: pushing to Supabase", () => {
     ).toEqual(["deploy-without-key-check package.json:1"]);
   });
 
+  it("reads a pinned CLI version, an executable name and global flags (closure)", () => {
+    for (const push of [
+      "npx supabase@2.117.0 db push",
+      "supabase@2 functions deploy users",
+      "npx supabase --debug db push",
+      "bunx supabase@latest config push",
+      "npx supabase db --linked push",
+      "npx supabase --workdir . db push",
+      "supabase.exe db push",
+      "npx supabase --profile prod secrets set --env-file .env",
+    ]) {
+      expect(check("makefile", `supabase-deploy:\n\t${push}\n`), push).toEqual([
+        "deploy-without-key-check makefile:2",
+      ]);
+      expect(
+        check(
+          "makefile",
+          `supabase-deploy:\n\tnode scripts/dev-signing-key.mjs --linked\n\t${push}\n`,
+        ),
+        push,
+      ).toEqual([]);
+    }
+  });
+
+  it("reads flags between a command group and its subcommand (closure)", () => {
+    for (const push of [
+      "supabase functions --project-ref=abcdefghijabcdefghij deploy users",
+      "npx supabase@2.1.0 functions --debug=true deploy users",
+      "supabase secrets --debug=true set X=1",
+      "supabase config --debug=true push",
+      "supabase db --db-url postgres://h/db push",
+    ]) {
+      expect(check("makefile", `supabase-deploy:\n\t${push}\n`), push).toEqual([
+        "deploy-without-key-check makefile:2",
+      ]);
+    }
+    for (const other of [
+      "supabase functions --debug serve",
+      "supabase db --linked reset",
+      "supabase secrets --debug list",
+    ]) {
+      expect(
+        check("makefile", `supabase-deploy:\n\t${other}\n`),
+        other,
+      ).toEqual([]);
+    }
+  });
+
+  it("does not count a check a backslash continuation or a replaced shell can defeat (closure)", () => {
+    for (const lead of ["\techo \\\n", "\ttrue || \\\n"]) {
+      expect(
+        check(
+          "makefile",
+          `supabase-deploy:\n${lead}\tnode scripts/dev-signing-key.mjs --linked\n\tnpx supabase db push\n`,
+        ),
+        lead,
+      ).toEqual(["deploy-without-key-check makefile:4"]);
+    }
+    expect(
+      check(
+        WORKFLOW,
+        workflow(
+          job(
+            "supabase",
+            [
+              `            - run: ${KEY_CHECK}`,
+              "              shell: sh -c 'exit 0' {0}",
+            ],
+            PUSH,
+          ),
+        ),
+      ),
+    ).toEqual([`deploy-without-key-check ${WORKFLOW}:9`]);
+  });
+
+  it("counts a check as blocking only when continue-on-error is statically false (closure)", () => {
+    const keyCheckWith = (line) =>
+      workflow(
+        job("supabase", [`            - run: ${KEY_CHECK}`, line], PUSH),
+      );
+    for (const line of [
+      "              continue-on-error: ${{ true }}",
+      "              continue-on-error: ${{ vars.CONTINUE }}",
+      "              continue-on-error: 'false'",
+      '              "continue-on-error": true',
+      "              continue-on-error : true",
+    ]) {
+      expect(check(WORKFLOW, keyCheckWith(line)), line).toEqual([
+        `deploy-without-key-check ${WORKFLOW}:9`,
+      ]);
+    }
+    for (const line of [
+      "              continue-on-error: false",
+      "              continue-on-error: False",
+      "              continue-on-error: ${{ false }}",
+      "              continue-on-error: false # reviewed",
+    ]) {
+      expect(check(WORKFLOW, keyCheckWith(line)), line).toEqual([]);
+    }
+  });
+
   it("exempts only the production-scope test's fixtures, by path, and only while it loads reviewed modules", () => {
     const fixture = 'const DEPLOY_ALL = "npx supabase functions deploy";\n';
     const TEST = "scripts/test/production-scope.test.mjs";

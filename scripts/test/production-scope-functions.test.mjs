@@ -206,7 +206,7 @@ describe("production scope: reintroducing the MCP function", () => {
     ).toEqual(["allowlisted-function-missing"]);
   });
 
-  it("refuses caller input handed to a raw SQL call, however it is spelled (review 3)", () => {
+  it("refuses caller input handed to a raw SQL call under any alias, wrapper or literal member name (review 3)", () => {
     for (const call of [
       "await db.executeQuery(CompiledQuery.raw(sql));",
       "await db.executeQuery(CompiledQuery\n  .raw(sql));",
@@ -239,23 +239,26 @@ describe("production scope: reintroducing the MCP function", () => {
     }
   });
 
-  it("accepts literal and compiled SQL, and the reviewed interpolation only as and where it was reviewed (review 3)", () => {
+  it("accepts literal SQL with bound parameters, refuses any interpolated template, and refuses a query compiled elsewhere (closure)", () => {
     expect(
       found({
         path: MERGE,
         content:
-          "await trx.executeQuery(CompiledQuery.raw(\"SET LOCAL ROLE authenticated\"));\nawait trx.executeQuery(\n  CompiledQuery.raw(\n    `SELECT set_config('request.jwt.claim.sub', '${userId}', true)`,\n  ),\n);\nawait trx.executeQuery(query.compile());\n",
+          'await trx.executeQuery(CompiledQuery.raw("SET LOCAL ROLE authenticated"));\nawait trx.executeQuery(\n  CompiledQuery.raw(\n    "SELECT set_config(\'request.jwt.claim.sub\', $1, true)",\n    [userId],\n  ),\n);\n',
       }),
     ).toEqual([]);
-    for (const [path, template] of [
-      [USERS, "'${userId}'"],
-      [MERGE, "'${body.sub}'"],
-    ]) {
+    for (const path of [MERGE, POOL, USERS]) {
       expect(
         found({
           path,
-          content: `await trx.executeQuery(CompiledQuery.raw(\`SELECT set_config('request.jwt.claim.sub', ${template}, true)\`));\n`,
+          content:
+            "await trx.executeQuery(CompiledQuery.raw(`SELECT set_config('request.jwt.claim.sub', '${userId}', true)`));\n",
         }),
+      ).toEqual([`raw-sql-non-literal ${path}:1`]);
+    }
+    for (const path of [MERGE, POOL]) {
+      expect(
+        found({ path, content: "await trx.executeQuery(query.compile());\n" }),
       ).toEqual([`raw-sql-non-literal ${path}:1`]);
     }
   });
@@ -272,6 +275,41 @@ describe("production scope: reintroducing the MCP function", () => {
         "raw-sql-non-literal",
       ]);
     }
+  });
+
+  it("refuses a function that imports another function's files (closure)", () => {
+    expect(
+      found({
+        path: USERS,
+        content:
+          'import "../merge_contacts/index.ts";\nDeno.serve(() => new Response(null));\n',
+      }),
+    ).toEqual([`function-imports-other-function ${USERS}:1`]);
+    expect(
+      rulesOf(
+        {
+          path: USERS,
+          content: 'import { helper } from "../_shared/helper.ts";\n',
+        },
+        {
+          path: "supabase/functions/_shared/helper.ts",
+          content:
+            'export { runAsUser as helper } from "../merge_contacts/index.ts";\n',
+        },
+      ),
+    ).toEqual(["function-imports-other-function"]);
+    expect(
+      found(
+        {
+          path: MERGE,
+          content: 'import { a } from "../merge_contacts/helper.ts";\n',
+        },
+        {
+          path: "supabase/functions/merge_contacts/helper.ts",
+          content: "export const a = 1;\n",
+        },
+      ),
+    ).toEqual([]);
   });
 
   it("refuses the shared Postgres pool reached from a function other than merge_contacts (review)", () => {

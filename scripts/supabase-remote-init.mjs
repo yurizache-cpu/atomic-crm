@@ -222,7 +222,8 @@ async function linkProject({ projectRef, databasePassword }) {
 // (owner decision 2026-09-13): it must never populate a hosted project,
 // and scripts/production-scope.mjs fails the build if a remote path pushes it
 // again. Seeding a remote staging project needs its own explicit,
-// environment-specific path; none exists.
+// environment-specific path; none exists. Global reference data a production
+// database needs arrives through migrations (20260913120000), never the seed.
 async function setupDatabase({ databasePassword }) {
   await execa(
     "npx",

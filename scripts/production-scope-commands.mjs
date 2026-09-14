@@ -29,8 +29,9 @@ const LITERAL_BLOCK = /^\|(?:[1-9][-+]?|[-+][1-9]?)?\s*(?:#.*)?$/;
 const FOLDED_BLOCK = /^>(?:[1-9][-+]?|[-+][1-9]?)?\s*(?:#.*)?$/;
 const CHANGES_DIRECTORY = /(?:^|[\s:;&|(])(?:cd|pushd)\s+\S/;
 const YAML_ANCHOR_OR_ALIAS = /(?:^\s*-|:)\s+[&*][A-Za-z][\w-]*(?:\s|$)/;
+/** Any status function replaces GitHub's implicit success(), `!success()` included. */
 const RUNS_AFTER_FAILURE =
-  /^\s*(?:-\s+)?if:.*\b(?:always|cancelled|failure)\s*\(/;
+  /^\s*(?:-\s+)?if:.*\b(?:always|cancelled|failure|success)\s*\(/;
 const MAKE_IGNORES_FAILURES =
   /^\s*\.(?:ONESHELL|IGNORE)\s*:|^\s*(?:export\s+)?\.?MAKEFLAGS\s*[:+?]?=.*(?:--ignore-errors|(?:^|\s)-[A-Za-z]*i)/;
 // prettier-ignore
@@ -47,6 +48,7 @@ const SINGLE_WORD_COMMANDS = new Set([
 // prettier-ignore
 const REMOTE_COMMANDS = new Set([
   "functions deploy", "db push", "db reset", "link", "secrets set", "config push",
+  "functions list",
 ]);
 /** What must follow the scope check in a pipeline. */
 const SCOPED_COMMANDS = new Set(["functions deploy", "db push"]);
@@ -247,7 +249,38 @@ export function commandViolations(path, content, { functions }) {
   }
 
   if (YAML.test(path) || PIPELINES.has(path)) {
+    let projectKeys = 0;
     content.split(/\r?\n/).forEach((text, i) => {
+      if (PIPELINES.has(path) && /\bSUPABASE_PROJECT_ID\s*[:+?]?=/.test(text)) {
+        add(
+          "deploy-target-mismatch",
+          i + 1,
+          "sets SUPABASE_PROJECT_ID in a deploy path, so a command can reach another project than the one the hosted check asked about",
+        );
+      }
+      if (
+        PIPELINES.has(path) &&
+        YAML.test(path) &&
+        /^\s*["']?SUPABASE_PROJECT_ID["']?\s*:/.test(text) &&
+        ++projectKeys > 1
+      ) {
+        add(
+          "deploy-target-mismatch",
+          i + 1,
+          "sets SUPABASE_PROJECT_ID a second time, so a step can reach another project than the one the hosted check asked about",
+        );
+      }
+      if (
+        PIPELINES.has(path) &&
+        YAML.test(path) &&
+        /^\s*(?:-\s+)?["']?(?:shell|defaults)["']?\s*:/.test(text)
+      ) {
+        add(
+          "workflow-shell-override",
+          i + 1,
+          "replaces the shell a deploy path's steps run in, which can make a check exit 0 whatever its command returns",
+        );
+      }
       if (/\bSUPABASE_WORKDIR\b/.test(text)) {
         add(
           "supabase-workdir-remote",
@@ -267,6 +300,13 @@ export function commandViolations(path, content, { functions }) {
           "workflow-command-unresolvable",
           i + 1,
           "uses a YAML anchor or alias, which repeats a step where no rule reads it",
+        );
+      }
+      if (pipelineWorkflow && /\bGITHUB_(?:ENV|PATH)\b/.test(text)) {
+        add(
+          "workflow-env-mutation",
+          i + 1,
+          "rewrites the job's environment or PATH between steps, which can change what a later step's condition or command means after the checks ran",
         );
       }
       if (/^\s*(?:-\s+)?run:\s*\$\{\{[^}]*\}\}\s*$/.test(text)) {
@@ -360,37 +400,134 @@ function commandRuleViolations({ path, line, cmd, add, functions }) {
 
 const SCOPE_RUN = /^\s*(?:-\s+)?run:\s*node scripts\/production-scope\.mjs\s*$/;
 const SCOPE_RECIPE = /^\tnode scripts\/production-scope\.mjs\s*$/;
-const STEP_CONDITION = /^\s*(?:-\s+)?if:/;
-const MAY_CONTINUE = /^\s*(?:-\s+)?continue-on-error:(?!\s*false\s*$)/;
+const REMOTE_SCOPE_RUN =
+  /^\s*(?:-\s+)?run:\s*node scripts\/production-scope\.mjs --project-ref "\$SUPABASE_PROJECT_ID"\s*$/;
+const REMOTE_SCOPE_RECIPE =
+  /^\tnode scripts\/production-scope\.mjs --linked\s*$/;
+/** One makefile push or deploy command as reviewed: the CLI, flags and names only. */
+const MAKE_PUSH_SEGMENT =
+  /^@?(?:npx\s+)?supabase(?:@[\w.-]+)?(?:\s+--?[\w-]+(?:=[\w.:/-]+)?)*\s+(?:db(?:\s+--?[\w-]+(?:=[\w.:/-]+)?)*\s+push|functions(?:\s+--?[\w-]+(?:=[\w.:/-]+)?)*\s+deploy)(?:\s+(?:--?[\w-]+(?:=[\w.:/-]+)?|[\w.-]+))*$/;
+/** A recipe line made only of reviewed push or deploy commands, on one line. */
+const isPlainMakePush = (text) =>
+  !text.includes("\n") &&
+  text
+    .split(SEGMENTS)
+    .every((segment) => MAKE_PUSH_SEGMENT.test(segment.trim()));
+const LINK_RUN =
+  /^\s*(?:-\s+)?run:\s*npx supabase link --project-ref "?\$SUPABASE_PROJECT_ID"?\s*$/;
+const IF_KEY = /^\s*(?:-\s+)?["']?if["']?\s*:/;
+const NAME_KEY = /^\s*(?:-\s+)?name:/;
+/** Step keys that change what a check's command runs against, or how it exits. */
+const STEP_OVERRIDE =
+  /^\s*(?:-\s+)?["']?(?:env|shell|working-directory)["']?\s*:/m;
+/** A condition spelled so that no comparison here can trust it. */
+const UNREADABLE = Symbol("unreadable condition");
 
-/** A workflow step that runs the scope check, unconditionally, and stops the job when it fails. */
-const isWorkflowScopeCheck = (step) => {
-  const stepLines = step.text.split("\n");
+const leadingSpaces = (line) => line.match(/^\s*/)[0].length;
+
+/**
+ * A step's `if:` expression, null when it has none, or UNREADABLE when it is
+ * spelled any way but one plain line. Only the step's own keys count, never a
+ * line inside a run block or a nested map. A quoted, escaped or explicit
+ * (`? if`) key anywhere in the step, a spaced or second `if` key, a block or
+ * multi-line scalar, a tag, anchor or quoted value, or an expression left open
+ * is UNREADABLE.
+ */
+const conditionOf = (step) => {
+  const lines = step.text.split("\n");
+  const keyIndent = (lines[0].match(/^\s*-\s+/) ?? [""])[0].length;
+  const keys = lines.flatMap((line, at) =>
+    at === 0 || (line.trim() !== "" && leadingSpaces(line) === keyIndent)
+      ? [{ at, key: line.slice(keyIndent).trim() }]
+      : [],
+  );
+  if (keys.some(({ key }) => /^[?"'{[!&*]/.test(key))) return UNREADABLE;
+  const conditions = keys.filter(({ key }) => /^if\s*:/.test(key));
+  if (conditions.length === 0) return null;
+  if (conditions.length > 1) return UNREADABLE;
+  const [{ at, key }] = conditions;
+  const plain = key.match(/^if: (\S.*?)\s*$/);
+  const next = lines.slice(at + 1).find((l) => l.trim() !== "");
+  if (!plain || (next && leadingSpaces(next) > keyIndent)) return UNREADABLE;
+  const value = plain[1].replace(/\s+#.*$/, "");
+  const opened = value.split("${{").length - 1;
+  const closed = value.split("}}").length - 1;
+  return /^[|>"'&*!]/.test(value) || opened !== closed ? UNREADABLE : value;
+};
+
+/** True when a condition reads only env, vars and secrets, which no later step can change (GITHUB_ENV writes are refused). */
+const readsOnlyStableContexts = (condition) =>
+  [
+    ...condition
+      .replace(/'(?:[^']|'')*'/g, "''")
+      .matchAll(/[A-Za-z_][\w-]*(?=\s*[.([])/g),
+  ].every(([name]) => ["env", "vars", "secrets"].includes(name));
+
+/** A workflow step that runs the repository scope check, unconditionally, and stops the job when it fails. */
+const isWorkflowScopeCheck = (step) =>
+  step.text.split("\n").some((l) => SCOPE_RUN.test(l)) &&
+  conditionOf(step) === null &&
+  isBlocking(step.text, { makefile: false });
+
+/**
+ * A workflow step that asks the hosted project and stops the job when it fails:
+ * nothing overrides its environment, shell or directory, and its condition is
+ * absent or one plain line reading only env, vars and secrets.
+ */
+const isWorkflowRemoteScopeCheck = (step) => {
+  const condition = conditionOf(step);
   return (
-    stepLines.some((l) => SCOPE_RUN.test(l)) &&
-    !stepLines.some((l) => STEP_CONDITION.test(l) || MAY_CONTINUE.test(l)) &&
+    step.text.split("\n").some((l) => REMOTE_SCOPE_RUN.test(l)) &&
+    condition !== UNREADABLE &&
+    (condition === null || readsOnlyStableContexts(condition)) &&
+    !STEP_OVERRIDE.test(step.text) &&
     isBlocking(step.text, { makefile: false })
+  );
+};
+
+/** A workflow step that only links the project the hosted check asked about. */
+const isCanonicalLink = (step) => {
+  const lines = step.text.split("\n");
+  return (
+    lines.some((l) => LINK_RUN.test(l)) &&
+    lines.every(
+      (l) => IF_KEY.test(l) || NAME_KEY.test(l) || LINK_RUN.test(l),
+    ) &&
+    conditionOf(step) !== UNREADABLE
   );
 };
 
 /**
  * In deploy.yml and the makefile, every function deploy and database push
- * follows the scope check in the same job or target, and the check can stop
- * it: not commented out, not conditional, not `|| true` or `; exit 0`, not
- * continue-on-error, not a make `-` recipe, and not undone by a push step that
- * runs after a failure or a make setting that ignores failed recipes.
+ * follows two checks in the same job or target: the repository scope check,
+ * and the hosted check that asks the project which functions it serves. Each
+ * can stop it: not commented out, not `|| true` or `; exit 0`, not
+ * continue-on-error (unless statically false), not a make `-` recipe, and not
+ * undone by a push step that runs after a failure or a make setting that
+ * ignores failed recipes. The repository check is unconditional. The hosted
+ * check may carry a condition, one plain line reading only env, vars and
+ * secrets, and then the push must carry the same one, so the push never runs
+ * where the check did not. The push reaches the project the check asked about:
+ * it names no project or database of its own, and the only link is the
+ * workflow's own `supabase link --project-ref $SUPABASE_PROJECT_ID`.
  */
 export function scopeCheckViolations(path, content) {
   if (!PIPELINES.has(path)) return [];
-  const pushLines = new Set(
-    commandTexts(path, content)
-      .filter(({ text }) =>
-        parseSupabaseCommands(text).some((cmd) =>
-          SCOPED_COMMANDS.has(cmd.command),
-        ),
-      )
-      .map(({ line }) => line),
-  );
+  const pushLines = new Set();
+  const targetedPushLines = new Set();
+  const linkLines = new Set();
+  for (const { text, line } of commandTexts(path, content)) {
+    for (const cmd of parseSupabaseCommands(text)) {
+      if (SCOPED_COMMANDS.has(cmd.command)) {
+        pushLines.add(line);
+        if (cmd.flags.has("--project-ref") || cmd.flags.has("--db-url")) {
+          targetedPushLines.add(line);
+        }
+      } else if (cmd.command === "link") {
+        linkLines.add(line);
+      }
+    }
+  }
   if (pushLines.size === 0) return [];
 
   const makefile = path === MAKEFILE;
@@ -414,19 +551,96 @@ export function scopeCheckViolations(path, content) {
     });
   }
   const units = (makefile ? makefileUnits(lines) : workflowUnits(lines)) ?? [];
+  const remoteViolation = (line, detail) =>
+    violations.push({
+      rule: "deploy-before-remote-scope-check",
+      file: path,
+      line,
+      detail,
+    });
+  const targetViolation = (line, detail) =>
+    violations.push({
+      rule: "deploy-target-mismatch",
+      file: path,
+      line,
+      detail,
+    });
+  const remoteCheck = makefile
+    ? "node scripts/production-scope.mjs --linked"
+    : 'node scripts/production-scope.mjs --project-ref "$SUPABASE_PROJECT_ID"';
   const covered = new Set();
   for (const { unit, steps } of units) {
     let checked = false;
-    for (const step of steps) {
+    let remote = null;
+    const pushes = steps.some((s) => s.lines.some((n) => pushLines.has(n)));
+    const lastPush = steps.findLastIndex((s) =>
+      s.lines.some((n) => pushLines.has(n)),
+    );
+    for (const [index, step] of steps.entries()) {
       step.lines.forEach((n) => covered.add(n));
+      const link = step.lines.find((n) => linkLines.has(n));
+      if (
+        link !== undefined &&
+        pushes &&
+        (makefile || !isCanonicalLink(step))
+      ) {
+        targetViolation(
+          link,
+          `"${unit}" links a project this rule cannot match to the one the hosted check asked about, so a push can reach another project`,
+        );
+      }
       if (
         makefile ? SCOPE_RECIPE.test(step.text) : isWorkflowScopeCheck(step)
       ) {
         checked = true;
         continue;
       }
+      if (
+        makefile
+          ? REMOTE_SCOPE_RECIPE.test(step.text)
+          : isWorkflowRemoteScopeCheck(step)
+      ) {
+        remote = { condition: makefile ? null : conditionOf(step) };
+        continue;
+      }
+      if (
+        makefile &&
+        remote &&
+        index <= lastPush &&
+        !isPlainMakePush(step.text)
+      ) {
+        targetViolation(
+          step.lines[0],
+          `"${unit}" runs something other than a plain push between the hosted check and its last push, which can change the project a push reaches`,
+        );
+      }
       const push = step.lines.find((n) => pushLines.has(n));
       if (push === undefined) continue;
+      if (step.lines.some((n) => targetedPushLines.has(n))) {
+        targetViolation(
+          push,
+          `"${unit}" names its own project or database on a deploy or push, so the hosted check may have asked about another`,
+        );
+      }
+      if (!remote) {
+        remoteViolation(
+          push,
+          `"${unit}" deploys functions or pushes the database before a blocking \`${remoteCheck}\` asks the project which functions it serves`,
+        );
+      } else if (conditionOf(step) === UNREADABLE) {
+        remoteViolation(
+          push,
+          `"${unit}" deploys or pushes under a condition this rule cannot read, so it can run where the hosted check did not`,
+        );
+      } else if (
+        remote.condition !== null &&
+        conditionOf(step) !== remote.condition
+      ) {
+        remoteViolation(
+          push,
+          `"${unit}" deploys or pushes under a condition other than the hosted check's, so it can run where that check did not`,
+        );
+      }
       if (!checked) {
         violation(
           push,

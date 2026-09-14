@@ -1,8 +1,8 @@
 // Fail-closed SQL tokenizer and statement classifier.
 //
-// Deliberately NOT a SQL parser. `pgsql-ast-parser@12` is a devDependency (it
-// backed the SQL validator of the MCP function removed on 2026-09-13) and was
-// measured against this corpus first:
+// Deliberately NOT a SQL parser. `pgsql-ast-parser@12`, a devDependency until
+// 2026-09-13 (it backed the SQL validator of the MCP function removed that day),
+// was measured against this corpus first:
 //
 //   create or replace view public.x with (security_invoker = on) as select 1;
 //     -> THROWS (syntax error at `with`)

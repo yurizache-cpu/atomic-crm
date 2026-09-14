@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { sql, type Selectable } from "https://esm.sh/kysely@0.27.2";
-import { db, type ContactsTable, CompiledQuery } from "../_shared/db.ts";
+import { runAsUser, type ContactsTable } from "../_shared/db.ts";
 import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
 import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
@@ -83,28 +83,23 @@ async function mergeContacts(
   userId: string,
 ) {
   try {
-    return await db.transaction().execute(async (trx) => {
-      // Enable RLS by switching to authenticated role and setting user context
-      await trx.executeQuery(CompiledQuery.raw("SET LOCAL ROLE authenticated"));
-      await trx.executeQuery(
-        CompiledQuery.raw(
-          `SELECT set_config('request.jwt.claim.sub', '${userId}', true)`,
-        ),
-      );
+    // RLS applies: the whole merge runs as `authenticated`, as the caller.
+    return await runAsUser(userId, async (trx) => {
+      // Queries run one after another, never in parallel: the transaction owns
+      // a single pooled session, and a rollback must not race a query still
+      // queued behind a failed one.
 
       // 1. Fetch both contacts
-      const [winner, loser] = await Promise.all([
-        trx
-          .selectFrom("contacts")
-          .selectAll()
-          .where("id", "=", winnerId)
-          .executeTakeFirstOrThrow(),
-        trx
-          .selectFrom("contacts")
-          .selectAll()
-          .where("id", "=", loserId)
-          .executeTakeFirstOrThrow(),
-      ]);
+      const winner = await trx
+        .selectFrom("contacts")
+        .selectAll()
+        .where("id", "=", winnerId)
+        .executeTakeFirstOrThrow();
+      const loser = await trx
+        .selectFrom("contacts")
+        .selectAll()
+        .where("id", "=", loserId)
+        .executeTakeFirstOrThrow();
 
       // 2. Reassign tasks from loser to winner
       await trx
@@ -163,18 +158,16 @@ async function mergeContacts(
       // OR, never "winner wins" — if EITHER side asked not to be contacted,
       // the merged contact is opted out. Silently re-enabling contact because
       // the surviving row happened to be the winner's is the incident.
-      const [winnerProfile, loserProfile] = await Promise.all([
-        trx
-          .selectFrom("lead_profiles")
-          .selectAll()
-          .where("contact_id", "=", winnerId)
-          .executeTakeFirst(),
-        trx
-          .selectFrom("lead_profiles")
-          .selectAll()
-          .where("contact_id", "=", loserId)
-          .executeTakeFirst(),
-      ]);
+      const winnerProfile = await trx
+        .selectFrom("lead_profiles")
+        .selectAll()
+        .where("contact_id", "=", winnerId)
+        .executeTakeFirst();
+      const loserProfile = await trx
+        .selectFrom("lead_profiles")
+        .selectAll()
+        .where("contact_id", "=", loserId)
+        .executeTakeFirst();
 
       if (winnerProfile && loserProfile) {
         await trx

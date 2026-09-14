@@ -202,6 +202,16 @@ jobs:
             - name: 🔒 Production scope (reviewed functions only, no development seed)
               run: node scripts/production-scope.mjs
 
+            # A named deploy never deletes a function, so a project deployed
+            # while the MCP function existed would still serve it. Ask the
+            # project, with the ref and token this job deploys with, which
+            # functions it serves, and refuse any outside PRODUCTION_FUNCTIONS
+            # before pushing anything. It deletes nothing: an unexpected function
+            # needs a person. Exits non-zero if it cannot get an answer.
+            - if: ${{ env.IS_SUPABASE_CONFIGURED }}
+              name: 🔒 Project serves reviewed functions only
+              run: node scripts/production-scope.mjs --project-ref "$SUPABASE_PROJECT_ID"
+
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 🔗 Supabase Link
               run: npx supabase link --project-ref $SUPABASE_PROJECT_ID

@@ -10,6 +10,7 @@ import {
   PostgresIntrospector,
   PostgresQueryCompiler,
   type Generated,
+  type Transaction,
 } from "https://esm.sh/kysely@0.27.2";
 
 export { CompiledQuery };
@@ -176,8 +177,9 @@ const connectionString =
 
 const pool = new Pool(connectionString, 1); // Single connection for edge functions
 
-// Create and export Kysely instance
-export const db = new Kysely<Database>({
+// The Kysely instance over the owner pool. Module-private: runAsUser is the
+// only way a function uses it (SI-27).
+const db = new Kysely<Database>({
   dialect: {
     createAdapter: () => new PostgresAdapter(),
     createDriver: () => new DenoPostgresDriver(pool),
@@ -185,3 +187,32 @@ export const db = new Kysely<Database>({
     createQueryCompiler: () => new PostgresQueryCompiler(),
   },
 });
+
+/**
+ * Runs `work` in one transaction as `authenticated`, with the verified caller's
+ * id as the RLS identity. The pool logs in as the database owner, so this is how
+ * a function uses it (ADR 0002). SET LOCAL ROLE and the local set_config end
+ * with the transaction, on COMMIT and ROLLBACK alike, and the id travels as a
+ * bound parameter, never inside the SQL text.
+ *
+ * The role switch is not a privilege boundary: the owner session could switch
+ * back. What keeps it out of `ops` is that every statement sent here is fixed
+ * code in this file and in merge_contacts/index.ts, both sealed by
+ * supabase/tests/ownerSessionSeal.test.ts, and that `authenticated` holds
+ * nothing in `ops` (SI-27).
+ */
+export function runAsUser<T>(
+  userId: string,
+  work: (trx: Transaction<Database>) => Promise<T>,
+): Promise<T> {
+  return db.transaction().execute(async (trx) => {
+    await trx.executeQuery(CompiledQuery.raw("SET LOCAL ROLE authenticated"));
+    await trx.executeQuery(
+      CompiledQuery.raw(
+        "SELECT set_config('request.jwt.claim.sub', $1, true)",
+        [userId],
+      ),
+    );
+    return await work(trx);
+  });
+}

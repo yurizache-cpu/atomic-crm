@@ -360,19 +360,47 @@ function directPagesPublishes(path, content) {
   );
 }
 
-const SUPABASE_PUSH =
-  /\bsupabase\s+(?:db\s+push|functions\s+deploy|secrets\s+set|config\s+push)\b/;
+/**
+ * A Supabase CLI push on one line. The CLI may be version-pinned
+ * (`supabase@2.117.0`), called as an executable, and given flags, with or
+ * without values, before the subcommand or between its words
+ * (`supabase --debug db --db-url postgres://h/db push`).
+ */
+const CLI_FLAG = String.raw`\s+-{1,2}[\w-]+(?:=\S*|\s+(?!(?:db|functions|secrets|config)\b)[^\s-]\S*)?`;
+const GROUP_FLAG = String.raw`\s+-{1,2}[\w-]+(?:=\S*|\s+(?!(?:push|deploy|set)\b)[^\s-]\S*)?`;
+const SUPABASE_PUSH = new RegExp(
+  String.raw`\bsupabase(?:@[^\s"'${"`"}]*)?(?:\.exe)?(?:${CLI_FLAG})*\s+(?:db(?:${GROUP_FLAG})*\s+push|functions(?:${GROUP_FLAG})*\s+deploy|secrets(?:${GROUP_FLAG})*\s+set|config(?:${GROUP_FLAG})*\s+push)\b`,
+);
 const KEY_CHECK =
   /\bdev-signing-key\.mjs\s+--(?:project-ref\s+\S|remote\s+\S|linked\b)/;
 
 const indentOf = (line) => line.match(/^\s*/)[0].length;
 const isComment = (line) => line.trim().startsWith("#");
 
+const CONTINUE_ON_ERROR =
+  /(?:^|[\s{,])(["']?)continue-on-error\1[ \t]*:[ \t]*((?:\$\{\{[^\n}]*\}\})?[^\n,}]*)/g;
+const STATICALLY_FALSE =
+  /^(?:false|False|FALSE|\$\{\{\s*false\s*\}\})[ \t]*(?:#.*)?$/;
+
+/**
+ * True when a step may carry on after it fails: any `continue-on-error` whose
+ * value is not statically false. An expression counts as true, because GitHub
+ * evaluates it at run time and no rule here can.
+ */
+export const mayContinueOnError = (text) =>
+  [...text.matchAll(CONTINUE_ON_ERROR)].some(
+    ([, , value]) => !STATICALLY_FALSE.test(value.trim()),
+  );
+
 /** A step that cannot fail cannot refuse anything. `${{ a || b }}` is not a fallback. */
 export const isBlocking = (text, { makefile }) => {
+  if (mayContinueOnError(text)) return false;
+  // A replaced shell decides the exit status: `shell: sh -c 'exit 0' {0}`.
+  if (!makefile && /^\s*(?:-\s+)?["']?shell["']?\s*:/m.test(text)) {
+    return false;
+  }
   const code = text.replace(/\$\{\{[\s\S]*?\}\}/g, "");
   if (/\|\|/.test(code)) return false;
-  if (/continue-on-error:\s*(?!false\b)\S/.test(code)) return false;
   if (makefile && /^\t[@+]*-/.test(text)) return false;
   return true;
 };
@@ -431,14 +459,27 @@ export function workflowUnits(lines) {
   return units;
 }
 
-/** A makefile as targets of recipe lines. */
+/**
+ * A makefile as targets of recipe lines. make joins a recipe line that ends in
+ * a backslash with the next one, so they are one step: a check there can be an
+ * argument to another command, or a branch it skips.
+ */
 export function makefileUnits(lines) {
   const units = [];
   let target = null;
+  let continued = null;
   lines.forEach((line, i) => {
+    if (continued) {
+      continued.text += `\n${line}`;
+      continued.lines.push(i + 1);
+      if (!line.endsWith("\\")) continued = null;
+      return;
+    }
     if (line.startsWith("\t")) {
       if (target && line.trim()) {
-        target.steps.push({ text: line, lines: [i + 1] });
+        const step = { text: line, lines: [i + 1] };
+        target.steps.push(step);
+        if (line.endsWith("\\")) continued = step;
       }
       return;
     }
@@ -504,6 +545,7 @@ function deployWithoutKeyCheck(path, content) {
       if (
         checkAt !== -1 &&
         isBlocking(step.text, { makefile }) &&
+        !(makefile && step.lines.length > 1) &&
         (pushAt === -1 || checkAt < pushAt)
       ) {
         checked = true;

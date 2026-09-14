@@ -16,8 +16,10 @@ import {
 // Every "refuses" case is an attack on a deploy path or on the development
 // seed: it reintroduces a path the owner closed on 2026-09-13, and the guard
 // must name it. Cases marked (review), (review 2) and (review 3) reproduce ways
-// three adversarial reviews got past earlier versions of this guard. Function
-// source attacks live in production-scope-functions.test.mjs.
+// three adversarial reviews got past earlier versions of this guard; (closure)
+// cases come from the final pre-1D closure. Function source attacks live in
+// production-scope-functions.test.mjs, and the hosted check's own logic in
+// production-scope-remote.test.mjs.
 
 const DEPLOY_ALL = "npx supabase functions deploy";
 const EXPLICIT = `${DEPLOY_ALL} ${PRODUCTION_FUNCTIONS.join(" ")}`;
@@ -27,10 +29,14 @@ const REMOTE_INIT = "scripts/supabase-remote-init.mjs";
 const SCOPE_RUN = "run: node scripts/production-scope.mjs";
 const SCOPE_RECIPE = "\tnode scripts/production-scope.mjs";
 const SCOPE_STEP = `            - name: 🔒 Production scope (reviewed functions only, no development seed)\n              ${SCOPE_RUN}`;
-/** A deploy.yml whose one job runs the scope check, then `run`. */
+const REMOTE_RUN =
+  'run: node scripts/production-scope.mjs --project-ref "$SUPABASE_PROJECT_ID"';
+const REMOTE_RECIPE = "\tnode scripts/production-scope.mjs --linked";
+const REMOTE_STEP = `            - if: \${{ env.IS_SUPABASE_CONFIGURED }}\n              name: 🔒 Project serves reviewed functions only\n              ${REMOTE_RUN}`;
+/** A deploy.yml whose one job runs both scope checks, then `run`. */
 const scopedWorkflow = (run) => ({
   path: WORKFLOW,
-  content: `jobs:\n  fn:\n    steps:\n      - ${SCOPE_RUN}\n      - run: ${run}\n`,
+  content: `jobs:\n  fn:\n    steps:\n      - ${SCOPE_RUN}\n      - ${REMOTE_RUN}\n      - run: ${run}\n`,
 });
 
 describe("production scope: the committed repository", () => {
@@ -303,8 +309,11 @@ describe("production scope: deploying functions", () => {
           deployStep,
           deployStep.replace("${{ env", "${{ always() && env"),
         ),
-      ),
-    ).toEqual(["deploy-before-scope-check"]);
+      ).sort(),
+    ).toEqual([
+      "deploy-before-remote-scope-check",
+      "deploy-before-scope-check",
+    ]);
     const withoutStep = mutate(WORKFLOW, SCOPE_STEP, "").content;
     expect(
       rulesOf({
@@ -336,6 +345,301 @@ describe("production scope: deploying functions", () => {
     }
   });
 
+  it("counts a scope check as blocking only when continue-on-error is statically false (closure)", () => {
+    for (const value of [
+      "${{ vars.CONTINUE }}",
+      "${{ true }}",
+      "'false'",
+      "true",
+    ]) {
+      expect(
+        rulesOf(
+          mutate(
+            WORKFLOW,
+            SCOPE_STEP,
+            `${SCOPE_STEP}\n              continue-on-error: ${value}`,
+          ),
+        ),
+        value,
+      ).toEqual(["deploy-before-scope-check"]);
+    }
+    for (const key of [
+      '"continue-on-error": true',
+      "continue-on-error : true",
+    ]) {
+      expect(
+        rulesOf(
+          mutate(WORKFLOW, SCOPE_STEP, `${SCOPE_STEP}\n              ${key}`),
+        ),
+        key,
+      ).toEqual(["deploy-before-scope-check"]);
+    }
+    for (const value of [
+      "false",
+      "False",
+      "${{ false }}",
+      "false # reviewed",
+    ]) {
+      expect(
+        rulesOf(
+          mutate(
+            WORKFLOW,
+            SCOPE_STEP,
+            `${SCOPE_STEP}\n              continue-on-error: ${value}`,
+          ),
+        ),
+        value,
+      ).toEqual([]);
+    }
+  });
+
+  it("refuses a deploy or push no blocking hosted check precedes under the same condition (closure)", () => {
+    for (const to of [
+      "",
+      `${REMOTE_STEP} || true`,
+      `${REMOTE_STEP}\n              continue-on-error: \${{ vars.SOFT }}`,
+      REMOTE_STEP.replace(/^( +)/gm, "$1# "),
+      REMOTE_STEP.replace("IS_SUPABASE_CONFIGURED", "OTHER_FLAG"),
+      REMOTE_STEP.replace('"$SUPABASE_PROJECT_ID"', '"$OTHER_PROJECT"'),
+      REMOTE_STEP.replace(' --project-ref "$SUPABASE_PROJECT_ID"', " --linked"),
+    ]) {
+      expect(rulesOf(mutate(WORKFLOW, REMOTE_STEP, to)), to).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+    const deployStep =
+      "if: ${{ env.IS_SUPABASE_CONFIGURED }}\n              name: 📡 Deploy supabase functions";
+    expect(
+      rulesOf(
+        mutate(
+          WORKFLOW,
+          deployStep,
+          deployStep.replace(
+            "${{ env.IS_SUPABASE_CONFIGURED }}",
+            "${{ vars.DEPLOY }}",
+          ),
+        ),
+      ),
+    ).toEqual(["deploy-before-remote-scope-check"]);
+    for (const to of [
+      "",
+      `${REMOTE_RECIPE} || true\n`,
+      "\t-node scripts/production-scope.mjs --linked\n",
+    ]) {
+      expect(rulesOf(mutate(MAKEFILE, `${REMOTE_RECIPE}\n`, to)), to).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+  });
+
+  it("refuses a deploy path that rewrites its environment, or lists functions from another workdir (closure)", () => {
+    for (const to of [
+      `echo DEPLOY=1 >> $GITHUB_ENV && ${EXPLICIT}`,
+      `echo ./bin >> $GITHUB_PATH && ${EXPLICIT}`,
+    ]) {
+      expect(rulesOf(mutate(WORKFLOW, EXPLICIT, to)), to).toEqual([
+        "workflow-env-mutation",
+      ]);
+    }
+    expect(
+      rulesOf(
+        mutate(
+          WORKFLOW,
+          EXPLICIT,
+          `npx supabase functions list --workdir staging -o json && ${EXPLICIT}`,
+        ),
+      ),
+    ).toEqual(["supabase-workdir-remote"]);
+  });
+
+  it("reads a step condition only as one plain line, and only env, vars and secrets in the hosted check's (closure)", () => {
+    const ifLine = "if: ${{ env.IS_SUPABASE_CONFIGURED }}";
+    for (const to of [
+      REMOTE_STEP.replace(ifLine, "if: >-\n                ${{ false }}"),
+      REMOTE_STEP.replace(
+        ifLine,
+        "if: ${{ env.IS_SUPABASE_CONFIGURED\n                && false }}",
+      ),
+      REMOTE_STEP.replace(
+        ifLine,
+        "if: env.IS_SUPABASE_CONFIGURED\n                && false",
+      ),
+      REMOTE_STEP.replace(ifLine, '"if": ${{ env.IS_SUPABASE_CONFIGURED }}'),
+      REMOTE_STEP.replace(ifLine, "if : ${{ env.IS_SUPABASE_CONFIGURED }}"),
+    ]) {
+      expect(rulesOf(mutate(WORKFLOW, REMOTE_STEP, to)), to).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+    const conditioned = (check, push = check) => ({
+      path: WORKFLOW,
+      content: `jobs:\n  fn:\n    steps:\n      - ${SCOPE_RUN}\n      - if: ${check}\n        ${REMOTE_RUN}\n      - if: ${push}\n        run: ${EXPLICIT}\n`,
+    });
+    for (const condition of [
+      "${{ steps.decide.outputs.go }}",
+      "${{ env.IS_SUPABASE_CONFIGURED && hashFiles('deploy.flag') != '' }}",
+      "${{ github.event_name == 'push' }}",
+    ]) {
+      expect(rulesOf(conditioned(condition)), condition).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+    for (const condition of [
+      "${{ env.IS_SUPABASE_CONFIGURED }}",
+      "${{ vars.DEPLOY == 'true' && secrets.SUPABASE_ACCESS_TOKEN != '' }}",
+    ]) {
+      expect(found(conditioned(condition)), condition).toEqual([]);
+    }
+    expect(
+      rulesOf(
+        conditioned(
+          "${{ env.IS_SUPABASE_CONFIGURED }}",
+          '"${{ env.IS_SUPABASE_CONFIGURED }}"',
+        ),
+      ),
+    ).toEqual(["deploy-before-remote-scope-check"]);
+  });
+
+  it("refuses a deploy that runs after a failed check, or under a condition it cannot read (closure)", () => {
+    const after = (condition) => ({
+      path: WORKFLOW,
+      content: `jobs:\n  fn:\n    steps:\n      - ${SCOPE_RUN}\n      - ${REMOTE_RUN}\n      - ${condition}\n        run: ${EXPLICIT}\n`,
+    });
+    expect(rulesOf(after("if: ${{ !success() }}"))).toEqual([
+      "deploy-before-scope-check",
+    ]);
+    for (const condition of [
+      '"if": ${{ always() }}',
+      "if: >-\n          ${{ always() }}",
+    ]) {
+      expect(rulesOf(after(condition)), condition).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+  });
+
+  it("refuses a deploy aimed at a project other than the one the hosted check asked about (closure)", () => {
+    expect(
+      rulesOf(
+        mutate(
+          WORKFLOW,
+          REMOTE_STEP,
+          `${REMOTE_STEP}\n              env:\n                  SUPABASE_PROJECT_ID: abcdefghijabcdefghij`,
+        ),
+      ).sort(),
+    ).toEqual(["deploy-before-remote-scope-check", "deploy-target-mismatch"]);
+    expect(
+      rulesOf(
+        mutate(
+          WORKFLOW,
+          REMOTE_STEP,
+          `${REMOTE_STEP}\n              shell: sh -c 'exit 0' {0}`,
+        ),
+      ).sort(),
+    ).toEqual(["deploy-before-remote-scope-check", "workflow-shell-override"]);
+    for (const [from, to, rule] of [
+      [
+        EXPLICIT,
+        EXPLICIT.replace(
+          " deploy ",
+          " deploy --project-ref abcdefghijabcdefghij ",
+        ),
+        "deploy-target-mismatch",
+      ],
+      [
+        "npx supabase db push",
+        "npx supabase db push --project-ref abcdefghijabcdefghij",
+        "deploy-target-mismatch",
+      ],
+      [
+        "npx supabase link --project-ref $SUPABASE_PROJECT_ID",
+        "npx supabase link --project-ref abcdefghijabcdefghij",
+        "deploy-target-mismatch",
+      ],
+      [
+        "    deploy-supabase:\n",
+        "    deploy-supabase:\n        defaults:\n            run:\n                shell: sh -c 'exit 0' {0}\n",
+        "workflow-shell-override",
+      ],
+    ]) {
+      expect(rulesOf(mutate(WORKFLOW, from, to)), to).toEqual([rule]);
+    }
+    for (const [from, to] of [
+      [
+        `${REMOTE_RECIPE}\n`,
+        `${REMOTE_RECIPE}\n\tnpx supabase link --project-ref abcdefghijabcdefghij\n`,
+      ],
+      [
+        "\tnpx supabase db push\n",
+        "\tSUPABASE_PROJECT_ID=abcdefghijabcdefghij npx supabase db push\n",
+      ],
+      [
+        "\tnpx supabase db push\n",
+        "\tnpx supabase db push --project-ref abcdefghijabcdefghij\n",
+      ],
+    ]) {
+      expect(rulesOf(mutate(MAKEFILE, from, to)), to).toEqual([
+        "deploy-target-mismatch",
+      ]);
+    }
+  });
+
+  it("reads a make recipe continued with a backslash as one command (closure)", () => {
+    for (const lead of ["\techo \\\n", "\ttrue || \\\n"]) {
+      expect(
+        rulesOf(
+          mutate(MAKEFILE, `${REMOTE_RECIPE}\n`, `${lead}${REMOTE_RECIPE}\n`),
+        ),
+        lead,
+      ).toEqual(["deploy-before-remote-scope-check"]);
+      expect(
+        rulesOf(
+          mutate(MAKEFILE, `${SCOPE_RECIPE}\n`, `${lead}${SCOPE_RECIPE}\n`),
+        ),
+        lead,
+      ).toEqual(["deploy-before-scope-check"]);
+    }
+  });
+
+  it("reads only a step's own if key, and refuses a makefile step that can repoint the push (closure)", () => {
+    const heredoc = {
+      path: WORKFLOW,
+      content: `jobs:\n  fn:\n    steps:\n      - ${SCOPE_RUN}\n      - if: \${{ vars.NEVER }}\n        ${REMOTE_RUN}\n      - run: |\n          cat <<'X' >/dev/null\n          if: \${{ vars.NEVER }}\n          X\n          ${EXPLICIT}\n`,
+    };
+    expect(rulesOf(heredoc)).toEqual(["deploy-before-remote-scope-check"]);
+    const ifLine = "if: ${{ env.IS_SUPABASE_CONFIGURED }}";
+    for (const to of [
+      REMOTE_STEP.replace(ifLine, '"\\x69f": ${{ false }}'),
+      REMOTE_STEP.replace(ifLine, "? if\n              : ${{ false }}"),
+    ]) {
+      expect(rulesOf(mutate(WORKFLOW, REMOTE_STEP, to)), to).toEqual([
+        "deploy-before-remote-scope-check",
+      ]);
+    }
+    expect(
+      rulesOf(
+        mutate(
+          WORKFLOW,
+          SCOPE_STEP,
+          SCOPE_STEP.replace(
+            "- name:",
+            '- "\\x69f": ${{ false }}\n              name:',
+          ),
+        ),
+      ),
+    ).toEqual(["deploy-before-scope-check"]);
+    for (const to of [
+      "\techo abcdefghijabcdefghij > supabase/.temp/project-ref\n\tnpx supabase db push\n",
+      "\t$(MAKE) relink\n\tnpx supabase db push\n",
+      "\techo abcdefghijabcdefghij > supabase/.temp/project-ref && npx supabase db push\n",
+    ]) {
+      expect(
+        rulesOf(mutate(MAKEFILE, "\tnpx supabase db push\n", to)),
+        to,
+      ).toEqual(["deploy-target-mismatch"]);
+    }
+  });
+
   it("refuses a deploy step repeated through a YAML alias (review 3)", () => {
     expect(
       rulesOf({
@@ -352,7 +656,7 @@ describe("production scope: deploying functions", () => {
           ">\n          npx supabase functions deploy\n          users mcp",
         ),
       ),
-    ).toEqual([`functions-deploy-unlisted ${WORKFLOW}:5`]);
+    ).toEqual([`functions-deploy-unlisted ${WORKFLOW}:6`]);
     expect(
       found(
         scopedWorkflow(
@@ -366,21 +670,24 @@ describe("production scope: deploying functions", () => {
           "|2-\n          echo deploying supabase\n          npx supabase functions deploy mcp",
         ),
       ),
-    ).toEqual([`functions-deploy-unlisted ${WORKFLOW}:7`]);
+    ).toEqual([`functions-deploy-unlisted ${WORKFLOW}:8`]);
     expect(
       found(
         scopedWorkflow(`>\n          echo supabase\n\n          ${DEPLOY_ALL}`),
       ),
-    ).toEqual([`functions-deploy-all ${WORKFLOW}:8`]);
+    ).toEqual([`functions-deploy-all ${WORKFLOW}:9`]);
   });
 
   it("does not let a comment ending in a backslash hide the next command (review)", () => {
     expect(
       found({
         path: MAKEFILE,
-        content: `fn:\n${SCOPE_RECIPE}\n\t# deploy everything \\\n\t${DEPLOY_ALL}\n`,
+        content: `fn:\n${SCOPE_RECIPE}\n${REMOTE_RECIPE}\n\t# deploy everything \\\n\t${DEPLOY_ALL}\n`,
       }),
-    ).toEqual([`functions-deploy-all ${MAKEFILE}:4`]);
+    ).toEqual([
+      `functions-deploy-all ${MAKEFILE}:5`,
+      `deploy-target-mismatch ${MAKEFILE}:4`,
+    ]);
   });
 
   it("refuses the Management API, an expression-only run step and an unreadable subcommand (review)", () => {
@@ -446,12 +753,12 @@ describe("production scope: the development seed stays local", () => {
         },
         {
           path: MAKEFILE,
-          content: `db:\n${SCOPE_RECIPE}\n\tnpx supabase@2 db push --linked --include-seed\n`,
+          content: `db:\n${SCOPE_RECIPE}\n${REMOTE_RECIPE}\n\tnpx supabase@2 db push --linked --include-seed\n`,
         },
       ),
     ).toEqual([
       "remote-seed .github/workflows/seed.yml:4",
-      "remote-seed makefile:3",
+      "remote-seed makefile:4",
     ]);
   });
 
@@ -557,6 +864,133 @@ describe("production scope: the development seed stays local", () => {
         ),
       ),
     ).toEqual(["seed-file-reference"]);
+  });
+
+  it("refuses a glob that can expand to the seed file, in any file (closure)", () => {
+    const globs = [
+      'psql "$DB" -f supabase/*.sql',
+      'for f in supabase/*.sql; do psql "$DB" -f "$f"; done',
+      "cat supabase/**/*.sql",
+      "cat supabase/s*.sql",
+      "cat supabase/se?d.sql",
+      "cat supabase/[s]eed.sql",
+      "cat supabase/{seed,other}.sql",
+      "cat supabase/seed.s?l",
+      'cat "supabase/"*.sql',
+      'cat "$ROOT"/supabase/*.sql',
+      "cd supabase && psql -f *.sql",
+    ];
+    expect(
+      found(
+        {
+          path: "scripts/seed-remote.sh",
+          content: `${globs.join("\n")}\n`,
+        },
+        {
+          path: ".github/workflows/seed.yml",
+          content:
+            'jobs:\n  s:\n    steps:\n      - run: psql "$DB" -f supabase/*.sql\n',
+        },
+        {
+          path: "scripts/seed.mjs",
+          content:
+            'const files = globSync("supabase/*.sql");\nconst more = glob(`${root}/supabase/*.sql`);\n',
+        },
+      ),
+    ).toEqual([
+      ...globs.map(
+        (_, i) => `seed-file-reference scripts/seed-remote.sh:${i + 1}`,
+      ),
+      "seed-file-reference .github/workflows/seed.yml:4",
+      "seed-file-reference scripts/seed.mjs:1",
+      "seed-file-reference scripts/seed.mjs:2",
+    ]);
+    expect(
+      rulesOf(
+        mutate(
+          MAKEFILE,
+          "supabase-deploy:",
+          'seed-staging:\n\tpsql "$(DB)" -f supabase/*.sql\n\nsupabase-deploy:',
+        ),
+      ),
+    ).toEqual(["seed-file-reference"]);
+  });
+
+  it("accepts globs that cannot reach the seed file (closure)", () => {
+    expect(
+      found({
+        path: "scripts/local-tools.sh",
+        content: [
+          'psql "$DB" -f supabase/migrations/*.sql',
+          "ls supabase/tests/*.sql",
+          'ls "$workdir"/supabase/migrations/*_e2e_throwaway.sql',
+          'include: ["src/**/*"]',
+          "class: transition-[color,box-shadow]",
+        ].join("\n"),
+      }),
+    ).toEqual([]);
+  });
+
+  it("refuses the seed glob spellings the closure review found (closure)", () => {
+    for (const glob of [
+      "supabase/seed.*",
+      "supabase/*.{sql,ts}",
+      "supabase/se*",
+      "-name 'seed.*'",
+      "supabase/seed[.]sql",
+      "supabase/seed.[s]ql",
+      "supabase/seed.[Ss][Qq][Ll]",
+      "supabase/seed{.,}sql",
+      "supabase/[[:alpha:]]eed.sql",
+      "supabase/{s{e,x}ed,y}.sql",
+      `supabase/*.sql{${",".repeat(200)}}`,
+    ]) {
+      expect(
+        rulesOf({ path: "scripts/seed-remote.sh", content: `cat ${glob}\n` }),
+        glob,
+      ).toEqual(["seed-file-reference"]);
+    }
+    expect(
+      found({
+        path: "scripts/local-tools.sh",
+        content: "ls supabase/*\ndu -sh supabase/**\n",
+      }),
+    ).toEqual([]);
+  });
+
+  it("refuses a brace sequence, or a glob too long to read, that can reach the seed file (closure)", () => {
+    for (const glob of [
+      "supabase/{r..t}eed.sql",
+      "supabase/s{e..e}ed.sql",
+      `supabase/se[${"e".repeat(210)}]d.*`,
+    ]) {
+      expect(
+        rulesOf({
+          path: "scripts/seed-remote.sh",
+          content: `cat ${glob} | psql\n`,
+        }),
+        glob,
+      ).toEqual(["seed-file-reference"]);
+    }
+  });
+
+  it("refuses seed configuration in an inline table, however it is spelled (closure)", () => {
+    for (const content of [
+      '[db]\nseed = { enabled = true, "sql_paths" = ["./*.sql"] }\n',
+      "[db]\nseed = { enabled = true, 'sql_paths' = ['./*.sql'] }\n",
+      '[db]\nseed = { enabled = true, sql_paths = [\n  "./*.sql",\n] }\n',
+      'db = { seed = { sql_paths = ["./*.sql"] } }\n',
+      "[remotes.staging]\ndb = { seed = { enabled = true } }\n",
+      "remotes = { staging = { db = { seed = { enabled = true } } } }\n",
+      "remotes.staging.db = { seed = { enabled = true } }\n",
+    ]) {
+      expect(rulesOf({ path: CONFIG, content }), content).toEqual([
+        "seed-file-reference",
+      ]);
+    }
+    expect(
+      found({ path: CONFIG, content: "[db]\nseed = { enabled = false }\n" }),
+    ).toEqual([]);
   });
 
   it("refuses changed seed paths, an inline seed table and a remote seed table (review 3)", () => {

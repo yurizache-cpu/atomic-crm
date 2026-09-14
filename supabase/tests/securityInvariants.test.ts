@@ -88,7 +88,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-03",
     statement:
-      "Arbitrary SQL is not a capability any deployed edge function offers: the generic MCP SQL function is removed; edge functions are a reviewed allowlist in one canonical tree at canonical configuration paths, loading only reviewed modules; no function names a known MCP server or SQL parser, and a raw SQL call receives only a literal, a reviewed interpolation or a query Kysely compiled; and only deploy.yml and the makefile deploy functions, by name, after a blocking scope check.",
+      "Arbitrary SQL is not a capability any deployed edge function offers: the generic MCP SQL function is removed; edge functions are a reviewed allowlist in one canonical tree at canonical configuration paths, loading only reviewed modules; no function names a known MCP server or SQL parser or imports another function's files, and a raw SQL call the parser can name receives only a literal, values travelling as bound parameters; and only deploy.yml and the makefile deploy functions, by name, after a blocking repository scope check and a blocking check that the target project serves no function outside the allowlist.",
     provenBy: ["static guard", "unit test"],
     enforcedBy: [
       {
@@ -168,6 +168,22 @@ const INVARIANTS: Invariant[] = [
         marker: /"deploy-before-scope-check"/,
       },
       {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"deploy-before-remote-scope-check"/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"workflow-env-mutation"/,
+      },
+      {
+        file: "scripts/production-scope-remote.mjs",
+        marker: /export function checkRemoteFunctions/,
+      },
+      {
+        file: "scripts/production-scope-remote.mjs",
+        marker: /This check deletes nothing/,
+      },
+      {
         file: "scripts/source-facts.mjs",
         marker: /export function moduleLoads/,
       },
@@ -191,7 +207,11 @@ const INVARIANTS: Invariant[] = [
       {
         file: "scripts/test/production-scope-functions.test.mjs",
         marker:
-          /refuses caller input handed to a raw SQL call, however it is spelled/,
+          /refuses caller input handed to a raw SQL call under any alias, wrapper or literal member name/,
+      },
+      {
+        file: "scripts/test/production-scope-functions.test.mjs",
+        marker: /refuses any interpolated template/,
       },
       {
         file: "scripts/test/production-scope.test.mjs",
@@ -200,19 +220,55 @@ const INVARIANTS: Invariant[] = [
       {
         file: "scripts/test/production-scope.test.mjs",
         marker:
+          /refuses a deploy or push no blocking hosted check precedes under the same condition/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker: /reads a step condition only as one plain line/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
+          /refuses a deploy aimed at a project other than the one the hosted check asked about/,
+      },
+      {
+        file: "scripts/production-scope-commands.mjs",
+        marker: /"deploy-target-mismatch"/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
           /refuses deploying functions from anywhere but deploy\.yml and the makefile/,
+      },
+      {
+        file: "scripts/test/production-scope-remote.test.mjs",
+        marker:
+          /fails a project still serving the removed MCP function, or any other/,
+      },
+      {
+        file: "scripts/test/production-scope-remote.test.mjs",
+        marker: /fails closed whenever it cannot get a readable answer/,
       },
       {
         file: ".github/workflows/deploy.yml",
         marker: /^\s*run: node scripts\/production-scope\.mjs\s*$/m,
       },
       {
+        file: ".github/workflows/deploy.yml",
+        marker:
+          /^\s*run: node scripts\/production-scope\.mjs --project-ref "\$SUPABASE_PROJECT_ID"\s*$/m,
+      },
+      {
         file: "makefile",
         marker: /^\tnode scripts\/production-scope\.mjs\s*$/m,
       },
+      {
+        file: "makefile",
+        marker: /^\tnode scripts\/production-scope\.mjs --linked\s*$/m,
+      },
     ],
     caveat:
-      "Static: it reads committed files other than prose, its own modules and tests, and reviewed fixtures, and covers edge functions and their deploy paths. Out of reach: a person running the CLI by hand; a command or module name assembled where no literal shows it; SQL reaching the database through a method other than the raw ones it names, or caller-chosen identifiers handed to a query builder; whether a reviewed interpolation's variable still holds the verified caller's id; code outside supabase/functions, such as an engine module or a database function executing dynamic SQL; and a function a hosted project already serves, which a named deploy never deletes. PRODUCTION_FUNCTIONS, REVIEWED_FUNCTION_DEPENDENCIES and REVIEWED_SQL_INTERPOLATIONS are the review points, and a function that executes caller-supplied SQL must not pass review (ADR 0011 item 3).",
+      "Static: the repository check reads committed files other than prose, its own modules and tests, and reviewed fixtures, and covers edge functions and their deploy paths. Out of reach: a person running the CLI by hand; a command or module name assembled where no literal shows it; a raw method reached through a computed member name or reflection, which is why SI-27 seals the owner-session files; SQL reaching the database through a method other than the raw ones it names, or caller-chosen identifiers handed to a query builder; code outside supabase/functions, such as an engine module or a database function executing dynamic SQL. The hosted check sees what the named project serves when a deploy runs, not a function deployed after it or to a project no deploy names, and it deletes nothing. PRODUCTION_FUNCTIONS and REVIEWED_FUNCTION_DEPENDENCIES are the review points, and a function that executes caller-supplied SQL must not pass review (ADR 0011 item 3).",
   },
   {
     id: "SI-04",
@@ -262,7 +318,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "ACCEPTED RISK today: the edge functions DO run as service_role. Both suites assert the bypass explicitly so a green RLS run cannot be mistaken for worker isolation. Closing it is ADR 0012's integration work.",
+      "ACCEPTED RISK today: the edge functions DO run as service_role, except merge_contacts, whose pool logs in as postgres and assumes authenticated per transaction (SI-27, 2026-09-13). Both suites assert the bypass explicitly so a green RLS run cannot be mistaken for worker isolation. Closing it is ADR 0012's integration work.",
   },
   // SI-07 (retired 2026-09-13): "The SQL read path is read-only in the database
   // itself, not only in the parser." Its only subject was the MCP function's
@@ -584,6 +640,15 @@ const INVARIANTS: Invariant[] = [
         marker: /confines the development signing key to local tooling/,
       },
       {
+        file: "scripts/test/dev-signing-key.test.mjs",
+        marker:
+          /reads a pinned CLI version, an executable name and global flags/,
+      },
+      {
+        file: "scripts/dev-signing-key.mjs",
+        marker: /export const mayContinueOnError/,
+      },
+      {
         file: "scripts/publish-pages.mjs",
         marker: /Nothing was published/,
       },
@@ -783,8 +848,8 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-25",
     statement:
-      "The development seed never reaches a remote project through a committed path: no tracked file outside prose, the guard and reviewed fixtures pushes it with the CLI's include-seed flag, resets a linked or non-loopback database, changes the seed paths, or names a seed SQL file outside a reviewed list of local uses.",
-    provenBy: ["static guard", "unit test"],
+      "The development seed never reaches a remote project through a committed path: no tracked file outside prose, the guard and reviewed fixtures pushes it with the CLI's include-seed flag, resets a linked or non-loopback database, changes the seed paths, or names a seed SQL file, or a glob that can expand to one, outside a reviewed list of local uses; and global reference data a production database needs exists after migrations alone.",
+    provenBy: ["static guard", "unit test", "live database"],
     enforcedBy: [
       {
         file: "scripts/production-scope-commands.mjs",
@@ -803,6 +868,10 @@ const INVARIANTS: Invariant[] = [
         marker: /changes the seed files a reset applies/,
       },
       {
+        file: "scripts/production-scope.mjs",
+        marker: /export function seedGlobs/,
+      },
+      {
         file: "scripts/test/production-scope.test.mjs",
         marker: /refuses a remote reset, however it is spelled/,
       },
@@ -813,12 +882,37 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "scripts/test/production-scope.test.mjs",
+        marker: /refuses a glob that can expand to the seed file, in any file/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker:
+          /refuses seed configuration in an inline table, however it is spelled/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
+        marker: /refuses the seed glob spellings the closure review found/,
+      },
+      {
+        file: "scripts/test/production-scope.test.mjs",
         marker:
           /refuses changed seed paths, an inline seed table and a remote seed table/,
       },
+      {
+        file: "supabase/migrations/20260913120000_favicons_excluded_domains_reference.sql",
+        marker: /favicons_excluded_domains is missing % of % reference domains/,
+      },
+      {
+        file: "supabase/tests/referenceData.mjs",
+        marker: /no Company OS tenant/,
+      },
+      {
+        file: ".github/workflows/check.yml",
+        marker: /run: node supabase\/tests\/referenceData\.mjs --without-seed/,
+      },
     ],
     caveat:
-      "Static: a person seeding by hand, or a command assembled from string fragments, is outside it. So is a seeded local database dumped and restored elsewhere. Local supabase start and db reset, and the CI local stacks, still seed on purpose. The seed also carries reference data a hosted project needs (loss_reasons, favicons_excluded_domains), so providing that remotely needs its own explicit path, and none exists yet.",
+      "Static: a person seeding by hand, a command or path assembled from string fragments, and a directory-wide glob such as supabase/* are outside it. So is a seeded local database dumped and restored elsewhere. Local supabase start and db reset, and the CI local stacks, still seed on purpose. Since 2026-09-13 global reference data (favicons_excluded_domains) ships in a migration and CI proves it after a migrations-only replay; tenant vocabulary such as loss_reasons stays out of migrations and waits for an explicit onboarding path, so a hosted tenant cannot mark a deal lost until it has one.",
   },
   {
     id: "SI-26",
@@ -849,6 +943,89 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "It guards grants, not what code does with a value. ops_worker reads ops.job_events.id under the lease-bound policy and is not tenant-facing. A worker capability, edge function or future API that reads a global sequence through ops_worker, service_role or the owner and returns it to a tenant is outside it and is a review event under ADR 0015's owner clarification. A tenant-scoped or opaque cursor must be designed before any tenant-facing event or job-event reader exists.",
+  },
+  {
+    id: "SI-27",
+    statement:
+      "The owner-session Postgres pool reaches nothing in ops and carries nothing between requests: the pool is private to db.ts, whose only use is runAsUser, which assumes authenticated for one transaction with the caller's id as a bound parameter; merge_contacts, the only function that loads it, sends fixed statements through it, and both files are sealed; authenticated holds no privilege in ops; and after COMMIT, ROLLBACK or an error inside the transaction the one pooled session is again the owner, with no role, identity, tenant context or open transaction.",
+    provenBy: ["live database", "static guard", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/functions/_shared/db.ts",
+        marker: /CompiledQuery\.raw\("SET LOCAL ROLE authenticated"\)/,
+      },
+      {
+        file: "supabase/functions/_shared/db.ts",
+        marker: /^const db = new Kysely<Database>\(/m,
+      },
+      {
+        file: "supabase/tests/ownerSessionSeal.test.ts",
+        marker: /const OWNER_SESSION_SEAL/,
+      },
+      {
+        file: "supabase/tests/ownerSessionSeal.test.ts",
+        marker: /"supabase\/functions\/_shared\/db\.ts":\s*"[0-9a-f]{64}"/,
+      },
+      {
+        file: "supabase/tests/ownerSessionSeal.test.ts",
+        marker:
+          /"supabase\/functions\/merge_contacts\/index\.ts":\s*"[0-9a-f]{64}"/,
+      },
+      {
+        file: "supabase/functions/_shared/db.ts",
+        marker: /"SELECT set_config\('request\.jwt\.claim\.sub', \$1, true\)"/,
+      },
+      {
+        file: "supabase/functions/merge_contacts/index.ts",
+        marker: /return await runAsUser\(userId,/,
+      },
+      {
+        file: "supabase/tests/owner_session_pool.sql",
+        marker: /B: the downgraded transaction ran/,
+      },
+      {
+        file: "supabase/tests/owner_session_pool.sql",
+        marker: /C\/D: the role survived/,
+      },
+      {
+        file: "supabase/tests/owner_session_pool.sql",
+        marker: /characterisation changed: RESET ROLE/,
+      },
+      {
+        file: "supabase/tests/ownerSessionPool.mjs",
+        marker: /every transaction ran on backend/,
+      },
+      {
+        file: "supabase/tests/ownerSessionPool.mjs",
+        marker: /is refused at the schema/,
+      },
+      {
+        file: "supabase/tests/ownerSessionPool.probe.ts",
+        marker: /ownerPoolForProbe as db,/,
+      },
+      {
+        file: "supabase/tests/ownerSessionPool.mjs",
+        marker: /const PROBE_EXPORT = "export \{ db as ownerPoolForProbe \};"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"postgres-pool-consumer"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"raw-sql-non-literal"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker: /"function-imports-other-function"/,
+      },
+      {
+        file: "scripts/test/production-scope-functions.test.mjs",
+        marker: /refuses a function that imports another function's files/,
+      },
+    ],
+    caveat:
+      "The role switch is not a privilege boundary: the owner session can RESET ROLE, and both suites characterise that it does. Containment rests on code: the pool is private to db.ts and runAsUser is its only use; db.ts and merge_contacts/index.ts are sealed (tests/ownerSessionSeal.test.ts), because the static guard cannot read a raw method reached through a computed member name or reflection; only merge_contacts may import the pool, and no function imports another's files (SI-03); and authenticated holds nothing in ops (SI-15, SI-21). The seal runs with the unit tests that gate every CI deploy, not in the makefile. The real-driver suite runs db.ts, plus one appended line that hands its probe the private pool, as a main service on a direct connection in the local edge runtime; a hosted SUPABASE_DB_URL that names a pooler is not measured. A COMMIT that itself fails and a connection that breaks mid-transaction are not exercised.",
   },
 ];
 
