@@ -25,7 +25,7 @@
 | `anon` | Revoked. Default privileges also revoke tables, sequences and function execute. |
 | `authenticated` | `usage` on `public`; per-table grants; row visibility then narrowed by RLS |
 | `service_role` | `all` on all tables/sequences/functions — used by edge functions only, never reachable from a browser |
-| `postgres` | ~~Superuser.~~ Not a superuser on Supabase (`rolsuper=false`), but `BYPASSRLS` *(corrected 2026-09-13)*. ~~**The MCP function's pool defaults to it**~~ The MCP function that pooled as it was removed on 2026-09-13 — see [SECURITY.md](SECURITY.md) |
+| `postgres` | ~~Superuser.~~ Not a superuser on Supabase (`rolsuper=false`), but `BYPASSRLS` *(corrected 2026-09-13)*. ~~**The MCP function's pool defaults to it**~~ The MCP function that pooled as it was removed on 2026-09-13; `merge_contacts` still pools it, as `authenticated` for each transaction (SI-27) — see [SECURITY.md](SECURITY.md) |
 
 Default privileges revoke from `anon`/`authenticated` for future objects, so a newly created table is not accidentally world-readable. That is the correct deny-by-default shape and it should be preserved.
 

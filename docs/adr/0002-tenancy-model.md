@@ -1,6 +1,6 @@
 # ADR 0002 — Tenancy model
 
-**Status:** Proposed · **Date:** 2026-09-10 (isolation claim retracted and re-scoped 2026-09-11)
+**Status:** **Accepted** 2026-09-13 by the owner, under the acceptance bar of the final pre-1D closure (see the last addendum) · **Date:** 2026-09-10 (isolation claim retracted and re-scoped 2026-09-11)
 
 ## Context
 
@@ -45,7 +45,7 @@ What that does **not** discharge, for this ADR specifically:
 
 ## Addendum 2026-09-13 — reconciled with ADR 0012, ADR 0015 and the owner decisions (after Phase 1C)
 
-This record was re-read against the repository after Phases 1A–1C, against [ADR 0012](0012-worker-tenant-context.md) as accepted, and against [ADR 0015](0015-company-os-domain-core.md) with its owner addendum. Claims that were false are corrected in place above; this addendum states what the tenancy model now is. **Status stays Proposed:** the MCP channel (§6) is still open. *(Later 2026-09-13: the MCP channel is closed; see the second 2026-09-13 addendum. The status still stays Proposed, for the reason given there.)*
+This record was re-read against the repository after Phases 1A–1C, against [ADR 0012](0012-worker-tenant-context.md) as accepted, and against [ADR 0015](0015-company-os-domain-core.md) with its owner addendum. Claims that were false are corrected in place above; this addendum states what the tenancy model now is. **Status stays Proposed:** the MCP channel (§6) is still open. *(Later 2026-09-13: the MCP channel is closed; see the second 2026-09-13 addendum. The status still stays Proposed, for the reason given there.)* *(Final 2026-09-13: accepted; see the last addendum.)*
 
 ### 1. Tenant is the only isolation boundary
 
@@ -91,7 +91,7 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 - "Tenant one" is data: at most one `ops.tenants` row may carry `owns_local_crm`, enforced by a unique partial index (Phase 1B). No migration, seed or provisioning script creates that row, and the seeded `dev` tenant leaves the flag false; only the driver-backed test fixture (`engine/worker/testSupport/dbFixture.ts`) marks its test tenant `dbtest-a`. On a migrated or seeded database, therefore, `ops.purge_inbound_email_ledger` refuses every tenant until an operator marks one.
 - A capability reaching `public.*` takes its tenant from the lease and refuses a tenant without `owns_local_crm` (SI-18); today that is `ops.purge_inbound_email_ledger`. Company-scoped work must never reach `public.*` on `owns_local_crm` alone (ADR 0015 §2).
 - `public.*` will not gain a tenant axis under this decision, so `rls_tenant_isolation.sql` stays pointed at `sales_id`. There is nothing to re-point.
-- `scripts/supabase-remote-init.mjs` provisions one Atomic CRM project. It is not tenant provisioning, but it is not tenant-free either: it runs `supabase db push --include-roles --include-seed`, and because `config.toml` declares no `[db.seed]`, that pushes the default seed, `supabase/seed.sql` (inferred from the CLI's default seed path; not executed). The seed creates the `dev` development tenant with one company, three departments and two agents, contradicting its own comment that a hosted project never runs it. The script sets no `owns_local_crm` and creates no `ops_worker` login. Project per tenant remains an option for hard isolation. *(Later 2026-09-13: the seed flag is removed, so a hosted project no longer receives the development tenant; SI-25. The seed's reference data is an open decision.)*
+- `scripts/supabase-remote-init.mjs` provisions one Atomic CRM project. It is not tenant provisioning, but it is not tenant-free either: it runs `supabase db push --include-roles --include-seed`, and because `config.toml` declares no `[db.seed]`, that pushes the default seed, `supabase/seed.sql` (inferred from the CLI's default seed path; not executed). The seed creates the `dev` development tenant with one company, three departments and two agents, contradicting its own comment that a hosted project never runs it. The script sets no `owns_local_crm` and creates no `ops_worker` login. Project per tenant remains an option for hard isolation. *(Later 2026-09-13: the seed flag is removed, so a hosted project no longer receives the development tenant; SI-25. The seed's reference data is an open decision.)* *(Final 2026-09-13: the reference-data decision is made. Global reference data ships in migration 20260913120000; loss reasons are tenant vocabulary and wait for an onboarding path; SI-25.)*
 
 ### 6. Channels
 
@@ -130,16 +130,16 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 | --- | --- | --- |
 | Data API, REST and GraphQL | none: `ops` is off the exposed schemas and the search path, and `anon` and `authenticated` hold no USAGE on it | `opsDataApiExposure.mjs` (SI-15) |
 | Edge functions over supabase-js (`users`, `update_password`, `delete_note_attachments`, `postmark`) | none: PostgREST, Auth and Storage only; the one RPC is `public.get_user_id_by_email` | SI-15, which attacks `service_role` too |
-| `merge_contacts`, over the shared Postgres pool | none as written: the session logs in as `postgres`, runs `SET LOCAL ROLE authenticated`, then fixed Kysely queries on `public` tables, and `authenticated` holds no USAGE on `ops` | **nothing tests it**; SI-03 only keeps other functions off the pool and refuses raw SQL other than literals, compiled queries and the one reviewed interpolation |
+| `merge_contacts`, over the shared Postgres pool | none as written: the session logs in as `postgres`, runs `SET LOCAL ROLE authenticated`, then fixed Kysely queries on `public` tables, and `authenticated` holds no USAGE on `ops` | ~~**nothing tests it**~~ SI-27 since 2026-09-13; SI-03 only keeps other functions off the pool and refuses raw SQL other than literals, compiled queries ~~and the one reviewed interpolation~~ (none remains since 2026-09-13) |
 | Worker | lease-bound, as `ops_worker` | SI-13, SI-14, SI-16 |
 | Owner (`postgres`) | everything; never an ordinary agent or worker identity | ADR 0015 owner decision 7 |
 | MCP function | removed | SI-03 (static) |
 
-**Why it stays Proposed.** This record's two-channel test obligation (2026-09-11 addendum) requires an isolation test through the raw-connection channel as well as the Data API. After the removal, that channel is `merge_contacts`: deployed, invoked by signed-in users, and logged in as a `BYPASSRLS` role. It cannot reach `ops` today only because of what its own code does, and no test reproduces its connection shape. Two things would let this record be accepted:
+**Why it stays Proposed.** This record's two-channel test obligation (2026-09-11 addendum) requires an isolation test through the raw-connection channel as well as the Data API. After the removal, that channel is `merge_contacts`: deployed, invoked by signed-in users, and logged in as a `BYPASSRLS` role. It cannot reach `ops` today only because of what its own code does, and no test reproduces its connection shape. Two things would let this record be accepted: *(Final 2026-09-13: condition 1 is met by SI-27. The owner accepted the record on local evidence under the final pre-1D bar, and the CI run of condition 2 is still to be recorded; see the last addendum.)*
 1. a database test that connects as `postgres`, runs `SET LOCAL ROLE authenticated`, asserts `permission denied for schema ops`, and asserts the role is restored after COMMIT on the reused connection — or moving `merge_contacts` off the owner-session pool;
 2. a green CI run on the commits that removed the MCP function and added SI-03 and SI-25.
 
-Recorded for that decision: `merge_contacts` builds `set_config('request.jwt.claim.sub', …)` by interpolating the authenticated user id into the SQL on that session. A parameterised call would remove the question.
+Recorded for that decision: `merge_contacts` builds `set_config('request.jwt.claim.sub', …)` by interpolating the authenticated user id into the SQL on that session. A parameterised call would remove the question. *(Final 2026-09-13: the id is now a bound parameter.)*
 
 **Acceptance criterion, restated again.**
 
@@ -149,4 +149,63 @@ Recorded for that decision: `merge_contacts` builds `set_config('request.jwt.cla
 | Company OS privileges and structure | met, same run |
 | No Data API reach into `ops` | met, same run |
 | No MCP reach into `ops` | met by removal and SI-03; CI pending |
-| Owner-session pool (`merge_contacts`) tested against `ops` | **not met** |
+| Owner-session pool (`merge_contacts`) tested against `ops` | ~~**not met**~~ met 2026-09-13, SI-27 (see the last addendum) |
+
+---
+
+## Addendum 2026-09-13 (final pre-1D closure) — owner-session pool measured; accepted
+
+**Owner decision:** accept this record once measurement shows that the `merge_contacts` channel cannot reach `ops` and cannot carry state between requests, judged against the owner's acceptance bar below. This addendum records that measurement. The evidence is local: CI has not yet run on these commits.
+
+**What changed in the channel, and what did not.** `merge_contacts` still pools one `postgres` session (`BYPASSRLS`) and assumes `authenticated` for each merge. Two things changed. First, `runAsUser` in `supabase/functions/_shared/db.ts` now sends `SET LOCAL ROLE authenticated`, then `SELECT set_config('request.jwt.claim.sub', $1, true)` with the caller's id as a bound parameter; the id used to be interpolated into the SQL text. Second, the merge's queries now run one after another, so a rollback cannot race a query queued behind a failed one. No query was added or widened.
+
+**Measured 2026-09-13 on the local e2e stack.**
+
+| Proof | How | Result |
+| --- | --- | --- |
+| A. Inside the transaction the session is `authenticated`, acting as the caller | both suites; a merge-shaped read of `contacts` runs under RLS | met |
+| B. Reads, writes and function calls on `ops` from that transaction are refused | nine attempts (a select on two tables, an insert, an update, a delete, and calls to `current_tenant_id`, `lease_job`, `enqueue_job` and `create_company`), each refused with `42501 permission denied for schema ops` | met |
+| C. COMMIT ends the role and the identity | afterwards the same session is `postgres`, role `none`, with no claim | met |
+| D. ROLLBACK ends them | the same checks | met |
+| E. The pooled backend is reused cleanly | one backend PID for every transaction. Between transactions there is no role, identity, tenant context (`app.worker_id`, `app.job_id`, `ops.current_tenant_id()`), or open transaction. Two callers, in turn and at once, each see only their own identity | met |
+| F. Error paths return a clean session | a thrown error, a missing contact and a database error inside the transaction; in psql, both a COMMIT and a ROLLBACK of an aborted transaction | met |
+| G. Success and failure paths are both tested | the committed path and every failure above, through `runAsUser`, the function `merge_contacts` calls | met |
+
+`supabase/tests/owner_session_pool.sql` proves the database side on one psql session. `supabase/tests/ownerSessionPool.mjs` runs the repository's `db.ts` through the real deno-postgres driver and Kysely, as a main service inside the local edge runtime on a direct connection, with one appended line that hands the probe the module's private pool, and checks the same properties. `npm run test:db` runs both, locally and in CI. Together they are SI-27.
+
+**What this is: containment by code, not by role.** Both suites also record that the owner session can `RESET ROLE` back to `postgres` inside the transaction. So the channel stays out of `ops` because of code and one privilege fact:
+
+- The pool is private to `_shared/db.ts`, and `runAsUser` is its only use.
+- `merge_contacts` sends only fixed statements through it.
+- Both files are sealed by `supabase/tests/ownerSessionSeal.test.ts`. A static guard cannot read every spelling of a raw call, such as a computed member name or reflection, and an independent review on 2026-09-13 found changes to these files that the guard alone accepted.
+- SI-03 refuses any other function that imports the pool or another function's files.
+- `authenticated` holds no privilege in `ops`.
+
+Changing either sealed file reopens this record's two-channel obligation. The seal fails until the change has been reviewed against SI-27, `npm run test:db` passes, and the new digest is recorded.
+
+**Not measured.** A COMMIT that itself fails, a connection that breaks mid-transaction, and a hosted `SUPABASE_DB_URL` that names a pooler rather than a direct connection. The owner-session suites should run against that connection shape before a hosted deploy relies on this record.
+
+**The acceptance bar, row by row.**
+
+| Criterion | State |
+| --- | --- |
+| The MCP production channel remains absent | met: removed 2026-09-13 (SI-03) |
+| The production guard prevents its reintroduction | met: SI-03's static guard over the canonical function tree and every committed deploy path |
+| A remote preflight catches stale or unexpected functions | met. Before every deploy or push, `node scripts/production-scope.mjs --project-ref "$SUPABASE_PROJECT_ID"` in `deploy.yml`, and `--linked` in the makefile, list the functions the project serves. They fail on any function outside the allowlist, `mcp` included, and delete nothing. A guard rule refuses a deploy path that skips the check (SI-03) |
+| `merge_contacts` cannot reach `ops` after the role downgrade | met: SI-27, proofs A and B, held in place by the seal and SI-03 |
+| Role and request state clear after COMMIT | met: SI-27, proof C |
+| Role and request state clear after ROLLBACK or an error | met: SI-27, proofs D and F |
+| Pooled backend reuse is clean | met: SI-27, proof E |
+| Ordinary Company OS execution uses neither `service_role` nor `postgres` | met. SI-16: the worker refuses a superuser or `BYPASSRLS` identity at boot, and both roles are `BYPASSRLS`. SI-21: no application role holds any privilege on Company OS data |
+| Guards and tests are green | met locally; CI pending on these commits |
+
+Condition 1 of the previous addendum, a database test through this connection shape on a reused connection, is met by SI-27. Condition 2, a green CI run on the removal commits, has not happened yet. The owner accepted the record on local evidence under the bar above; the CI run on these commits is still to be recorded, as it was for Phase 1C. The ADR 0012 obligation that context does not survive a COMMIT or a ROLLBACK on a reused connection is now measured for this channel as well as for the worker.
+
+**Recorded, not changed.** These were found while tracing the channel. They lie outside this record's isolation claim and are left for their own decisions.
+
+- The SQL function `public.merge_contacts(bigint, bigint)` is SECURITY INVOKER and executable by PUBLIC, `anon`, `authenticated` and `service_role` (grants measured). Its body never touches `lead_profiles` or attribution rows before it deletes the loser (read from its definition, not executed). The edge function's 2026-09-11 fix addressed that same cascade.
+- In the edge function, read from source and not executed:
+  - the deal re-point compares the decoded `contact_ids` elements with the request's JSON numbers using `!==`, which never matches if the driver returns `bigint` values as BigInt or as strings;
+  - a self-merge is not refused, and would delete the contact;
+  - the pool connects when the function starts;
+  - `db.ts` falls back to a hard-coded local owner connection string when `SUPABASE_DB_URL` is absent.
