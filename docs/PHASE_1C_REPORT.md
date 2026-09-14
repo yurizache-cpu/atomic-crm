@@ -4,7 +4,7 @@
 
 **Dates:** built 2026-09-12, signoff pass 2026-09-13 · **Branch:** `feature/clinical-phase-1` · **Base:** `7d41efff` · **Commits:** see §22
 
-**CI:** **VERIFIED** — [run 34770182266](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34770182266) on `e160debb`. Green: database security and reproducibility, the Phase 1C SQL suites, the Data API `ops` probe, the worker runtime, unit tests, typecheck, ESLint, build, the secret scan and the migration/security guards. `e2e-test` and Prettier are red, identical to the baseline [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`, so the run's overall conclusion is `failure`, as the baseline's was. See §22.
+**CI:** **VERIFIED** — [run 34770182266](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34770182266) on `e160debb`. Green: database security and reproducibility, the Phase 1C SQL suites, the Data API `ops` probe, the worker runtime, unit tests, typecheck, ESLint, build, the secret scan and the migration/security guards. `e2e-test` and Prettier are red, identical to the baseline [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`, so the run's overall conclusion is `failure`, as the baseline's was. See §22. **PRE-1D closure: CI VERIFIED** — [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca`, 2026-09-14, covering the five pre-1D closure commits. The owner-session pool suites, the no-seed replay and every required check are green; `e2e-test` and Prettier are red, identical to [run 34779599564](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34779599564) on `b155b177`. See §22, "PRE-1D closure CI".
 
 Phase 1C gives the Company OS its first organisational model. It is deterministic end to end: no LLM, no prompt, no model provider, no agent memory, no Tool Gateway, no WhatsApp, no Ads, no browser automation, no approval engine, no UI. [ADR 0015](adr/0015-company-os-domain-core.md) records every decision and the alternatives rejected. SI-21 to SI-24 in [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) are the properties that must now hold.
 
@@ -548,7 +548,70 @@ CI reports executed tests. §18's case counts (118 migration cases, 17 `engine/d
 
 **Prettier** flags the same two files in both runs, both older than Phase 1C, and no file that `7d41efff..e160debb` changes. CI's Prettier glob does not cover `.mjs` or `.sql`, so those files rest on the local check in §20.
 
-The commit recording this verification touches only `CLAUDE.md` and this report, and is not covered by run 34770182266. When the owner pushes it, its own run is expected to show the same two red checks and nothing else. The last commit to change code or configuration is `0b0c438e`, covered by the run above.
+The commit recording this verification touches only `CLAUDE.md` and this report, and is not covered by run 34770182266. When the owner pushes it, its own run is expected to show the same two red checks and nothing else. The last commit to change code or configuration is `0b0c438e`, covered by the run above. *(Confirmed 2026-09-14: [run 34779599564](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34779599564) on `b155b177` showed exactly those two red checks.)*
+
+### PRE-1D closure CI (2026-09-14)
+
+**CI VERIFIED.** Evidence: [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) of `✅ Check` (push, attempt 1) on `a1f9bbca42460e138ceefb1adde2067fc526b89f`, 2026-09-14 11:11–11:18 UTC. Every check the pre-1D closure is responsible for is green. The only red checks are the two pre-existing ones, each identical to the baseline, so the overall conclusion is `failure`, as the baseline's was.
+
+**Baseline:** [run 34779599564](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34779599564) on `b155b177`, the last commit before this push.
+
+**Commits covered:** the five pre-1D closure commits, pushed together: `ac0fd142`, `a09aac88`, `04f7fc14`, `d1fd00d8`, `a1f9bbca`. A push runs `check.yml` on its head only, so the intermediate commits have no run of their own.
+
+**Evidence source:** the GitHub REST API (run, jobs, steps, check runs, annotations) and each job's step logs, read from GitHub on 2026-09-14.
+
+#### The owner's CI acceptance bar
+
+| # | Check | Job → step | Result |
+| --- | --- | --- | --- |
+| 1 | `ownerSessionPool.mjs` | `🗄️ Database security & reproducibility` → `🔒 RLS, tenant isolation and grant surface` and `🔒 Same guarantees after the reset` | ✅ `PASS ownerSessionPool.mjs` both times (2375 ms, 2359 ms), each with 27 of 27 checks `ok`: A ×2, B ×10 (all nine `ops` attempts refused with `42501 permission denied for schema ops`), F, G ×2, the `RESET ROLE` characterisation, C/D/E ×8 and E ×3. Every transaction ran on one backend (559, then 606 after the reset) |
+| 2 | No-seed production-like replay | `🌱 Production-like replay (migrations only)` → `🔎 Reference data without the development data` | ✅ `supabase db reset --local --no-seed` applied all 33 migrations through `20260913120000` and printed no `Seeding data` line. `referenceData.mjs --without-seed`: 6 of 6 `ok` (migration applied; all 102 reference domains present exactly once; 0 loss reasons; 0 Company OS tenants; 0 Company OS companies; 0 CRM contacts) |
+| 3 | Seeded replay | `🐘 Start Supabase`, `♻️ Clean reconstruction from scratch`, `🔒 Same guarantees after the reset` | ✅ `supabase start` and `supabase db reset --local` each applied all 33 migrations and ran `Seeding data from supabase/seed.sql`; after the reset, `9 database suite(s) passed` again |
+| 4 | Production-scope guard | `🔎 Test` | ✅ `scripts/test/production-scope.test.mjs`, 39 tests, including the check of every tracked file |
+| 5 | Remote-function allowlist and preflight | `🔎 Test` | ✅ `scripts/test/production-scope-remote.test.mjs`, 14 tests (fixture CLI output; no hosted project) |
+| 6 | Seed and deployment guards | `🔎 Test` | ✅ `dev-signing-key.test.mjs` 64, `production-scope.test.mjs` 39, `production-scope-functions.test.mjs` 15 |
+| 7 | Security and migration invariants | `🔎 Test`; the database job | ✅ `securityInvariants.test.ts` 34, `migrationInvariants.test.ts` 131, `schemaReproducibility.test.ts` 9, `ownerSessionSeal.test.ts` 2. The new migration's assertion raised nothing on start, on the no-seed reset or on the seeded reset |
+| 8 | Worker/runtime regression tests | `⚙️ Worker runtime, pooling and concurrency` | ✅ 4 files, **42 passed**: `workerRuntime` 21, `companyOs.dbtest` 10, `concurrency` 5, `pooling` 6 |
+| 9 | Typecheck | `🏷️ Typecheck` | ✅ `tsc --noEmit --project tsconfig.app.json`, no errors |
+| 10 | Lint | `🔬 ESLint` job and `ESLint` check run | ✅ "No issues", 0 annotations |
+| 11 | Build | `🔨 Build` → `npm run build` | ✅ built in 10.47 s |
+| 12 | Secret build scan | `🔒 No secrets in the production build` | ✅ "scanned 16 text file(s) in "dist": 0 blocking, 0 advisory." |
+
+**What each proof rests on:**
+- **Item 1, the edge runtime:** `ownerSessionPool.mjs` exits 2 unless the stack's edge-runtime container runs the probe as a main service and the probe reports. `run-db-tests.mjs` counts any non-zero exit as `FAIL`.
+- **Item 1, the driver:** the probe runs `supabase/functions/_shared/db.ts`, which uses deno-postgres and Kysely through `runAsUser`.
+- **Item 1, the imports:** the probe can only report after its imports from esm.sh and deno.land have resolved inside the CI container. The log does not show whether they were fetched over the network or came from a cache in the image.
+- **Item 1, scope:** the probe is a separate edge-runtime process on a direct connection. It does not go through the functions gateway, it does not run `merge_contacts/index.ts` itself (the seal covers that file), and it does not use a hosted pooler.
+- **Item 3, the e2e stack:** the `e2e-test` job also builds a stack from the copied seed and reaches Playwright, but no e2e test reads the seeded rows. The database job is the proof of the seeded path.
+- **Items 4 to 6, the hosted path:** the guard's logic runs through its tests. `check.yml` does not run the guard as a command. `deploy.yml`, where the hosted `--project-ref` check runs, does not run on a push to a feature branch.
+- **Item 9, typecheck scope:** it does not cover `supabase/functions` or `scripts`.
+
+**Unit test totals, against the baseline:**
+
+| Step | Baseline (`b155b177`) | This run (`a1f9bbca`) | Why it moved |
+| --- | --- | --- | --- |
+| App step (every project) | 91 files, 1129 passed, 2 skipped | 94 files, 1159 passed, 2 skipped | the sum of the two rows below |
+| Supabase functions | 21 files, 485 passed | 21 files, 442 passed | `supabase/functions/mcp/validateSql.test.ts` (48 tests) was deleted with the MCP function in `a09aac88`. Added: `ownerSessionSeal.test.ts` (+2), `securityInvariants.test.ts` +2, `schemaReproducibility.test.ts` +1 |
+| Agent harness | 40 files, 410 passed, 1 skipped | 43 files, 483 passed, 1 skipped | three new production-scope test files (39 + 15 + 14), and `dev-signing-key.test.mjs` +5 |
+
+#### Red checks: classified before any change, neither a regression
+
+| Check | `b155b177` (baseline) | `a1f9bbca` (this run) | Classification |
+| --- | --- | --- | --- |
+| `e2e-test` | `Run Playwright tests` failed, exit code 2: **9 failed, 1 skipped** | same step, same exit code: **9 failed, 1 skipped** | pre-existing, unchanged |
+| `Prettier` | 2 files: `dataImport/sampleCsv.test.ts`, `providers/commons/canAccess.test.ts` | the same 2 files | pre-existing, unchanged |
+
+The `e2e-test` logs were compared test by test:
+- **The same 9 failures:** `adminAccountManagerFilter.spec.ts:42` and `:79`, `onboarding.spec.ts:3` and `userAddingATask.spec.ts:42` in `chromium` and `Mobile Chrome`, and `bulkContactTags.spec.ts:3` in `chromium`.
+- **The same messages:** "expect(locator).toBeVisible() failed" 15, "element(s) not found" 15, "locator.click: Timeout 5000ms exceeded" 12.
+- **The same locators:** `getByRole('link', { name: 'Contacts' })` 3, `getByText('Latest Activity')` 6, `getByText('Welcome to Atomic CRM')` 6.
+- **The same retries:** 18 retry lines.
+- **One difference:** the make error moved from `makefile:124` to `makefile:126`, because `d1fd00d8` added two recipe lines to `supabase-deploy` above `test-e2e-ci`.
+- **What this cannot show:** every failing test fails at its first check, so this job would not see a regression later in those flows.
+
+Neither Prettier file is touched by `b155b177..a1f9bbca`.
+
+**Environmental noise, no effect:** `🐘 Start Supabase` logged five `toomanyrequests: Rate exceeded` responses while pulling images, and the step still succeeded. Every job carries GitHub's Node.js 20 deprecation warning.
 
 ## 23. ADR changes
 
@@ -625,6 +688,16 @@ Explicitly **not** in Phase 1D: the approval engine (ADR 0009), principals and a
 - the migration and security guards.
 
 The only red checks, `e2e-test` and Prettier, are identical to the baseline [run 34715191426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34715191426) on `7d41efff`: the same 9 failed and 1 skipped Playwright tests, and the same 2 unformatted files. Neither is a Phase 1C regression.
+
+**PRE-1D closure: CI VERIFIED 2026-09-14.** [Run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca` covers the five pre-1D closure commits (§22, "PRE-1D closure CI"). Green:
+- `ownerSessionPool.mjs`, 27 of 27 checks before and after the reset;
+- the no-seed replay, with the reference data present and no development data (6 of 6);
+- the seeded replay, 9 of 9 database suites twice;
+- the production-scope, preflight, seed, deployment and seal tests, and the security and migration invariants;
+- the worker/runtime tests (42);
+- typecheck, ESLint, build and the secret scan (0 blocking).
+
+`e2e-test` and Prettier are red, identical to run 34779599564 on `b155b177`. ADRs 0002, 0003 and 0015 are Accepted.
 
 Everything else the signoff requires was measured locally on 2026-09-13:
 

@@ -116,7 +116,7 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 | Worker reads isolated by a live lease | `ops_execution_core.sql` and `runOneJob.ts` (SI-14); `pooling.dbtest.ts` for context not surviving a pooled connection | met, CI run 34770182266 |
 | Company OS privileges and structure | `company_domain_core.sql` (SI-21, SI-22) | met, same run |
 | No Data API reach into `ops` | `opsDataApiExposure.mjs` (SI-15) | met, same run |
-| No MCP reach into `ops` | ADR 0011 item 4 discharged, and a test through that channel | ~~**not met**~~ met 2026-09-13 by removal; SI-03's static guard replaces a runtime test through a channel that no longer exists (CI pending) |
+| No MCP reach into `ops` | ADR 0011 item 4 discharged, and a test through that channel | ~~**not met**~~ met 2026-09-13 by removal; SI-03's static guard replaces a runtime test through a channel that no longer exists ~~(CI pending)~~ *(CI verified 2026-09-14: run 34836911824 on `a1f9bbca`)* |
 
 ---
 
@@ -135,7 +135,7 @@ For the Company OS tables, the Decision's "`tenant_id` + RLS" therefore describe
 | Owner (`postgres`) | everything; never an ordinary agent or worker identity | ADR 0015 owner decision 7 |
 | MCP function | removed | SI-03 (static) |
 
-**Why it stays Proposed.** This record's two-channel test obligation (2026-09-11 addendum) requires an isolation test through the raw-connection channel as well as the Data API. After the removal, that channel is `merge_contacts`: deployed, invoked by signed-in users, and logged in as a `BYPASSRLS` role. It cannot reach `ops` today only because of what its own code does, and no test reproduces its connection shape. Two things would let this record be accepted: *(Final 2026-09-13: condition 1 is met by SI-27. The owner accepted the record on local evidence under the final pre-1D bar, and the CI run of condition 2 is still to be recorded; see the last addendum.)*
+**Why it stays Proposed.** This record's two-channel test obligation (2026-09-11 addendum) requires an isolation test through the raw-connection channel as well as the Data API. After the removal, that channel is `merge_contacts`: deployed, invoked by signed-in users, and logged in as a `BYPASSRLS` role. It cannot reach `ops` today only because of what its own code does, and no test reproduces its connection shape. Two things would let this record be accepted: *(Final 2026-09-13: condition 1 is met by SI-27. The owner accepted the record on local evidence under the final pre-1D bar, and the CI run of condition 2 ~~is still to be recorded~~ was recorded on 2026-09-14, run 34836911824 on `a1f9bbca`; see the last addendum.)*
 1. a database test that connects as `postgres`, runs `SET LOCAL ROLE authenticated`, asserts `permission denied for schema ops`, and asserts the role is restored after COMMIT on the reused connection — or moving `merge_contacts` off the owner-session pool;
 2. a green CI run on the commits that removed the MCP function and added SI-03 and SI-25.
 
@@ -148,14 +148,14 @@ Recorded for that decision: `merge_contacts` builds `set_config('request.jwt.cla
 | Worker reads isolated by a live lease | met, CI run 34770182266 |
 | Company OS privileges and structure | met, same run |
 | No Data API reach into `ops` | met, same run |
-| No MCP reach into `ops` | met by removal and SI-03; CI pending |
+| No MCP reach into `ops` | met by removal and SI-03; ~~CI pending~~ CI run 34836911824 on `a1f9bbca` (2026-09-14) |
 | Owner-session pool (`merge_contacts`) tested against `ops` | ~~**not met**~~ met 2026-09-13, SI-27 (see the last addendum) |
 
 ---
 
 ## Addendum 2026-09-13 (final pre-1D closure) — owner-session pool measured; accepted
 
-**Owner decision:** accept this record once measurement shows that the `merge_contacts` channel cannot reach `ops` and cannot carry state between requests, judged against the owner's acceptance bar below. This addendum records that measurement. The evidence is local: CI has not yet run on these commits.
+**Owner decision:** accept this record once measurement shows that the `merge_contacts` channel cannot reach `ops` and cannot carry state between requests, judged against the owner's acceptance bar below. This addendum records that measurement. The evidence is local: ~~CI has not yet run on these commits.~~ *(CI verified 2026-09-14: run 34836911824 on `a1f9bbca`; see "CI verification" at the end of this record.)*
 
 **What changed in the channel, and what did not.** `merge_contacts` still pools one `postgres` session (`BYPASSRLS`) and assumes `authenticated` for each merge. Two things changed. First, `runAsUser` in `supabase/functions/_shared/db.ts` now sends `SET LOCAL ROLE authenticated`, then `SELECT set_config('request.jwt.claim.sub', $1, true)` with the caller's id as a bound parameter; the id used to be interpolated into the SQL text. Second, the merge's queries now run one after another, so a rollback cannot race a query queued behind a failed one. No query was added or widened.
 
@@ -197,9 +197,9 @@ Changing either sealed file reopens this record's two-channel obligation. The se
 | Role and request state clear after ROLLBACK or an error | met: SI-27, proofs D and F |
 | Pooled backend reuse is clean | met: SI-27, proof E |
 | Ordinary Company OS execution uses neither `service_role` nor `postgres` | met. SI-16: the worker refuses a superuser or `BYPASSRLS` identity at boot, and both roles are `BYPASSRLS`. SI-21: no application role holds any privilege on Company OS data |
-| Guards and tests are green | met locally; CI pending on these commits |
+| Guards and tests are green | met locally; ~~CI pending on these commits~~ met in CI 2026-09-14, run 34836911824 on `a1f9bbca`, with only the pre-existing `e2e-test` and Prettier red, identical to run 34779599564 on `b155b177` |
 
-Condition 1 of the previous addendum, a database test through this connection shape on a reused connection, is met by SI-27. Condition 2, a green CI run on the removal commits, has not happened yet. The owner accepted the record on local evidence under the bar above; the CI run on these commits is still to be recorded, as it was for Phase 1C. The ADR 0012 obligation that context does not survive a COMMIT or a ROLLBACK on a reused connection is now measured for this channel as well as for the worker.
+Condition 1 of the previous addendum, a database test through this connection shape on a reused connection, is met by SI-27. ~~Condition 2, a green CI run on the removal commits, has not happened yet.~~ The owner accepted the record on local evidence under the bar above. *(2026-09-14: condition 2 is met. Run 34836911824 on `a1f9bbca` covers all five pushed commits, the removal commits included, and every required check is green; see "CI verification" below.)* The ADR 0012 obligation that context does not survive a COMMIT or a ROLLBACK on a reused connection is now measured for this channel as well as for the worker.
 
 **Recorded, not changed.** These were found while tracing the channel. They lie outside this record's isolation claim and are left for their own decisions.
 
@@ -209,3 +209,11 @@ Condition 1 of the previous addendum, a database test through this connection sh
   - a self-merge is not refused, and would delete the contact;
   - the pool connects when the function starts;
   - `db.ts` falls back to a hard-coded local owner connection string when `SUPABASE_DB_URL` is absent.
+
+**CI verification (2026-09-14).** [Run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca` covers the five pre-1D closure commits.
+- **`ownerSessionPool.mjs`:** passed before and after a clean reset, each time with 27 of 27 checks. All nine `ops` attempts were refused with `42501 permission denied for schema ops`, and every transaction ran on one backend.
+- **`owner_session_pool.sql`:** passed both times.
+- **No-seed replay:** all 33 migrations, then `referenceData.mjs --without-seed` 6 of 6 (all 102 reference domains; no loss reasons, tenants, companies or contacts).
+- **Red checks:** only the pre-existing `e2e-test` and Prettier, identical to run 34779599564 on `b155b177`.
+
+What the run does not show: it runs the probe on a direct connection, not through a hosted pooler, and it does not show whether the probe's esm.sh and deno.land imports came from the network or from a cache. The evidence table is in PHASE_1C_REPORT.md §22, "PRE-1D closure CI".
