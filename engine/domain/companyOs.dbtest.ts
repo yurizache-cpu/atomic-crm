@@ -16,7 +16,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import type { WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
-import { handlerRegistry } from "../worker/registry.ts";
+import { REGISTERED_HANDLER_KINDS } from "../worker/registry.ts";
 import {
   ADMIN_URL,
   adminPool,
@@ -233,7 +233,10 @@ describe("the Company OS domain services", () => {
     expect((error as CompanyOsError).code).toBe("invalid_state");
   });
 
-  it("refuse every execution request in Phase 1C, even for a registered handler", async () => {
+  // Phase 1D allowlists exactly agent_run.execute. A kind with a registered
+  // handler that the allowlist does not name is still refused, and enqueues
+  // nothing.
+  it("refuse an execution request for a registered handler kind the allowlist does not name", async () => {
     const { companyId } = await buildHierarchy(TENANT_A, "no-execution");
     const ctx = context(TENANT_A);
     const taskId = await owner.withTransaction((tx) =>
@@ -417,14 +420,17 @@ describe("the database and the TypeScript side agree", () => {
     expect(database).toEqual([...TASK_STATUSES].sort());
   });
 
-  it("that every kind a task may request has a registered handler — and that none may yet", async () => {
+  it("that every kind a task may request has a registered handler — and that the allowlist is exactly agent_run.execute", async () => {
     const { rows } = await admin.query<{ kind: string }>(
       "select unnest(ops.task_executable_kinds()) as kind",
     );
-    for (const { kind } of rows) {
-      expect(handlerRegistry.has(kind)).toBe(true);
+    const kinds = rows.map((row) => row.kind);
+    for (const kind of kinds) {
+      expect(REGISTERED_HANDLER_KINDS).toContain(kind);
     }
-    expect(rows).toEqual([]);
+    // A literal, not the handler's constant: renaming the kind on one side
+    // only must fail here.
+    expect(kinds).toEqual(["agent_run.execute"]);
   });
 });
 

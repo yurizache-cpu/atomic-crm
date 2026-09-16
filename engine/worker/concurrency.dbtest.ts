@@ -23,6 +23,7 @@ import {
   TENANT_B,
   WORKER_URL,
 } from "./testSupport/dbFixture.ts";
+import { testChildEnvironment } from "./testSupport/childEnvironment.ts";
 
 const WORKER_SCRIPT = "engine/worker/testSupport/concurrencyWorker.ts";
 
@@ -51,9 +52,17 @@ beforeEach(async () => {
 /** stdin is piped so the parent can ask for a graceful stop portably. */
 type WorkerProcess = ChildProcessWithoutNullStreams;
 
+interface WorkerExit {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
 interface SpawnedWorker {
   child: WorkerProcess;
   done: Promise<WorkerReport>;
+  /** Resolves on exit with everything the process printed, whatever its code. */
+  closed: Promise<WorkerExit>;
 }
 
 function spawnWorker(
@@ -61,12 +70,11 @@ function spawnWorker(
   env: Record<string, string> = {},
 ): SpawnedWorker {
   const child = spawn(process.execPath, [WORKER_SCRIPT], {
-    env: {
-      ...process.env,
+    env: testChildEnvironment(process.env, {
       OPS_WORKER_DATABASE_URL: WORKER_URL,
       OPS_WORKER_ID: workerId,
       ...env,
-    },
+    }),
     stdio: ["pipe", "pipe", "pipe"],
   }) as WorkerProcess;
 
@@ -91,7 +99,11 @@ function spawnWorker(
     });
   });
 
-  return { child, done };
+  const closed = new Promise<WorkerExit>((resolve) =>
+    child.once("close", (code) => resolve({ code, stdout, stderr })),
+  );
+
+  return { child, done, closed };
 }
 
 /**
@@ -341,4 +353,56 @@ describe("graceful shutdown", () => {
     // The crashed attempt was counted, not forgiven.
     expect(after.rows[0].attempts).toBe(2);
   }, 120_000);
+});
+
+describe("the database a concurrency worker may be pointed at", () => {
+  // What no other case can prove: this worker leases the head of whatever queue
+  // OPS_WORKER_DATABASE_URL names (the production worker's variable) and settles
+  // those jobs with its test handlers. It must refuse a database that is not on
+  // this machine before it connects, naming no part of the connection string.
+  // 192.0.2.10 is unroutable: a process that tried it would not exit 2 at all.
+  it("refuses a worker process pointed at a database that is not on this machine, before connecting and without printing the connection string", async () => {
+    const remote =
+      "postgresql://ops_worker_login:dbtest-remote-pw@192.0.2.10:5432/postgres";
+    const worker = spawnWorker("dbtest-conc-remote", {
+      OPS_WORKER_DATABASE_URL: remote,
+      WORKER_RUN_MS: "60000",
+    });
+    // A refusing process exits non-zero, so `done` rejects by design.
+    const refused = worker.done.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const exit = await Promise.race([
+        worker.closed,
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "the worker did not refuse a remote database before trying to reach it",
+                ),
+              ),
+            15_000,
+          );
+        }),
+      ]);
+
+      expect(exit.code).toBe(2);
+      expect(exit.stdout).toBe("");
+      expect(exit.stderr).toMatch(
+        /OPS_WORKER_DATABASE_URL must name a database on this machine/,
+      );
+      for (const piece of [
+        "dbtest-remote-pw",
+        "192.0.2.10",
+        "ops_worker_login",
+      ]) {
+        expect(exit.stderr).not.toContain(piece);
+      }
+    } finally {
+      clearTimeout(timer);
+      worker.child.kill("SIGKILL");
+      await refused;
+    }
+  }, 30_000);
 });

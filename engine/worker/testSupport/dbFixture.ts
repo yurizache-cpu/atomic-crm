@@ -13,6 +13,7 @@ import { execFileSync } from "node:child_process";
 import { Pool } from "pg";
 import { createWorkerDatabase } from "../../db/workerDatabase.ts";
 import type { WorkerDatabase } from "../../db/types.ts";
+import { assertLocalTestDatabases } from "./localDatabase.ts";
 
 const DEFAULT_PORT = process.env.SUPABASE_DB_PORT ?? "54322";
 const HOST = process.env.SUPABASE_DB_HOST ?? "127.0.0.1";
@@ -26,9 +27,19 @@ export const ADMIN_URL =
 export const WORKER_PASSWORD =
   process.env.OPS_WORKER_PASSWORD ?? "dbtest-worker-pw";
 
+/**
+ * `OPS_WORKER_DATABASE_URL` is also the PRODUCTION worker's variable, so a shell
+ * that exports it for `npm run worker` would otherwise point these suites'
+ * workers — which lease the head of the whole queue and answer agent runs with
+ * canned model output — at that deployment, or at the other working copy's
+ * stack. Checked when this module loads, before anything provisions, connects
+ * or spawns a process.
+ */
 export const WORKER_URL =
   process.env.OPS_WORKER_DATABASE_URL ??
   `postgresql://ops_worker_login:${encodeURIComponent(WORKER_PASSWORD)}@${HOST}:${DEFAULT_PORT}/${DATABASE}`;
+
+assertLocalTestDatabases(ADMIN_URL, WORKER_URL);
 
 /**
  * Runs the real deployment script.
@@ -54,7 +65,7 @@ export function provisionWorkerRole(): void {
 }
 
 /** The migration that must be applied for any of these suites to mean anything. */
-const REQUIRED_MIGRATION = "20260912200000";
+const REQUIRED_MIGRATION = "20260914120000";
 
 /**
  * Refuses to run against the wrong database.
@@ -76,7 +87,7 @@ export async function assertTargetDatabase(admin: Pool): Promise<void> {
   if (applied < REQUIRED_MIGRATION) {
     throw new Error(
       `Refusing to run: ${ADMIN_URL.replace(/:[^:@/]*@/, ":***@")} is at migration ${applied}, ` +
-        `but ${REQUIRED_MIGRATION} (the Phase 1C company domain core) is required. ` +
+        `but ${REQUIRED_MIGRATION} (the Phase 1D agent runtime) is required. ` +
         "This is almost certainly the wrong stack — the isolated e2e stack is on port 54342 " +
         "(npx supabase start --workdir .supabase-e2e), and 54322 is the other working copy's " +
         "atomic-crm-demo. Set SUPABASE_DB_PORT.",
@@ -124,25 +135,53 @@ export const TENANT_B = "b0000000-0000-4000-8000-00000000000b";
  * event or link would make the next suite's `delete from ops.tenants` (or
  * `delete from ops.jobs`) fail with 23503, and the single-fork engine run would
  * go red in a file that never touched the domain. Self-referencing rows (a
- * task's parent) go in one statement, which the foreign key allows.
+ * task's parent, a run's retry parent) go in one statement, which the foreign
+ * key allows.
+ *
+ * Agent runs go FIRST: a run references its job, task, agent and the stop that
+ * refused it, all ON DELETE RESTRICT. Execution stops go before the
+ * organisation they target. An ACTIVE stop is never deleted (an ENABLE ALWAYS
+ * trigger refuses it), so a stop a failed test left active is cleared first,
+ * recorded on the row as dbtest cleanup, the way an owner clears one.
  */
 export async function deleteCompanyOsRows(
   admin: Pool,
   tenantIds: readonly string[],
 ): Promise<void> {
-  for (const table of [
-    "task_jobs",
-    "events",
-    "tasks",
-    "agents",
-    "departments",
-    "companies",
+  for (const statement of [
+    "delete from ops.agent_runs where tenant_id = any($1::uuid[])",
+    "delete from ops.task_jobs where tenant_id = any($1::uuid[])",
+    "delete from ops.events where tenant_id = any($1::uuid[])",
+    `update ops.execution_stops
+        set cleared_by = 'dbtest', cleared_reason = 'dbtest cleanup'
+      where tenant_id = any($1::uuid[]) and cleared_at is null`,
+    "delete from ops.execution_stops where tenant_id = any($1::uuid[])",
+    "delete from ops.tasks where tenant_id = any($1::uuid[])",
+    "delete from ops.agents where tenant_id = any($1::uuid[])",
+    "delete from ops.departments where tenant_id = any($1::uuid[])",
+    "delete from ops.companies where tenant_id = any($1::uuid[])",
   ]) {
-    await admin.query(
-      `delete from ops.${table} where tenant_id = any($1::uuid[])`,
-      [tenantIds],
-    );
+    await admin.query(statement, [tenantIds]);
   }
+}
+
+/**
+ * Removes the GLOBAL execution stops these suites trip.
+ *
+ * A global stop has no tenant, so deleteCompanyOsRows cannot reach it; a suite
+ * marks its own with a reason that starts with `dbtest`. Delete the runs that
+ * name one first (they belong to a fixture tenant). Not optional: a global stop
+ * left active refuses every agent run on this database, in every later suite.
+ */
+export async function deleteFixtureStops(admin: Pool): Promise<void> {
+  await admin.query(
+    `update ops.execution_stops
+        set cleared_by = 'dbtest', cleared_reason = 'dbtest cleanup'
+      where scope = 'global' and reason like 'dbtest%' and cleared_at is null`,
+  );
+  await admin.query(
+    "delete from ops.execution_stops where scope = 'global' and reason like 'dbtest%'",
+  );
 }
 
 /**
@@ -154,6 +193,7 @@ export async function deleteCompanyOsRows(
 export async function resetFixtures(admin: Pool): Promise<void> {
   await assertTargetDatabase(admin);
   await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
+  await deleteFixtureStops(admin);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],
@@ -190,6 +230,7 @@ export async function cleanupFixtures(admin: Pool | undefined): Promise<void> {
   // buried under "Cannot read properties of undefined (reading 'query')".
   if (!admin) return;
   await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
+  await deleteFixtureStops(admin);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],

@@ -31,7 +31,9 @@
     "check:local-exposure": "node ./scripts/local-exposure.mjs",
     "check:production-scope": "node ./scripts/production-scope.mjs",
     "worker": "node engine/worker/main.ts",
-    "worker:provision": "node scripts/provision-worker-role.mjs"
+    "worker:provision": "node scripts/provision-worker-role.mjs",
+    "execution-stop": "node engine/cli/executionStop.ts",
+    "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",
