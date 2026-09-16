@@ -51,6 +51,40 @@ const JWK_WINDOW = 400;
 /** What a finding shows in place of private key material. */
 const WITHHELD = "<withheld: private key material>";
 
+/**
+ * What names a model provider credential or its routing configuration. Matched
+ * in either case: Vite exposes a lower-case `VITE_` name exactly as it exposes
+ * the upper-case spelling. AZURE_OPENAI needs no entry of its own; OPENAI covers
+ * it. OPEN_AI and CLAUDE are the other spellings people reach for.
+ */
+const MODEL_PROVIDER_NAME_PARTS = [
+  "OPENAI",
+  "OPEN_AI",
+  "ANTHROPIC",
+  "CLAUDE",
+  "AGENT_MODEL",
+  "MODEL_PROVIDER",
+];
+
+const anyCase = (part) =>
+  part.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`);
+
+/**
+ * Resolves `\uXXXX`, `\u{…}` and `\xXX` escapes, however many backslashes lead
+ * them (a source map escapes the backslash of an escape once more). Only for a
+ * rule that matches a NAME: a letter spelled as an escape is still that letter.
+ * A literal name is never altered, because every escape starts with a backslash
+ * and no name contains one.
+ */
+const decodeCodeEscapes = (content) =>
+  content.replace(
+    /\\+(?:u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2}))/g,
+    (escape, braced, unicode, hex) => {
+      const codePoint = parseInt(braced ?? unicode ?? hex, 16);
+      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : escape;
+    },
+  );
+
 const decodeJwtRole = (token) => {
   try {
     const payload = token.split(".")[1];
@@ -128,12 +162,61 @@ const RULES = [
     describe: () => "AWS access key id",
   },
   {
+    id: "anthropic-api-key",
+    severity: "critical",
+    // A model provider key belongs to the worker's environment only (Phase 1D).
+    // No row-level policy narrows it: whoever reads it off a static host can
+    // bill the account and call every model it reaches.
+    //
+    // Every `sk-ant-` family, not only `api03`/`admin01`. The OpenAI rule below
+    // skips ALL of `sk-ant-`, so the two rules must cover complementary halves
+    // of `sk-`: a pattern naming only `api|admin` here left OAuth (`oat01`,
+    // `ort01`) and session (`sid01`) tokens refused by neither rule.
+    // Measured 2026-09-14: 0 matches in dist, node_modules, src, engine,
+    // supabase/functions, docs and scripts.
+    pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/g,
+    describe: () => "Anthropic credential (sk-ant-…)",
+  },
+  {
+    id: "openai-api-key",
+    severity: "critical",
+    // `\b` needs a non-word character before `sk`, so "risk-assessment-…" or
+    // "task-management-…" never match: their `s` follows a letter. The
+    // lookahead leaves `sk-ant-` to the rule above, so one key is one finding.
+    // Measured 2026-09-14: neither provider rule matches anything in the
+    // current build or in node_modules (47,009 text files).
+    pattern: /\bsk-(?!ant-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}/g,
+    describe: () => "OpenAI API key (sk-…)",
+  },
+  {
+    id: "browser-model-provider-variable",
+    severity: "critical",
+    // Provider credentials and routing configuration are backend-only (Phase
+    // 1D): the worker reads them from its own environment. Vite hands every
+    // `VITE_` variable to the bundle, so a provider name carrying that prefix
+    // proves its value was on its way to a static host, key-shaped or not.
+    //
+    // A bare NAME match, unlike assigned-server-secret below, because a build
+    // spells the name many ways: `import.meta.env.X`, a key of the object Vite
+    // inlines (`{"X":"…"}`), `X=` in an embedded .env, and all of those again
+    // escaped inside a source map's sourcesContent (`\"X\":`, `\nX=`). There is
+    // no leading `\b`: the `n` of an escaped newline is a word character. The
+    // match stops where the name does, so a finding never carries a value.
+    // Measured 2026-09-14: 0 matches in dist and in node_modules.
+    pattern: new RegExp(
+      `VITE_[A-Za-z0-9_]*?(?:${MODEL_PROVIDER_NAME_PARTS.map(anyCase).join("|")})[A-Za-z0-9_]*`,
+      "g",
+    ),
+    normalize: decodeCodeEscapes,
+    describe: (m) => `model provider variable exposed to the browser (${m})`,
+  },
+  {
     id: "assigned-server-secret",
     severity: "high",
     // A server-only variable NAME with a non-trivial value next to it. Catches
     // the `VITE_`-typo case, where the name survives into the bundle.
     pattern:
-      /\b(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTMARK_WEBHOOK_PASSWORD|SUPABASE_ACCESS_TOKEN|JWT_SECRET|DEPLOY_TOKEN|OPS_WORKER_PASSWORD|OPS_WORKER_DATABASE_URL)\s*[:=]\s*["'`][^"'`\s]{8,}["'`]/g,
+      /\b(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTMARK_WEBHOOK_PASSWORD|SUPABASE_ACCESS_TOKEN|JWT_SECRET|DEPLOY_TOKEN|OPS_WORKER_PASSWORD|OPS_WORKER_DATABASE_URL|OPENAI_API_KEY|ANTHROPIC_API_KEY)\s*[:=]\s*["'`][^"'`\s]{8,}["'`]/g,
     describe: (m) =>
       `server-only variable assigned a value (${m.split(/[:=]/)[0].trim()})`,
   },
@@ -215,13 +298,14 @@ export function scanDirectory(dir, { devSigningKeys } = {}) {
     const content = readFileSync(file, "utf8");
 
     for (const rule of RULES) {
+      const text = rule.normalize ? rule.normalize(content) : content;
       rule.pattern.lastIndex = 0;
       const seen = new Set();
-      for (const match of content.matchAll(rule.pattern)) {
+      for (const match of text.matchAll(rule.pattern)) {
         const value = match[0];
         if (seen.has(value)) continue;
         seen.add(value);
-        if (rule.verify && !rule.verify(value, content, match.index)) continue;
+        if (rule.verify && !rule.verify(value, text, match.index)) continue;
         findings.push({
           rule: rule.id,
           severity: rule.severity,
@@ -296,6 +380,12 @@ if (await isEntryPoint()) {
       "\nA server-side credential is present in a browser artifact. Do not deploy this build. " +
         "Rotate the credential, then find the variable: only `VITE_`-prefixed values are meant to reach the bundle.",
     );
+    if (blocking.some((f) => f.rule === "browser-model-provider-variable")) {
+      console.error(
+        "A model provider variable carries the `VITE_` prefix. Provider credentials and configuration are backend-only: " +
+          "drop the prefix and let the worker read it from its own environment.",
+      );
+    }
     process.exit(1);
   }
 }

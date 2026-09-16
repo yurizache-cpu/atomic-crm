@@ -673,7 +673,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or function, no ops function is executable by PUBLIC, and every Company OS function is SECURITY INVOKER.",
+      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are the pinned lease-bound worker capabilities.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -681,6 +681,27 @@ const INVARIANTS: Invariant[] = [
       "unit test",
     ],
     enforcedBy: [
+      // Phase 1D (2026-09-14): the agent run and execution stop tables, and the
+      // six lease-bound capabilities, the only DEFINER functions it adds.
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /A1: an agent runtime table is reachable by an application role/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /A3: an agent runtime owner service is reachable by an application role/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /B: a leased worker reached agent runtime data or services/,
+      },
+      {
+        file: "supabase/migrations/20260914120000_agent_runtime.sql",
+        marker:
+          /the SECURITY DEFINER surface in ops drifted from the pinned set/,
+      },
       {
         file: "supabase/tests/company_domain_core.sql",
         marker: /A1: Company OS table reachable by an application role/,
@@ -813,9 +834,29 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-24",
     statement:
-      "A task can request execution only for an allowlisted job kind — none in Phase 1C — and the job's tenant is the task row's, never the payload's; a task never adopts a job it did not request, and a cross-tenant task/job link cannot be stored.",
+      "A task can request execution only for an allowlisted job kind — exactly agent_run.execute since Phase 1D, and only for a pending agent run of the same task that has no job — and the job's tenant is the task row's, never the payload's; a task never adopts a job it did not request, and a cross-tenant task/job link cannot be stored.",
     provenBy: ["live database", "migration assertion"],
     enforcedBy: [
+      // Phase 1D (2026-09-14): the allowlist holds exactly one kind, and the
+      // bridge creates it only for a pending run of the same task.
+      {
+        file: "supabase/migrations/20260914120000_agent_runtime.sql",
+        marker:
+          /ops\.task_executable_kinds\(\) is not exactly \{agent_run\.execute\}/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /A5: ops\.task_executable_kinds\(\) is not exactly \{agent_run\.execute\}/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /J1 an agent run job with an extra key/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /J4: the bridge created a job outside its task/,
+      },
       {
         file: "supabase/tests/company_domain_core.sql",
         marker: /H1: a non-allowlisted kind was enqueued/,
@@ -842,7 +883,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "The only registered handler, postmark.ledger_retention, is tenant-wide CRM maintenance, so it is deliberately NOT task-executable: a company-scoped task must not be able to trigger it. The bridge's success path is proven through an allowlist replaced inside a rolled-back transaction. Settling a job never changes a task.",
+      "postmark.ledger_retention is tenant-wide CRM maintenance, so it is deliberately NOT task-executable: a company-scoped task must not be able to trigger it. Since Phase 1D the bridge's success path runs against the real allowlist, through ops.request_agent_run. Settling a job never changes a task.",
   },
   // -- Pre-1D closure: production scope ---------------------------------------
   {
@@ -1026,6 +1067,379 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The role switch is not a privilege boundary: the owner session can RESET ROLE, and both suites characterise that it does. Containment rests on code: the pool is private to db.ts and runAsUser is its only use; db.ts and merge_contacts/index.ts are sealed (tests/ownerSessionSeal.test.ts), because the static guard cannot read a raw method reached through a computed member name or reflection; only merge_contacts may import the pool, and no function imports another's files (SI-03); and authenticated holds nothing in ops (SI-15, SI-21). The seal runs with the unit tests that gate every CI deploy, not in the makefile. The real-driver suite runs db.ts, plus one appended line that hands its probe the private pool, as a main service on a direct connection in the local edge runtime; a hosted SUPABASE_DB_URL that names a pooler is not measured. A COMMIT that itself fails and a connection that breaks mid-transaction are not exercised.",
+  },
+  // -- Phase 1D: agent runs, model providers and the execution stop -----------
+  {
+    id: "SI-28",
+    statement:
+      "An agent run is one bounded model invocation for one agent about one task it is assigned: every run carries its tenant, company, department, task and agent through composite keys, the agent must be the task's assignee in an active company and department both when the run is requested and immediately before the call, and a run never changes its task.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260914120000_agent_runtime.sql",
+        marker: /composite foreign key\(s\) missing/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /E3 an agent the task is not assigned to/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /E8: a refused agent run request wrote something/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /L9: a run whose gate changed since the request/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /L1: an agent run changed its task/,
+      },
+    ],
+    caveat:
+      "Tenant is the isolation boundary and a company is organisation only (ADR 0015). The owner is outside this boundary exactly as for SI-22: raw DML with foreign-key checks skipped in replica mode, or DISABLE TRIGGER, can store what the services refuse.",
+  },
+  {
+    id: "SI-29",
+    statement:
+      "A model call is issued at most once per run: the start commits running before any call and only that token authorises one; a run found running by anyone but its own live attempt is settled indeterminate and never started again; a call's failure is recorded as the run's outcome, never retried by its job; the adapter and router make exactly one request with no retry or fallback; and a retry is a new run naming the finished run it repeats.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260914120000_agent_runtime.sql",
+        marker: /agent run error categories map to the wrong status/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /L4: a second start changed a running run/,
+      },
+      {
+        // Through real processes: a worker killed while its call is in flight.
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker:
+          /is recovered by the stale-run sweep as indeterminate, and the next worker never calls the provider/,
+      },
+      {
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker:
+          /never calls again for a run whose answer arrived but was never settled/,
+      },
+      {
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker:
+          /does not call the provider again when settlement failed transiently and the runtime scheduled the job/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /L7: a run left running by an earlier attempt was not settled indeterminate on its next claim/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N3b: a run another attempt started was not settled indeterminate by a later start/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /M1: a running run whose lease expired was not settled indeterminate/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N6a: the sweep left a run whose lease ran out on the wall clock/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker: /settles without calling on every other token start returns/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker:
+          /issues exactly one call whatever the provider does, and never retries/,
+      },
+      {
+        file: "engine/models/router.test.ts",
+        marker:
+          /invokes a failing provider once, passes its category through, and never tries another route/,
+      },
+      {
+        file: "engine/worker/runOneJob.test.ts",
+        marker:
+          /hands the error to settle and completes the job without recording a failure/,
+      },
+    ],
+    caveat:
+      "At most once, not exactly once: a run whose attempt died, or whose settle transaction failed after the provider answered, is indeterminate even when the call succeeded or never left the process, and a person decides whether to request a retry. No provider idempotency exists for the Responses API, so nothing below the database can deduplicate a call. A stop tripped after a start commits does not interrupt that call; it is bounded by the route timeout and the lease deadline.",
+  },
+  {
+    id: "SI-30",
+    statement:
+      "The worker reaches agent runs only through lease-bound capabilities that take no tenant, run, task, agent or job argument and require a lease live on the current clock; the job payload is a reference cross-checked against the leased run, never authority; and ops_worker holds no privilege on agent runs, execution stops, tasks or agents.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /A2: an agent run capability is not a lease-bound definer/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /C6: claiming one run changed runs/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /C7: a job payload chose the agent run a lease reached/,
+      },
+      {
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /keeps the reaper and a re-lease off a job whose claim is still open, and lets them act once it ends/,
+      },
+      {
+        // The lease on the clock again after start_agent_run's own lock waits.
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /refuses a start whose lease ran out while it waited on the task lock, and leaves the run pending/,
+      },
+      {
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker: /fails a forged agent_run.execute job as a security refusal/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /A4: the ops EXECUTE surface drifted from the pinned set/,
+      },
+      {
+        file: "engine/worker/capabilities.test.ts",
+        marker:
+          /carries no tenant, run, task, agent or job id, even one smuggled onto its input/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker:
+          /refuses a payload that does not name the claimed run, before any other capability and any call/,
+      },
+    ],
+    caveat:
+      "The bound is the same as SI-14's: a fully malicious worker process holding a legitimate lease can misreport its own run's outcome or usage, but cannot reach another run, another tenant or any table. The sweep checks no lease, like ops.reap_expired_leases, and touches only runs whose attempt is provably dead. The claim returns agent and task text to the worker, which sends it to the provider.",
+  },
+  {
+    id: "SI-31",
+    statement:
+      "An active execution stop refuses every new agent run it covers, at request time and again immediately before the call, serialised with tripping so a returned trip is seen by every later start; any covering stop wins over a cleared narrower one; a stop that cannot be read refuses; every refusal is recorded naming the stop; and a stop is cleared only by a recorded owner act, and cannot be deleted while active, truncated, or rewritten except by redaction.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /K1: a global stop did not refuse another tenant/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /K2: an active tenant stop did not refuse a run whose narrower stop was cleared/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /K3: a stop tripped after the request did not refuse the run at start/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /K11 reading the switch without a tenant/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N7b: ops.start_agent_run does not hold the kill-switch lock shared once it has read the stops/,
+      },
+      {
+        // The ORDER, lock before read, needs two sessions.
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /makes a start wait for a trip in flight, and the start refuses its run once the trip commits/,
+      },
+      {
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /makes a request wait for a trip in flight, and records the request as refused by that stop once the trip commits/,
+      },
+      {
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /makes a trip wait for a clearing of the same target, and records a new active stop once the clearing commits/,
+      },
+      {
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker:
+          /refuses a run at request under a global stop and at start under an agent stop, with no provider call, and runs once cleared/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N7d: ops\.trip_execution_stop did not take the kill-switch lock exclusively/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N10a: a caller for whom row security hides the stops read the switch as/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /A7: agent runtime guard trigger\(s\) missing or not ENABLE ALWAYS/,
+      },
+      {
+        file: "engine/domain/executionStops.test.ts",
+        marker:
+          /offers no force or override, and never forwards one set on the act or the target/,
+      },
+      {
+        file: "engine/cli/executionStop.test.ts",
+        marker:
+          /trips a stop in one owner transaction and prints one JSON line/,
+      },
+    ],
+    caveat:
+      "It covers agent runs only. It does not refuse leasing other job kinds, has no integration or tool scope (no tools exist), no UI, no budget and no spend ceiling (ADR 0010 addendum). The owner can DISABLE TRIGGER, as for SI-22 and SI-23. A stop does not interrupt a call already started.",
+  },
+  {
+    id: "SI-32",
+    statement:
+      "Model output is untrusted, advisory data: the request declares no tools and asks for no reasoning, the answer must satisfy a strict structured contract validated in the worker and again by the database before a run can succeed, it is stored only on the run row, it selects nothing and changes no task, job or CRM row, and events about a run carry no content.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "engine/models/openaiResponses.test.ts",
+        marker:
+          /sends exactly the documented body keys, and none that grant a capability or retain state/,
+      },
+      {
+        file: "engine/models/openaiResponses.test.ts",
+        marker: /ignores reasoning items entirely, wherever they appear/,
+      },
+      {
+        file: "engine/models/router.test.ts",
+        marker:
+          /rejects malformed output as schema_validation, carrying what the call cost/,
+      },
+      {
+        file: "engine/models/taskAssessment.test.ts",
+        marker:
+          /keeps an instruction-shaped task field inside the document and out of the instructions/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker:
+          /stores output that looks like a tenant id, a job kind, SQL or a URL only as opaque result data/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /L2: an envelope with/,
+      },
+      {
+        file: "engine/domain/agentRunRuntime.dbtest.ts",
+        marker:
+          /assesses an assigned task with one provider call, stores the facts of that call, and never touches the task/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /I3: an agent_run fact carries a payload key outside the minimised set/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /I3: an agent_run fact carries an outcome outside the three-valued contract/,
+      },
+    ],
+    caveat:
+      "Advisory does not mean harmless to read: a summary or proposed step can carry prompt-injected text, and any future reader that acts on it inherits that risk; nothing in Phase 1D acts on it. Task and agent text is sent to the provider, whose abuse-monitoring retention applies despite store: false; only synthetic data may reach a live provider until the processor question (BASELINE Q8) is decided.",
+  },
+  {
+    id: "SI-33",
+    statement:
+      "Model provider credentials are backend-only: no VITE_-prefixed provider variable exists in tracked build inputs or the build, no provider key shape reaches the build, the model and handler layers never read the process environment, provider strings that echo the key are dropped and errors surface as fixed messages, and CI needs no provider key.",
+    provenBy: ["static guard", "unit test"],
+    enforcedBy: [
+      {
+        file: "scripts/scan-build-artifacts.mjs",
+        marker: /browser-model-provider-variable/,
+      },
+      {
+        file: "scripts/test/scan-build-artifacts.test.mjs",
+        marker:
+          /refuses a VITE_ model provider variable however a build spells it/,
+      },
+      {
+        file: "scripts/test/scan-build-artifacts.test.mjs",
+        marker: /catches an OpenAI API key under each of its prefixes/,
+      },
+      {
+        file: "engine/models/providerSecretsBoundary.test.ts",
+        marker: /holds for every build input in the repository/,
+      },
+      {
+        file: "engine/models/providerSecretsBoundary.test.ts",
+        marker:
+          /holds for every file under engine\/models and engine\/handlers/,
+      },
+      {
+        file: "engine/models/openaiResponses.test.ts",
+        marker:
+          /drops an id or model that echoes the key, even when it is well formed/,
+      },
+      {
+        file: "engine/models/routingConfig.test.ts",
+        marker:
+          /refuses any other provider, including the test-only fake, without echoing the value/,
+      },
+    ],
+    caveat:
+      "The build scan reads names through source maps: without them, a provider value that is not key-shaped could ship under a VITE_ name with no finding. The older assigned-server-secret rule still misses prefixed and JSON-quoted forms of its existing names. Providers other than OpenAI and Anthropic are not named. Nothing inspects the worker's runtime environment or a person running the smoke command with a live key.",
+  },
+  {
+    id: "SI-34",
+    statement:
+      "Agent run lineage cannot be chosen by a caller or a model: correlation is generated or inherited by the database, causation is derived from the run's own lifecycle facts, and an idempotency key is tenant-scoped data that returns the same run for the same request and refuses a different one.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /A4: ops\.request_agent_run takes lineage from its caller/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /G4: a retry did not inherit its parent/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /G6: two independent requests share a correlation/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /F1: replaying the same request returned another run/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /F4: the same key in tenant B returned tenant A/,
+      },
+      {
+        file: "engine/domain/agentRuns.dbtest.ts",
+        marker:
+          /resolves two concurrent requests with one key to one run and one job, the second waiting for the first to commit/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker: /N14a: agent_run\.started was caused by/,
+      },
+      {
+        file: "engine/domain/agentRuns.test.ts",
+        marker:
+          /never forwards lineage or a tenant smuggled onto the context or the input/,
+      },
+    ],
+    caveat:
+      "The Phase 1C owner services still accept a caller-declared correlation_id for their own lifecycle events (ADR 0016 §5 residual); agent run facts never read it. An idempotency key is not a secret and grants nothing: it names a request inside one tenant.",
   },
 ];
 
