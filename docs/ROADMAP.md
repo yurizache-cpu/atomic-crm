@@ -266,7 +266,7 @@ Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003
 
 ## Status update 2026-09-14
 
-**Phase 1D — agent runtime, model router and the first model call — built and committed on 2026-09-16, but not yet pushed, so not yet verified by CI. ADR 0016 was accepted by the owner on 2026-09-16, with an amendment.** This is the smallest slice of *Phase 4 — Agent runtime*: one agent calls a model **once**, about **one** task it is assigned, and nothing follows from what it says. See [PHASE_1D_REPORT.md](PHASE_1D_REPORT.md) and [ADR 0016](adr/0016-agent-runs-and-model-providers.md) (Accepted 2026-09-16: ambiguous provider outcomes, a 5xx included, are `indeterminate`).
+**Phase 1D — agent runtime, model router and the first model call — built and committed on 2026-09-16. Not yet verified by CI: the first run (35125528392 on `0a4bcfec`) failed two Phase 1D test-surface checks, fixed in a commit awaiting the owner's push. ADR 0016 was accepted by the owner on 2026-09-16, with an amendment.** This is the smallest slice of *Phase 4 — Agent runtime*: one agent calls a model **once**, about **one** task it is assigned, and nothing follows from what it says. See [PHASE_1D_REPORT.md](PHASE_1D_REPORT.md) and [ADR 0016](adr/0016-agent-runs-and-model-providers.md) (Accepted 2026-09-16: ambiguous provider outcomes, a 5xx included, are `indeterminate`).
 
 **Built:**
 - **Runs:** `ops.agent_runs`, with a six-edge state machine in which `indeterminate` is a state, and a retry is always a new run with lineage.
@@ -283,4 +283,4 @@ Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003
 - No `tool_invocations`, typed tool registry, memory, budgets, spend ceiling, UI switch or CRM access.
 - The `CRMProvider` ordering note still applies before any agent reads CRM data.
 
-**Next:** CI verification of the pushed commits, and the owner's review of the report's classification. The next major milestone is decided in a separate roadmap review, aimed at a real, testable clinic flow. The report's §28 is a list of proposed follow-up work, not an accepted phase.
+**Next:** CI verification after the owner pushes the CI-fix commit, and the owner's review of the report's classification. The next major milestone is decided in a separate roadmap review, aimed at a real, testable clinic flow. The report's §28 is a list of proposed follow-up work, not an accepted phase.

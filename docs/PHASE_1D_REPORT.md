@@ -2,9 +2,9 @@
 
 ## Agent runtime, model router and the first model call
 
-**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction; not yet pushed): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; `009cd862` documentation; and the ADR 0016 owner-review amendment commit that carries this revision of the report (`git log 60cbc2b5..HEAD`).
+**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; `009cd862` documentation; `0a4bcfec` the ADR 0016 owner-review amendment (pushed, CI run 35125528392); and the CI-fix commit that carries this revision of the report, not yet pushed (`git log 60cbc2b5..HEAD`).
 
-**CI:** **PENDING PUSH.** The commits are local; the owner pushes, and no CI run covers Phase 1D until then. Every result below was measured locally on Windows 11 against the isolated e2e stack (`atomic-crm-e2e`, loopback only).
+**CI:** **NOT YET VERIFIED.** The first run, [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) on `0a4bcfec` (2026-09-16), failed two checks that Phase 1D introduced. Both are defects in Phase 1D's test surface, not in the runtime, and both are fixed in the CI-fix commit, which awaits the owner's push (§25). Everything else in that run was green. `e2e-test` and Prettier were red, identical to the baseline [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824). Unless §25 says otherwise, every result below was measured locally on Windows 11 against the isolated e2e stack (`atomic-crm-e2e`, loopback only).
 
 Phase 1D lets one agent call a language model **once**, about **one** task it is assigned, and nothing follows from what the model says. There are no tools, Tool Gateway, MCP, memory, retrieval, multiple agents, loops, autonomous triggers, approvals, UI, CRM reads or writes, or clinical data. [ADR 0016](adr/0016-agent-runs-and-model-providers.md) records every decision and the alternatives rejected. The minimal kill switch discharges part of [ADR 0010](adr/0010-cost-control-and-kill-switch.md), whose addendum maps it part by part. SI-28 to SI-34 in [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) are the properties that must now hold; SI-21 and SI-24 were restated.
 
@@ -570,7 +570,7 @@ Resets during the phase:
 | --- | --- |
 | `npm run build` | exit 0 |
 | `npm run scan:build` | 18 text files, **0 blocking, 0 advisory** |
-| `npm run check:production-scope` | OK: 5 reviewed functions, reviewed dependencies only, no generic SQL endpoint, no development seed on a remote path |
+| `npm run check:production-scope` | OK: 5 reviewed functions, reviewed dependencies only, no generic SQL endpoint, no development seed on a remote path. **Corrected 2026-09-16:** this OK was measured while the Phase 1D files were still untracked, and the guard reads tracked files only. Once committed, `engine/cli/agentRunSmoke.ts` failed it twice (§25). After the fix it is OK on the committed tree. |
 | `node scripts/dev-signing-key.mjs` | development signing key confined to local tooling |
 | `npm run typecheck` | exit 0 (covers `engine/`) |
 | `npm run lint` | exit 0, **0 errors**. Its 64 warnings are all unused-disable directives inside the stale, git-excluded `.claude/worktrees/loving-mendel-123ece` copy, none in the repository's own files. |
@@ -581,7 +581,51 @@ Resets during the phase:
 
 ## 25. CI status
 
-**Pending the owner's push.** The four Phase 1D commits and the ADR 0016 owner-review commit are local on `feature/clinical-phase-1`; pushing them runs `check.yml`. Expected pre-existing reds, unrelated to Phase 1D: `e2e-test` and Prettier, as on every run since the Phase 1C baseline.
+**NOT YET VERIFIED.** The owner pushed the four Phase 1D commits and the owner-review commit. [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) of `✅ Check` (push, attempt 1) ran on `0a4bcfeced85cba1db6d22536fa99ab10cb2ffa8` on 2026-09-16, starting 17:00 UTC, and failed on two new checks. The baseline is [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca`.
+
+| Job / step | Result on `0a4bcfec` | Classification |
+| --- | --- | --- |
+| 🔨 Build, including 🔒 No secrets in the production build | green; the scan found 16 text files, 0 blocking, 0 advisory | — |
+| 🏷️ Typecheck | green | — |
+| 🔬 ESLint | green | — |
+| Prettier (lint-action check) | red: 2 files, `sampleCsv.test.ts` and `canAccess.test.ts` | **Historical**, identical to the baseline; Phase 1D touches neither |
+| e2e-test, "Run Playwright tests" | red: 9 failed, 1 skipped (the same four specs on chromium and Mobile Chrome) | **Historical**, identical to the baseline: same tests, same count |
+| 🗄️ 🔒 RLS, tenant isolation and grant surface (`test:db`) | green: `agent_runtime.sql`, the Data API exposure probe and the other 8 suites, with both new migrations applied | — |
+| 🗄️ ⚙️ Worker runtime, pooling and concurrency (`test:db:engine`) | **red: 84 of 85 passed.** Among the passes were the crash and indeterminate cases, idempotency and kill-switch races, real SIGTERM and SIGKILL paths, and the lock-wait probes. | **New, blocking**, failure 2 below |
+| 🗄️ The migrations-only replay, the reference data without the development data, the clean reconstruction, `test:db` after the reset | **skipped** by the failure above | Not run in CI. The same four steps were replayed locally on the e2e stack on 2026-09-16, all green: a `--no-seed` reset, `referenceData.mjs --without-seed`, a seeded reset, then `test:db` 10/10 |
+| 🔎 Test, "Unit Tests on App" (`vitest` over all three projects) | **red: one failure.** The `functions` project ran in this step and passed, including security and migration invariants, the provider contract, the fake provider, the OpenAI adapter, the router, errors and the handler. | **New, blocking**, failure 1 below |
+| 🔎 Unit Tests on Supabase functions / on agent harness | **skipped** by the failure above; their tests had already run inside the previous step | — |
+
+**Failure 1: `scripts/test/production-scope.test.mjs`, "keeps the MCP function and the development seed out of every deployment path".**
+- **What failed:** rule `seed-file-reference` (SI-25), at `engine/cli/agentRunSmoke.ts` lines 13 and 260. A comment and a refusal message named the seed SQL file in prose; nothing reads it.
+- **Why local validation missed it:** the guard reads git-tracked files only, and the Phase 1D files were untracked when it ran (§24).
+- **Fix:** both lines now say "the local development seed". The guard is unchanged.
+- **Proof:** `check:production-scope` is OK on the committed tree. The HEAD content of the file reproduces exactly CI's two violations in memory.
+
+**Failure 2: `engine/domain/agentRunRuntime.dbtest.ts`, "refuses to load the driver-backed fixture when OPS_WORKER_DATABASE_URL names another database".**
+- **What failed:** the case hard-coded `127.0.0.1:54322/postgres` as the other database. That is the other working copy's stack on this machine, but in CI it is the fixture's own database (`SUPABASE_DB_PORT` unset). So in CI the child legitimately loaded and exited 0. The guard itself was correct.
+- **Fix:** the case now derives two other databases from the fixture's own. One is the other of 54322/54342 on the same host and database; the other is the same server with another database name. For each it asserts the premise (a loopback database that is not the fixture's), then expects the refusal. The test timeout was raised to 45 s so the per-child timeout message fires first.
+- **Proof:**
+  - A no-connection simulation of CI's environment reproduces the old failure (exit 0) and shows both derived databases refused.
+  - Five mutations were checked:
+    - removing the fixture's check: caught;
+    - skipping the admin/worker comparison: caught;
+    - ignoring the database name in the comparison: caught by the premise;
+    - ignoring the port: caught by the premise;
+    - putting the fixed 54322 address back: fails loudly at the premise under CI's environment.
+  - Local `test:db:engine` passes 85/85.
+
+**Independent verification of the fixes:** three independent checks passed.
+- **CI-environment simulation and mutations:** as in the proof above.
+- **Guard integrity:** every guard that reads tracked files is green on the current tree, and no seed SQL mention remains outside the reviewed set.
+- **Divergences between Windows and CI:** a sweep found none beyond the two above. Its non-blocking notes: the timing-bounded driver and promptness cases already recorded in §27, all of which passed on ubuntu.
+
+**After the fix, locally on the committed tree:**
+- the unit command CI runs (`vitest` over all three projects, stale `.claude/worktrees` copy excluded) passes;
+- `test:db` 10/10 and `test:db:engine` 85/85;
+- typecheck, ESLint and Prettier on the changed files are clean.
+
+**Still needed for CI VERIFIED:** the owner pushes the CI-fix commit, and its run is green apart from the two historical reds.
 
 ## 26. ADR changes
 
@@ -606,7 +650,7 @@ Resets during the phase:
 9. **A shutdown that lands during prepare** records `indeterminate` for a call that never left the process: safe, pessimistic.
 10. **Unchanged from earlier phases:** SI-06 (edge functions as `service_role`), ADR 0008's registry publication scope, the stale `.claude/worktrees/` copy that breaks an unfiltered `claude` test run.
 
-11. **Nothing here has run in CI.** On Windows, `SIGKILL` is TerminateProcess and only the stdin stop channel runs; Linux CI exercises the real signals. Four timing-dependent driver cases can fail on a slow runner but cannot pass wrongly. The lock-wait probes need `pg_read_all_stats`, and the write-count proof needs `track_counts` (the default).
+11. **CI has run once, with two test-surface failures (§25).** On Windows, `SIGKILL` is TerminateProcess and only the stdin stop channel runs; Linux CI exercises the real signals. In run 35125528392, 84 of 85 driver cases passed on ubuntu, including the real SIGTERM and SIGKILL paths. Four timing-dependent driver cases can fail on a slow runner but cannot pass wrongly. The lock-wait probes need `pg_read_all_stats`, and the write-count proof needs `track_counts` (the default).
 12. **Waits after the lease re-check.** The `running` update and its event insert take foreign-key share locks after the check, so an owner session holding `ops.tenants` `FOR UPDATE` could still delay a start past it. The handler's time-left check still bounds the call itself.
 13. **The smoke's race.** A job enqueued between the smoke's empty-queue check and its lease would be answered by the smoke's provider. Fake mode is refused except against a database on this machine, which confines that race to local development data.
 14. **Driver test files exceed the size guideline:** `agentRunRuntime.dbtest.ts` is about 1 660 lines and `agentRuns.dbtest.ts` about 1 250, against an 800-line maximum. Split them by concern before they grow.
@@ -636,17 +680,19 @@ Resets during the phase:
 
 ## Classification
 
-# READY FOR PHASE 2A — pending CI
+# READY FOR NEXT PHASE — pending CI
+
+*(Reworded 2026-09-16: the next milestone is decided in a separate roadmap review, so this classification names no phase; §28's proposal is not accepted.)*
 
 **Why READY:**
 - Every Phase 1D deliverable exists and is proven.
-- Every final gate is green on a clean database: 10 SQL suites, 85 driver-backed cases, 1000 + 494 + 234 unit tests, typecheck, lint, build, secret scan, production scope, signing key, local exposure, and invariant sync.
+- Every final gate is green locally on a clean database and on the committed tree: 10 SQL suites, 85 driver-backed cases, 1000 + 494 + 234 unit tests, typecheck, lint, build, secret scan, production scope, signing key, local exposure, and invariant sync. The production-scope result holds only since the CI fix (§24, §25).
 - Every load-bearing guard was mutation-tested and caught by a named assertion. The survivors were closed, or are recorded as equivalent.
 - Four independent adversarial passes found no Critical or High finding, and every confirmed Medium and Low was fixed with a test that fails without it.
 - At most one provider call per run holds through real worker processes killed mid-call.
 
 **What this classification does NOT claim, and what must happen first:**
-1. **CI has not run.** The commits are local and not yet pushed. The first CI run must be green apart from the pre-existing `e2e-test` and Prettier reds before this reads "CI VERIFIED".
+1. **CI is not verified.** Run 35125528392 on `0a4bcfec` failed two new checks, both Phase 1D test-surface defects, now fixed (§25). The owner's push of the CI-fix commit must produce a run that is green apart from the pre-existing `e2e-test` and Prettier reds before this reads "CI VERIFIED".
 2. **ADR 0016 is Accepted** by the owner (2026-09-16), with the ambiguous-failure amendment. The ADR 0010 addendum is still unreviewed.
 3. **No live model call was made.** The OpenAI adapter is proven against its contract suite and a fake transport, not against the live API; no key exists here and none was requested.
 4. **BASELINE Q8 is open.** Until it is decided, only synthetic task text may reach a live provider (§27 item 1).

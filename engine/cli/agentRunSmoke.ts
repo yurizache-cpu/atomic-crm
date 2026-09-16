@@ -10,7 +10,7 @@
 // must never need a provider key. It exists as a package.json script and nothing
 // else calls it; CI relies on the driver-backed proofs in engine/domain/*.dbtest.ts.
 //
-// WHAT IT DOES. In the seeded `dev` tenant (supabase/seed.sql, local only), it
+// WHAT IT DOES. In the seeded `dev` tenant (the local development seed only), it
 // takes the first active department that has an active agent, creates a
 // synthetic office-operations task there, assigns it to that agent, requests one
 // task_assessment run under the key `smoke:<ISO timestamp>`, and runs the worker
@@ -257,7 +257,7 @@ async function requestSmokeRun(tx: TxClient, now: Date): Promise<SmokeRequest> {
       kind: "refused",
       error: "no_dev_agent",
       message:
-        "the dev tenant has no active department with an active agent; the local seed (supabase/seed.sql) creates one",
+        "the dev tenant has no active department with an active agent; the local development seed creates one",
     };
   }
 

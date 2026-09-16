@@ -71,6 +71,7 @@ import {
   workerDatabase,
 } from "../worker/testSupport/dbFixture.ts";
 import { testChildEnvironment } from "../worker/testSupport/childEnvironment.ts";
+import { loopbackDatabaseTarget } from "../worker/testSupport/localDatabase.ts";
 import {
   AGENT_RUN_STATUSES,
   AGENT_RUN_TRANSITIONS,
@@ -1605,44 +1606,63 @@ describe("the database a driver-backed worker may be pointed at", () => {
   // What the helper's unit tests cannot prove: that the shared fixture every
   // driver-backed suite imports actually applies the check, before it
   // provisions a role or opens a pool, when the production worker's variable
-  // names another database on this machine (the other working copy's stack).
+  // names another database on this machine: the other working copy's stack, or
+  // another database on the fixture's own server.
+  //
+  // Both are derived from the fixture's own database, never written as fixed
+  // addresses: CI's only stack listens on 54322, the port the other working copy
+  // uses here, so a fixed "other" address can be the fixture's own database.
   it("refuses to load the driver-backed fixture when OPS_WORKER_DATABASE_URL names another database", async () => {
     const fixture = new URL(
       "../worker/testSupport/dbFixture.ts",
       import.meta.url,
     ).href;
-    const child = spawn(
-      process.execPath,
-      [
-        "--input-type=module",
-        "-e",
-        `await import(${JSON.stringify(fixture)});`,
-      ],
-      {
-        env: testChildEnvironment(process.env, {
-          OPS_WORKER_DATABASE_URL:
-            "postgresql://ops_worker_login:dbtest-other-pw@127.0.0.1:54322/postgres",
-        }),
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let stderr = "";
-    child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-    const code = await withinMs(
-      new Promise<number | null>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("close", resolve);
-      }),
-      15_000,
-      "loading the fixture did not finish",
-    ).finally(() => child.kill("SIGKILL"));
+    const own = new URL(ADMIN_URL);
+    const otherPort = own.port === "54322" ? "54342" : "54322";
+    const others = [
+      `postgresql://ops_worker_login:dbtest-other-pw@${own.hostname}:${otherPort}${own.pathname}`,
+      `postgresql://ops_worker_login:dbtest-other-pw@${own.host}/dbtest_other_database`,
+    ];
+    for (const other of others) {
+      // The premise: a database on this machine, and not the fixture's.
+      expect(loopbackDatabaseTarget(other)).toBeDefined();
+      expect(loopbackDatabaseTarget(other)).not.toBe(
+        loopbackDatabaseTarget(ADMIN_URL),
+      );
 
-    expect(code).not.toBe(0);
-    expect(stderr).toMatch(
-      /OPS_WORKER_DATABASE_URL and ADMIN_DATABASE_URL name different databases/,
-    );
-    expect(stderr).not.toContain("dbtest-other-pw");
-  }, 30_000);
+      const child = spawn(
+        process.execPath,
+        [
+          "--input-type=module",
+          "-e",
+          `await import(${JSON.stringify(fixture)});`,
+        ],
+        {
+          env: testChildEnvironment(process.env, {
+            OPS_WORKER_DATABASE_URL: other,
+          }),
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let stderr = "";
+      child.stderr.on("data", (chunk) => (stderr += String(chunk)));
+      const code = await withinMs(
+        new Promise<number | null>((resolve, reject) => {
+          child.once("error", reject);
+          child.once("close", resolve);
+        }),
+        15_000,
+        "loading the fixture did not finish",
+      ).finally(() => child.kill("SIGKILL"));
+
+      expect(code).not.toBe(0);
+      expect(stderr).toMatch(
+        /OPS_WORKER_DATABASE_URL and ADMIN_DATABASE_URL name different databases/,
+      );
+      expect(stderr).not.toContain("dbtest-other-pw");
+    }
+    // Two children, each bounded at 15 s by withinMs, so that message fires first.
+  }, 45_000);
 });
 
 // ---------------------------------------------------------------------------
