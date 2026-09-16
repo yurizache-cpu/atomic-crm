@@ -2,9 +2,9 @@
 
 ## Agent runtime, model router and the first model call
 
-**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; `009cd862` documentation; `0a4bcfec` the ADR 0016 owner-review amendment (pushed, CI run 35125528392); and the CI-fix commit that carries this revision of the report, not yet pushed (`git log 60cbc2b5..HEAD`).
+**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; `009cd862` documentation; `0a4bcfec` the ADR 0016 owner-review amendment (CI run 35125528392); `c4382b9b` the CI fix (CI run 35129049291, verified); and the evidence commit that carries this revision of the report (`git log 60cbc2b5..HEAD`).
 
-**CI:** **NOT YET VERIFIED.** The first run, [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) on `0a4bcfec` (2026-09-16), failed two checks that Phase 1D introduced. Both are defects in Phase 1D's test surface, not in the runtime, and both are fixed in the CI-fix commit, which awaits the owner's push (§25). Everything else in that run was green. `e2e-test` and Prettier were red, identical to the baseline [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824). Unless §25 says otherwise, every result below was measured locally on Windows 11 against the isolated e2e stack (`atomic-crm-e2e`, loopback only).
+**CI:** **VERIFIED** — [run 35129049291](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35129049291) on `c4382b9b` (2026-09-16). Every check Phase 1D is responsible for is green: the database job, including the migrations-only replay and the clean reconstruction, the driver-backed suites 85/85, all three unit projects, typecheck, ESLint, the build and the secret scan. `e2e-test` and Prettier are red, identical to the baseline [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824). The first run, [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) on `0a4bcfec`, failed two Phase 1D test-surface checks; `c4382b9b` fixed both (§25). Unless §25 says otherwise, every other result below was measured locally on Windows 11 against the isolated e2e stack (`atomic-crm-e2e`, loopback only).
 
 Phase 1D lets one agent call a language model **once**, about **one** task it is assigned, and nothing follows from what the model says. There are no tools, Tool Gateway, MCP, memory, retrieval, multiple agents, loops, autonomous triggers, approvals, UI, CRM reads or writes, or clinical data. [ADR 0016](adr/0016-agent-runs-and-model-providers.md) records every decision and the alternatives rejected. The minimal kill switch discharges part of [ADR 0010](adr/0010-cost-control-and-kill-switch.md), whose addendum maps it part by part. SI-28 to SI-34 in [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md) are the properties that must now hold; SI-21 and SI-24 were restated.
 
@@ -581,7 +581,31 @@ Resets during the phase:
 
 ## 25. CI status
 
-**NOT YET VERIFIED.** The owner pushed the four Phase 1D commits and the owner-review commit. [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) of `✅ Check` (push, attempt 1) ran on `0a4bcfeced85cba1db6d22536fa99ab10cb2ffa8` on 2026-09-16, starting 17:00 UTC, and failed on two new checks. The baseline is [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca`.
+**CI VERIFIED.** Evidence: [run 35129049291](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35129049291) of `✅ Check` (push, attempt 1) on `c4382b9bb7868340679aeb9757bc20184e98a14d`, 2026-09-16 17:34–17:41 UTC. Every check Phase 1D is responsible for is green. The only red checks are the two pre-existing ones, each identical to the baseline [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca`. The run's overall conclusion is therefore `failure`, as the baseline's was. The criterion was: green, or red only on those two checks and unchanged. Results were read from the job logs.
+
+| Job / step | Result on `c4382b9b` |
+| --- | --- |
+| 🗄️ Start Supabase | green; applied every migration through `20260914120000_agent_runtime.sql` and `20260916120000_agent_run_ambiguous_provider_failures.sql` |
+| 🗄️ `test:db` | **10 of 10 suites passed**: `agent_runtime.sql`, `company_domain_core.sql`, `ops_execution_core.sql`, `owner_session_pool.sql`, `rls_tenant_isolation.sql`, `worker_tenant_context.sql`, `jobLeasingConcurrency.mjs`, `opsDataApiExposure.mjs` (the Data API `ops` probe), `ownerSessionPool.mjs`, `referenceData.mjs` |
+| 🗄️ `test:db:engine` | **6 files, 85 of 85 passed.** `agentRunRuntime.dbtest.ts` 23: crash and indeterminate cases through killed worker processes, real SIGTERM and SIGKILL, and the fixed fixture-refusal case. `agentRuns.dbtest.ts` 19: concurrent idempotent requests, kill-switch races, the stop CLI. Also `workerRuntime` 21, `companyOs` 10, `concurrency` 6, `pooling` 6. **Regression 2 closed.** |
+| 🗄️ Production-like replay (`db reset --no-seed`) | green, including both Phase 1D migrations and their end-state assertions |
+| 🗄️ Reference data without the development data | green ("reference data holds without the development data") |
+| 🗄️ Clean reconstruction, then `test:db` again | green, 10 of 10 |
+| 🔎 Unit Tests on App (`vitest`, all three projects) | **113 files, 1728 passed, 2 skipped.** Includes `scripts/test/production-scope.test.mjs` 39/39. **Regression 1 closed.** |
+| 🔎 Unit Tests on Supabase functions | **40 files, 1000 passed.** Includes `openaiResponses` 71, `providerContract` 18, `fakeModelProvider` 14, `router` 32, `errors` 18, `routingConfig` 10, `taskAssessment` 71, `outputContract` 5, `fingerprint` 7, `providerSecretsBoundary` 10, `agentRunExecute` 40, `runOneJob` 53, `securityInvariants` 41, `migrationInvariants` 131, `schemaReproducibility` 11. |
+| 🔎 Unit Tests on agent harness | 43 files, 494 passed, 1 skipped (`production-scope`, `dev-signing-key` and `scan-build-artifacts` included) |
+| 🏷️ Typecheck | green |
+| 🔬 ESLint | green |
+| 🔨 Build | green |
+| 🔒 No secrets in the production build | green: 16 text files, 0 blocking, 0 advisory |
+| Prettier (lint-action check) | red, 2 files: `sampleCsv.test.ts`, `canAccess.test.ts`. **Historical**, identical to the baseline |
+| e2e-test | red, 9 failed and 1 skipped: the same tests as the baseline (`adminAccountManagerFilter` ×2, `bulkContactTags`, `onboarding`, `userAddingATask`, on chromium and Mobile Chrome). **Historical**, identical |
+
+The commit that records this verification touches documentation only (this report, `CLAUDE.md`, `ROADMAP.md`, `DECISIONS.md`), so run 35129049291 does not cover it. Its own run is expected to show the same two red checks and nothing else. The last commit to change code or tests is `c4382b9b`, covered by the run above.
+
+### First run: [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) on `0a4bcfec`, failed
+
+The owner pushed the four Phase 1D commits and the owner-review commit. [run 35125528392](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35125528392) of `✅ Check` (push, attempt 1) ran on `0a4bcfeced85cba1db6d22536fa99ab10cb2ffa8` on 2026-09-16, starting 17:00 UTC, and failed on two new checks. The baseline is [run 34836911824](https://github.com/yurizache-cpu/atomic-crm/actions/runs/34836911824) on `a1f9bbca`.
 
 | Job / step | Result on `0a4bcfec` | Classification |
 | --- | --- | --- |
@@ -625,7 +649,7 @@ Resets during the phase:
 - `test:db` 10/10 and `test:db:engine` 85/85;
 - typecheck, ESLint and Prettier on the changed files are clean.
 
-**Still needed for CI VERIFIED:** the owner pushes the CI-fix commit, and its run is green apart from the two historical reds.
+**Outcome:** the owner pushed the CI-fix commit as `c4382b9b`, and run 35129049291 verified it (above).
 
 ## 26. ADR changes
 
@@ -650,7 +674,7 @@ Resets during the phase:
 9. **A shutdown that lands during prepare** records `indeterminate` for a call that never left the process: safe, pessimistic.
 10. **Unchanged from earlier phases:** SI-06 (edge functions as `service_role`), ADR 0008's registry publication scope, the stale `.claude/worktrees/` copy that breaks an unfiltered `claude` test run.
 
-11. **CI has run once, with two test-surface failures (§25).** On Windows, `SIGKILL` is TerminateProcess and only the stdin stop channel runs; Linux CI exercises the real signals. In run 35125528392, 84 of 85 driver cases passed on ubuntu, including the real SIGTERM and SIGKILL paths. Four timing-dependent driver cases can fail on a slow runner but cannot pass wrongly. The lock-wait probes need `pg_read_all_stats`, and the write-count proof needs `track_counts` (the default).
+11. **Windows and Linux differ, and CI covers the Linux side (§25).** On Windows, `SIGKILL` is TerminateProcess and only the stdin stop channel runs; Linux CI exercises the real signals. Run 35129049291 passed all 85 driver cases on ubuntu, including the real SIGTERM and SIGKILL paths. The first run failed two test-surface checks, fixed in `c4382b9b`. Four timing-dependent driver cases can fail on a slow runner but cannot pass wrongly. The lock-wait probes need `pg_read_all_stats`, and the write-count proof needs `track_counts` (the default).
 12. **Waits after the lease re-check.** The `running` update and its event insert take foreign-key share locks after the check, so an owner session holding `ops.tenants` `FOR UPDATE` could still delay a start past it. The handler's time-left check still bounds the call itself.
 13. **The smoke's race.** A job enqueued between the smoke's empty-queue check and its lease would be answered by the smoke's provider. Fake mode is refused except against a database on this machine, which confines that race to local development data.
 14. **Driver test files exceed the size guideline:** `agentRunRuntime.dbtest.ts` is about 1 660 lines and `agentRuns.dbtest.ts` about 1 250, against an 800-line maximum. Split them by concern before they grow.
@@ -680,7 +704,7 @@ Resets during the phase:
 
 ## Classification
 
-# READY FOR NEXT PHASE — pending CI
+# READY FOR NEXT PHASE — CI VERIFIED
 
 *(Reworded 2026-09-16: the next milestone is decided in a separate roadmap review, so this classification names no phase; §28's proposal is not accepted.)*
 
@@ -692,7 +716,7 @@ Resets during the phase:
 - At most one provider call per run holds through real worker processes killed mid-call.
 
 **What this classification does NOT claim, and what must happen first:**
-1. **CI is not verified.** Run 35125528392 on `0a4bcfec` failed two new checks, both Phase 1D test-surface defects, now fixed (§25). The owner's push of the CI-fix commit must produce a run that is green apart from the pre-existing `e2e-test` and Prettier reds before this reads "CI VERIFIED".
+1. **CI VERIFIED, and nothing more is claimed.** Run 35129049291 on `c4382b9b` is green on every Phase 1D check; `e2e-test` and Prettier are red, identical to the baseline (§25). The first run, 35125528392 on `0a4bcfec`, failed two Phase 1D test-surface checks, fixed in `c4382b9b`. The next milestone is not chosen here: it is decided in the separate roadmap review, and §28 is not accepted.
 2. **ADR 0016 is Accepted** by the owner (2026-09-16), with the ambiguous-failure amendment. The ADR 0010 addendum is still unreviewed.
 3. **No live model call was made.** The OpenAI adapter is proven against its contract suite and a fake transport, not against the live API; no key exists here and none was requested.
 4. **BASELINE Q8 is open.** Until it is decided, only synthetic task text may reach a live provider (§27 item 1).
