@@ -215,23 +215,38 @@ export function describeModelProviderContract(
       expect(agentRunStatusForCategory(error.category)).toBe("failed");
     });
 
+    // The recorded status is part of the contract (ADR 0016, owner review
+    // 2026-09-16): a refusal that proves the model never ran is a known
+    // failure; a server error or a lost connection is not.
     const failures: readonly (readonly [
       string,
       (harness: ProviderContractHarness) => ModelProvider,
       ModelErrorCategory,
+      "failed" | "indeterminate",
     ])[] = [
       [
         "an authentication failure",
         (h) => h.authenticationFailure(),
         "authentication",
+        "failed",
       ],
-      ["a rate limit", (h) => h.rateLimited(), "rate_limit"],
-      ["a provider server error", (h) => h.serverError(), "provider_5xx"],
-      ["a transport failure", (h) => h.transportFailure(), "transport"],
+      ["a rate limit", (h) => h.rateLimited(), "rate_limit", "failed"],
+      [
+        "a provider server error",
+        (h) => h.serverError(),
+        "provider_5xx",
+        "indeterminate",
+      ],
+      [
+        "a transport failure",
+        (h) => h.transportFailure(),
+        "transport",
+        "indeterminate",
+      ],
     ];
 
-    for (const [label, make, category] of failures) {
-      it(`reports ${label} as ${category}, without its secret or the prompt`, async () => {
+    for (const [label, make, category, status] of failures) {
+      it(`reports ${label} as ${category}, recorded ${status}, without its secret or the prompt`, async () => {
         const harness = makeHarness();
         const settlement = await settle(
           make(harness).execute(
@@ -239,9 +254,9 @@ export function describeModelProviderContract(
             new AbortController().signal,
           ),
         );
-        expect(
-          expectModelError(settlement, harness.secretSentinel).category,
-        ).toBe(category);
+        const error = expectModelError(settlement, harness.secretSentinel);
+        expect(error.category).toBe(category);
+        expect(agentRunStatusForCategory(error.category)).toBe(status);
       });
     }
 

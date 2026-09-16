@@ -666,6 +666,24 @@ describe("a failed call is recorded once, with what it cost", () => {
   });
 });
 
+describe("a provider server error is an ambiguous ending, never a known failure", () => {
+  it("records a provider server error as indeterminate, with what the call cost", async () => {
+    const { provider, handler, caps } = setup({
+      type: "fail",
+      category: "provider_5xx",
+      code: "http_503",
+    });
+    const { detail } = await runCycle(handler, caps);
+    expect(recordedFailure(caps)).toMatchObject({
+      category: "provider_5xx",
+      code: "http_503",
+    });
+    expect(detail).toContain("status=indeterminate");
+    expect(detail).toContain("category=provider_5xx");
+    expect(provider.calls).toHaveLength(1);
+  });
+});
+
 describe("the lease deadline and shutdown are recorded as different endings", () => {
   it("records an abort by the lease deadline as timeout, with code deadline", async () => {
     // The context runOneJob builds: shutdown combined with a deadline timer.

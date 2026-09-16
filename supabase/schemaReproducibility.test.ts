@@ -134,6 +134,7 @@ describe("declarative schema vs migrations", () => {
       "ops_worker_runtime",
       "company_domain_core",
       "agent_runtime",
+      "agent_run_ambiguous_provider_failures",
     ]) {
       const file = migrationFiles.find((f) => f.includes(name));
       expect(file, `missing migration: ${name}`).toBeDefined();

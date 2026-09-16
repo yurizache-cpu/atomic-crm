@@ -2470,7 +2470,7 @@ begin
       ('authentication', 'failed', 'authentication'),
       ('rate_limit', 'failed', 'rate_limit'),
       ('invalid_request', 'failed', 'invalid_request'),
-      ('provider_5xx', 'failed', 'provider_5xx'),
+      ('provider_5xx', 'indeterminate', 'provider_5xx'),
       ('invalid_response', 'failed', 'invalid_response'),
       ('schema_validation', 'failed', 'schema_validation'),
       ('timeout', 'indeterminate', 'timeout'),
@@ -3749,6 +3749,35 @@ begin
   end if;
 end
 $$;
+-- N15. A provider server error is an ambiguous outcome (ADR 0016, owner review
+--      2026-09-16): a 5xx does not prove the model never ran. The helper records it
+--      indeterminate, and not even a raw owner UPDATE can store it as a known failure
+--      that a person might retry believing no call was made.
+do $$
+declare
+  v_run uuid := pg_temp.raw_run_in('running', 'task_n');
+  v_err text;
+begin
+  perform set_config('app.event_source', 'ar1d-raw', true);
+  if ops.agent_run_error_status('provider_5xx') is distinct from 'indeterminate' then
+    raise exception 'N15a: ops.agent_run_error_status(provider_5xx) is %, not indeterminate',
+      coalesce(ops.agent_run_error_status('provider_5xx'), 'NULL');
+  end if;
+
+  perform pg_temp.expect_refused('N15b: a raw update recording a provider server error as a known failure', '23514',
+    format($q$update ops.agent_runs set status = 'failed', error_category = 'provider_5xx', error_code = 'http_503' where id = %L$q$,
+           v_run));
+
+  v_err := pg_temp.attempt(format(
+    $q$update ops.agent_runs set status = 'indeterminate', error_category = 'provider_5xx', error_code = 'http_503' where id = %L$q$,
+    v_run));
+  if v_err is not null or pg_temp.run_status(v_run) is distinct from 'indeterminate' then
+    raise exception 'N15c: the same raw update recording the server error as indeterminate was refused (%), so the refusal above proves nothing',
+      coalesce(v_err, pg_temp.run_status(v_run));
+  end if;
+end
+$$;
+
 select set_config('app.event_source', '', true);
 
 -- ===========================================================================

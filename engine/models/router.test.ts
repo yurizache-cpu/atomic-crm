@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { inspect } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ModelError } from "./errors.ts";
+import { agentRunStatusForCategory, ModelError } from "./errors.ts";
 import {
   createFakeModelProvider,
   type FakeBehavior,
@@ -492,6 +492,90 @@ describe("there is no retry and no fallback", () => {
       providerResponseId: "resp_ok",
       latencyMs: 0,
     });
+  });
+});
+
+describe("a provider that breaks its own contract is an ambiguous ending", () => {
+  const callWith = (execute: ModelProvider["execute"]) => {
+    const router = routerFor([
+      ["standard", { name: "fake", execute }, "configured-model"],
+    ]);
+    return failureOf(
+      router.executeStructured(
+        resolved(router, "standard"),
+        PROMPT,
+        taskAssessmentContract,
+        new AbortController().signal,
+      ),
+    );
+  };
+
+  it("records something other than a response as unknown and indeterminate", async () => {
+    for (const raw of [null, undefined, "text", 42, true]) {
+      const error = await callWith(
+        async () =>
+          raw as unknown as Awaited<ReturnType<ModelProvider["execute"]>>,
+      );
+      expect([error.category, error.code]).toEqual([
+        "unknown",
+        "provider_contract",
+      ]);
+      expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
+    }
+  });
+
+  it("records a response with no content as unknown, with what the call cost", async () => {
+    const error = await callWith(
+      async () =>
+        ({
+          provider: "fake",
+          model: "served-model",
+          finishReason: "completed",
+          usage: {
+            inputTokens: 12,
+            outputTokens: 3,
+            totalTokens: 15,
+            cachedInputTokens: null,
+            reasoningTokens: null,
+          },
+          providerRequestId: "req_1",
+          providerResponseId: "resp_1",
+          latencyMs: 40,
+        }) as unknown as Awaited<ReturnType<ModelProvider["execute"]>>,
+    );
+    expect(error).toMatchObject({
+      category: "unknown",
+      code: "provider_contract",
+      model: "served-model",
+      usage: { inputTokens: 12, outputTokens: 3, totalTokens: 15 },
+      providerRequestId: "req_1",
+      providerResponseId: "resp_1",
+      latencyMs: 40,
+    });
+    expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
+  });
+
+  it("still records present content that fails the contract as a known failure", async () => {
+    for (const content of [null, "prose", { outcome: "completed" }]) {
+      const error = await callWith(async () => ({
+        provider: "fake",
+        model: "served-model",
+        content,
+        finishReason: "completed",
+        usage: {
+          inputTokens: 1,
+          outputTokens: 1,
+          totalTokens: 2,
+          cachedInputTokens: null,
+          reasoningTokens: null,
+        },
+        providerRequestId: null,
+        providerResponseId: null,
+        latencyMs: 1,
+      }));
+      expect(error.category).toBe("schema_validation");
+      expect(agentRunStatusForCategory(error.category)).toBe("failed");
+    }
   });
 });
 

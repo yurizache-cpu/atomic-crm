@@ -129,19 +129,25 @@ const FINISH_REASON_PATTERN = /^[a-z][a-z0-9_]{0,39}$/;
  * field by field: the provider name is the configured one, and every
  * network-derived value is shape-checked again. A provider adapter already does
  * this; the router does not assume every future adapter will.
+ *
+ * A provider that resolves something other than a response, or a response with
+ * no content at all, has broken its own contract after the request may have
+ * left. Nothing proves what the model did, so it is "unknown" (indeterminate),
+ * never a known failure. Content that is present but wrong is a known answer,
+ * and the contract check below records it as schema_validation.
  */
 const normalizeResponse = (
   resolved: ResolvedModelRoute,
   raw: unknown,
 ): ModelResponse => {
   if (typeof raw !== "object" || raw === null) {
-    throw new ModelError("invalid_response", {
+    throw new ModelError("unknown", {
       code: "provider_contract",
       model: resolved.model,
     });
   }
   const response = raw as Partial<Record<keyof ModelResponse, unknown>>;
-  return {
+  const normalized: ModelResponse = {
     provider: resolved.provider,
     model: isModelId(response.model) ? response.model : resolved.model,
     content: response.content,
@@ -159,6 +165,17 @@ const normalizeResponse = (
       : null,
     latencyMs: normalizeLatencyMs(response.latencyMs) ?? 0,
   };
+  if (normalized.content === undefined) {
+    throw new ModelError("unknown", {
+      code: "provider_contract",
+      usage: normalized.usage,
+      providerRequestId: normalized.providerRequestId,
+      providerResponseId: normalized.providerResponseId,
+      model: normalized.model,
+      latencyMs: normalized.latencyMs,
+    });
+  }
+  return normalized;
 };
 
 /**

@@ -39,22 +39,28 @@ describe("the category list is closed and ordered", () => {
 describe("a run's recorded status follows whether the end of the call is known", () => {
   // This table is what ops.agent_run_error_status() must mirror. A category
   // moved from indeterminate to failed invites a re-issue of a paid call that
-  // may already have been processed.
+  // may already have been processed. The literal lists are the oracle (ADR 0016,
+  // owner review 2026-09-16): failed only when the provider was never called or
+  // its answer settles the outcome.
   const FAILED: readonly ModelErrorCategory[] = [
     "configuration",
     "authentication",
     "rate_limit",
     "invalid_request",
-    "provider_5xx",
     "invalid_response",
     "schema_validation",
   ];
   const INDETERMINATE: readonly ModelErrorCategory[] = [
     "timeout",
     "transport",
+    "provider_5xx",
     "cancelled",
     "unknown",
   ];
+
+  it("records a provider server error as indeterminate, because a 5xx proves nothing about whether the model ran", () => {
+    expect(agentRunStatusForCategory("provider_5xx")).toBe("indeterminate");
+  });
 
   it("records a call that was answered or provably refused as failed", () => {
     for (const category of FAILED) {

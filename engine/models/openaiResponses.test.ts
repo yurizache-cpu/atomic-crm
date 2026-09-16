@@ -1,8 +1,13 @@
 // @vitest-environment node
 import { inspect } from "node:util";
 import { describe, expect, it } from "vitest";
-import { ModelError, type ModelErrorCategory } from "./errors.ts";
 import {
+  agentRunStatusForCategory,
+  ModelError,
+  type ModelErrorCategory,
+} from "./errors.ts";
+import {
+  categoryForHttpStatus,
   createOpenAiResponsesProvider,
   OPENAI_RESPONSES_URL,
 } from "./openaiResponses.ts";
@@ -346,7 +351,7 @@ describe("a successful response is reduced to shape-checked fields", () => {
   });
 });
 
-describe("an unusable 200 is invalid_response and carries what the call cost", () => {
+describe("a 200 the adapter cannot use is reported with what the call cost", () => {
   const cases: readonly (readonly [string, Record<string, unknown>, string])[] =
     [
       [
@@ -430,12 +435,6 @@ describe("an unusable 200 is invalid_response and carries what the call cost", (
         },
         "response_failed",
       ],
-      [
-        "a status still in progress",
-        { status: "in_progress" },
-        "unexpected_status",
-      ],
-      ["no status", { status: undefined }, "unexpected_status"],
     ];
 
   for (const [label, overrides, code] of cases) {
@@ -487,7 +486,7 @@ describe("an unusable 200 is invalid_response and carries what the call cost", (
     );
   });
 
-  it("maps a failed response's server and rate-limit errors to their own categories", async () => {
+  it("maps a complete, terminal failed response to a known failure: a server error as invalid_response, a rate limit as rate_limit", async () => {
     const server = await failureOf(
       run(() =>
         jsonResponse(
@@ -497,9 +496,10 @@ describe("an unusable 200 is invalid_response and carries what the call cost", (
       ),
     );
     expect(server).toMatchObject({
-      category: "provider_5xx",
+      category: "invalid_response",
       code: "server_error",
     });
+    expect(agentRunStatusForCategory(server.category)).toBe("failed");
     expect(server.usage).not.toBeNull();
 
     const limited = await failureOf(
@@ -530,7 +530,7 @@ describe("an unusable 200 is invalid_response and carries what the call cost", (
       ),
     );
     expect(error).toMatchObject({
-      category: "invalid_response",
+      category: "unknown",
       code: "json_parse",
       providerRequestId: "req_html",
       usage: null,
@@ -542,10 +542,39 @@ describe("an unusable 200 is invalid_response and carries what the call cost", (
       run(() => jsonResponse(200, [completedBody()])),
     );
     expect(error).toMatchObject({
-      category: "invalid_response",
+      category: "unknown",
       code: "unexpected_status",
     });
   });
+});
+
+describe("a 200 that names no terminal status is unknown and carries what the call cost", () => {
+  // The provider has not said the model's run ended, so nobody can say how it
+  // ended: the run is indeterminate (ADR 0016, owner review 2026-09-16).
+  const cases: readonly (readonly [string, Record<string, unknown>])[] = [
+    ["a status still in progress", { status: "in_progress" }],
+    ["a queued status", { status: "queued" }],
+    ["no status", { status: undefined }],
+    ["a status nobody defined", { status: "paused" }],
+  ];
+
+  for (const [label, overrides] of cases) {
+    it(`reports ${label} as unexpected_status, recorded indeterminate`, async () => {
+      const error = await failureOf(
+        run(() => jsonResponse(200, completedBody(overrides))),
+      );
+      expect(error).toMatchObject({
+        category: "unknown",
+        code: "unexpected_status",
+        providerRequestId: "req_123",
+        providerResponseId: "resp_0123abc",
+        model: "gpt-test-2026-01-01",
+        latencyMs: 25,
+      });
+      expect(error.usage).toMatchObject({ inputTokens: 321, outputTokens: 45 });
+      expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
+    });
+  }
 });
 
 describe("HTTP failures are classified by status, never by message", () => {
@@ -556,11 +585,15 @@ describe("HTTP failures are classified by status, never by message", () => {
     [404, "configuration"],
     [408, "timeout"],
     [409, "unknown"],
+    [405, "unknown"],
+    [410, "unknown"],
     [413, "invalid_request"],
-    [418, "invalid_request"],
+    [418, "unknown"],
     [422, "invalid_request"],
     [429, "rate_limit"],
+    [499, "unknown"],
     [500, "provider_5xx"],
+    [501, "provider_5xx"],
     [502, "transport"],
     [503, "provider_5xx"],
     [504, "timeout"],
@@ -656,7 +689,7 @@ describe("an oversized body is refused", () => {
       ),
     );
     expect(error).toMatchObject({
-      category: "invalid_response",
+      category: "unknown",
       code: "response_too_large",
       providerRequestId: "req_big",
     });
@@ -681,7 +714,7 @@ describe("an oversized body is refused", () => {
       ),
     );
     expect(error).toMatchObject({
-      category: "invalid_response",
+      category: "unknown",
       code: "response_too_large",
     });
     expect(cancelled).toBe(true);
@@ -815,5 +848,136 @@ describe("cancellation and network failures", () => {
       code: "network",
       providerRequestId: "req_reset",
     });
+  });
+});
+
+describe("an ambiguous provider outcome is never recorded as a known failure", () => {
+  // ADR 0016, owner review 2026-09-16. A run may be recorded failed only when the
+  // provider was never called or its answer settles the outcome: a refusal that
+  // proves the model never ran, or a complete response we read. Anything that
+  // leaves open whether the model ran is indeterminate, so nobody retries a paid
+  // call believing it never happened.
+  const DEFINITIVE_REFUSALS: ReadonlyMap<number, ModelErrorCategory> = new Map([
+    [400, "invalid_request"],
+    [401, "authentication"],
+    [403, "authentication"],
+    [404, "configuration"],
+    [413, "invalid_request"],
+    [422, "invalid_request"],
+    [429, "rate_limit"],
+  ]);
+
+  it("classifies every HTTP status outside the definitive refusals as indeterminate", () => {
+    const knownFailures: number[] = [];
+    for (let status = 100; status <= 599; status += 1) {
+      if (status >= 200 && status <= 299) continue;
+      const category = categoryForHttpStatus(status);
+      if (agentRunStatusForCategory(category) !== "indeterminate") {
+        knownFailures.push(status);
+      }
+    }
+    expect(knownFailures).toEqual([...DEFINITIVE_REFUSALS.keys()]);
+  });
+
+  it("records a complete, terminal answer it cannot use as a known failure", async () => {
+    for (const overrides of [
+      { output: messageOutput("not json at all") },
+      {
+        status: "incomplete",
+        incomplete_details: { reason: "max_output_tokens" },
+      },
+      { status: "failed", error: { code: "server_error" } },
+      { status: "failed", error: { code: "rate_limit_exceeded" } },
+    ]) {
+      const error = await failureOf(
+        run(() => jsonResponse(200, completedBody(overrides))),
+      );
+      expect(agentRunStatusForCategory(error.category)).toBe("failed");
+    }
+  });
+
+  it("classifies each definitive refusal as its own known failure", () => {
+    for (const [status, category] of DEFINITIVE_REFUSALS) {
+      expect(categoryForHttpStatus(status)).toBe(category);
+      expect(agentRunStatusForCategory(category)).toBe("failed");
+    }
+  });
+
+  it("records a server or gateway error, a lost connection, a broken body, an abort in flight and an unreadable or unfinished answer as indeterminate", async () => {
+    const outcomes: ModelError[] = [];
+    for (const status of [500, 502, 503, 504]) {
+      outcomes.push(
+        await failureOf(
+          run((request) => jsonResponse(status, errorBodyEchoing(request))),
+        ),
+      );
+    }
+    outcomes.push(
+      await failureOf(
+        run(() => {
+          throw new TypeError("socket closed after the request was written");
+        }),
+      ),
+    );
+    const broken = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error("connection reset mid-body"));
+      },
+    });
+    outcomes.push(
+      await failureOf(run(() => new Response(broken, { status: 200 }))),
+    );
+    const { provider } = adapter(hangUntilAborted);
+    const controller = new AbortController();
+    const pending = provider.execute(REQUEST, controller.signal);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    controller.abort();
+    outcomes.push(await failureOf(pending));
+    outcomes.push(
+      await failureOf(
+        run(() => jsonResponse(200, completedBody({ status: "in_progress" }))),
+      ),
+    );
+    outcomes.push(
+      await failureOf(
+        run(() => new Response("<html>gateway</html>", { status: 200 })),
+      ),
+    );
+    outcomes.push(
+      await failureOf(
+        run(() => jsonResponse(200, completedBody()), { maxResponseBytes: 16 }),
+      ),
+    );
+
+    expect(outcomes.map((error) => error.category)).toEqual([
+      "provider_5xx",
+      "transport",
+      "provider_5xx",
+      "timeout",
+      "transport",
+      "transport",
+      "cancelled",
+      "unknown",
+      "unknown",
+      "unknown",
+    ]);
+    for (const error of outcomes) {
+      expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
+    }
+  });
+
+  it("records a failure nobody classified, after the request left, as unknown and indeterminate", async () => {
+    // The fetch resolves, so the request was sent, but with something that is
+    // not a Response. What breaks next escapes every mapping above and reaches
+    // the adapter's last-resort catch, which must never name a known failure.
+    const { provider, requests } = adapter(
+      () => ({ ok: true, status: 200 }) as unknown as Response,
+    );
+    const error = await failureOf(
+      provider.execute(REQUEST, new AbortController().signal),
+    );
+    expect(requests).toHaveLength(1);
+    expect(error).toMatchObject({ category: "unknown", code: null });
+    expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
   });
 });

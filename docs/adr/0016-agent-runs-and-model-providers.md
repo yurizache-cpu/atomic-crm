@@ -1,7 +1,7 @@
 # ADR 0016 — Agent runs: one bounded model call, at most once, behind a provider boundary
 
-**Status:** Proposed · **Date:** 2026-09-14
-**Implemented by:** `supabase/migrations/20260914120000_agent_runtime.sql`, `engine/models/`, `engine/handlers/agentRunExecute.ts`, the `external_call` handler shape in `engine/worker/`, `engine/domain/agentRuns.ts`, `engine/domain/executionStops.ts`, `engine/cli/executionStop.ts`
+**Status:** Accepted (2026-09-16, owner review, with the amendment recorded at the end) · **Date:** 2026-09-14
+**Implemented by:** `supabase/migrations/20260914120000_agent_runtime.sql` and `20260916120000_agent_run_ambiguous_provider_failures.sql`, `engine/models/`, `engine/handlers/agentRunExecute.ts`, the `external_call` handler shape in `engine/worker/`, `engine/domain/agentRuns.ts`, `engine/domain/executionStops.ts`, `engine/cli/executionStop.ts`
 
 ## Context
 
@@ -11,7 +11,7 @@ Five facts shaped every decision below. Each was measured or read from source on
 
 1. **A model call cannot be made idempotent by the provider.** The OpenAI Responses API declares no idempotency header for `POST /responses`; the only `Idempotency-Key` in its OpenAPI spec belongs to an unrelated endpoint. A request whose answer never reached us may still have run and been billed.
 2. **The worker's execution transaction wraps the handler.** Since Phase 1B, TX2 resumes the lease, runs the handler and completes the job in one transaction ([ADR 0012](0012-worker-tenant-context.md), Phase 1B addendum). Holding it open across a network call pins a pooled connection for the length of the call, and a rollback there discards the record of a call that already happened.
-3. **The official OpenAI SDK retries by itself.** openai-node retries 408, 409, 429 and every status of 500 or above, twice by default. An adapter built on it would re-issue paid requests without the runtime knowing.
+3. **The official OpenAI SDK retries by default.** openai-node retries connection errors, timed-out requests, 408, 409, 429 and every status of 500 or above, twice unless told otherwise; `maxRetries: 0`, per client or per request, turns that off. An adapter that kept the default would re-issue paid requests without the runtime knowing, so zero retries has to be explicit wherever a request is made. *(Corrected 2026-09-16, owner review, and checked that day against the openai-node README: an earlier wording implied the SDK could not be used without retries.)*
 4. **The tenant boundary is the lease** ([ADR 0012](0012-worker-tenant-context.md)). A job's payload is the untrusted surface, and from this phase model output is too.
 5. **No kill switch existed.** [ADR 0010](0010-cost-control-and-kill-switch.md) and ROADMAP sequencing rule 3 require one before any agent runs. The owner decided on 2026-09-14 to build its minimal agent-run form in this phase.
 
@@ -41,11 +41,31 @@ pending ──► running ──► succeeded
 
 | Status | Categories |
 | --- | --- |
-| `failed` | `configuration`, `authentication`, `rate_limit`, `invalid_request`, `provider_5xx`, `invalid_response`, `schema_validation`, `job_failed` |
-| `indeterminate` | `timeout`, `transport`, `cancelled`, `unknown`, `interrupted` |
+| `failed` | `configuration`, `authentication`, `rate_limit`, `invalid_request`, `invalid_response`, `schema_validation`, `job_failed` |
+| `indeterminate` | `timeout`, `transport`, `provider_5xx`, `cancelled`, `unknown`, `interrupted` |
 | `cancelled` | `refused` |
 
-HTTP 502 maps to `transport` and 504 to `timeout`, because a gateway error says nothing about whether the model ran. 500 and 503 are the provider saying it did not complete.
+**The evidence decides the status** *(amended 2026-09-16, owner review)*. `failed` means the outcome is known. `indeterminate` means a model call may have happened and nobody can say how it ended.
+
+| Evidence | What produces it | Category | Status |
+| --- | --- | --- | --- |
+| **A.** The provider was never called | no configured route or key | `configuration` | `failed` |
+| | a run whose job ended before it started | `job_failed` | `failed` |
+| **B.** The provider answered, and the answer settles the outcome | a refusal that proves the model never ran: HTTP 400, 413, 422 | `invalid_request` | `failed` |
+| | HTTP 401, 403 | `authentication` | `failed` |
+| | HTTP 404 | `configuration` | `failed` |
+| | HTTP 429 | `rate_limit` | `failed` |
+| | a 200 whose body names a terminal status: `completed` with unusable output, `incomplete`, or `failed` | `invalid_response` (`rate_limit` for a terminal rate-limit failure) | `failed` |
+| | output that fails the contract | `schema_validation` | `failed` |
+| **C.** The model may have run, and completion is uncertain | every 5xx other than 502 and 504 | `provider_5xx` | `indeterminate` |
+| | HTTP 502; a redirect, which is refused rather than followed; a connection lost before or after the request was sent; a body broken mid-read | `transport` | `indeterminate` |
+| | HTTP 408 and 504; the route or lease deadline, including a call the runtime never starts because its deadline has already passed | `timeout` | `indeterminate` |
+| | an abort while the request is in flight | `cancelled` | `indeterminate` |
+| | HTTP 409 and every status not listed above; a 200 whose body cannot be read (not JSON, over the byte cap) or names no terminal status; a provider that resolves no response, or a response with no content (`provider_contract`); a failure nobody classified | `unknown` | `indeterminate` |
+| | an attempt that died after the start | `interrupted` | `indeterminate` |
+| Refused by a gate or a stop before any call | | `refused` | `cancelled` |
+
+A status is never a known failure merely because it is an HTTP error. A 5xx does not prove the model did not run before the failure became visible. Two outcomes that are provably A are still recorded as indeterminate, because the runtime cannot always tell them from their in-flight twins: an abort before the request was sent (`cancelled`), and a call never started because its deadline had passed (`timeout`). Both errors are on the conservative side. Content that is present but fails the contract is a known answer, `schema_validation`; a provider that returns no content at all has broken its own contract, which proves nothing about the model, so it is `unknown`. The database owns the mapping (`ops.agent_run_error_status` and the table's CHECK), `engine/models/errors.ts` mirrors it, and a driver-backed test asserts that the two agree.
 
 ### 3. At most one model call per run
 
@@ -120,7 +140,11 @@ Each capability has one output contract. `task_assessment` returns `{outcome: co
 `ModelProvider.execute(request, signal)` returns a normalised response or rejects with a `ModelError` whose message is fixed text, never provider text. The domain, the run schema, the worker's tenancy, the events and the idempotency model know nothing about any provider. A new provider needs only an adapter that passes `engine/models/testSupport/providerContract.ts`, plus routing configuration.
 
 **One real adapter:** the OpenAI Responses API over native `fetch`.
-- No SDK: package installs are gated, and the SDK's built-in retries contradict §3.
+- **No SDK, by choice rather than necessity** *(reworded 2026-09-16, owner review)*. The official SDK can be configured for zero retries. The adapter uses `fetch` because:
+  - zero retries is explicit at the HTTP boundary, and correctness depends on no SDK default;
+  - the `external_call` runtime controls the whole request lifecycle: the deadline, the abort and the body read;
+  - the dependency surface is smaller, and new packages are gated;
+  - the exact request, the redirect policy, the body cap and the abort are directly testable.
 - `store: false`.
 - Strict JSON-schema output.
 - A byte-capped body read.
@@ -171,7 +195,7 @@ The settling transaction stores input, output, total, cached and reasoning token
 - **Hold TX2 open across the provider call.** Rejected: fact 2. A rollback forgets a paid call, and a lease expiring mid-call rolls it back and lets the job retry into a second call.
 - **Rely on provider idempotency.** Rejected: fact 1. None exists for Responses.
 - **Retry transient provider errors automatically.** Rejected: a timeout or a 502 does not tell us the call did not run. An explicit retry is a new run a caller chose.
-- **Use the official SDK.** Rejected: fact 3, plus the dependency gate. A fetch adapter keeps the whole request under test.
+- **Use the official SDK with `maxRetries: 0`.** Workable, and declined *(reworded 2026-09-16, owner review)*. Correctness would rest on an SDK default being overridden wherever a request is made. The `fetch` adapter instead keeps the retry policy, the exact request, the redirect policy, the body cap and the abort under direct test, with a smaller dependency surface.
 - **A second worker process or queue for model calls.** Rejected by the brief, and unnecessary: one handler shape suffices.
 - **Let the worker read the run from the payload.** Rejected: the payload is the untrusted surface (ADR 0012).
 - **SELECT grants for the worker on runs, tasks and agents.** Rejected: §6.
@@ -192,3 +216,23 @@ The settling transaction stores input, output, total, cached and reasoning token
   - The multi-tenant LGPD processor question (BASELINE Q8) is therefore live, not theoretical, and must be decided before a hosted tenant sends real task text.
 - **No tenant-facing reader of runs or events exists.** SI-26 still requires an opaque or tenant-scoped cursor before one does.
 - **ADR 0010 is partly implemented.** Its addendum records which parts.
+
+---
+
+## Owner review — 2026-09-16
+
+**Accepted**, with two amendments. Every other decision above stands as written.
+
+1. **Ambiguous provider outcomes are `indeterminate`.** As proposed, this ADR recorded `provider_5xx` as `failed`, reading HTTP 500 and 503 as the provider saying it did not complete. A 5xx does not prove that. The rule is now §2's evidence table: `failed` only when the provider was never called or its answer settles the outcome; `indeterminate` whenever the execution may have occurred and its completion cannot be proven; and never an automatic retry.
+   - **Database:** a forward migration, `20260916120000_agent_run_ambiguous_provider_failures.sql`, moves `provider_5xx` to `indeterminate` in `ops.agent_run_error_status` and in the `agent_runs_category_status_pair` CHECK. It asserts the complete mapping in the function and in the CHECK body Postgres stores. It stops with a clear message, instead of failing on the constraint, if a run is already recorded as a failed provider server error. `20260914120000` is not edited.
+   - **Adapter:** seven HTTP statuses are definitive refusals: 400, 401, 403, 404, 413, 422 and 429. Every other non-2xx status is indeterminate, and so is a 200 whose body cannot be read or names no terminal status. A 200 naming a terminal `failed` status is a known answer, so its server error is `invalid_response`, which is `failed`.
+   - **Router:** a provider that resolves something other than a response, or a response with no content, is `unknown` (`provider_contract`), with whatever usage it reported. Content that is present but fails the contract stays `schema_validation`.
+   - **Proof:**
+     - an exhaustive sweep of HTTP statuses 100–599;
+     - the provider contract suite, which now pins the recorded status;
+     - the router's contract-breach tests and the handler tests;
+     - the SQL suite: L3, and N15, in which not even a raw owner UPDATE can store a provider server error as `failed`;
+     - the driver-backed mirror of the two mappings.
+
+     PHASE_1D_REPORT §20 records the mutation results.
+2. **The SDK rationale is corrected** (fact 3, §8 and Alternatives). The official SDK can run with zero retries: by default it retries connection errors, timeouts, 408, 409, 429 and 5xx twice, and `maxRetries: 0` turns that off (openai-node README, checked 2026-09-16). The `fetch` adapter stays, for the reasons §8 now gives.

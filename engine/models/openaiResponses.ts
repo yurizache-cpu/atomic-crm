@@ -57,18 +57,29 @@ const asObject = (value: unknown): JsonObject | null =>
 const cancelled = () => new ModelError("cancelled", { code: "aborted" });
 
 /**
- * HTTP status -> category. Statuses not listed fall through by class: other
- * 5xx are the provider's failure, other 4xx are a request it refused. 408 and
- * 504 are timeouts and 502 a transport failure, because in each the request may
- * have been processed without an answer reaching us. 409 is a conflict this
- * request cannot cause and nobody has analysed, so it is `unknown`.
+ * HTTP status -> category. The question is whether the answer PROVES the model
+ * never ran (ADR 0016 §2, owner review 2026-09-16).
+ *
+ * Seven statuses are the provider's definitive refusal of the request before
+ * any model execution, and their categories record the run `failed`: our
+ * credentials (401, 403), a missing model or endpoint (404), a malformed or
+ * oversized request (400, 413, 422), and a rate or quota refusal (429).
+ *
+ * Every other non-2xx status leaves open whether the model ran, and its
+ * category records the run `indeterminate`: a request timeout (408), a
+ * conflict nobody analysed (409), a gateway failure (502) or timeout (504),
+ * any other server error, and any status not listed here at all. A status is
+ * never a known failure merely because it is an error.
  */
 const STATUS_CATEGORIES: ReadonlyMap<number, ModelErrorCategory> = new Map([
+  [400, "invalid_request"],
   [401, "authentication"],
   [403, "authentication"],
   [404, "configuration"],
   [408, "timeout"],
   [409, "unknown"],
+  [413, "invalid_request"],
+  [422, "invalid_request"],
   [429, "rate_limit"],
   [502, "transport"],
   [504, "timeout"],
@@ -77,10 +88,10 @@ const STATUS_CATEGORIES: ReadonlyMap<number, ModelErrorCategory> = new Map([
 export function categoryForHttpStatus(status: number): ModelErrorCategory {
   const listed = STATUS_CATEGORIES.get(status);
   if (listed) return listed;
+  // A server error proves nothing about whether the model ran before it failed.
   if (status >= 500) return "provider_5xx";
-  if (status >= 400) return "invalid_request";
-  // A non-ok status below 400 (a 3xx that reached us, say) is not an answer
-  // and not a refusal; nobody can say whether the request was processed.
+  // An unlisted 4xx, or a non-ok status below 400 (a 3xx that reached us, say),
+  // is one nobody analysed, so nobody can say the request was not processed.
   return "unknown";
 }
 
@@ -351,9 +362,14 @@ export function createOpenAiResponsesProvider(options: {
       });
     }
 
+    // A 200 is a KNOWN answer only once its body is read and names a terminal
+    // status: completed, incomplete or failed. Those are recorded as failed
+    // when unusable. A body that cannot be read, or that names no terminal
+    // status, leaves open whether the model finished, so it is `unknown`,
+    // recorded indeterminate (ADR 0016 §2, owner review 2026-09-16).
     const read = await readBody();
     if (read.kind === "too_large") {
-      throw new ModelError("invalid_response", {
+      throw new ModelError("unknown", {
         code: "response_too_large",
         providerRequestId,
         latencyMs: elapsed(),
@@ -361,7 +377,7 @@ export function createOpenAiResponsesProvider(options: {
     }
     const parsed = parseJson(read.text);
     if (!parsed.ok) {
-      throw new ModelError("invalid_response", {
+      throw new ModelError("unknown", {
         code: "json_parse",
         providerRequestId,
         latencyMs: elapsed(),
@@ -404,9 +420,11 @@ export function createOpenAiResponsesProvider(options: {
         );
       }
       case "failed": {
+        // A complete, terminal response: the provider reports how the model's
+        // run ended, so the outcome is known (B), unlike an HTTP 5xx (C).
         const failure = asObject(root.error)?.code;
         if (failure === "server_error") {
-          throw unusable("provider_5xx", "server_error");
+          throw unusable("invalid_response", "server_error");
         }
         if (failure === "rate_limit_exceeded") {
           throw unusable("rate_limit", "rate_limit_exceeded");
@@ -414,7 +432,9 @@ export function createOpenAiResponsesProvider(options: {
         throw unusable("invalid_response", "response_failed");
       }
       default:
-        throw unusable("invalid_response", "unexpected_status");
+        // No terminal status (in progress, queued, missing, or one nobody
+        // defined): the provider has not said the model's run ended.
+        throw unusable("unknown", "unexpected_status");
     }
 
     const output = extractOutputText(root.output);

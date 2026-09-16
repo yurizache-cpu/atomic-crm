@@ -65,7 +65,7 @@ export function provisionWorkerRole(): void {
 }
 
 /** The migration that must be applied for any of these suites to mean anything. */
-const REQUIRED_MIGRATION = "20260914120000";
+const REQUIRED_MIGRATION = "20260916120000";
 
 /**
  * Refuses to run against the wrong database.
@@ -87,7 +87,7 @@ export async function assertTargetDatabase(admin: Pool): Promise<void> {
   if (applied < REQUIRED_MIGRATION) {
     throw new Error(
       `Refusing to run: ${ADMIN_URL.replace(/:[^:@/]*@/, ":***@")} is at migration ${applied}, ` +
-        `but ${REQUIRED_MIGRATION} (the Phase 1D agent runtime) is required. ` +
+        `but ${REQUIRED_MIGRATION} (the Phase 1D agent runtime, with its owner-review amendment) is required. ` +
         "This is almost certainly the wrong stack — the isolated e2e stack is on port 54342 " +
         "(npx supabase start --workdir .supabase-e2e), and 54322 is the other working copy's " +
         "atomic-crm-demo. Set SUPABASE_DB_PORT.",

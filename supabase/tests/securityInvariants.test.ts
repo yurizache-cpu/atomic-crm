@@ -1110,6 +1110,24 @@ const INVARIANTS: Invariant[] = [
         marker: /agent run error categories map to the wrong status/,
       },
       {
+        // ADR 0016 owner review (2026-09-16): an ambiguous provider outcome,
+        // a 5xx included, is indeterminate in the database, the table and the
+        // adapter, and never a known failure.
+        file: "supabase/migrations/20260916120000_agent_run_ambiguous_provider_failures.sql",
+        marker:
+          /agent run error categories map to the wrong status after the owner review/,
+      },
+      {
+        file: "supabase/tests/agent_runtime.sql",
+        marker:
+          /N15b: a raw update recording a provider server error as a known failure/,
+      },
+      {
+        file: "engine/models/openaiResponses.test.ts",
+        marker:
+          /classifies every HTTP status outside the definitive refusals as indeterminate/,
+      },
+      {
         file: "supabase/tests/agent_runtime.sql",
         marker: /L4: a second start changed a running run/,
       },

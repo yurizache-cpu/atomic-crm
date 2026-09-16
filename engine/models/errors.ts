@@ -55,17 +55,26 @@ export const MODEL_ERROR_CATEGORIES: readonly ModelErrorCategory[] =
 export type AgentRunFailureStatus = "failed" | "indeterminate";
 
 /**
- * The split is "do we KNOW how the call ended?".
+ * The split is "do we KNOW how the call ended?" (ADR 0016 §2, owner review
+ * 2026-09-16). The evidence decides it:
  *
- * `failed`: the provider answered, or provably never accepted the request — a
- * refusal of our credentials, our quota, our request, its own server error, or
- * an answer we could read and reject. Retrying the RUN is a decision someone
- * can make with full information.
+ * A. The provider was never called: no route, no key. `failed`.
+ * B. The provider answered, and the answer settles the outcome: a refusal that
+ *    proves the model never ran (our credentials, our quota, a malformed
+ *    request, a missing model), or a complete response we read and could not
+ *    use. `failed`: retrying the RUN is a decision someone can make with full
+ *    information.
+ * C. The model may have run, and nobody can say how it ended: a server or
+ *    gateway error, a timeout, a lost connection or broken body, an abort in
+ *    flight, an answer we could not read or that names no terminal status, or
+ *    anything nobody classified. `indeterminate`: recording it as
+ *    `failed` would invite a re-issue of a paid call that may already have
+ *    happened. A 5xx is here, not in B: it proves nothing about whether the
+ *    model ran before the failure became visible.
  *
- * `indeterminate`: the request may have been processed, and billed, without us
- * seeing the answer — the connection dropped, the deadline passed, the worker
- * was stopped, or something nobody classified. Recording that as `failed` would
- * invite a re-issue of a paid call that may already have happened.
+ * `cancelled` also covers an abort before the request was sent, which is
+ * provably A; it is kept on the conservative side because the runtime cannot
+ * always tell the two apart.
  */
 const STATUS_BY_CATEGORY: Readonly<
   Record<ModelErrorCategory, AgentRunFailureStatus>
@@ -74,11 +83,11 @@ const STATUS_BY_CATEGORY: Readonly<
   authentication: "failed",
   rate_limit: "failed",
   invalid_request: "failed",
-  provider_5xx: "failed",
   invalid_response: "failed",
   schema_validation: "failed",
   timeout: "indeterminate",
   transport: "indeterminate",
+  provider_5xx: "indeterminate",
   cancelled: "indeterminate",
   unknown: "indeterminate",
 });

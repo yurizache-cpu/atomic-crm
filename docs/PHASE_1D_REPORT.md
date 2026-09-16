@@ -2,7 +2,7 @@
 
 ## Agent runtime, model router and the first model call
 
-**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction; not yet pushed): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; and the documentation commit that carries this report (`git log 60cbc2b5..HEAD`).
+**Date:** built 2026-09-14 · **Branch:** `feature/clinical-phase-1` · **Base:** `60cbc2b5` · **Commits** (2026-09-16, on the owner's instruction; not yet pushed): `58429b0a` database, domain and runtime; `0e5243f5` providers, router, handler and driver-backed proofs; `d846263b` security guards and invariants; `009cd862` documentation; and the ADR 0016 owner-review amendment commit that carries this revision of the report (`git log 60cbc2b5..HEAD`).
 
 **CI:** **PENDING PUSH.** The commits are local; the owner pushes, and no CI run covers Phase 1D until then. Every result below was measured locally on Windows 11 against the isolated e2e stack (`atomic-crm-e2e`, loopback only).
 
@@ -85,11 +85,13 @@ pending ──► running ──► succeeded
 
 | Status | Categories |
 | --- | --- |
-| `failed` | `configuration`, `authentication`, `rate_limit`, `invalid_request`, `provider_5xx`, `invalid_response`, `schema_validation`, `job_failed` |
-| `indeterminate` | `timeout`, `transport`, `cancelled`, `unknown`, `interrupted` |
+| `failed` | `configuration`, `authentication`, `rate_limit`, `invalid_request`, `invalid_response`, `schema_validation`, `job_failed` |
+| `indeterminate` | `timeout`, `transport`, `provider_5xx`, `cancelled`, `unknown`, `interrupted` |
 | `cancelled` | `refused` |
 
 An unrecognised category is stored as `unknown`, which is indeterminate. Codes the database assigns (`execution_stopped`, `execution_interrupted`, `database_contract`, `job_failed`, `job_ended_before_start`) are reserved: a worker-supplied one is dropped or replaced (N5).
+
+**Owner review (2026-09-16).** A run is `failed` only when the provider was never called, or its answer settles the outcome. Whenever the model may have run and its completion cannot be proven, the run is `indeterminate`, and a 5xx is such a case: `provider_5xx` moved from `failed` to `indeterminate` in a forward migration (`20260916120000_agent_run_ambiguous_provider_failures.sql`), in the function and in the table's CHECK. ADR 0016 §2 gives the full evidence table. The router follows the same rule: a provider that resolves no response, or a response with no content, is `unknown`. Proven by L3 and N15 (not even a raw owner UPDATE can store a provider server error as `failed`), by the driver-backed mirror, by the migration's own assertion over the stored CHECK body, and by the adapter's exhaustive status sweep (§20).
 
 **Proven:** H1 attempts every ordered pair of the six statuses with a raw UPDATE against a literal edge list; H2 checks the database helpers against the same list; the migration asserts the edges and the category map at apply time; a driver-backed test asserts the TypeScript mirror equals the database relation in both directions (§19).
 
@@ -195,12 +197,12 @@ The task is never changed by any step (L1, §19).
 
 **OpenAI Responses over native `fetch`** (`engine/models/openaiResponses.ts`).
 
-**SDK versus `fetch`, evaluated:**
-- The official SDK retries 408, 409, 429 and every 5xx twice by default, which would re-issue paid calls behind the runtime's back and contradict §6.
+**SDK versus `fetch`, evaluated** *(reworded 2026-09-16, owner review)*:
+- The official SDK retries connection errors, timeouts, 408, 409, 429 and 5xx twice by default (openai-node README, checked 2026-09-16). `maxRetries: 0` turns that off, per client or per request, so the SDK is usable; keeping `fetch` is a choice, not a necessity.
+- With `fetch`, zero retries is explicit at the HTTP boundary, and correctness depends on no SDK default.
+- The `external_call` runtime controls the whole request lifecycle: the deadline, the abort and the body read.
+- The exact request, the redirect policy, the body cap and the abort are directly testable, and the dependency surface is smaller; a new package would need the owner's dependency review.
 - `output_text` is an SDK convenience, not a wire field.
-- A new package needs the owner's dependency review.
-
-`fetch` keeps the whole request under test with no dependency.
 
 **Request:** `POST https://api.openai.com/v1/responses` with `model`, `instructions`, one `input` message, `text.format` as a strict named JSON schema, `max_output_tokens` and `store: false`. Nothing else: no tools, tool choice, reasoning request, metadata, stream or previous response id. A test pins the exact key set. The key travels only in the `Authorization` header; `redirect: "error"` keeps it from following a redirect.
 
@@ -209,9 +211,27 @@ The task is never changed by any step (L1, §19).
 - `output_text` parts are concatenated in order. A `reasoning` item is ignored. Any other output item is refused as `invalid_response`.
 - Ids come from `x-request-id` and the body; any provider string that contains the key is dropped.
 - Usage maps `input_tokens`, `output_tokens`, `total_tokens`, `input_tokens_details.cached_tokens` and `output_tokens_details.reasoning_tokens`.
-- An incomplete response is `invalid_response` with its reason as the code.
+- A 200 is a known answer only once its body is read and names a terminal status. The following are recorded `failed`:
+  - an unusable `completed` answer, which is `invalid_response`;
+  - an `incomplete` response, which is `invalid_response` with its reason as the code;
+  - a terminal `failed` response, which is `invalid_response`, or `rate_limit` for a rate-limit failure.
+- A 200 whose body is not JSON or is over the byte cap is `unknown` and recorded `indeterminate`. So is one that names no terminal status: `in_progress`, `queued`, no status, or one nobody defined.
 
-**Status mapping:** 401 and 403 `authentication`; 404 `configuration`; 408 and 504 `timeout`; 409 `unknown`; 429 `rate_limit`; 502 `transport`; other 5xx `provider_5xx`; other 4xx `invalid_request`. A 502 or 504 says nothing about whether the model ran, so those runs are indeterminate.
+**Status mapping** *(amended 2026-09-16, owner review):*
+
+| HTTP status | Category | Run status |
+| --- | --- | --- |
+| 400, 413, 422 | `invalid_request` | `failed` |
+| 401, 403 | `authentication` | `failed` |
+| 404 | `configuration` | `failed` |
+| 429 | `rate_limit` | `failed` |
+| 408, 504 | `timeout` | `indeterminate` |
+| 502 | `transport` | `indeterminate` |
+| every other 5xx | `provider_5xx` | `indeterminate` |
+| 409, and any other status | `unknown` | `indeterminate` |
+| a redirect (refused, never followed) | `transport` | `indeterminate` |
+
+Only the seven statuses in the first four rows are definitive refusals, which prove the model never ran. A status is never a known failure merely because it is an error, and a 5xx does not prove the model did not run. An exhaustive test checks every status from 100 to 599 against this rule.
 
 **Live smoke:** `npm run agent-runtime:smoke -- --live` builds the router from the environment and prints `{"skipped": …}` when no provider is configured. **No live call was made in Phase 1D:** no key exists on this machine, and none was requested.
 
@@ -413,6 +433,36 @@ Each implementer and reviewer broke its own guards one at a time and restored ea
 | Handler, boot gate, settle tokens (implementer + reviewer + final) | 27 | 27 |
 | Seam-review fixes: CLI connection phase, fixed `ModelError` message, live remaining time, recheck after start, no call past the deadline | 5 | 5 |
 
+### ADR 0016 owner-review amendment (2026-09-16)
+
+Same method: each TypeScript mutation was restored from a pristine copy and checked by sha256; each database mutation was restored by re-applying the migration in one transaction and checked against the `ops` fingerprint (`a500ce88…252f`, 61 functions, 25 triggers, 121 constraints, 10 policies). **22 mutations, 22 caught, no survivor.**
+
+| Mutation | Caught by |
+| --- | --- |
+| T1: `provider_5xx` → `failed` in `errors.ts` | 7 tests: the `errors.test.ts` 5xx case, the provider contract case for the fake and the adapter, the handler's 5xx case, the exhaustive status sweep |
+| T2: every status ≥ 500 → `invalid_request` | 10 tests, including the 500–599 status cases, the byte-cap case and the sweep |
+| T3: an unlisted 4xx → `invalid_request` (the old fall-through) | 5 tests: the 405/410/418/499 cases and the sweep |
+| T4: 503 listed as `invalid_request` | 4 tests, including the sweep (eight known-failure statuses where seven are expected) |
+| T5: 502 → `invalid_request` | 3 tests |
+| T6: a fetch rejection → `invalid_request` | 4 tests, including the adapter contract's transport case |
+| T7: a body broken mid-read → `invalid_response` | 2 tests |
+| T8: a 200 that is not JSON → `invalid_response` | 2 tests |
+| T9: a 200 over the byte cap → `invalid_response` | 3 tests |
+| T10: a 200 naming no terminal status → `invalid_response` | 6 tests: the four no-terminal-status cases, the not-an-object case, the ambiguous-outcome list |
+| T11: a terminal `failed` answer's server error → `provider_5xx` | 2 tests, including "records a complete, terminal answer it cannot use as a known failure" |
+| T12: `unknown` → `failed` in `errors.ts` | 7 tests |
+| The adapter's last-resort catch → `invalid_response` | **survived at first** (review finding 1); now "records a failure nobody classified, after the request left, as unknown and indeterminate" |
+| R1: the router records a non-response as `invalid_response` | "records something other than a response as unknown and indeterminate" |
+| R2: the router accepts a response with no content | "records a response with no content as unknown, with what the call cost" |
+| R3: the router records a response with no content as `invalid_response` | the same case |
+| R4: the router treats present `null` content as missing | "still records present content that fails the contract as a known failure", and the existing malformed-output case |
+| D1: the function maps `provider_5xx` → `failed` | `agent_runtime.sql` L3 (through the CHECK violation; with L3's row removed, N15a by name); the driver-backed mirror and the real-run case |
+| D2: the CHECK accepts `provider_5xx` in both branches | N15b, by name (`ACCEPTED, expected a refusal with SQLSTATE 23514`) |
+| D3: the CHECK drops `provider_5xx` from the indeterminate branch | L3 (through the CHECK violation; with L3's row removed, N15c by name) |
+| D4: the function and the CHECK back to the pre-amendment mapping | L3, by name |
+| The migration's own end state, over six mutated CHECK bodies (both branches, the old mapping, dropped from indeterminate, an extra failed category, no cancelled branch, a wrong cancelled category) | each refused by the migration's assertion; the reviewed body passes |
+| The migration's preflight, with a run already recorded `failed`/`provider_5xx` under the old CHECK | refused with its own message; a control run recorded `cancelled` passes |
+
 ## 21. Security and adversarial findings
 
 ### Migration review, before v2 (18 findings)
@@ -470,23 +520,43 @@ Four independent finders (at-most-once, tenancy, secrets, documentation claims) 
 | 6 | secrets | Worker logs name the database host and login role on connection failures. | Refuted | Neither is a credential; the project ref is public. Recorded for a future single logging policy. |
 | 8 | claims | Under an active stop, a run a worker refuses for a missing route is recorded `configuration`, not against the stop. | Refuted | The stop is read at request and at start, as documented; no call is possible. |
 
+### Owner review of ADR 0016 (2026-09-16)
+
+The amendment went through the mutation pass above and an adversarial review of the classification. **Verdict: PASS.** No path was found where an outcome that may have run is recorded `failed`.
+
+| # | Finding | Disposition |
+| --- | --- | --- |
+| 1 | The adapter's last-resort catch had no test. | **Fixed:** a test, mutation-checked. |
+| 2 | The router recorded a provider contract breach (not a response; no content) as `invalid_response`, a known failure. | **Fixed:** `unknown` / `provider_contract`, with what the call cost; three tests, four mutations caught. |
+| 3 | The migration asserted the function's mapping but not the CHECK body. | **Fixed:** the end state reads the stored CHECK body and checks every category's branch and each branch's size. |
+| 4 | An existing `failed`/`provider_5xx` row would make the new CHECK unaddable with a bare constraint error. | **Fixed:** a preflight stops with a clear message. None can exist outside a development database. |
+| 5 | Some provable-A outcomes (an abort before sending, a call never started past its deadline) are recorded indeterminate. | **Kept:** the safe direction; ADR 0016 §2 now says so. |
+| 6 | Documents called the amendment committed before the commit existed. | **Resolved** by the commit itself. |
+| 7 | DECISIONS.md omitted "never called" from the rule. | **Fixed.** |
+| 8 | Report counts and sections were stale. | **Fixed** here (§20, §22–§25). |
+| 9 | ADR 0016 §2 did not place redirects (`transport`) or a call never started past its deadline (`timeout`). | **Fixed.** |
+| 10 | The SDK retry claim was unverified. | **Checked** against the openai-node README on 2026-09-16: connection errors, timeouts, 408, 409, 429 and 5xx are retried twice by default, and `maxRetries` is configurable per client and per request. |
+| 11 | A describe title in the adapter tests still said a 200 that cannot be used is `invalid_response`. | **Fixed:** renamed to a neutral title. |
+
 ## 22. Test counts
 
 | Suite | Result |
 | --- | --- |
-| Unit, `functions` project (engine, models, handlers, CLI, static guards, invariants) | 40 files, **983 passed** |
+| Unit, `functions` project (engine, models, handlers, CLI, static guards, invariants) | 40 files, **1000 passed** (983 when Phase 1D was built; the owner-review amendment added the rest) |
 | Unit, `claude` project | 43 files, **494 passed**, 1 skipped (a stale worktree under `.claude/worktrees/`, created 2026-09-12 and git-excluded, adds 54 failures when not excluded; it is not this repository's code) |
 | Unit, `app` project (real Chromium, run after the database work finished) | 30 files, **234 passed**, 1 skipped |
 | Database suites, `npm run test:db` | **10 passed**: `agent_runtime.sql` (new), `company_domain_core.sql`, `ops_execution_core.sql`, `owner_session_pool.sql`, `rls_tenant_isolation.sql`, `worker_tenant_context.sql`, `jobLeasingConcurrency.mjs`, `opsDataApiExposure.mjs`, `ownerSessionPool.mjs`, `referenceData.mjs` |
 | Driver-backed suites, `npm run test:db:engine` | 6 files, **85 passed**: `agentRunRuntime.dbtest.ts` 23 (new), `agentRuns.dbtest.ts` 19 (new), `workerRuntime.dbtest.ts` 21, `companyOs.dbtest.ts` 10, `pooling.dbtest.ts` 6, `concurrency.dbtest.ts` 6 |
-| Static migration guard and schema reproducibility | 141 passed (inside the `functions` count) |
+| Static migration guard and schema reproducibility | 142 passed (inside the `functions` count) |
 | Security invariants | 41 checks passed: 33 invariants (SI-01 to SI-34, SI-07 retired), every enforcement marker present, and the document in sync with the code |
 
 Baseline before Phase 1D: 9 database suites and 42 driver-backed cases, all green.
 
+The owner-review amendment (2026-09-16) re-ran the `functions` project, the static guards, the invariants, and the database and driver suites after a clean reset. It changed no file in the `claude` or `app` projects, so their counts are from the Phase 1D build and were not re-run for it.
+
 ## 23. `db reset`
 
-**Final:** `npx supabase db reset --workdir .supabase-e2e --local` succeeded on 2026-09-14, applying every migration including `20260914120000_agent_runtime.sql` and the seed. Its end-state assertions passed, so the apply did not abort. Before the reset, every migration under `supabase/migrations/` was byte-compared with its `.supabase-e2e` copy, with no difference. The full `test:db` and `test:db:engine` runs above followed it.
+**Final:** `npx supabase db reset --workdir .supabase-e2e --local` succeeded on 2026-09-16, applying every migration including `20260914120000_agent_runtime.sql`, the owner-review amendment `20260916120000_agent_run_ambiguous_provider_failures.sql`, and the seed. The first Phase 1D reset was on 2026-09-14. Its end-state assertions passed, so the apply did not abort. Before the reset, every migration under `supabase/migrations/` was byte-compared with its `.supabase-e2e` copy, with no difference. The full `test:db` and `test:db:engine` runs above followed it.
 
 Resets during the phase:
 - **Every applied revision** (v1, v2, and v2 with the start re-check) was applied through a clean reset before its suites ran.
@@ -507,21 +577,21 @@ Resets during the phase:
 | Prettier on every changed or new file | 65 code files and every changed document: all formatted |
 | `npm run check:local-exposure` | OK: every Supabase CLI stack, 20 containers, 16 published bindings, loopback only on Docker and on the host |
 | Key-shaped literals in touched files | none (`sk-` plus 20 or more key characters). At commit time three test fixtures in `engine/models/errors.test.ts` and `routingConfig.test.ts` were still literals; they were changed to concatenation, and those two files were re-run (27 passed). No other file changed after the final validation. |
-| Static migration guard + schema reproducibility | 141 passed (inside the `functions` count) |
+| Static migration guard + schema reproducibility | 142 passed (inside the `functions` count) |
 
 ## 25. CI status
 
-**Pending the owner's push.** The four Phase 1D commits are local on `feature/clinical-phase-1`; pushing them runs `check.yml`. Expected pre-existing reds, unrelated to Phase 1D: `e2e-test` and Prettier, as on every run since the Phase 1C baseline.
+**Pending the owner's push.** The four Phase 1D commits and the ADR 0016 owner-review commit are local on `feature/clinical-phase-1`; pushing them runs `check.yml`. Expected pre-existing reds, unrelated to Phase 1D: `e2e-test` and Prettier, as on every run since the Phase 1C baseline.
 
 ## 26. ADR changes
 
 | ADR | Change |
 | --- | --- |
-| [0016](adr/0016-agent-runs-and-model-providers.md) | **New, Proposed.** Agent runs, at-most-once call, provider boundary, router, output contract, usage without cost, the minimal kill switch; revised after the adversarial review (attempt binding, lock serialisation, reserved codes, stop immutability). |
+| [0016](adr/0016-agent-runs-and-model-providers.md) | **New; Accepted by the owner on 2026-09-16**, with two amendments: ambiguous provider outcomes, a 5xx included, are `indeterminate`, and the SDK rationale is corrected. Agent runs, at-most-once call, provider boundary, router, output contract, usage without cost, the minimal kill switch; revised after the adversarial review (attempt binding, lock serialisation, reserved codes, stop immutability). |
 | [0010](adr/0010-cost-control-and-kill-switch.md) | Addendum 2026-09-14: which parts the minimal agent-run stop builds, and which remain owed (UI, lease-time refusal for every kind, integration and tool scopes, budgets, spend ceiling). Status unchanged: Proposed. |
 | [0015](adr/0015-company-os-domain-core.md) | Addendum 2026-09-14: the allowlist gains `agent_run.execute`; `agent_run` becomes a reserved namespace and an event subject; six DEFINER capabilities; still no model configuration on agents. |
 | [0003](adr/0003-identifier-strategy.md) | Dated note: a configured `OPS_WORKER_ID` gets a per-process suffix. |
-| [DECISIONS.md](DECISIONS.md) | Row for ADR 0016. |
+| [DECISIONS.md](DECISIONS.md) | Row for ADR 0016, Accepted. |
 
 ## 27. Remaining risks
 
@@ -551,7 +621,7 @@ Resets during the phase:
 
 **Theme: make agent runs safe to leave on.** Phase 1D proves one run is bounded, isolated and at most once. Phase 2A should make many runs affordable, stoppable everywhere and inspectable, still with no tool, integration or autonomy. Deterministic throughout; the only model call remains Phase 1D's.
 
-1. **Review gate.** The owner accepts or amends ADR 0016 and the ADR 0010 addendum. Phase 1D is committed and verified by CI. BASELINE Q8 (processor roles, provider retention, data classification of task text) is decided and recorded before any live provider receives non-synthetic text.
+1. **Review gate.** The owner reviews the ADR 0010 addendum (ADR 0016 was accepted on 2026-09-16). Phase 1D is committed and verified by CI. BASELINE Q8 (processor roles, provider retention, data classification of task text) is decided and recorded before any live provider receives non-synthetic text.
 2. **A versioned price source, as data.** A reviewed table of per-provider, per-model token prices with effective dates, shipped as reference data (SI-25), never a constraint. A run's cost is computed in the settling transaction only when a price covers it, and is NULL otherwise.
 3. **Budgets** (ADR 0010 Decision 3), per tenant, company and agent, daily and monthly. They are checked deterministically at request and again at start, under the same serialisation as the stop. A refusal is recorded like a stop refusal. An `indeterminate` run counts at its ceiling (its `max_output_tokens` and input size), never at zero.
 4. **A global daily spend ceiling** (ADR 0010 Decision 3) that trips a global execution stop automatically, recorded as a system trip with its reason. Clearing it stays a human act.
@@ -566,17 +636,17 @@ Resets during the phase:
 
 ## Classification
 
-# READY FOR PHASE 2A — pending CI and the owner's review
+# READY FOR PHASE 2A — pending CI
 
 **Why READY:**
 - Every Phase 1D deliverable exists and is proven.
-- Every final gate is green on a clean database: 10 SQL suites, 85 driver-backed cases, 983 + 494 + 234 unit tests, typecheck, lint, build, secret scan, production scope, signing key, local exposure, and invariant sync.
+- Every final gate is green on a clean database: 10 SQL suites, 85 driver-backed cases, 1000 + 494 + 234 unit tests, typecheck, lint, build, secret scan, production scope, signing key, local exposure, and invariant sync.
 - Every load-bearing guard was mutation-tested and caught by a named assertion. The survivors were closed, or are recorded as equivalent.
 - Four independent adversarial passes found no Critical or High finding, and every confirmed Medium and Low was fixed with a test that fails without it.
 - At most one provider call per run holds through real worker processes killed mid-call.
 
 **What this classification does NOT claim, and what must happen first:**
 1. **CI has not run.** The commits are local and not yet pushed. The first CI run must be green apart from the pre-existing `e2e-test` and Prettier reds before this reads "CI VERIFIED".
-2. **ADR 0016 is Proposed**, and the ADR 0010 addendum is unreviewed. Phase 2A's first item is that review.
+2. **ADR 0016 is Accepted** by the owner (2026-09-16), with the ambiguous-failure amendment. The ADR 0010 addendum is still unreviewed.
 3. **No live model call was made.** The OpenAI adapter is proven against its contract suite and a fake transport, not against the live API; no key exists here and none was requested.
 4. **BASELINE Q8 is open.** Until it is decided, only synthetic task text may reach a live provider (§27 item 1).
