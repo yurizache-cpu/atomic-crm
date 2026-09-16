@@ -2,14 +2,26 @@
 import { describe, expect, it } from "vitest";
 import {
   createRegistry,
+  isExternalCallHandler,
   resolveHandler,
   type AnyHandlerDefinition,
+  type ExternalCallHandlerDefinition,
 } from "./handlerRegistry.ts";
 
 const handler = (kind: string): AnyHandlerDefinition => ({
   kind,
   capabilities: [],
   run: async () => "ok",
+});
+
+const externalHandler = (kind: string): ExternalCallHandlerDefinition => ({
+  kind,
+  shape: "external_call",
+  prepareCapabilities: [],
+  settleCapabilities: [],
+  prepare: async () => ({ kind: "settled", detail: "nothing to call" }),
+  call: async () => null,
+  settle: async () => "settled",
 });
 
 describe("the registry is an explicit list", () => {
@@ -70,11 +82,76 @@ describe("what the registry deliberately cannot express", () => {
     // payload carrying a module path or a function name has nowhere to go.
     const registry = createRegistry([handler("known")]);
     const entry = resolveHandler(registry, "known");
+    if (entry && isExternalCallHandler(entry)) {
+      throw new Error("registered a transactional handler, resolved another");
+    }
     expect(typeof entry?.run).toBe("function");
     expect(Object.keys(entry ?? {}).sort()).toEqual([
       "capabilities",
       "kind",
       "run",
     ]);
+  });
+});
+
+describe("a handler's shape is declared by its definition, never by the job", () => {
+  it("registers an external_call handler and tells it apart from a transactional one", () => {
+    const registry = createRegistry([
+      handler("work.in_transaction"),
+      externalHandler("work.external"),
+    ]);
+    const transactional = resolveHandler(registry, "work.in_transaction");
+    const external = resolveHandler(registry, "work.external");
+    expect(transactional && isExternalCallHandler(transactional)).toBe(false);
+    expect(external && isExternalCallHandler(external)).toBe(true);
+  });
+
+  it("refuses an external_call handler missing prepare, call or settle", () => {
+    // Found at boot, not on the first leased job, where it would fail every
+    // attempt of every job of that kind.
+    for (const method of ["prepare", "call", "settle"]) {
+      const broken = {
+        ...externalHandler("work.external"),
+        [method]: undefined,
+      } as unknown as AnyHandlerDefinition;
+      expect(() => createRegistry([broken])).toThrow(
+        new RegExp(`without a ${method} function`),
+      );
+    }
+  });
+
+  it("refuses an external_call handler without its capability lists", () => {
+    for (const list of ["prepareCapabilities", "settleCapabilities"]) {
+      const broken = {
+        ...externalHandler("work.external"),
+        [list]: undefined,
+      } as unknown as AnyHandlerDefinition;
+      expect(() => createRegistry([broken])).toThrow(
+        new RegExp(`without a ${list} list`),
+      );
+    }
+  });
+
+  it("refuses a shape it does not know", () => {
+    const misspelt = {
+      ...handler("work.misspelt"),
+      shape: "external-call",
+    } as unknown as AnyHandlerDefinition;
+    expect(() => createRegistry([misspelt])).toThrow(/unknown shape/);
+  });
+
+  it("refuses an external call that forgot its shape instead of registering it as transactional", () => {
+    // Without the shape it would be a transactional handler with no `run`.
+    const shapeless = {
+      kind: "work.shapeless",
+      prepareCapabilities: [],
+      settleCapabilities: [],
+      prepare: async () => ({ kind: "settled", detail: "none" }),
+      call: async () => null,
+      settle: async () => "settled",
+    } as unknown as AnyHandlerDefinition;
+    expect(() => createRegistry([shapeless])).toThrow(
+      /transactional handler without a run function/,
+    );
   });
 });

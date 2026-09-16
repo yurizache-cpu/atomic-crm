@@ -12,7 +12,9 @@
 //   * the reaper tick, so expired leases are recovered on a clock. Phase 1A
 //     recovered them only inside `ops.lease_job`, which meant recovery was a
 //     side effect of new work arriving. The tick runs whether or not anything
-//     is queued.
+//     is queued. After reaping, the same tick settles agent runs a dead worker
+//     left "running" — in its OWN transaction, so a failure there can never
+//     undo or block lease recovery.
 //
 // Signals are NOT handled here. The caller owns the AbortSignal, so this
 // function stays a plain async function that tests can drive.
@@ -33,7 +35,10 @@ export interface RunWorkerOptions {
   reapIntervalMs?: number;
   leaseSeconds?: number;
   log?: WorkerLogger;
-  /** Aborting stops the loop after the job in flight finishes. */
+  /**
+   * Aborting stops the loop after the job in flight finishes. An external call
+   * in flight is aborted, and its handler settles that outcome.
+   */
   signal?: AbortSignal;
   /** Stop after this many loop iterations. Tests only; undefined means forever. */
   maxIterations?: number;
@@ -49,6 +54,8 @@ export interface WorkerStats {
   idlePolls: number;
   pollFailures: number;
   leaseRecoveries: number;
+  /** Agent runs left "running" by a worker that died mid-call, settled by the reaper tick. */
+  staleRunsSettled: number;
 }
 
 const DEFAULTS = {
@@ -104,6 +111,7 @@ export async function runWorker(
     idlePolls: 0,
     pollFailures: 0,
     leaseRecoveries: 0,
+    staleRunsSettled: 0,
   };
 
   const heartbeat = async (detail?: string) => {
@@ -130,6 +138,33 @@ export async function runWorker(
     }
   };
 
+  // A separate transaction, and a failure that is contained, both on purpose.
+  // Lease recovery is what keeps every tenant's queue moving; this settlement
+  // only closes out runs whose worker died between its call and its settle. If
+  // it shared the reap transaction, one broken run would roll recovery back;
+  // if it threw into the loop, it would count as a poll failure and back the
+  // whole worker off. It is logged, and tried again on the next tick.
+  const settleStaleAgentRuns = async () => {
+    try {
+      const settled = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ settled: number | string }>(
+          "select ops.settle_stale_agent_runs() as settled",
+        );
+        return Number(rows[0]?.settled ?? 0);
+      });
+      if (settled > 0) {
+        stats.staleRunsSettled += settled;
+        log("agent_run.stale_settled", { workerId, count: settled });
+      }
+    } catch (error) {
+      log("worker.poll_failed", {
+        workerId,
+        detail: `stale agent run settlement failed: ${describeError(error)}`,
+      });
+    }
+  };
+
   await heartbeat("started");
   log("worker.started", { workerId });
 
@@ -147,6 +182,7 @@ export async function runWorker(
       try {
         if (now() - lastReap >= reapIntervalMs) {
           await reap();
+          await settleStaleAgentRuns();
           lastReap = now();
         }
         if (now() - lastHeartbeat >= heartbeatIntervalMs) {
@@ -155,11 +191,20 @@ export async function runWorker(
           lastHeartbeat = now();
         }
 
+        // Shutdown may have landed while the maintenance above ran. Leasing now
+        // would commit a lease, and an external call's prepare would commit a
+        // "running" record, for a call the aborted signal then cancels before it
+        // is ever issued. The loop condition cannot see this: it ran first.
+        if (signal?.aborted) break;
+
         result = await runOneJob(db, {
           workerId,
           leaseSeconds,
           registry,
           log,
+          // Reaches an external call, so shutdown does not wait out a slow
+          // service. A transactional job in flight still finishes.
+          signal,
         });
         consecutivePollFailures = 0;
       } catch (error) {

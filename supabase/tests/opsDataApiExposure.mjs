@@ -242,6 +242,23 @@ async function main() {
       `ops.${fn} is missing from the catalogue; is the Phase 1C migration applied?`,
     );
   }
+  // Phase 1D: the agent runtime objects, for the same reason.
+  for (const relation of ["agent_runs", "execution_stops"]) {
+    check(
+      relations.includes(relation),
+      `ops.${relation} is missing from the catalogue; is the Phase 1D migration (20260914120000_agent_runtime) applied?`,
+    );
+  }
+  for (const fn of [
+    "request_agent_run",
+    "claim_agent_run",
+    "trip_execution_stop",
+  ]) {
+    check(
+      functions.includes(fn),
+      `ops.${fn} is missing from the catalogue; is the Phase 1D migration (20260914120000_agent_runtime) applied?`,
+    );
+  }
 
   // The live PostgREST configuration, not the file that is supposed to produce it.
   const restEnv = execFileSync(

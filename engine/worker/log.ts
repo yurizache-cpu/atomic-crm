@@ -29,7 +29,15 @@ export type WorkerLogEvent =
   | "job.retry_scheduled"
   | "job.terminal_failure"
   | "job.settlement_refused"
-  | "lease.recovered";
+  // An external_call handler's call, which runs outside every transaction.
+  // `detail` on the finish line is "ok" or "error" and nothing else: the
+  // error is a provider's text, and a provider's text can echo a prompt.
+  | "job.external_call_started"
+  | "job.external_call_finished"
+  | "lease.recovered"
+  // Agent runs left "running" by a worker that died mid-call, settled by the
+  // reaper tick. `count` only.
+  | "agent_run.stale_settled";
 
 export interface WorkerLogFields {
   workerId?: string;

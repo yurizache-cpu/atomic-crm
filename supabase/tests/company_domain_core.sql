@@ -186,9 +186,11 @@ do $$
 declare
   v_bad text;
 begin
-  -- A1. Tables.
+  -- A1. Tables. Phase 1D (2026-09-14) adds agent_runs and execution_stops, which
+  --     are backend-only on exactly the same terms.
   select string_agg(format('%s:%s:%s', r.rolname, t.relname, p.priv), ', ') into v_bad
-    from unnest(array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs']) as t (relname)
+    from unnest(array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
+                      'agent_runs', 'execution_stops']) as t (relname)
    cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r (rolname)
    cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as p (priv)
    where has_table_privilege(r.rolname, format('ops.%I', t.relname), p.priv);
@@ -215,6 +217,12 @@ begin
   -- A4. The complete EXECUTE surface of the application roles in ops, pinned.
   --     Phase 1C adds NOTHING to it. A new function born reachable, or a grant
   --     nobody reviewed, shows up here by name.
+  --     Phase 1D (2026-09-14, 20260914120000_agent_runtime.sql) adds exactly the
+  --     six agent run capabilities, to ops_worker only. Each takes no tenant, run,
+  --     task or job argument and resolves its one run from the live lease; the
+  --     owner services it adds (request_agent_run and the stop functions) are
+  --     executable by no application role. supabase/tests/agent_runtime.sql
+  --     attacks both halves.
   with expected (rolname, fn) as (values
     ('service_role', 'ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)'::regprocedure),
     ('ops_worker',   'ops.lease_job(text, integer)'::regprocedure),
@@ -227,7 +235,13 @@ begin
     ('ops_worker',   'ops.settle_job_failure(uuid, text, text)'::regprocedure),
     ('ops_worker',   'ops.purge_inbound_email_ledger(integer, integer)'::regprocedure),
     ('ops_worker',   'ops.resume_lease(text, uuid)'::regprocedure),
-    ('ops_worker',   'ops.reap_expired_leases()'::regprocedure)
+    ('ops_worker',   'ops.reap_expired_leases()'::regprocedure),
+    ('ops_worker',   'ops.claim_agent_run()'::regprocedure),
+    ('ops_worker',   'ops.refuse_agent_run(text)'::regprocedure),
+    ('ops_worker',   'ops.start_agent_run(text, text, text, text)'::regprocedure),
+    ('ops_worker',   'ops.complete_agent_run(jsonb, text, text, text, text, integer, integer, integer, integer, integer, integer)'::regprocedure),
+    ('ops_worker',   'ops.fail_agent_run(text, text, text, text, text, integer, integer, integer, integer, integer, integer)'::regprocedure),
+    ('ops_worker',   'ops.settle_stale_agent_runs()'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -248,13 +262,18 @@ begin
     raise exception 'A4: the ops EXECUTE surface drifted from the pinned set: %', v_bad;
   end if;
 
-  -- A5. The SECURITY DEFINER surface, pinned. Every Company OS function is INVOKER.
+  -- A5. The SECURITY DEFINER surface, pinned. Every Company OS *service* is
+  --     INVOKER. Phase 1D (2026-09-14) adds the six agent run capabilities, which
+  --     are lease-bound DEFINER exactly like the Phase 1B capability: they take no
+  --     tenant and reach only the run bound to the live lease's job.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
      and p.proname not in ('complete_job', 'current_tenant_id', 'enqueue_job', 'fail_job', 'lease_job',
                            'purge_inbound_email_ledger', 'reap_expired_leases', 'resume_lease',
-                           'settle_job_failure', 'worker_heartbeat', 'worker_stopped');
+                           'settle_job_failure', 'worker_heartbeat', 'worker_stopped',
+                           'claim_agent_run', 'refuse_agent_run', 'start_agent_run',
+                           'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;
@@ -280,9 +299,12 @@ begin
     raise exception 'A7: guard trigger(s) missing or not ENABLE ALWAYS: %', v_bad;
   end if;
 
-  -- A8. No task may request execution in Phase 1C.
-  if cardinality(ops.task_executable_kinds()) <> 0 then
-    raise exception 'A8: ops.task_executable_kinds() is not empty';
+  -- A8. No task could request execution in Phase 1C. Since Phase 1D (2026-09-14)
+  --     exactly one kind is allowlisted: the job that carries an agent run, which
+  --     the bridge creates only for a pending run of the same task
+  --     (supabase/tests/agent_runtime.sql, section J).
+  if ops.task_executable_kinds() is distinct from array['agent_run.execute']::text[] then
+    raise exception 'A8: ops.task_executable_kinds() is not exactly {agent_run.execute}';
   end if;
 end
 $$;
@@ -311,7 +333,8 @@ begin
     raise exception 'B: the lease did not install tenant A';
   end if;
 
-  foreach v_table in array array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs'] loop
+  foreach v_table in array array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
+                                 'agent_runs', 'execution_stops'] loop
     v_tried := v_tried + 1;
     begin
       execute format('select count(*) from ops.%I', v_table) into v_n;
@@ -337,6 +360,10 @@ begin
   exception when insufficient_privilege then v_refused := v_refused + 1; end;
   v_tried := v_tried + 1;
   begin perform ops.request_task_execution(ta, current_setting('c1c.task_a1')::uuid, 'c1c.lease_probe', 'c1c-worker');
+  exception when insufficient_privilege then v_refused := v_refused + 1; end;
+  v_tried := v_tried + 1;
+  begin perform ops.request_agent_run(ta, current_setting('c1c.task_a1')::uuid, current_setting('c1c.agent_a1_reception')::uuid,
+                                      'task_assessment', 'c1c-worker-key', 'c1c-worker');
   exception when insufficient_privilege then v_refused := v_refused + 1; end;
   v_tried := v_tried + 1;
   begin perform ops.push_event_context('c1c-worker', null, null);
@@ -1242,7 +1269,7 @@ begin
   if exists (select 1 from ops.tenants where slug like 'c1c-test-%') then
     raise exception 'company_domain_core.sql left fixtures behind';
   end if;
-  if cardinality(ops.task_executable_kinds()) <> 0 then
+  if ops.task_executable_kinds() is distinct from array['agent_run.execute']::text[] then
     raise exception 'company_domain_core.sql left the test allowlist in place';
   end if;
 end

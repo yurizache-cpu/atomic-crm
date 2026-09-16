@@ -27,6 +27,48 @@ describe("log lines are structured", () => {
     expect(Object.keys(line)).toEqual(["at", "event", "workerId"]);
   });
 
+  it("emits the external call and stale settlement events through the same fixed fields", () => {
+    const lines: string[] = [];
+    const log = createLogger(
+      (line) => lines.push(line),
+      () => new Date("2026-09-14T10:00:00.000Z"),
+    );
+    log("job.external_call_started", {
+      workerId: "w1",
+      jobId: "j1",
+      kind: "agent_run.execute",
+      attempt: 1,
+    });
+    log("job.external_call_finished", {
+      workerId: "w1",
+      jobId: "j1",
+      durationMs: 42,
+      detail: "error",
+      error: { message: "provider text that may echo the input" },
+    } as never);
+    log("agent_run.stale_settled", { workerId: "w1", count: 3 });
+    const at = "2026-09-14T10:00:00.000Z";
+    expect(lines.map((line) => JSON.parse(line))).toEqual([
+      {
+        at,
+        event: "job.external_call_started",
+        workerId: "w1",
+        jobId: "j1",
+        kind: "agent_run.execute",
+        attempt: 1,
+      },
+      {
+        at,
+        event: "job.external_call_finished",
+        workerId: "w1",
+        jobId: "j1",
+        durationMs: 42,
+        detail: "error",
+      },
+      { at, event: "agent_run.stale_settled", workerId: "w1", count: 3 },
+    ]);
+  });
+
   it("contains no newline, so one event is one line", () => {
     const line = formatLogLine(
       "job.attempt_failed",
