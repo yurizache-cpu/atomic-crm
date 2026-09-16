@@ -260,4 +260,27 @@ A phase is complete when its work is: **working, tested, logged, permission-cont
 
 **Phase 1C — the Company OS domain core — complete: CI verified, and accepted by the owner on 2026-09-13.** The organisational half of *Phase 2 — Engine foundation*, still with no model, prompt, tool or UI: tenant → company → department → agent → task → event, in `ops`, deterministic. Companies are data inside a tenant; agents are configuration only; tasks follow an 11-edge state machine enforced in the database; every lifecycle change writes exactly one event in the same statement; a task → job bridge exists with an **empty** allowlist, so no task can cause execution. Backend-only: no application role holds any privilege on it. Proven by a SQL attack suite, driver-backed tests, a static-guard extension and database mutation testing; an adversarial pass on the new surface found no Critical, High or Medium. See [PHASE_1C_REPORT.md](PHASE_1C_REPORT.md) and [ADR 0015](adr/0015-company-os-domain-core.md), which is **Accepted** (2026-09-13) with the owner addendum: tenant is the only isolation boundary, businesses that need independent data isolation are separate tenants (a tenant may still hold several companies, as organisation only), `events.seq` internal only, minimised event payloads.
 
-Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003, and ADR 0002 is blocked on ADR 0011 item 4 (the MCP channel).~~ *(2026-09-13, pre-1D closure: ADR 0003 is accepted, the MCP function is removed, the development seed stays off hosted projects, and global monotonic identifiers stay internal. ~~ADR 0002 stays Proposed until the `merge_contacts` owner-session pool is tested against `ops`.~~ (Final 2026-09-13: ADR 0002 is accepted; the pool is measured unable to reach `ops` or carry state, SI-27.) The Phase 1D scope, with the owner's added requirements, is PHASE_1C_REPORT.md Appendix A.)* The sequencing rule still holds: **no agent before the kill switch and cost ledger exist.**
+Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003, and ADR 0002 is blocked on ADR 0011 item 4 (the MCP channel).~~ *(2026-09-13, pre-1D closure: ADR 0003 is accepted, the MCP function is removed, the development seed stays off hosted projects, and global monotonic identifiers stay internal. ~~ADR 0002 stays Proposed until the `merge_contacts` owner-session pool is tested against `ops`.~~ (Final 2026-09-13: ADR 0002 is accepted; the pool is measured unable to reach `ops` or carry state, SI-27.) The Phase 1D scope, with the owner's added requirements, is PHASE_1C_REPORT.md Appendix A.)* The sequencing rule still holds: **no agent before the kill switch and cost ledger exist.** *(2026-09-14: superseded by the status below.)*
+
+---
+
+## Status update 2026-09-14
+
+**Phase 1D — agent runtime, model router and the first model call — built, and committed on 2026-09-16 but not yet pushed, so not yet verified by CI; awaiting the owner's review.** This is the smallest slice of *Phase 4 — Agent runtime*: one agent calls a model **once**, about **one** task it is assigned, and nothing follows from what it says. See [PHASE_1D_REPORT.md](PHASE_1D_REPORT.md) and [ADR 0016](adr/0016-agent-runs-and-model-providers.md) (Proposed).
+
+**Built:**
+- **Runs:** `ops.agent_runs`, with a six-edge state machine in which `indeterminate` is a state, and a retry is always a new run with lineage.
+- **At most once:** a durable start before the call, a call outside every transaction, and settlement in the transaction that completes the job. Proven with real worker processes killed mid-call.
+- **Idempotency and lineage:** tenant-scoped idempotency, with correlation and causation owned by the database.
+- **Explicit request:** only `ops.request_agent_run` causes a call. The allowlist holds exactly `agent_run.execute`, and the job payload is a reference, never authority.
+- **Providers:** a provider-neutral `ModelProvider` with a contract suite, an OpenAI Responses adapter over plain `fetch`, and a deterministic fake for CI. Routing is by deterministic tier, and an unknown route fails closed.
+- **Output:** structured and advisory, validated twice, inert. No tools, no reasoning stored, usage recorded, no cost column.
+- **The minimal kill switch** (owner decision): five scopes, deny wins, serialised with the start, audited clearing, `npm run execution-stop`. The ADR 0010 addendum records what it discharges.
+
+**Deliberately not built, and how it departs from the Phase 4 text above:**
+- The first adapter is OpenAI, not Anthropic: the Phase 1D brief preferred the Responses API.
+- There are three tiers, not four, and no escalation trigger, so no escalation.
+- No `tool_invocations`, typed tool registry, memory, budgets, spend ceiling, UI switch or CRM access.
+- The `CRMProvider` ordering note still applies before any agent reads CRM data.
+
+**Next:** the owner's review of ADR 0016 and of the report's classification. The next major milestone is decided in a separate roadmap review, aimed at a real, testable clinic flow. The report's §28 is a list of proposed follow-up work, not an accepted phase.

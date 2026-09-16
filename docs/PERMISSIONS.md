@@ -182,3 +182,40 @@ The static migration guard now also rejects, before anything applies:
 - any `DROP … CASCADE` that reaches `ops`;
 - `SET session_replication_role`;
 - a `search_path` that sends unqualified names into `ops`.
+
+---
+
+## 11. Agent runs and execution stops (Phase 1D, 2026-09-14)
+
+`ops.agent_runs` and `ops.execution_stops`, and the functions that touch them. [ADR 0016](adr/0016-agent-runs-and-model-providers.md).
+
+| Role | Tables | Functions |
+| --- | --- | --- |
+| `anon`, `authenticated` | nothing (no USAGE on `ops` at all) | nothing |
+| `service_role` | nothing | nothing new — still only `ops.enqueue_job` |
+| `ops_worker` | **nothing** — no SELECT on runs, stops, tasks or agents | EXECUTE on the six capabilities below, and nothing else new |
+| `postgres` (owner) | everything | everything, including `ops.request_agent_run` and the three stop functions |
+| PUBLIC | — | **nothing**: every new function is revoked explicitly |
+
+**Why capabilities and not grants.** The handler needs one run's bounded prompt context. A SELECT grant on `ops.tasks` and `ops.agents`, even under the lease-bound read policies, would expose every task of the leased tenant. A capability returns exactly the one run bound to the lease.
+
+| Function | Why it is safe to expose to `ops_worker` |
+| --- | --- |
+| `ops.claim_agent_run()` | Resolves the run bound to `(lease tenant, app.job_id)`; takes no argument. Returns the agent's name, role and description and the task's type, title, description, priority and due date — no id, slug or timestamp beyond the due date. Settles a run an earlier attempt left running; refuses (42501) a second claim by the attempt that started it. |
+| `ops.start_agent_run(provider, model, prompt version, fingerprint)` | Re-checks every gate and the kill switch, serialised with tripping. Records `running` only for a pending run. Only the token `running` means "call". The arguments are facts about the call, shape-checked; none selects a row. |
+| `ops.refuse_agent_run(code)` | A pending run only, recorded `failed` / `configuration`; a code the database reserves is replaced. |
+| `ops.complete_agent_run(result, …)` | A run `running` under this very attempt only; otherwise `not_running`. The database re-validates the result and stores a refused one as `failed` / `schema_validation` / `database_contract`. |
+| `ops.fail_agent_run(category, code, …)` | Same attempt check. The worker reports a category, and the **database** decides `failed` or `indeterminate`; an unknown category is `unknown`, which is indeterminate. A reserved code is dropped. |
+| `ops.settle_stale_agent_runs()` | Checks no lease, like `ops.reap_expired_leases`. It settles only runs whose attempt is provably dead: `running` without the same attempt's live lease becomes `indeterminate`, and `pending` whose job already ended becomes `failed` / `job_failed`. It skips rows another transaction holds, so it cannot settle a run whose worker is inside its prepare or settle transaction. |
+
+Every run capability first share-locks the leased job and requires the lease to be live on the current clock (`clock_timestamp()`) when it begins, so a job inside a worker transaction cannot be reaped underneath it. `ops.start_agent_run`, the one step whose answer leads to a paid call, checks the lease on the clock again after its own lock waits and before any write, so a lease that ran out while it waited starts nothing (`42501`). *(Corrected 2026-09-14 after the seam review: this sentence said a lease expiring at any point of the transaction was refused, while each capability checked only when it began.)*
+
+**Execution stops are owner-only in both directions.** No application role can read, trip or clear one. The CLI runs with the owner connection (`ADMIN_DATABASE_URL`). A stop cannot be deleted while active or truncated, even by the owner outside `DISABLE TRIGGER`. `ops.active_execution_stop` raises `OS403` rather than answer "no stop" if row security would filter its read.
+
+**SQLSTATEs added to the Phase 1C set's meanings:**
+
+| SQLSTATE | New use |
+| --- | --- |
+| `OS403` | a capability that is not an agent run capability; a stop read under row security |
+| `OS409` | an idempotency key naming a different agent run request; a retry of an unfinished run; a trip that found no stop in force |
+| `42501` | a run capability without a live lease, with a lease no longer live, with no run bound to the job, or a second claim by the starting attempt |

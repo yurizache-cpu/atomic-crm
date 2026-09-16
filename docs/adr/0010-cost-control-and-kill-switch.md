@@ -76,3 +76,32 @@ Department and agent scopes now name real rows (`ops.departments`, `ops.agents`)
 
 - **`ops.agents.status` is not the kill switch.** It is lifecycle configuration (`active | inactive`), changed without the audit and deny-wins semantics this ADR requires.
 - **Enforcing a company, department or agent scope at lease time** needs the job's organisational context, which only `ops.task_jobs` holds. Resolving it there is allowed. A refusal must be recorded as a settlement that does **not** consume one of the job's attempts — today every lease increments `attempts`, so a scoped stop would otherwise retire a job to `failed` within its backoff window instead of leaving it resumable.
+
+---
+
+## Addendum 2026-09-14 — the minimal agent-run stop is built (Phase 1D, owner decision)
+
+**Owner decision (2026-09-14):** Phase 1D is the first phase that can invoke a model. No kill switch existed, so building the agent runtime without one would have broken sequencing rule 3 and Decision 4. The owner chose to build the part of this ADR that agent runs need, and nothing broader. The design is recorded in [ADR 0016](0016-agent-runs-and-model-providers.md) §11; this addendum records which parts of this ADR it discharges.
+
+| This ADR | Phase 1D |
+| --- | --- |
+| Deterministic pre-flight, outside any prompt (Decision 2a, "Enforced in deterministic pre-flight") | **Built.** `ops.start_agent_run` evaluates the stops in the transaction that commits `running`, before the provider call. `ops.request_agent_run` evaluates them again at request time. Both read the stops only after taking a shared advisory lock that trip and clear take exclusively, so a trip that has returned is seen by every later start. |
+| Halts new agent runs across every tenant at once (2b) | **Built** for agent runs: a `global` stop. |
+| Scopes (tenant and company addendum) | **Built:** `global`, `tenant`, `company`, `department`, `agent`. **Not built:** `integration` / `tool`, because nothing in Phase 1D calls a tool. |
+| Deny wins; no override or force parameter | **Built.** Any active stop covering a run refuses it. No function or CLI flag overrides a stop, and the CLI parser refuses unknown flags. |
+| Fail closed on an unreadable switch | **Built.** `ops.active_execution_stop` raises on a missing coordinate. An error reading the stops aborts the transaction that would have recorded `running`, so no call follows. |
+| Observability and administration stay up | **Holds.** A stop refuses new runs only. It does not block reads, the audit trail, the queue, or the owner's ability to inspect and clear it. |
+| Running work: stops at the next pre-flight, and an external side effect re-checks immediately before it | **Built** at the one boundary that exists: the check runs immediately before the model call. A call already in flight when a stop is tripped completes; see "Bounded delay" below. |
+| The trip is recorded with who, when and why, plus every action refused while it was active | **Built.** `tripped_by`, `tripped_at` and `reason` are on the stop row. Every refused run is recorded `cancelled` / `refused` / `execution_stopped` with the stop's id. |
+| Un-tripping is a deliberate, audited act; nothing but a human clears a stop | **Built.** `ops.clear_execution_stop` records `cleared_by`, `cleared_reason` and `cleared_at` on the row. A cleared stop is never rewritten, and no code path clears one. |
+| Reachable in one action from a CLI that does not depend on a UI (2c) | **Built:** `npm run execution-stop -- trip --scope global --reason … --actor …`, run with the owner connection (`ADMIN_DATABASE_URL`). |
+| Reachable from the Phase-1 UI (2c) | **Not built.** No UI exists. |
+| A test that trips it and asserts the next run is refused (2d) | **Built.** Per scope, in `supabase/tests/agent_runtime.sql` K and the driver-backed agent runtime suite. |
+| No new job is leased while stopped (running jobs, a) | **Not built.** Lease-time refusal for every job kind needs the non-consuming settlement the 1C addendum describes. For agent runs the effect is equivalent: a covered run is cancelled before any call, and its job completes without a provider request. |
+| The cost row is written in the same transaction as the run (Decision 1) | **Partly built.** Usage (tokens, latency, provider ids) is written in the transaction that settles the run. There is no cost column: no versioned price source exists (ADR 0016 §10). An `indeterminate` run has unknown usage. |
+| Per-agent budgets; global daily spend ceiling (Decisions 3, 4) | **Not built.** Both need a price source. They remain owed before autonomous or high-volume execution. |
+| Model routing starts cheapest and escalates only on stated triggers (Decision 5) | **Partly built.** Routing is deterministic by capability tier (ADR 0016 §9). No escalation trigger is defined, so there is no escalation. |
+
+**Bounded delay, stated.** A stop tripped after `ops.start_agent_run` commits does not interrupt a call already in flight. That call is bounded by its route timeout and the lease-derived deadline, and its result is recorded. This is the "bounded delay in arming" the Consequences section accepts: enforcement is exact at the start boundary, and a half-applied external action is not produced.
+
+**Status unchanged: Proposed.** Accepting this record, or amending it to match what Phase 1D built, is an owner decision.

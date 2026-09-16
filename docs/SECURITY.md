@@ -198,3 +198,54 @@ Measured before choosing it:
 **Detection:** `npm run check:local-exposure` (`scripts/local-exposure.mjs`) checks both Docker's effective bindings and the host's actual listening sockets. It exits 1 when anything is exposed and 2 when it cannot verify. `npm run test:db` prints its verdict as a warning, and CI skips it.
 
 **Unchanged and still open:** SI-06 (edge functions as `service_role`), SI-02's residue (`net.http_get`), and [ADR 0008](adr/0008-fork-posture.md)'s publication-scope decision.
+
+---
+
+## 10. Phase 1D — the first model call (2026-09-14)
+
+Phase 1D lets one agent call a language model once about one task. [ADR 0016](adr/0016-agent-runs-and-model-providers.md) records the decisions; the invariants are listed in [SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md); results and counts are in [PHASE_1D_REPORT.md](PHASE_1D_REPORT.md).
+
+**The trust boundary moved outward.** For the first time, data leaves the database for a third party: a task's type, title, description, priority and due date, and an agent's name, role and description. Nothing else is sent: no id, slug, tenant name, CRM record, event or prior run. The adapter sends `store: false`, which removes application-state retention, but the provider's abuse-monitoring retention remains unless the organisation has zero data retention. The multi-tenant processor question (BASELINE Q8) is therefore live. **Until it is decided, only synthetic, non-sensitive task text may reach a live provider.** Every test and the smoke command use synthetic office-operations data.
+
+**Model output is untrusted, advisory and inert.**
+- It is structured only: a strict JSON schema at the provider, zod in the worker, and the same rules again in the database.
+- It is stored as data on the run row. It selects no tenant, run, job, handler or route, and it changes no task, job or CRM row.
+- The request carries no tools; a unit test pins its exact key set. Reasoning is never requested, a reasoning item is ignored, and any other output item is refused.
+- Events about a run carry ids, statuses and categories only, never content.
+
+**Provider secrets are backend-only.**
+- The key lives in the worker's environment (`OPENAI_API_KEY`) and nowhere else: never in the database, a job or event payload, a log line, the browser bundle or CI.
+- CI runs against the deterministic fake provider and needs no key. The live smoke run skips itself when no key is configured.
+- `npm run scan:build` refuses OpenAI and Anthropic credential shapes and any `VITE_`-prefixed model-provider variable name. A source test refuses a `VITE_` provider name in any tracked build input (source, env files, vite configs, workflows, `package.json`, `makefile`). It also refuses any reference to the `process` global in the model and handler layers, while ESLint refuses the module-loader routes to it.
+- The adapter refuses redirects, so the authorization header cannot follow one. It drops any provider string containing the key, and every `ModelError` message is fixed text.
+
+**No blind retry, measured rather than assumed.** No provider idempotency exists for `POST /responses`, and the official SDK retries by itself, so the adapter is plain `fetch` with no retry. The start commits before the call; any run found still `running` by anyone but its own live attempt becomes `indeterminate`, and nothing retries it. Crash, lease-expiry and shutdown cases run against real worker processes (PHASE_1D_REPORT).
+
+**The adversarial review of the migration, before it was applied beyond the local stack.** 18 findings; 2 Medium, the rest Low or Info. All Medium and Low findings were fixed in the migration itself:
+
+| Finding | What it was | Closed by |
+| --- | --- | --- |
+| AR-01 (Medium) | `start_agent_run` checked the lease only on entry, could wait on locks past lease expiry, then commit `running` with the successor's attempt number. | Every run capability share-locks the leased job and requires the lease live on `clock_timestamp()` when it begins; the attempt is read from that locked row. The seam review then found the start could still commit after a long lock wait: it now re-checks the lease after its waits and before any write, the handler re-reads the time left, and the runtime starts no call past its deadline. |
+| AR-02 (Medium) / EVK-03 | `start_agent_run` answered `running` for a run already started, the same token as a real start; complete and fail checked no attempt. | Distinct tokens (`already_running`, `indeterminate`); another attempt's start settles the run; complete and fail answer `not_running` for another attempt. |
+| AR-03 | A claim could settle a run whose own attempt was still live (two replicas sharing a worker id). | A claim by the starting attempt is refused, never settled. |
+| AR-04 | The sweep and a settle transaction judged liveness on different clocks; a job could succeed while its paid result was dropped. | The sweep locks run and job and skips locked rows; `not_running` rolls the settle back. |
+| AR-05 / EVK-09 | A confirmed trip did not stop a start already reading the stops. | A transaction advisory lock: exclusive for trip and clear, shared for start and request. |
+| AR-06 / AR-1 | A worker-supplied `execution_stopped` code violated a CHECK and aborted settlement. | Codes the database assigns are reserved. |
+| AR-07 | Opposite lock order between a retry request or a direct bridge call and the worker could deadlock and cost an attempt. | Plain reads before the task lock. |
+| AR-08 | The bridge stored a non-canonical run id. | The canonical payload is stored. |
+| EVK-01 | A trip racing a clear could return nothing with no stop in force. | The trip raises `OS409` instead of returning nothing. |
+| EVK-02 | An active stop could be deleted or truncated with no record. | `ENABLE ALWAYS` delete and truncate guards. |
+| EVK-04 | Any fact with an agent run subject could become the cause of the next lifecycle fact. | Causation lookups read only `agent_run.*` facts. |
+| EVK-05 | The result contract held only in one function, and a raw owner update could copy arbitrary outcome text into an event. | The update guard requires a valid result for `succeeded`; only an enum outcome is copied. |
+| EVK-06 | A run could name a stop that did not cover it, or a cleared one. | The guard requires an active, covering stop. |
+| EVK-07 | Free text typed into a stop could never be rectified. | One permitted rewrite: redaction to `[redacted]`. |
+| EVK-08 | A row-security-filtered read of the stops would answer "no stop". | `OS403` instead. |
+| EVK-10 (Info) | Owner-side forging paths for `agent_run.*` facts. | Recorded: replica mode, `DISABLE TRIGGER` and an owner-created trigger remain owner tripwires, as SI-22 and SI-23 already state. |
+
+**Recorded, not changed.**
+- A stop tripped after a start commits does not interrupt that call. The call is bounded by its route timeout and the lease deadline (ADR 0010's accepted arming delay).
+- An `indeterminate` run has unknown usage and possibly unknown spend.
+- A settle transaction that fails transiently discards a successful result: the next attempt finds the run `running` and settles it `indeterminate`. That is conservative by design.
+- A provider error code that fits the lowercase code shape is stored as reported, up to 100 characters.
+- The scanner's older `assigned-server-secret` name rule still misses prefixed and JSON-quoted forms of its existing names. The new `VITE_` provider-name rule covers the model-provider case.
+- The kill switch has no UI, no budgets and no spend ceiling (ADR 0010 addendum).

@@ -143,3 +143,23 @@ A link restricts deleting its job, so any future job retention must decide what 
 - `ops.job_events` keeps its bigint primary key. The decision does not require changing a key unless a real need is proven.
 
 Its executable form is SI-26: the static migration guard and the migration and database assertions keep every application role away from these tables, so no tenant-facing reader can be granted without changing a guard.
+
+---
+
+## Addendum 2026-09-14 — what Phase 1D changes in this record
+
+[ADR 0016](0016-agent-runs-and-model-providers.md) builds agent runs on this domain. `supabase/migrations/20260914120000_agent_runtime.sql` changes four things this record fixed, each additively and each re-asserted by that migration's end-state block. No 1C migration was edited.
+
+1. **§8, the allowlist is no longer empty.** `ops.task_executable_kinds()` returns exactly `{agent_run.execute}`.
+   - That kind is not a generic door. `ops.request_task_execution` creates it only for a pending run of the same task that has no job yet, and its payload must be exactly `{agent_run_id}`, resolved inside the task's tenant.
+   - `postmark.ledger_retention` is still refused, for the reason §8 gives.
+   - The Phase 1C migration's own assertion ("Phase 1C ships no executable task kind") still passes on replay, because it runs before the Phase 1D migration.
+2. **§7, `agent_run` is a reserved lifecycle namespace.** `ops.derived_event_namespaces()` keeps the five 1C namespaces and adds `agent_run`, so `ops.record_event` and direct inserts cannot forge `agent_run.*` facts.
+   - `events_subject_type_check` and `ops.guard_event_insert` accept `agent_run` as a subject, resolved inside the event's tenant and company. The rest of the guard's body is unchanged.
+   - Agent run facts take their correlation from the run row, never from the transaction setting §7 describes (ADR 0016 §5).
+3. **§4, the SECURITY DEFINER surface grows by six lease-bound worker capabilities.** None takes a tenant, run, task, agent or job argument; each follows the Phase 1B capability shape (SI-18).
+   - Every Company OS **service** stays SECURITY INVOKER and owner-only, including the new `ops.request_agent_run`, `ops.trip_execution_stop` and `ops.clear_execution_stop`.
+   - The future wrapper contract is unchanged.
+4. **§5, agents gain no model configuration.** `ops.agents` has no provider, model or prompt column. A run's route comes from its capability (ADR 0016 §9).
+
+**Not changed:** tenant as the only isolation boundary, the composite-key integrity of §3, the task state machine of §6 (a run never transitions its task), SI-26, and every owner decision in the 2026-09-13 addendum.

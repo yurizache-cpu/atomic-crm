@@ -212,7 +212,7 @@ event / schedule / task
 
 **Model router.** Four tiers — T1 classification/extraction/routing, T2 routine analysis and review, T3 strategy and complex reasoning, T4 frontier for rare hard problems and executive synthesis. Start cheap, escalate on low confidence or detected complexity. Provider-agnostic behind `LLMProvider`.
 
-**Structured outputs are mandatory.** Schema-validated objects, never parsed prose. Note the baseline has `zod` declared at v4 but imported only in one edge function at v3 — that split must be resolved before schemas are shared across the worker, the functions and the browser.
+**Structured outputs are mandatory.** Schema-validated objects, never parsed prose. Note the baseline has `zod` declared at v4 but imported only in one edge function at v3 — that split must be resolved before schemas are shared across the worker, the functions and the browser. *(2026-09-14: that v3 import went with the removed MCP function, and no edge function imports zod today. The engine's output contracts (`engine/models/`) use the application's zod v4. A schema shared with an edge function would reopen the question.)*
 
 **Memory is retrieved, not accumulated.** Short-term task context, then agent / department / company memory by retrieval. The whole company history is never sent to a model.
 
@@ -398,4 +398,52 @@ ops.tenants                          the isolation boundary (1A)
 
 **Who can touch it.** Nobody but the owner in Phase 1C. No `anon`, `authenticated`, `service_role` or `ops_worker` privilege on any table or function, no PUBLIC EXECUTE, and a pinned per-run EXECUTE set that fails by name if that changes. The lease-bound read policies on every domain table have no grant behind them; they fix the scope of a future worker read before it exists.
 
-**Deliberately absent.** No model, prompt, tool, memory, approval, review, UI or CRM link; no `risk_level`, task input/result, company settings or agent configuration blob; no executable task kind (the allowlist is empty); no worker access to domain data. The kill switch and cost ledger ([ADR 0010](adr/0010-cost-control-and-kill-switch.md)) are still owed before any agent can run.
+**Deliberately absent.** No model, prompt, tool, memory, approval, review, UI or CRM link; no `risk_level`, task input/result, company settings or agent configuration blob; no executable task kind (the allowlist is empty); no worker access to domain data. The kill switch and cost ledger ([ADR 0010](adr/0010-cost-control-and-kill-switch.md)) are still owed before any agent can run. *(2026-09-14: Phase 1D added the minimal agent-run stop and records usage, but still no cost; §16.)*
+
+---
+
+## 16. Phase 1D as built (2026-09-14)
+
+One agent can think **once** about **one** task it is assigned, and nothing follows from what it says. [ADR 0016](adr/0016-agent-runs-and-model-providers.md) records the decisions and the alternatives rejected. The kill switch is the minimal agent-run form of [ADR 0010](adr/0010-cost-control-and-kill-switch.md), which its addendum maps part by part.
+
+```
+owner ── ops.request_agent_run(tenant, task, agent, capability, idempotency key, source [, retry_of])
+           gates: task in tenant, agent in task's company, assignee, capability, active org, kill switch
+           run: pending ── bridge ── ops.jobs  kind agent_run.execute, payload {agent_run_id}  (reference only)
+                                         │
+worker  TX1   lease ─────────────────────┤ COMMIT
+        TX2a  prepare  claim_agent_run   the run bound to the LIVE LEASE, never the payload
+                       start_agent_run   gates + stops again ── COMMIT "running"
+                                         any other token: settle now, never call
+        ────  call     ModelRouter.executeStructured(route, prompt, contract, signal)
+                       no transaction, no capabilities; signal = shutdown or lease deadline
+        TX2b  settle   complete_agent_run | fail_agent_run  +  ops.complete_job ── COMMIT
+        tick  sweep    settle_stale_agent_runs: running under a dead or superseded attempt -> indeterminate
+```
+
+| Distinction | What keeps it |
+| --- | --- |
+| Agent ≠ model | `ops.agents` carries no model, prompt or provider; routes belong to capabilities |
+| Run ≠ job | a run is the business record of one invocation; the job only carries it, and a job retry cannot re-issue the call |
+| Idempotency key ≠ correlation ≠ causation | a key is caller data scoped to a tenant; correlation is generated or inherited by the database; causation is derived from the run's own facts. No caller or model supplies the last two |
+| Result ≠ action | the result is advisory data on the run row; it changes no task, job, event beyond the run's own lifecycle, or CRM row |
+| Stop ≠ agent status | `ops.execution_stops` is the audited, deny-wins switch; `ops.agents.status` stays lifecycle configuration |
+
+| Piece | Where | Note |
+| --- | --- | --- |
+| Runs, stops, guards, capabilities | `supabase/migrations/20260914120000_agent_runtime.sql` | Hand-written; end-state assertions; revised after an adversarial review before it was applied anywhere but the local stack |
+| State machine | `ops.agent_run_status_transitions()` + `agent_runs_guard_update` (ENABLE ALWAYS) | 6 edges; a finished run refuses any update; `succeeded` requires a contract-valid result |
+| Owner services | `ops.request_agent_run`, `ops.trip_execution_stop`, `ops.clear_execution_stop`, `ops.active_execution_stop`, `ops.request_task_execution` (agent run branch) | SECURITY INVOKER, explicit tenant scope, owner-only EXECUTE |
+| Worker capabilities | `ops.claim_agent_run`, `start_agent_run`, `refuse_agent_run`, `complete_agent_run`, `fail_agent_run`, `settle_stale_agent_runs` | SECURITY DEFINER, lease-bound (the sweep checks no lease), no id arguments |
+| Handler shape | `engine/worker/handlerRegistry.ts`, `runOneJob.ts` | `external_call`: prepare (commit), call (no transaction), settle (with job completion). Transactional handlers are unchanged |
+| The handler | `engine/handlers/agentRunExecute.ts` | Claims, routes, fingerprints, starts, calls once, settles. Never logs, reads the environment, or imports a client |
+| Provider boundary | `engine/models/types.ts`, `errors.ts`, `testSupport/providerContract.ts` | Provider-neutral request, response and error taxonomy; fixed error messages, never provider text |
+| Adapters | `engine/models/openaiResponses.ts`, `fakeModelProvider.ts` | OpenAI Responses over native `fetch` (`store: false`, strict JSON schema, no tools, redirects refused, byte-capped body); a deterministic fake for every test |
+| Router | `engine/models/router.ts`, `routingConfig.ts` | Capability → tier in the database; tier → provider and model in the environment; tier → timeout and output ceiling in code. One call, no retry, no fallback; an unknown route fails closed |
+| Output contract | `engine/models/outputContract.ts`, `taskAssessment.ts`, `ops.agent_run_result_valid` | zod and JSON schema in the worker, the same rules again in the database; versioned prompt `task_assessment.v1`; sha256 input fingerprint |
+| Typed owner boundary | `engine/domain/agentRuns.ts`, `executionStops.ts`, `agentRunStateMachine.ts` | Authorises nothing; no correlation, causation or force parameter exists |
+| Stop CLI | `engine/cli/executionStop.ts` (`npm run execution-stop`) | `trip`, `clear`, `list`; owner connection only; unknown flags refused |
+
+**What a run records.** Status, error category and code, prompt version, input fingerprint, provider, requested and response model, finish reason, provider request and response ids, five token counts, latency, the job attempt that started it, and the stop that refused it. No cost column: there is no versioned price source (ADR 0016 §10). No prompt text, no reasoning, and no provider error text.
+
+**Deliberately absent.** Tools and a Tool Gateway, MCP, memory, retrieval, multiple agents, loops, autonomous triggers (creating a task causes no run), approvals, any UI, any CRM read or write, cost, budgets, a spend ceiling, route escalation, and refusal at lease time for every job kind.
