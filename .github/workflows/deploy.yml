@@ -50,6 +50,18 @@ jobs:
 
             - name: 🔎 Unit Tests on agent harness
               run: CI=1 npm run test:unit:claude -- --run
+
+    # The live-database proof, for the commit this run ships. check.yml runs
+    # it too, but in another workflow run, and `needs:` cannot reach a job in
+    # another run: the hosted database deploy used to start before, or despite,
+    # a failing database job. Both workflows call the one definition, and
+    # deploy-supabase needs this job directly. No secrets are passed: it runs
+    # repository code against a local stack and holds no deploy token.
+    database:
+        name: 🗄️ Database gate (must pass before the database deploy)
+        permissions:
+            contents: read
+        uses: ./.github/workflows/database.yml
     deploy-doc:
         name: 🚀 Deploy (doc)
         needs: gate
@@ -136,7 +148,7 @@ jobs:
 
     deploy-supabase:
         name: 🚀 Deploy (supabase)
-        needs: gate
+        needs: [gate, database]
         runs-on: ubuntu-latest
         timeout-minutes: 10
 

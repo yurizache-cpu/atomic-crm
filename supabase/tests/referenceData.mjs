@@ -149,6 +149,22 @@ try {
       spendLimits === "0",
       `no spend limit: limits are set by an owner act, never shipped by a migration (found ${spendLimits})`,
     );
+
+    // The CRM owner is chosen by a person (public.bootstrap_owner, Phase 1D.2):
+    // a migration that shipped one, or a record of one, would be an owner
+    // nobody chose.
+    const [[owners, ownerLog]] = psql(
+      `select (select count(*) from public.sales where role = 'owner' or administrator),
+              (select count(*) from public.owner_provisioning_log);`,
+    );
+    check(
+      owners === "0",
+      `no CRM owner or administrator: a person bootstraps the first one (found ${owners})`,
+    );
+    check(
+      ownerLog === "0",
+      `no owner provisioning record without an owner act (found ${ownerLog})`,
+    );
   }
 } catch (error) {
   console.error(`reference data could not be checked: ${error.message}`);

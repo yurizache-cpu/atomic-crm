@@ -61,7 +61,7 @@ Audit and documentation. No functional change. Deliverables: `BASELINE_REPORT.md
 **Goal.** A deployed instance that a real person can log into, with the critical holes closed, before any real data exists.
 
 **Scope.**
-- **Owner bootstrap.** Today no code path can create the first owner (`is_admin()` requires `role='owner'`; the trigger hardcodes `operator`; signup is off; `authenticated` has no INSERT on `sales`; the bootstrap UI was deleted). Build a deliberate, auditable provisioning procedure and document it.
+- **Owner bootstrap.** Today no code path can create the first owner (`is_admin()` requires `role='owner'`; the trigger hardcodes `operator`; signup is off; `authenticated` has no INSERT on `sales`; the bootstrap UI was deleted). Build a deliberate, auditable provisioning procedure and document it. *(2026-09-17, Phase 1D.2: built. `public.bootstrap_owner` is a person's act with the database credential, recorded in `public.owner_provisioning_log`; an upgrade with legacy administrators halts until a person runs it. Runbook: PERMISSIONS.md §3, "Owner bootstrap"; SI-41. The `users`/`patchUser` item below is still open.)*
 - Fix `delete_note_attachments` (any authenticated user can delete any file via the service role).
 - Fix the `users`/`patchUser` ordering bug (auth email and ban state mutate before the owner check).
 - Decide and act on the MCP function (Q6) — at minimum add audience validation, stop trusting `x-forwarded-host`, close the nested-CTE bypass in `validateSql`, stop logging raw SQL containing personal data, and stop connecting as superuser. *(Done 2026-09-13: the function is removed and kept out of the committed deploy paths; ADR 0011 addendum, SI-03.)*
@@ -359,3 +359,20 @@ Phase 2A may be built and tested with synthetic data before then. See DECISIONS.
 - health data.
 
 Synthetic data is allowed.
+
+### Phase 1D.2 — pre-main safety closure (2026-09-17)
+
+**Built on `feature/pre-main-safety` (from `feature/clinical-phase-1` at `c0c07c37`), ~~not pushed~~ pushed by the owner, and CI VERIFIED (run 35247254334 on `c00082fb`, 2026-09-17; only the historical `e2e-test` and Prettier checks are red, identical to the baseline). Not merged.** A debt-closure phase that exists only to settle four automated-review (Codex) findings on PR #1 before anything reaches `main`. It adds no product functionality and does not start Phase 2A. See [PHASE_1D2_REPORT.md](PHASE_1D2_REPORT.md).
+
+- Three findings in `20260911232039_pending_delta.sql` were reproduced on legacy data and fixed by forward migrations: legacy deals keep their stage; legacy contacts get their lead profile, so an opt-out can be recorded; legacy administrators are neither silently dropped nor promoted on trust, and the owner bootstrap above closes the fresh-deployment deadlock.
+- The fourth finding was confirmed from source and fixed: `deploy.yml` now runs the same live-database gate as `check.yml`, from one reusable workflow, in the same run and on the same commit, before any hosted Supabase push.
+- A new upgrade replay (`npm run test:db:upgrade`) runs in that gate, so a migration that mishandles existing rows is no longer invisible.
+
+Phase 2A's position is unchanged: it waits for this phase's CI result and its own brief. *(2026-09-17: the CI result is in, verified; Phase 2A now waits only for its brief, and is not started.)*
+
+**Owner review 2026-09-17: the three implementation choices are accepted** (PHASE_1D2_REPORT.md §16):
+- **F. Legacy administrators are never promoted automatically.** The upgrade is a two-step operational procedure: the chain halts at `20260917180300` while no active owner exists, a person runs `public.bootstrap_owner` for the chosen user, the same deploy runs again, and the remaining legacy administrators become recorded operators. A production deployment can intentionally stop there (PERMISSIONS.md §3).
+- **G. The deal-stage repair preserves the business `updated_at`.** A representation repair must not manufacture an interaction timestamp.
+- **H. A backfilled lead profile's `acquired_at` is derived** from the contact's earliest trustworthy evidence, never overwrites an existing profile, stays one per contact and idempotent, and is documented as derived.
+
+**Production-readiness gate (recorded, not part of this phase).** These do not block Phase 1D.2 CI, and they remain blockers or risks to a real production deployment where they apply: the `users` edge function (`patchUser` ordering, half-state administrator paths); `delete_note_attachments`; committed development-secret debt; and the makefile deploy path, which does not use the database gate. BASELINE Q8 is separate and still blocks real patient or clinical data from reaching an LLM provider.

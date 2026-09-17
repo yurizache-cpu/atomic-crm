@@ -33,6 +33,16 @@ Index of ADRs under [`docs/adr/`](adr/). Each records context, decision, alterna
 - **0012 is `Accepted` as of 2026-09-12**, and what was accepted matters: the owner accepted the **Phase 1A addendum**, not the ADR as originally written. Tenancy is bound to a live lease, not to a GUC the worker writes — measured, a worker can set any GUC, so the original item 4 would have made "which tenant am I" an assertion by the worker. A Phase 1B addendum then corrected the transaction boundary: the lease commits on its own, because a single-transaction lease leaves a crashed worker no trace and makes a crashing job a poison pill.
 - **No ADR is `Superseded` or `Rejected`.** Recorded explicitly so the absence reads as a finding rather than an oversight.
 
+### Owner decisions recorded outside an ADR
+
+Phase-level owner decisions that settle behaviour without a new architectural record. Each is recorded in full in the phase report it names.
+
+- **F — Legacy administrators are never promoted to owner automatically** (2026-09-17, [PHASE_1D2_REPORT.md](PHASE_1D2_REPORT.md) §16). The historical `administrator` flag is not ownership evidence. An upgrade that meets legacy administrators without an active owner halts until a person runs `public.bootstrap_owner`, then resumes; the other legacy administrators become recorded operators. Runbook: [PERMISSIONS.md](PERMISSIONS.md) §3.
+- **G — A representation repair keeps the business `updated_at`** (2026-09-17, same report). The legacy deal-stage backfill must not manufacture an interaction timestamp.
+- **H — A backfilled lead profile's `acquired_at` is derived from the contact's earliest trustworthy evidence** (2026-09-17, same report), never from the migration time when evidence exists; it never overwrites an existing profile and is documented as derived.
+
+Decisions A–E belong to ADR 0017's owner-review addendum.
+
 ## How to use this
 
 - Read the relevant ADR **before** changing anything it covers.

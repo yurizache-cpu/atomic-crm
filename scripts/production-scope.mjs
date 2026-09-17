@@ -35,14 +35,25 @@
 //   - The seed paths stay the default, no remote project configures seeding,
 //     and no tracked file names a seed SQL file, or a glob that can expand to
 //     one, outside SEED_REFERENCES.
+// The database gate (Phase 1D.2), in scripts/production-scope-database-gate.mjs
+//   - Every workflow job that can reach a hosted project (a hosted command, a
+//     credential, a self-hosted runner) has no job-level condition, directly
+//     needs a plain call of .github/workflows/database.yml, deploys the tree
+//     it checked out, and runs on push or workflow_dispatch only. database.yml
+//     is exactly the reviewed job, every live-database suite in order;
+//     check.yml calls the same file. checkDeployGate runs beside
+//     checkProductionScope in the repository check, not inside it: the
+//     fixtures of the rules above are deploy paths that are not whole
+//     workflows.
 //
 // How it reads. Shell, YAML, TOML and JSON line by line, comments included.
 // JavaScript and TypeScript through the TypeScript parser
 // (scripts/source-facts.mjs), so no comment, string or nested bracket hides an
 // import, a call or its arguments.
 //
-// Limits. It reads committed files, except prose (.md, .mdx), SELF (its two
-// modules and its tests) and COMMAND_FIXTURES. It cannot see a person running
+// Limits. It reads committed files, except prose (.md, .mdx), SELF (its
+// modules and the tests that quote their rules) and COMMAND_FIXTURES. It
+// cannot see a person running
 // the CLI by hand; a command, module name or seed path assembled where no
 // literal shows it, including a directory-wide glob such as supabase/*; a raw
 // method reached through a computed member name or reflection, which is why
@@ -59,6 +70,7 @@ import {
   commandViolations,
   scopeCheckViolations,
 } from "./production-scope-commands.mjs";
+import { checkDeployGate } from "./production-scope-database-gate.mjs";
 import {
   checkRemoteFunctions,
   remoteTargetOf,
@@ -68,6 +80,7 @@ import {
 import { methodCalls, moduleLoads, parseSource } from "./source-facts.mjs";
 
 export { parseSupabaseCommands } from "./production-scope-commands.mjs";
+export { checkDeployGate } from "./production-scope-database-gate.mjs";
 
 /** The reviewed set of deployable edge functions. Adding one is a review event. */
 export const PRODUCTION_FUNCTIONS = Object.freeze([
@@ -141,6 +154,7 @@ const COMMAND_FIXTURES = new Set(["scripts/test/dev-signing-key.test.mjs"]);
 const SELF = new Set([
   "scripts/production-scope.mjs",
   "scripts/production-scope-commands.mjs",
+  "scripts/production-scope-database-gate.mjs",
   "scripts/test/production-scope.test.mjs",
   "scripts/test/production-scope-functions.test.mjs",
 ]);
@@ -877,7 +891,8 @@ const isEntryPoint = () =>
 function runRepositoryCheck() {
   let violations;
   try {
-    violations = checkProductionScope(readTrackedFiles());
+    const files = readTrackedFiles();
+    violations = [...checkProductionScope(files), ...checkDeployGate(files)];
   } catch (error) {
     console.error(`production scope could not be checked: ${error.message}`);
     process.exit(2);
@@ -889,12 +904,12 @@ function runRepositoryCheck() {
   }
   if (violations.length > 0) {
     console.error(
-      `\n${violations.length} way(s) a deployment could leave production scope (SI-03, SI-25).`,
+      `\n${violations.length} way(s) a deployment could leave production scope (SI-03, SI-25) or skip the live database gate (Phase 1D.2).`,
     );
     process.exit(1);
   }
   process.stdout.write(
-    `OK: production scope holds: ${PRODUCTION_FUNCTIONS.length} reviewed functions, reviewed dependencies only, no generic SQL endpoint, no development seed on a remote path\n`,
+    `OK: production scope holds: ${PRODUCTION_FUNCTIONS.length} reviewed functions, reviewed dependencies only, no generic SQL endpoint, no development seed on a remote path, every hosted deploy gated on the live database suites\n`,
   );
 }
 

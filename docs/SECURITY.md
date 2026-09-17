@@ -86,7 +86,7 @@ Ranked by what an attacker or an accident reaches first.
 | **Secrets are committed by design** — `.gitignore` un-ignores `supabase/functions/.env`; an EC private signing key is tracked in `supabase/signing_keys.json`; `.env.development` and `.env.e2e` match no ignore pattern at all. | Open; needs rotation, which is its own change |
 | **`delete_note_attachments`** lets any authenticated user delete any file via the service role. | Open |
 | **`users`/`patchUser` ordering** mutates auth email and ban state before the owner check. | Open |
-| **Two contradictory auth models** — `schemas/` has an unreachable owner bootstrap; `migrations/` makes the first signup an administrator. | Open |
+| **Two contradictory auth models** — `schemas/` has an unreachable owner bootstrap; `migrations/` makes the first signup an administrator. | ~~Open~~ Closed 2026-09-17 (Phase 1D.2): since `20260911232039` both carry the owner model, `public.bootstrap_owner` is the explicit owner path, and an upgrade with legacy administrators halts until a person chooses the owner (PERMISSIONS.md §3, SI-41) |
 | **No secret scanning** anywhere in CI or the local loop. | Open |
 
 ---

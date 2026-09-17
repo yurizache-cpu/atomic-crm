@@ -63,6 +63,14 @@ grant all on all tables in schema public to service_role;
 grant all on all sequences in schema public to service_role;
 grant all on all functions in schema public to service_role;
 
+-- Owner bootstrap: an act of a person holding the database credential, never
+-- of an application role, the service role included. These revokes must come
+-- AFTER the blanket service_role grants above, which would otherwise include
+-- them. Matches 20260917180200_owner_bootstrap.sql.
+revoke all on table public.owner_provisioning_log from anon, authenticated, service_role;
+revoke all on sequence public.owner_provisioning_log_id_seq from anon, authenticated, service_role;
+revoke all on function public.bootstrap_owner(uuid, text, text) from public, anon, authenticated, service_role;
+
 -- New objects are private by default. Add explicit grants above when a browser
 -- capability is intentionally introduced.
 alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;

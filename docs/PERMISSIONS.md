@@ -38,7 +38,7 @@ Two, on `public.sales`:
 - **`owner`** — administrative authority. `is_admin()` in `supabase/schemas/` requires `role = 'owner'` and `disabled = false`.
 - **`operator`** — ordinary user. The `handle_new_user` trigger assigns this.
 
-⚠️ **Two contradictory models are live at once**, and any work here must say which it targets:
+~~⚠️ **Two contradictory models are live at once**, and any work here must say which it targets:~~ *(Superseded 2026-09-17, Phase 1D.2: since `20260911232039_pending_delta.sql` the migrations carry the declarative model too, so the table below describes the database only before that migration. The deadlock it names is closed by the owner bootstrap below.)*
 
 | | `supabase/schemas/` (declarative, unmigrated) | `supabase/migrations/` (what a real database has) |
 | --- | --- | --- |
@@ -47,6 +47,43 @@ Two, on `public.sales`:
 | Net effect | **No owner can ever be created** — every `is_admin()` policy is unreachable, so tag creation and settings writes are dead | A working admin exists |
 
 The declarative model is the intended one and it has a bootstrap deadlock: signup is disabled in three places, `authenticated` has no INSERT on `sales`, the invite endpoint requires an existing owner, and the first-user bootstrap UI was deleted. Closing that needs a deliberate, audited provisioning path — it is Phase 1 security work, not a quick fix.
+
+### Owner bootstrap (Phase 1D.2, 2026-09-17)
+
+`is_admin()` is `administrator = true AND role = 'owner' AND disabled = false`, and that condition stays. The application writes both columns together: the `users` edge function sets `role = 'owner'` exactly when it sets `administrator = true`. It is also the only in-app way to make an owner, and only an active owner may call it. So an instance with no active owner needs one act by a **person holding the database credential**, and nothing else can do it (SI-41):
+
+```sql
+select public.bootstrap_owner('<auth user id>', '<who is doing this>', '<why>');
+```
+
+**Fresh deployment:**
+
+1. In the Supabase dashboard, open Authentication → Users → Add user, and create the owner's account with the email confirmed (or invite it and let the person accept). `handle_new_user` creates their CRM row as an `operator`.
+2. Copy the user's UID from the same page.
+3. In the SQL editor (it runs as `postgres`), run the statement above with that UID. It returns the CRM user id.
+4. The person signs in; they are the owner and can add further users, and further owners, in the application.
+
+**The function refuses:**
+- to run while any active owner exists (it is a bootstrap, not a promotion path);
+- a user with no CRM row, a disabled CRM row, or an auth account that is unconfirmed, banned or deleted;
+- a missing actor or reason;
+- any transaction isolation above READ COMMITTED. It locks `public.sales` so that two people running it at once cannot make two owners, and at a higher isolation level its check could read a stale snapshot.
+
+It names the user by auth id, never by email or user metadata. Each bootstrap is recorded in `public.owner_provisioning_log`, which no application role can read or write.
+
+**Upgrading an instance that predates `20260911232039`:**
+
+That migration gave every existing user `role = 'operator'`, so a legacy administrator stopped being one. They are not promoted automatically. From `20240730075029` until `20241104153231`, any signed-in user could set their own `administrator` flag, so the flag is not trustworthy evidence of ownership.
+
+> ⚠️ **A production deployment can intentionally STOP at migration `20260917180300`, and that stop is the designed behaviour, not a failure to debug.** Upgrading such an instance is a two-step operational procedure (owner decision F, 2026-09-17). The `deploy-supabase` job fails at `supabase db push`, so its later steps (secrets, edge functions and the production frontend) do not run until the deploy is resumed; the demo and documentation jobs do not depend on it. The database is left with every migration before the guard applied and no administrator until the bootstrap runs. **Resume only after the explicit owner bootstrap below, then run the same deploy again.** Never "fix" the stop by promoting the legacy `administrator = true` rows, by editing the guard, or by weakening `is_admin()`: automatic promotion was rejected by the owner.
+
+1. When the upgrade finds an active legacy administrator and no active owner, migration `20260917180300` **halts the deploy**. Its error names the waiting CRM users by id and auth id only.
+2. Everything before the guard is already applied (the CLI commits each migration file on its own), so `bootstrap_owner` exists. A person runs it for the right user, then deploys again.
+3. On that run, every other administrator without the owner role becomes a plain operator. Each change is recorded in `public.owner_provisioning_log`, and the owner can promote those users again in the application.
+
+The CI upgrade replay (`npm run test:db:upgrade`) rehearses exactly this sequence on legacy data.
+
+**Break glass:** if every owner has been disabled, the same statement works again, because no *active* owner exists. That is inherent to an owner act. Whoever holds the database credential can already do anything; the function makes the act explicit, checked and recorded.
 
 ---
 
