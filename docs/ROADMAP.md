@@ -289,7 +289,7 @@ Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003
 
 ## Status update 2026-09-17
 
-**Phase 1D.1, runtime governance closure, is built and committed locally on `feature/runtime-governance`. It is not pushed, and CI is pending.** It is a short bridge phase between the first model call and the first real clinic flow. See [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md) and [ADR 0017](adr/0017-runtime-governance.md) (Accepted by the owner 2026-09-17, below). It discharges most of what ADR 0010 left owed; see that ADR's 2026-09-17 addendum.
+**Phase 1D.1, runtime governance closure, is built, committed and pushed on `feature/runtime-governance`, and CI VERIFIED (run 35220094426 on `b4dee040`, 2026-09-17; only the historical `e2e-test` and Prettier checks are red, identical to the baseline).** It is a short bridge phase between the first model call and the first real clinic flow. See [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md) and [ADR 0017](adr/0017-runtime-governance.md) (Accepted by the owner 2026-09-17, below). It discharges most of what ADR 0010 left owed; see that ADR's 2026-09-17 addendum.
 
 **Built:**
 - **Prices:** versioned, owner-recorded model prices. They are never shipped by a migration, never used after they expire, and never replaced by an older version.
@@ -323,9 +323,9 @@ Phase 2A may be built and tested with synthetic data before then. See DECISIONS.
 - **C. Waiting is allowed.** A request may wait, bounded, for a prepare in progress.
 - **D. The spend-ceiling stop stays.** It is cleared only by a person. A new day, a budget change, a price change or lower observed spend never resumes execution.
 
-**Committed locally, not pushed.** The phase is committed on `feature/runtime-governance` in four commits: schema and domain; engine, CLIs and the driver-backed proofs (they compile only with the new start signature, so they ship with it); security invariants; documentation. CI runs once the owner pushes it, and the phase is CI VERIFIED only after that.
+~~**Committed locally, not pushed.**~~ *(2026-09-17: pushed by the owner and CI VERIFIED, run 35220094426 on `b4dee040`, which adds owner decision E.)* The phase is committed on `feature/runtime-governance` in four commits: schema and domain; engine, CLIs and the driver-backed proofs (they compile only with the new start signature, so they ship with it); security invariants; documentation. CI runs once the owner pushes it, and the phase is CI VERIFIED only after that.
 
-**Next phase: PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT. The owner accepts the direction. The phase is NOT started.** It waits for the Phase 1D.1 CI result and its own brief. Where the report's §14 (the proposed Phase 2A scope) differs, this section governs.
+**Next phase: PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT. The owner accepts the direction. The phase is NOT started.** It waits for the Phase 1D.1 CI result and its own brief. *(The CI result came in on 2026-09-17: verified, run 35220094426.)* Where the report's §14 (the proposed Phase 2A scope) differs, this section governs.
 
 **Flow:** inbound test ingress → idempotent task → `lead_triage` capability → agent run → structured advisory triage → human review → operator queue.
 

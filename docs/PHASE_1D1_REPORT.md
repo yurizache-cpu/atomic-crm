@@ -1,15 +1,17 @@
 # PHASE 1D.1 RUNTIME GOVERNANCE REPORT
 
 **Date:** built 2026-09-16/17
-**Branch:** `feature/runtime-governance` (local only, not pushed), created from `a2d0c37c` on `feature/clinical-phase-1`
-**Commits:** four, local only, on top of `a2d0c37c`:
+**Branch:** `feature/runtime-governance`, created from `a2d0c37c` on `feature/clinical-phase-1`, pushed by the owner on 2026-09-17
+**Commits:** five on top of `a2d0c37c`, the last of which is the CI-verified head `b4dee040`:
 - `c1761702` the schema and the domain services;
 - `cd9d3b3f` the engine, the CLIs and the driver-backed proofs;
 - `4bdcfb42` the security invariants;
-- the documentation commit that carries this report.
+- `56ec7b54` the documentation and the owner review;
+- `b4dee040` owner decision E.
 
-Each of the first three typechecks on its own. The verified state is the last commit.
-**CI:** not run. CI runs only on pushed branches, and agents never push.
+Each of the first three typechecks on its own.
+
+**CI: VERIFIED** on `b4dee040` by [run 35220094426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35220094426). The only red checks are `e2e-test` and repository-wide Prettier, identical to the baseline ("CI status" below). A later documentation-only commit records this evidence.
 
 **Preconditions, confirmed before any change (2026-09-16):**
 - **Phase 1D is CI verified.** Checked independently through the public GitHub API:
@@ -63,7 +65,7 @@ The owner did not decide ADR 0010, which stays Proposed; its 2026-09-17 addendum
 - **Flow:** inbound test ingress → idempotent task → `lead_triage` capability → agent run → structured advisory triage → human review → operator queue.
 - **Allowed:** verified inbound webhook infrastructure; synthetic or test messages; a minimal message ledger, without the message body wherever possible; idempotent `create_task`; `lead_triage` structured output; read-only CRM and contact lookup; a response draft that a person reviews; the current pricing, budget and kill-switch governance; operator CLI visibility; consent, `do_not_contact` and retention enforcement.
 - **Not allowed:** the model sending WhatsApp messages on its own; the model writing CRM data; generic tools; browser automation; RAG or memory; multi-agent delegation; autonomous loops; real clinical or patient text sent to a model while Q8 is open; UI or isometric work.
-- **Not started.** It waits for the Phase 1D.1 CI result and its own brief. Where §14 differs from the roadmap, the roadmap governs.
+- **Not started.** It waits for the Phase 1D.1 CI result and its own brief. *(The CI result came in on 2026-09-17: verified, run 35220094426.)* Where §14 differs from the roadmap, the roadmap governs.
 
 **BASELINE Q8 is unchanged and explicit.** It blocks real patient data, not synthetic Phase 2A development and testing. Until the owner decides it, no real patient message body, clinical text, psychotherapy information or health data may be sent to a real LLM provider (§13, item 1).
 
@@ -528,7 +530,7 @@ The simulation did not touch the real index. The phase was committed afterwards,
 
 **Before this phase counts as closed:**
 
-2. **CI has not run.** The phase is committed locally on `feature/runtime-governance`, in four commits (schema and domain; engine, CLIs and the driver-backed proofs (they compile only with the new start signature, so they ship with it); security invariants; documentation), and is not pushed. The owner pushes it; CI then has to show every check this phase touches green, with only the historical `e2e-test` and Prettier red. A local simulation of the committed tree is green on the tracked-file guards, but only CI proves the Linux side: real SIGTERM and SIGKILL, the absence of a `SUPABASE_DB_PORT`, and one stack.
+2. ~~**CI has not run.**~~ *(Done 2026-09-17: CI VERIFIED by [run 35220094426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35220094426) on `b4dee040`; see "CI status".)* The phase is committed on `feature/runtime-governance`, in four commits (schema and domain; engine, CLIs and the driver-backed proofs (they compile only with the new start signature, so they ship with it); security invariants; documentation), and is not pushed. The owner pushes it; CI then has to show every check this phase touches green, with only the historical `e2e-test` and Prettier red. A local simulation of the committed tree is green on the tracked-file guards, but only CI proves the Linux side: real SIGTERM and SIGKILL, the absence of a `SUPABASE_DB_PORT`, and one stack.
 3. ~~**Owner reviews:**~~
    - ~~ADR 0017 (Proposed);~~
    - ~~the ADR 0010 addendum (ADR 0010 is still Proposed);~~
@@ -582,12 +584,12 @@ The simulation did not touch the real index. The phase was committed afterwards,
 
 ## 14. Exact proposed Phase 2A scope
 
-> **Status (2026-09-17, owner):** the direction is accepted as **PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT** (ROADMAP, owner review 2026-09-17). Where this list differs, the roadmap governs. The phase is not started; it waits for the Phase 1D.1 CI result and its own brief.
+> **Status (2026-09-17, owner):** the direction is accepted as **PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT** (ROADMAP, owner review 2026-09-17). Where this list differs, the roadmap governs. The phase is not started; it waits for the Phase 1D.1 CI result and its own brief. *(CI verified 2026-09-17, run 35220094426.)*
 
 **Theme: one inbound lead is triaged by one agent, with a person in the loop, on synthetic data until Q8 closes.**
 
 1. **Gate.** Before real data, all of these hold:
-   - ADR 0017 is accepted, and Phase 1D.1 is CI verified *(ADR 0017 accepted 2026-09-17; CI pending)*;
+   - ADR 0017 is accepted, and Phase 1D.1 is CI verified *(both done 2026-09-17: ADR 0017 accepted; CI verified by run 35220094426)*;
    - Q8 is decided (until then, synthetic data only);
    - an ADR for the channel is accepted. WhatsApp Business Platform is the likely one, since the ROADMAP places it at Phase 8 with its own LGPD floor: rule 7 means that floor moves forward with it.
 2. **Inbound ingress.** One externally triggered source, **read-only**: an edge function or webhook receives an inbound message, verifies the provider's signature, and records a minimised ledger row.
@@ -629,20 +631,46 @@ The simulation did not touch the real index. The phase was committed afterwards,
 - a UI, or isometric work;
 - real clinical or patient text sent to a model while Q8 is open.
 
+## CI status
+
+**CI VERIFIED.** [run 35220094426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35220094426) of `✅ Check` (push, attempt 1) ran on `b4dee040aaf55953122e6cefe8b0984f6108553e` on 2026-09-17, 12:15–12:23 UTC.
+- **Remote head.** `origin/feature/runtime-governance` pointed at that commit, and so did the local head.
+- **Red checks.** The only red checks are the two pre-existing ones, each identical to baseline [run 35129049291](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35129049291) on `c4382b9b`, so the run's overall conclusion is `failure`, as the baseline's was.
+- **Criterion.** Green, or red only on those two checks and unchanged.
+- **Evidence.** Results were read from the job logs and the public check-run annotations.
+
+| Job / step | Result on `b4dee040` |
+| --- | --- |
+| 🗄️ Start Supabase | green; applied every migration through `20260917120000_runtime_governance.sql` |
+| 🗄️ `test:db` | **11 of 11 suites passed**, `runtime_governance.sql` included (7.9 s). `opsDataApiExposure.mjs`: 15 `ops` relations, 96 `ops` functions, 5 credentials, 705 Data API requests over REST and GraphQL, none reached `ops` |
+| 🗄️ `test:db:engine` | **28 files, 181 of 181 passed** (157 s) |
+| 🗄️ Production-like replay (`db reset --no-seed`) | green, `20260917120000_runtime_governance.sql` applied, with its end-state assertions |
+| 🗄️ Reference data without the development data | green: "reference data holds without the development data", no spend limit or price shipped |
+| 🗄️ Clean reconstruction, then `test:db` again | green; **11 of 11** after the reset |
+| 🔎 Unit Tests on App (all three projects) | **127 files, 2142 passed**, 2 skipped |
+| 🔎 Unit Tests on Supabase functions | **54 files, 1414 passed**. Includes `securityInvariants` **46**, `migrationInvariants` 131, `schemaReproducibility` 12, `agentRunExecute` 47, `spendLimits` 37 and the runtime read-model tests |
+| 🔎 Unit Tests on agent harness | 43 files, 494 passed, 1 skipped. The tracked-file guards run here on the committed tree: `production-scope` 39, `production-scope-functions` 15 and `production-scope-remote` 14; `dev-signing-key` 64; `scan-build-artifacts` 35 |
+| 🏷️ Typecheck | green |
+| 🔬 ESLint | green (both the job and the lint-action ESLint check: no issues) |
+| 🔨 Build | green |
+| 🔒 No secrets in the production build | green: 16 text files, 0 blocking, 0 advisory |
+| e2e-test | red at "Run Playwright tests", exit code 2 (annotation at `.github:790`), **identical to the baseline** |
+| Prettier (repository-wide) | red, 2 errors: `src/components/atomic-crm/dataImport/sampleCsv.test.ts` and `src/components/atomic-crm/providers/commons/canAccess.test.ts`, **the same two files as the baseline**, neither touched by this phase |
+
 ## Classification
 
-**READY FOR PHASE 2A: synthetic data only. Verified locally; CI pending.**
+**READY FOR PHASE 2A: synthetic data only. CI VERIFIED** (run 35220094426 on `b4dee040`).
 
 **Why:**
 - **Scope.** Every item in the brief is built.
 - **Tests.** The required tests exist and pass, and so does every earlier suite.
 - **Guards.** The load-bearing guards were mutation-tested, and every survivor is closed.
-- **Resets.** A clean reset and the CI sequence pass locally.
+- **Resets.** A clean reset and the CI sequence pass, locally and in CI.
 - **Security.** No security invariant was weakened.
 
 **What the classification does not cover:**
 - **Real patient data.** It does **not** cover it. BASELINE Q8 blocks any real patient or clinical text from reaching a model (§13, item 1).
-- **CI.** The phase is committed locally and not pushed. The classification becomes CI VERIFIED only after the owner pushes this branch, and CI shows every check this phase touches green, with only the historical `e2e-test` and Prettier checks red (§13, item 2).
+- **CI.** Verified: run 35220094426 on `b4dee040` shows every check this phase touches green, with only the historical `e2e-test` and Prettier checks red, identical to the baseline ("CI status"; §13, item 2).
 - **Owner decisions.** The owner accepted ADR 0017 on 2026-09-17, with decisions A to D ("Owner review" above; §13, item 3). ADR 0010 stays Proposed. The owner also confirmed decision E on 2026-09-17: a request made under a stop is refused before any job exists (§13, item 12). No owner decision is pending for this phase.
 - **Phase 2A scope.** The owner accepted the direction as PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT (ROADMAP, owner review 2026-09-17). Where §14 differs, the roadmap governs.
 
