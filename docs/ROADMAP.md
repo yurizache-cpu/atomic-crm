@@ -362,13 +362,13 @@ Synthetic data is allowed.
 
 ### Phase 1D.2 — pre-main safety closure (2026-09-17)
 
-**Built on `feature/pre-main-safety` (from `feature/clinical-phase-1` at `c0c07c37`), not pushed.** A debt-closure phase that exists only to settle four automated-review (Codex) findings on PR #1 before anything reaches `main`. It adds no product functionality and does not start Phase 2A. See [PHASE_1D2_REPORT.md](PHASE_1D2_REPORT.md).
+**Built on `feature/pre-main-safety` (from `feature/clinical-phase-1` at `c0c07c37`), ~~not pushed~~ pushed by the owner, and CI VERIFIED (run 35247254334 on `c00082fb`, 2026-09-17; only the historical `e2e-test` and Prettier checks are red, identical to the baseline). Not merged.** A debt-closure phase that exists only to settle four automated-review (Codex) findings on PR #1 before anything reaches `main`. It adds no product functionality and does not start Phase 2A. See [PHASE_1D2_REPORT.md](PHASE_1D2_REPORT.md).
 
 - Three findings in `20260911232039_pending_delta.sql` were reproduced on legacy data and fixed by forward migrations: legacy deals keep their stage; legacy contacts get their lead profile, so an opt-out can be recorded; legacy administrators are neither silently dropped nor promoted on trust, and the owner bootstrap above closes the fresh-deployment deadlock.
 - The fourth finding was confirmed from source and fixed: `deploy.yml` now runs the same live-database gate as `check.yml`, from one reusable workflow, in the same run and on the same commit, before any hosted Supabase push.
 - A new upgrade replay (`npm run test:db:upgrade`) runs in that gate, so a migration that mishandles existing rows is no longer invisible.
 
-Phase 2A's position is unchanged: it waits for this phase's CI result and its own brief.
+Phase 2A's position is unchanged: it waits for this phase's CI result and its own brief. *(2026-09-17: the CI result is in, verified; Phase 2A now waits only for its brief, and is not started.)*
 
 **Owner review 2026-09-17: the three implementation choices are accepted** (PHASE_1D2_REPORT.md §16):
 - **F. Legacy administrators are never promoted automatically.** The upgrade is a two-step operational procedure: the chain halts at `20260917180300` while no active owner exists, a person runs `public.bootstrap_owner` for the chosen user, the same deploy runs again, and the remaining legacy administrators become recorded operators. A production deployment can intentionally stop there (PERMISSIONS.md §3).

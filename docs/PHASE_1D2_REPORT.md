@@ -2,11 +2,11 @@
 
 | | |
 | --- | --- |
-| **Branch** | `feature/pre-main-safety`, created from `feature/clinical-phase-1` at `c0c07c37` (the Phase 1D.1 merge, CI verified). Local only: **not pushed**. |
+| **Branch** | `feature/pre-main-safety`, created from `feature/clinical-phase-1` at `c0c07c37` (the Phase 1D.1 merge, CI verified). ~~Local only: **not pushed**.~~ *(2026-09-17: pushed by the owner; remote HEAD `c00082fb`.)* |
 | **Date** | 2026-09-17 |
 | **Purpose** | Close pre-main safety debt before Phase 2A, and nothing else. Four findings an automated reviewer (Codex) raised on PR #1 were investigated and dispositioned. They sit in historical files outside the Phase 1D.1 diff, but any of them could block a merge or deploy to `main`. |
 | **Out of scope, untouched** | Phase 2A, WhatsApp, lead triage, tools, UI, the agent runtime, CRM redesign, `main`, any deploy, and unrelated backlog. |
-| **CI** | **Not run.** An agent never pushes; the owner pushes and CI verifies. |
+| **CI** | **VERIFIED** — [run 35247254334](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35247254334) on `c00082fb` (§17). Every Phase 1D.2 path is green; the only reds are `e2e-test` and repository-wide Prettier, identical to the baseline [run 35220094426](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35220094426) on `b4dee040`. |
 | **Owner review** | 2026-09-17: the three implementation choices are **accepted** as owner decisions F, G and H (§16). |
 | **Classification** | **READY FOR CI** (§15) |
 
@@ -436,4 +436,39 @@ Phase 1D.2 is **not** expanded to fix unrelated historical backlog. These stay r
 
 BASELINE **Q8** is separate and unchanged: no real patient message body, clinical text, psychotherapy information or health data may reach an LLM provider until the owner decides it.
 
-**Classification after the owner review:** READY FOR CI. Not pushed. Phase 2A not started.
+**Classification after the owner review:** READY FOR CI. ~~Not pushed.~~ *(Pushed and CI VERIFIED, §17.)* Phase 2A not started.
+
+## 17. CI verification (2026-09-17)
+
+**CI VERIFIED.** The owner pushed `feature/pre-main-safety`; the remote HEAD is `c00082fbb8f9b40ccd7287c27d5b5497702a4879`, the commit reviewed here. [run 35247254334](https://github.com/yurizache-cpu/atomic-crm/actions/runs/35247254334) (`✅ Check`, run number 24, push event) completed with the overall conclusion `failure`, as the baseline did, because of the two historical reds below. Counts were read from the job logs.
+
+| Path | Job / step | Result |
+| --- | --- | --- |
+| Migrations `20260917180000`–`180300` | `🗄️ Database` → start, both resets | applied each time |
+| `test:db` | `🔒 RLS, tenant isolation and grant surface` | **13/13**, `owner_provisioning.sql` and `crm_data_invariants.sql` included |
+| `test:db:engine` | `⚙️ Worker runtime, pooling and concurrency` | **181/181** in 28 files |
+| Upgrade replay | `⬆️ Upgrade replay over existing data` (`supabase_db_atomic-crm-demo`, `--workdir .`) | **PASS**: all 7 steps; the owner guard halted the upgrade, the bootstrap ran, the resume, the replay and the assertions passed |
+| Migrations-only replay | `🌱 Production-like replay (migrations only)` | PASS |
+| Reference data without the seed | `🔎 Reference data without the development data` | PASS, including no CRM owner or administrator and no owner provisioning record |
+| `test:db` after a clean reconstruction | `♻️` + `🔒 Same guarantees after the reset` | **13/13** |
+| Unit projects | `🔎 Test` | all projects: **129 files, 2175 passed, 2 skipped**; `functions` **54 / 1421**; `claude` **45 / 520 + 1 skipped**; `app` 30 / 234 + 1 skipped (by difference) |
+| Security invariants | `functions` | **49/49** |
+| Migration guard and seal; schema reproducibility; RLS suite coverage; owner-session seal | `functions` | 131, 16, 22, 2 — all passed |
+| Deploy gate guard | `claude`: `production-scope-database-gate.test.mjs` | 9/9, including the committed tree and the command-line wiring |
+| Production scope guard | `claude`: `production-scope.test.mjs` (39), `production-scope-functions` (15), `production-scope-remote` (14) | passed; the tracked tree is clean |
+| Signing-key guard | `claude`: `dev-signing-key.test.mjs` | 64/64, including the tracked-tree run |
+| Upgrade runner | `claude`: `run-db-upgrade-test.test.mjs` | 17/17 |
+| Typecheck | `🏷️ Typecheck` | success |
+| ESLint | `🔬 ESLint` and the lint action's ESLint check | success |
+| Build and secret scan | `🔨 Build` | success; `scan:build` 16 files, 0 blocking, 0 advisory |
+| Prettier on Phase 1D.2 files | lint action's Prettier check | no annotation on any Phase 1D.2 file (see below) |
+
+**The four Codex findings stay covered in CI:** deal stages by the upgrade replay (§1 of its assertions) and `crm_data_invariants.sql`; owner provisioning by the replay's halt and bootstrap, `owner_provisioning.sql`, the no-owner reference check and SI-41; lead profiles by the replay (§3), `crm_data_invariants.sql` and SI-42; the deploy gate by `production-scope-database-gate.test.mjs`, SI-40 and the `🗄️ Database` caller itself.
+
+**Reds, classified (no new regression):**
+- `e2e-test` — **B, historical.** The same 9 failures as the baseline's e2e job, test by test: `adminAccountManagerFilter` (2 cases) and `onboarding`, `userAddingATask` on chromium and Mobile Chrome, and `bulkContactTags` on chromium; 1 skipped in both.
+- Prettier — **B, historical.** "2 errors" in both runs, on the same two files, neither touched by this phase: `src/components/atomic-crm/dataImport/sampleCsv.test.ts` and `src/components/atomic-crm/providers/commons/canAccess.test.ts`.
+
+**Not observable yet:** `deploy.yml` runs only on a push to `main`, so its new `database` caller and `deploy-supabase`'s `needs: [gate, database]` are proven by reading and by the guard, not by a run. The check that used to be named "🗄️ Database security & reproducibility" is now reported as "🗄️ Database / 🗄️ Database security & reproducibility".
+
+**Classification:** Phase 1D.2 **CI VERIFIED**. Nothing is merged. The production-readiness gate (§16) and BASELINE Q8 stand. Phase 2A is not started; it waits only for its own brief.
