@@ -219,3 +219,55 @@ Every run capability first share-locks the leased job and requires the lease to 
 | `OS403` | a capability that is not an agent run capability; a stop read under row security |
 | `OS409` | an idempotency key naming a different agent run request; a retry of an unfinished run; a trip that found no stop in force |
 | `42501` | a run capability without a live lease, with a lease no longer live, with no run bound to the job, or a second claim by the starting attempt |
+
+## 12. Prices, spend limits and the lease-time switch (Phase 1D.1, 2026-09-17)
+
+`ops.model_prices` and `ops.spend_limits`, the cost columns on `ops.agent_runs`, and the functions that touch them. See [ADR 0017](adr/0017-runtime-governance.md).
+
+| Role | Tables | Functions |
+| --- | --- | --- |
+| `anon`, `authenticated` | nothing (no USAGE on `ops` at all) | nothing |
+| `service_role` | nothing | nothing new: still only `ops.enqueue_job` |
+| `ops_worker` | **nothing**, not even SELECT on prices or limits | EXECUTE on `ops.start_agent_run(text, text, text, text, integer)`, which replaces the four-argument start, and on the three capabilities below; nothing else new |
+| `postgres` (owner) | everything | everything, including the owner services listed below |
+| PUBLIC | — | **nothing**: every new function is revoked explicitly |
+
+**Owner services.** All are SECURITY INVOKER and executable by no application role; `npm run ops` calls them over `ADMIN_DATABASE_URL`.
+
+| Service | Signature and behaviour |
+| --- | --- |
+| `ops.record_model_price` | Signature: `(provider, model, input, output, reasoning_in_output, effective_from, expires_at, source, actor [, cached])`. |
+| `ops.set_spend_limit` | Signature: `(scope, daily_limit_micros, timezone, reason, actor [, tenant, company])`. It supersedes the active version; changing the time zone needs a retire first. |
+| `ops.retire_spend_limit` | Signature: `(limit, reason, actor)`. |
+| `ops.spend_status` | Signature: `([at])`. It reads across tenants, which is why only the owner may call it. Each active limit's row reports `settled_exhausted` (settled spend has reached the limit, never counting calls in flight) and `new_run_admission`, what that limit alone does to the next start: `blocked` when charged spend has reached the limit, so it admits no run with a reservation above zero; `conditional` otherwise, so it admits a run only if its reservation fits `remaining_micros`, while the price, every other applicable limit and the stops still decide. A missing limit has no row. A false `settled_exhausted` never means a run can start. `at` is meaningful only for now or a future instant: for an earlier instant the row reports that day's window start but counts later runs too. |
+| `ops.trip_execution_stop` | It gains a trailing `p_job_kind`. |
+| `ops.create_task`, `ops.record_event` | Each gains a trailing `p_idempotency_key`. |
+
+**Capabilities.** All three are SECURITY DEFINER and take no argument.
+
+| Function | Why it is safe to expose to `ops_worker` |
+| --- | --- |
+| `ops.job_execution_stop()` | Resolves the job this transaction's live lease holds, share-locking it. It takes the kill-switch lock shared, then returns the stop covering that job, or NULL. It reads only the stop table and the job's own agent run or task link. It cannot name another job, and a job without a live lease raises `42501`. |
+| `ops.defer_job()` | Resolves the same leased job. It re-evaluates the stops under the shared lock. Only when a stop covers the job does it return the job to `queued`, restore the attempt this lease spent, delay it 30 s and record a `deferred` job event. With no covering stop it changes nothing, so a worker cannot use it to keep a job alive or dodge `max_attempts`. The runtime calls it after its own pre-call check finds a stop, and after `ops.start_agent_run` answers `stopped`, in the same transaction; if it then finds no covering stop, the prepare rolls back and the attempt fails through the transient path, with nothing called. |
+| `ops.enforce_spend_ceiling()` | Checks no lease, like the reaper and the sweep. It trips a global stop, as `system:spend_ceiling`, only when the database finds the active ceiling version exhausted by settled spend. It never clears a stop, and it refuses (`OS403`) if row security would hide what it reads. The most a malicious worker can do with it is trip a stop the ceiling already justifies. |
+
+**What the start now checks, and when.** `ops.start_agent_run` works in this order:
+1. It takes the kill-switch lock shared. If an active stop covers the run, it answers `stopped` at once and evaluates no other gate.
+2. It checks the price and the route ceiling.
+3. It takes the global, tenant and company spend locks exclusively, each in its own statement, and reads the totals.
+4. It re-checks the lease on the clock before any write, as in Phase 1D.
+
+**`stopped` writes nothing** *(owner review, 2026-09-17, decision B)*. The run stays `pending`, with no stop, error code, price or charge. The runtime defers the job with `ops.defer_job()` in the same transaction, while the start's kill-switch lock is still held, so the stop cannot be cleared in between: no attempt is spent and nothing is called. After an explicit clear, the next lease runs the same run, and every gate is checked again at its start. Only `running` still means "call". A request made while a stop covers it is still refused and recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, before any job exists.
+
+`ops.claim_agent_run` now share-locks the task and agent rows it returns until the prepare transaction ends. Every worker transaction runs with `idle_in_transaction_session_timeout` (10 s), so a stalled worker cannot hold these locks indefinitely.
+
+**The lease.** `ops.lease_job` takes the kill-switch lock shared and passes over any queued job whose kind is not internal and that an active stop covers. It refuses (`OS403`) when row security would hide the stops, like every other reader of the switch, so an unreadable switch leases nothing. It refuses to run under any isolation level other than READ COMMITTED, as the request and spend admission do, and as the start does before it reads stops, prices or spend totals.
+
+**SQLSTATEs added to the Phase 1D set's meanings:**
+
+| SQLSTATE | New use |
+| --- | --- |
+| `OS400` | a stop on a kind that is not external; an unknown time zone; a rate with more than six decimals; an isolation level other than READ COMMITTED |
+| `OS403` | a governance reader for whom row security would filter prices, limits, runs or stops |
+| `OS409` | a different price version at the same moment; a limit version whose time zone differs from the active one; an idempotency key naming a different task or event request; a price, limit, stop or run rewritten outside its one allowed change |
+| `OS429` | a start the limits cannot absorb beside calls in flight; nothing is recorded, and the job retries |

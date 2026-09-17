@@ -45,6 +45,14 @@ const CLEAR = [
 const serverError = (code: string, message: string) =>
   Object.assign(new Error(message), { code, severity: "ERROR" });
 
+/** A trip that returns STOP, and a read-back of the stop it names. */
+const tripAnswering =
+  (stop: { tripped_by: string; reason: string; recorded_now?: boolean }) =>
+  (sql: string): unknown[] =>
+    sql.includes("ops.trip_execution_stop")
+      ? [{ result: STOP }]
+      : [{ recorded_now: true, ...stop }];
+
 interface HarnessOptions {
   readonly env?: Readonly<Record<string, string | undefined>>;
   readonly answer?: (sql: string, params: readonly unknown[]) => unknown[];
@@ -162,6 +170,32 @@ describe("parsing execution stop arguments", () => {
     ).toEqual(expected);
   });
 
+  it("parses a job_kind trip with its kind and an optional tenant", () => {
+    expect(
+      parseExecutionStopArgs([
+        "trip",
+        "--scope",
+        "job_kind",
+        "--kind",
+        "agent_run.execute",
+        "--tenant",
+        TENANT,
+        "--reason",
+        "provider incident",
+        "--actor",
+        "owner",
+      ]),
+    ).toEqual({
+      kind: "trip",
+      target: {
+        scope: "job_kind",
+        tenantId: TENANT,
+        jobKind: "agent_run.execute",
+      },
+      act: { reason: "provider incident", actor: "owner" },
+    });
+  });
+
   it("parses a clear", () => {
     expect(parseExecutionStopArgs(CLEAR)).toEqual({
       kind: "clear",
@@ -229,6 +263,32 @@ describe("parsing execution stop arguments", () => {
     ],
     ["--all on trip", [...TRIP_GLOBAL, "--all"], "--all is not a flag of trip"],
     [
+      "a kind on clear",
+      [...CLEAR, "--kind", "agent_run.execute"],
+      "--kind is not a flag of clear",
+    ],
+    [
+      "a kind on list",
+      ["list", "--kind", "agent_run.execute"],
+      "--kind is not a flag of list",
+    ],
+    [
+      "a repeated kind",
+      [
+        ...TRIP_GLOBAL,
+        "--kind",
+        "agent_run.execute",
+        "--kind",
+        "agent_run.execute",
+      ],
+      "--kind is given more than once",
+    ],
+    [
+      "a kind with no value",
+      [...TRIP_GLOBAL, "--kind"],
+      "--kind needs a value",
+    ],
+    [
       "a repeated switch",
       ["list", "--all", "--all"],
       "--all is given more than once",
@@ -276,7 +336,7 @@ describe("parsing execution stop arguments", () => {
     [
       "an unknown scope",
       ["trip", "--scope", "fleet", "--reason", "incident", "--actor", "owner"],
-      "--scope must be one of global, tenant, company, department, agent",
+      "--scope must be one of global, tenant, company, department, agent, job_kind",
     ],
   ])("refuses %s as a usage error", (_case, argv, fragment) => {
     const command = parseExecutionStopArgs(argv);
@@ -328,20 +388,93 @@ describe("running the execution stop tool", () => {
 
   it("trips a stop in one owner transaction and prints one JSON line", async () => {
     const { state, run, parsed } = harness({
-      answer: () => [{ result: STOP }],
+      answer: tripAnswering({ tripped_by: "owner", reason: "incident" }),
     });
 
     expect(await run(TRIP_GLOBAL)).toBe(EXIT_OK);
     expect(state.opened).toEqual([CONNECTION]);
-    expect(state.queries).toHaveLength(1);
+    expect(state.queries).toHaveLength(2);
     expect(state.queries[0]?.sql).toContain("ops.trip_execution_stop");
-    expect(parsed(state.stdout)).toEqual([{ result: "stopped", stopId: STOP }]);
+    expect(state.queries[1]?.sql).toMatch(/from ops\.execution_stops s\b/);
+    expect(state.queries[1]?.params).toEqual([STOP]);
+    expect(parsed(state.stdout)).toEqual([
+      { result: "stopped", stopId: STOP, trippedBy: "owner" },
+    ]);
     expect(state.stderr).toEqual([]);
     expect(state.identityChecks).toBe(0);
     expect(state.closed).toBe(1);
   });
 
-  it("prints one JSON line per listed stop, and reads cleared stops only with --all", async () => {
+  it("reports a trip an existing stop absorbed as already_stopped, naming who tripped it", async () => {
+    const { state, run, parsed } = harness({
+      answer: tripAnswering({
+        tripped_by: "ops:on-call",
+        reason: "incident 41",
+        recorded_now: false,
+      }),
+    });
+
+    expect(await run(TRIP_GLOBAL)).toBe(EXIT_OK);
+    expect(parsed(state.stdout)).toEqual([
+      { result: "already_stopped", stopId: STOP, trippedBy: "ops:on-call" },
+    ]);
+  });
+
+  it("trips a stop on one external job kind for every tenant, sending the kind last", async () => {
+    const { state, run, parsed } = harness({
+      answer: tripAnswering({ tripped_by: "owner", reason: "incident" }),
+    });
+
+    expect(
+      await run([
+        "trip",
+        "--scope",
+        "job_kind",
+        "--kind",
+        "agent_run.execute",
+        "--reason",
+        "incident",
+        "--actor",
+        "owner",
+      ]),
+    ).toBe(EXIT_OK);
+    expect(state.queries[0]?.params).toEqual([
+      "job_kind",
+      "incident",
+      "owner",
+      null,
+      null,
+      null,
+      null,
+      "agent_run.execute",
+    ]);
+    expect(parsed(state.stdout)).toEqual([
+      expect.objectContaining({ result: "stopped" }),
+    ]);
+  });
+
+  it("refuses a human act that claims the system: actor prefix before any query", async () => {
+    const { state, run, parsed } = harness();
+
+    expect(
+      await run([
+        "trip",
+        "--scope",
+        "global",
+        "--reason",
+        "incident",
+        "--actor",
+        "system:spend_ceiling",
+      ]),
+    ).toBe(EXIT_REFUSED);
+    expect(state.queries).toEqual([]);
+    expect(state.stdout).toEqual([]);
+    expect(parsed(state.stderr)).toEqual([
+      expect.objectContaining({ error: "invalid_argument" }),
+    ]);
+  });
+
+  it("prints one JSON line per listed stop, with its kind and origin, and reads cleared stops only with --all", async () => {
     const record = (id: string) => ({
       id,
       scope: "global",
@@ -349,6 +482,8 @@ describe("running the execution stop tool", () => {
       company_id: null,
       department_id: null,
       agent_id: null,
+      job_kind: null,
+      origin: "owner",
       reason: "incident",
       tripped_by: "owner",
       tripped_at: "2026-09-14T10:00:00+00:00",
@@ -367,6 +502,8 @@ describe("running the execution stop tool", () => {
       expect.objectContaining({
         id: STOP,
         scope: "global",
+        jobKind: null,
+        origin: "owner",
         trippedBy: "owner",
       }),
       expect.objectContaining({ id: other }),
@@ -530,7 +667,7 @@ describe("running the execution stop tool", () => {
 
   it("prints no result when the transaction does not commit", async () => {
     const { state, run, parsed } = harness({
-      answer: () => [{ result: STOP }],
+      answer: tripAnswering({ tripped_by: "owner", reason: "incident" }),
       commitError: serverError("40001", "could not serialize access"),
     });
 

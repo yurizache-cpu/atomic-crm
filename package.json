@@ -33,6 +33,7 @@
     "worker": "node engine/worker/main.ts",
     "worker:provision": "node scripts/provision-worker-role.mjs",
     "execution-stop": "node engine/cli/executionStop.ts",
+    "ops": "node engine/cli/operator.ts",
     "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts"
   },
   "dependencies": {

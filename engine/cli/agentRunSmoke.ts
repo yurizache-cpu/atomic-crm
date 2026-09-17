@@ -18,6 +18,22 @@
 // creates stays: the run, its job and its events are the record of what
 // happened, and the domain's history is append-only.
 //
+// GOVERNANCE (ADR 0017). A run starts only with a current price for its model, a
+// global daily ceiling and its tenant's daily budget. In the default mode, in a
+// transaction of its own that commits before the run is requested (setting a
+// limit takes a spend lock, and ADR 0017 §4 orders the kill-switch lock a request
+// takes before it), and through the domain services, the smoke first makes the
+// local database able to start its run without overriding the owner's
+// configuration: it records (idempotently) a synthetic price version for the fake
+// provider's model, effective from the start of the current UTC day for 30 days,
+// and sets a 1 USD (UTC) global ceiling and dev tenant budget only where none is
+// active. Those synthetic limits persist on that database after the smoke ends,
+// and they also govern a later --live run on it. --live configures nothing: a live
+// run is priced by the owner and budgeted by whatever limits are active (the
+// owner's, or a default-mode smoke's 1 USD ones), and when it is refused for want
+// of that configuration the smoke prints a one-line hint naming the `npm run ops`
+// act that provides it.
+//
 // It refuses to start while any job is queued or leased. A worker leases the
 // head of the WHOLE queue, whoever it belongs to, and the fake provider would
 // answer another run with canned text recorded as that run's result.
@@ -43,14 +59,15 @@
 // either connection string. The fake provider cannot be selected from the
 // environment (routingConfig.ts); only this command's default uses it.
 //
-// OUTPUT. Identifiers, statuses, a step count and event types — never an
-// environment value, the prompt, the result, or anything a provider sent. One
-// JSON line on stdout once the run was driven; one JSON line on stderr on a
-// failure, naming a code and the stage it failed in. A database error is
-// reported by its SQLSTATE alone, because its message can name the user,
-// database or host of a connection string. Exit 0 when the run succeeded or
-// --live skipped, 1 when the run did not succeed or something failed, 2 on a
-// usage error.
+// OUTPUT. Identifiers, statuses, error codes, a step count and event types —
+// never an environment value, the prompt, the result, or anything a provider
+// sent. One JSON line on stdout once the run was driven, and in --live mode a
+// {"hint": …} line on stderr when the run was refused for missing governance
+// configuration; one JSON line on stderr on a failure, naming a code and the
+// stage it failed in. A database error is reported by its SQLSTATE alone,
+// because its message can name the user, database or host of a connection
+// string. Exit 0 when the run succeeded or --live skipped, 1 when the run did not
+// succeed or something failed, 2 on a usage error.
 
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
@@ -67,6 +84,8 @@ import {
 } from "../domain/agentRunStateMachine.ts";
 import { assignTask, createTask } from "../domain/companyOs.ts";
 import { CompanyOsError } from "../domain/errors.ts";
+import { recordModelPrice } from "../domain/modelPrices.ts";
+import { setSpendLimit } from "../domain/spendLimits.ts";
 import { createFakeModelProvider } from "../models/fakeModelProvider.ts";
 import { createModelRouter, type ModelRouter } from "../models/router.ts";
 import { createModelRouterFromEnv } from "../models/routingConfig.ts";
@@ -106,6 +125,45 @@ const SOURCE = "agent-runtime-smoke";
 const MIN_LEASE_SECONDS = 60;
 const SQLSTATE = /^[0-9A-Z]{5}$/;
 
+/** The only route the default mode configures, on the scripted provider. */
+const FAKE_PROVIDER = "fake";
+const FAKE_MODEL = "fake-model-1";
+
+// The default mode's governance configuration (ADR 0017), all of it synthetic and
+// local. The rate keeps a run's worst-case reservation near 0.0002 USD, so a day
+// of smoke runs stays far inside the 1 USD limits.
+const SMOKE_ACTOR = "agent-runtime-smoke";
+const SYNTHETIC_PRICE_SOURCE =
+  "agent-runtime smoke: synthetic price for the fake provider";
+const SYNTHETIC_RATE_USD_PER_MTOK = "0.01";
+const SYNTHETIC_PRICE_DAYS = 30;
+const SMOKE_DAILY_USD = "1";
+const SMOKE_TIMEZONE = "UTC";
+const DAY_MS = 86_400_000;
+
+// Whether the owner already configured a ceiling and the dev tenant's budget:
+// exact existence, so an active limit of any value is left as it is.
+const ACTIVE_LIMITS_SQL = `select exists (select 1 from ops.spend_limits l
+                where l.scope = 'global' and l.ended_at is null) as has_ceiling,
+       exists (select 1 from ops.spend_limits l
+                where l.scope = 'tenant' and l.tenant_id = $1 and l.ended_at is null) as has_budget`;
+
+/** What a live run refused for missing governance configuration needs. Names acts, never values. */
+const GOVERNANCE_HINTS: ReadonlyMap<string, string> = new Map([
+  [
+    "price_unavailable",
+    "the run was refused as price_unavailable: record a current price for the configured model with npm run ops -- price record",
+  ],
+  [
+    "spend_ceiling_unconfigured",
+    "the run was refused as spend_ceiling_unconfigured: set the global daily ceiling with npm run ops -- limit set --scope global",
+  ],
+  [
+    "budget_unconfigured",
+    "the run was refused as budget_unconfigured: set the tenant's daily budget with npm run ops -- limit set --scope tenant",
+  ],
+]);
+
 const FAKE_ASSESSMENT: TaskAssessment = Object.freeze({
   outcome: "completed",
   summary: "Order paper, toner and coffee before Friday.",
@@ -127,7 +185,7 @@ const DEV_AGENT_SQL = `select d.tenant_id, d.company_id, d.id as department_id, 
  order by d.created_at, d.slug, a.created_at, a.slug
  limit 1`;
 
-const REPORT_SQL = `select r.status, r.error_category, r.job_id,
+const REPORT_SQL = `select r.status, r.error_category, r.error_code, r.job_id,
        (select array_agg(e.type order by e.seq)
           from ops.events e
          where e.tenant_id = r.tenant_id and e.subject_type = 'agent_run' and e.subject_id = r.id) as event_types
@@ -164,13 +222,13 @@ type SmokeRequest =
     };
 
 function fakeModelRouter(): ModelRouter {
-  const provider = createFakeModelProvider({
-    type: "respond",
-    content: FAKE_ASSESSMENT,
-  });
+  const provider = createFakeModelProvider(
+    { type: "respond", content: FAKE_ASSESSMENT },
+    { name: FAKE_PROVIDER },
+  );
   return createModelRouter({
     routes: new Map([
-      [SMOKE_ROUTE, { provider: provider.name, model: "fake-model-1" }],
+      [SMOKE_ROUTE, { provider: provider.name, model: FAKE_MODEL }],
     ]),
     providers: new Map([[provider.name, provider]]),
   });
@@ -232,12 +290,98 @@ function localDatabaseRefusal(
   return undefined;
 }
 
-/** Creates the synthetic task and requests its run, unless the queue is busy or there is no agent. */
-async function requestSmokeRun(tx: TxClient, now: Date): Promise<SmokeRequest> {
-  const { rows: busy } = await tx.query<{ n: number }>(
-    "select count(*)::int as n from ops.jobs where status in ('queued', 'leased')",
+/**
+ * Default mode only. Records the synthetic price version (a replay of today's
+ * returns it), then sets a ceiling and the dev tenant's budget only where no
+ * active one exists. It never ends, supersedes or changes an owner's limit, and
+ * a price version that differs from today's synthetic one is refused by the
+ * database, not replaced.
+ */
+async function configureFakeGovernance(
+  tx: TxClient,
+  tenantId: string,
+  now: Date,
+): Promise<void> {
+  const dayStart = Math.floor(now.getTime() / DAY_MS) * DAY_MS;
+  const act = { actor: SMOKE_ACTOR };
+  await recordModelPrice(
+    tx,
+    {
+      provider: FAKE_PROVIDER,
+      model: FAKE_MODEL,
+      inputUsdPerMtok: SYNTHETIC_RATE_USD_PER_MTOK,
+      outputUsdPerMtok: SYNTHETIC_RATE_USD_PER_MTOK,
+      reasoningInOutput: true,
+      effectiveFrom: new Date(dayStart).toISOString(),
+      expiresAt: new Date(
+        dayStart + SYNTHETIC_PRICE_DAYS * DAY_MS,
+      ).toISOString(),
+    },
+    { ...act, source: SYNTHETIC_PRICE_SOURCE },
   );
-  if (Number(busy[0]?.n ?? 0) > 0) {
+
+  const { rows } = await tx.query<{
+    has_ceiling: boolean;
+    has_budget: boolean;
+  }>(ACTIVE_LIMITS_SQL, [tenantId]);
+  const active = rows[0];
+  if (
+    typeof active?.has_ceiling !== "boolean" ||
+    typeof active.has_budget !== "boolean"
+  ) {
+    throw new Error("the active spend limits could not be read");
+  }
+  const value = { dailyUsd: SMOKE_DAILY_USD, timezone: SMOKE_TIMEZONE };
+  if (!active.has_ceiling) {
+    await setSpendLimit(tx, { scope: "global" }, value, {
+      ...act,
+      reason: "agent-runtime smoke: local development ceiling",
+    });
+  }
+  if (!active.has_budget) {
+    await setSpendLimit(tx, { scope: "tenant", tenantId }, value, {
+      ...act,
+      reason: "agent-runtime smoke: local development budget",
+    });
+  }
+}
+
+const QUEUE_BUSY_SQL =
+  "select count(*)::int as n from ops.jobs where status in ('queued', 'leased')";
+
+interface DevAgentRow {
+  tenant_id: string;
+  company_id: string;
+  department_id: string;
+  agent_id: string;
+}
+
+async function queueIsBusy(tx: TxClient): Promise<boolean> {
+  const { rows } = await tx.query<{ n: number }>(QUEUE_BUSY_SQL);
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/**
+ * Default mode only, in a transaction of its own that commits BEFORE the run is
+ * requested. Setting a limit takes a spend lock, and requesting a run takes the
+ * kill-switch lock; ADR 0017 §4 orders them kill switch first, so the two never
+ * share a transaction here. Does nothing when the request would be refused anyway
+ * (a busy queue, or no dev agent), so a refused smoke writes nothing.
+ */
+async function prepareSmokeGovernance(tx: TxClient, now: Date): Promise<void> {
+  if (await queueIsBusy(tx)) return;
+  const { rows } = await tx.query<DevAgentRow>(DEV_AGENT_SQL);
+  const found = rows[0];
+  if (!found) return;
+  await configureFakeGovernance(tx, found.tenant_id, now);
+}
+
+/**
+ * Creates the synthetic task and requests its run, unless the queue is busy or
+ * there is no agent.
+ */
+async function requestSmokeRun(tx: TxClient, now: Date): Promise<SmokeRequest> {
+  if (await queueIsBusy(tx)) {
     return {
       kind: "refused",
       error: "queue_not_empty",
@@ -245,12 +389,7 @@ async function requestSmokeRun(tx: TxClient, now: Date): Promise<SmokeRequest> {
         "jobs are queued or leased, and a worker leases the head of the whole queue; run the smoke on an idle queue",
     };
   }
-  const { rows } = await tx.query<{
-    tenant_id: string;
-    company_id: string;
-    department_id: string;
-    agent_id: string;
-  }>(DEV_AGENT_SQL);
+  const { rows } = await tx.query<DevAgentRow>(DEV_AGENT_SQL);
   const found = rows[0];
   if (!found) {
     return {
@@ -329,6 +468,7 @@ async function readReport(tx: TxClient, runId: string) {
   const { rows } = await tx.query<{
     status: string;
     error_category: string | null;
+    error_code: string | null;
     job_id: string | null;
     event_types: string[] | null;
   }>(REPORT_SQL, [runId]);
@@ -338,6 +478,7 @@ async function readReport(tx: TxClient, runId: string) {
     jobId: row.job_id,
     status: row.status,
     errorCategory: row.error_category,
+    errorCode: row.error_code,
     eventTypes: row.event_types ?? [],
   };
 }
@@ -433,8 +574,12 @@ export async function runAgentRunSmoke(
     assertWorkerIdentity(await worker.identity());
 
     stage = "request";
+    const now = deps.now();
+    if (!live) {
+      await owner.withTransaction((tx) => prepareSmokeGovernance(tx, now));
+    }
     const request = await owner.withTransaction((tx) =>
-      requestSmokeRun(tx, deps.now()),
+      requestSmokeRun(tx, now),
     );
     if (request.kind === "refused") {
       deps.stderr(
@@ -471,6 +616,11 @@ export async function runAgentRunSmoke(
         steps,
       }),
     );
+    const hint =
+      live && report.status === "cancelled" && report.errorCode !== null
+        ? GOVERNANCE_HINTS.get(report.errorCode)
+        : undefined;
+    if (hint !== undefined) deps.stderr(JSON.stringify({ hint }));
     return report.status === "succeeded" ? EXIT_OK : EXIT_FAILED;
   } catch (error) {
     deps.stderr(failureLine(stage, error));

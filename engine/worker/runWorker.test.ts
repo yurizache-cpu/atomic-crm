@@ -19,9 +19,14 @@ interface ScriptedOptions {
   staleSettled?: number;
   /** A statement fragment whose query throws inside an otherwise healthy transaction. */
   failStatement?: string;
+  /** What ops.job_execution_stop() and ops.defer_job() answer. Default: no stop. */
+  stopId?: string | null;
+  /** What ops.enforce_spend_ceiling() answers. Default: no stop tripped. */
+  ceilingStop?: unknown;
 }
 
 const TENANT = "aaaaaaaa-0000-0000-0000-000000000001";
+const STOP_ID = "5e0c1d2a-7b3f-4c8d-9e1f-2a3b4c5d6e7f";
 
 /**
  * A database that answers the whole runtime's SQL surface from a script.
@@ -31,6 +36,8 @@ const TENANT = "aaaaaaaa-0000-0000-0000-000000000001";
  */
 const scriptedDb = (options: ScriptedOptions = {}) => {
   const sql: string[] = [];
+  /** The parameters each entry of sql was sent with. */
+  const paramsOf: (readonly unknown[] | undefined)[] = [];
   /** The transaction each entry of sql ran in. */
   const transactionOf: number[] = [];
   const queue = [...(options.queue ?? [])];
@@ -47,8 +54,9 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
         });
       }
       const tx: TxClient = {
-        async query(statement) {
+        async query(statement, params) {
           sql.push(statement);
+          paramsOf.push(params);
           transactionOf.push(mine);
           if (
             options.failStatement &&
@@ -109,6 +117,17 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
               rows: [{ settled: options.staleSettled ?? 0 }],
             } as never;
           }
+          if (
+            statement.includes("ops.job_execution_stop") ||
+            statement.includes("ops.defer_job")
+          ) {
+            return { rows: [{ stop_id: options.stopId ?? null }] } as never;
+          }
+          if (statement.includes("ops.enforce_spend_ceiling")) {
+            return {
+              rows: [{ stop_id: options.ceilingStop ?? null }],
+            } as never;
+          }
           return { rows: [] } as never;
         },
       };
@@ -120,7 +139,7 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
     async close() {},
   };
 
-  return { db, sql, transactionOf };
+  return { db, sql, paramsOf, transactionOf };
 };
 
 const registry = createRegistry([
@@ -533,5 +552,247 @@ describe("shutdown reaches an external call in flight", () => {
     );
     expect(stats).toMatchObject({ leased: 1, succeeded: 1 });
     expect(sql.filter((s) => s.includes("ops.lease_job"))).toHaveLength(1);
+  });
+});
+
+describe("the global spend ceiling is enforced on the reaper's clock, apart from lease recovery", () => {
+  it("runs the ceiling check after the stale-run sweep, in its own transaction, as ops_worker", async () => {
+    let clock = 0;
+    const { db, sql, transactionOf } = scriptedDb({ queue: [null, null] });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+    });
+    const staleAt = sql.findIndex((s) =>
+      s.includes("ops.settle_stale_agent_runs"),
+    );
+    const ceilingAt = sql.findIndex((s) =>
+      s.includes("ops.enforce_spend_ceiling"),
+    );
+    expect(ceilingAt).toBeGreaterThan(staleAt);
+    expect(sql[ceilingAt]).toBe(
+      "select ops.enforce_spend_ceiling() as stop_id",
+    );
+    expect(transactionOf[ceilingAt]).toBe(transactionOf[staleAt] + 1);
+    expect(sql[ceilingAt - 1]).toBe("set local role ops_worker");
+    expect(transactionOf[ceilingAt - 1]).toBe(transactionOf[ceilingAt]);
+    // Once per tick, and alone in its transaction with the role switch.
+    expect(
+      sql.filter((s) => s.includes("ops.enforce_spend_ceiling")),
+    ).toHaveLength(2);
+    expect(
+      transactionOf.filter((tx) => tx === transactionOf[ceilingAt]),
+    ).toHaveLength(2);
+  });
+
+  it("does not check the ceiling between reaper ticks", async () => {
+    const { db, sql } = scriptedDb({ queue: [null, null, null] });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 3,
+      reapIntervalMs: 1_000_000,
+      sleep: noSleep,
+      now: () => 0,
+    });
+    expect(sql.some((s) => s.includes("ops.enforce_spend_ceiling"))).toBe(
+      false,
+    );
+  });
+
+  it("logs a tripped ceiling with the stop it tripped, and nothing while the ceiling holds", async () => {
+    const cases: readonly (readonly [string | null, readonly unknown[]])[] = [
+      [STOP_ID, [{ workerId: "w1", detail: STOP_ID }]],
+      [null, []],
+    ];
+    for (const [ceilingStop, expected] of cases) {
+      let clock = 0;
+      const { db } = scriptedDb({ queue: [null], ceilingStop });
+      const tripped: (WorkerLogFields | undefined)[] = [];
+      await runWorker({
+        workerId: "w1",
+        db,
+        registry,
+        maxIterations: 1,
+        reapIntervalMs: 10,
+        sleep: noSleep,
+        now: () => (clock += 100),
+        log: (event, fields) => {
+          if (event === "spend_ceiling.tripped") tripped.push(fields);
+        },
+      });
+      expect(tripped).toEqual(expected);
+    }
+  });
+
+  it("keeps recovering leases and polling when the ceiling check fails, and counts no poll failure", async () => {
+    let clock = 0;
+    const { db, sql } = scriptedDb({
+      queue: [null, null],
+      reaped: 1,
+      failStatement: "ops.enforce_spend_ceiling",
+    });
+    const failures: (WorkerLogFields | undefined)[] = [];
+    const stats = await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event, fields) => {
+        if (event === "worker.poll_failed") failures.push(fields);
+      },
+    });
+    expect(
+      sql.filter((s) => s.includes("ops.reap_expired_leases")),
+    ).toHaveLength(2);
+    expect(stats).toMatchObject({
+      leaseRecoveries: 2,
+      idlePolls: 2,
+      pollFailures: 0,
+    });
+    expect(failures).toHaveLength(2);
+    for (const fields of failures) {
+      expect(fields?.detail).toMatch(/^spend ceiling enforcement failed: /);
+      expect(fields?.count).toBeUndefined();
+    }
+  });
+
+  it("reports a ceiling answer that is not a stop id as a failure, without echoing it", async () => {
+    for (const ceilingStop of [
+      { leaked: "sentinel-ceiling-7731" },
+      "sentinel-ceiling-7731",
+      `${STOP_ID.toUpperCase()} sentinel-ceiling-7731`,
+      42,
+    ]) {
+      let clock = 0;
+      const { db } = scriptedDb({ queue: [null], ceilingStop });
+      const lines: { event: WorkerLogEvent; fields?: WorkerLogFields }[] = [];
+      await runWorker({
+        workerId: "w1",
+        db,
+        registry,
+        maxIterations: 1,
+        reapIntervalMs: 10,
+        sleep: noSleep,
+        now: () => (clock += 100),
+        log: (event, fields) => lines.push({ event, fields }),
+      });
+      expect(lines.map((line) => line.event)).not.toContain(
+        "spend_ceiling.tripped",
+      );
+      const failure = lines.find((line) => line.event === "worker.poll_failed");
+      expect(failure?.fields?.detail).toMatch(
+        /^spend ceiling enforcement failed: /,
+      );
+      expect(JSON.stringify(lines)).not.toContain("sentinel-ceiling-7731");
+      expect(JSON.stringify(lines)).not.toContain('"detail":42');
+    }
+  });
+});
+
+describe("a job an execution stop deferred is counted, and the loop does not wait on it", () => {
+  it("counts a deferral as leased and deferred, calls nothing, and sleeps only for the empty queue", async () => {
+    const call = vi.fn(async () => "called");
+    const slept: number[] = [];
+    const { db } = scriptedDb({
+      queue: ["call.probe", "call.probe", null],
+      stopId: STOP_ID,
+    });
+    const external = createRegistry([
+      {
+        kind: "call.probe",
+        shape: "external_call",
+        prepareCapabilities: [],
+        settleCapabilities: [],
+        prepare: async () => ({ kind: "call", state: null }),
+        call,
+        settle: async () => "settled",
+      },
+    ]);
+    const deferredLines: (WorkerLogFields | undefined)[] = [];
+    const stats = await runWorker({
+      workerId: "w1",
+      db,
+      registry: external,
+      maxIterations: 3,
+      pollIntervalMs: 7,
+      sleep: async (ms) => {
+        slept.push(ms);
+      },
+      log: (event, fields) => {
+        if (event === "job.deferred") deferredLines.push(fields);
+      },
+    });
+    expect(call).not.toHaveBeenCalled();
+    expect(stats).toMatchObject({
+      leased: 2,
+      deferred: 2,
+      succeeded: 0,
+      retried: 0,
+      failed: 0,
+      idlePolls: 1,
+      pollFailures: 0,
+    });
+    expect(slept).toEqual([7]);
+    expect(deferredLines).toHaveLength(2);
+    for (const fields of deferredLines) {
+      expect(fields?.detail).toBe(`held by execution stop ${STOP_ID}`);
+    }
+  });
+});
+
+describe("the boot heartbeat carries the detail the worker was started with", () => {
+  const bootDetail = async (startDetail?: string) => {
+    const { db, sql, paramsOf } = scriptedDb({ queue: [null] });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 1,
+      sleep: noSleep,
+      ...(startDetail === undefined ? {} : { startDetail }),
+    });
+    return paramsOf[sql.findIndex((s) => s.includes("ops.worker_heartbeat"))];
+  };
+
+  it("writes the given start detail into the first heartbeat", async () => {
+    const detail =
+      '{"version":"worker.detail.v1","state":"started","routes":[]}';
+    expect(await bootDetail(detail)).toEqual(["w1", detail]);
+  });
+
+  it("writes started when no start detail is given", async () => {
+    expect(await bootDetail()).toEqual(["w1", "started"]);
+  });
+
+  it("sends later heartbeats without a detail, so the database keeps the boot one", async () => {
+    let clock = 0;
+    const { db, sql, paramsOf } = scriptedDb({ queue: [null, null] });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      heartbeatIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      startDetail: "booted",
+    });
+    const beats = sql
+      .map((statement, index) => ({ statement, params: paramsOf[index] }))
+      .filter(({ statement }) => statement.includes("ops.worker_heartbeat"))
+      .map(({ params }) => params);
+    expect(beats[0]).toEqual(["w1", "booted"]);
+    expect(beats.length).toBeGreaterThan(1);
+    for (const params of beats.slice(1)) expect(params).toEqual(["w1", null]);
   });
 });

@@ -259,6 +259,26 @@ async function main() {
       `ops.${fn} is missing from the catalogue; is the Phase 1D migration (20260914120000_agent_runtime) applied?`,
     );
   }
+  // Phase 1D.1: the price and limit tables, their owner services, and the three
+  // worker capabilities runtime governance adds, for the same reason.
+  for (const relation of ["model_prices", "spend_limits"]) {
+    check(
+      relations.includes(relation),
+      `ops.${relation} is missing from the catalogue; is the Phase 1D.1 migration (20260917120000_runtime_governance) applied?`,
+    );
+  }
+  for (const fn of [
+    "record_model_price",
+    "set_spend_limit",
+    "job_execution_stop",
+    "defer_job",
+    "enforce_spend_ceiling",
+  ]) {
+    check(
+      functions.includes(fn),
+      `ops.${fn} is missing from the catalogue; is the Phase 1D.1 migration (20260917120000_runtime_governance) applied?`,
+    );
+  }
 
   // The live PostgREST configuration, not the file that is supposed to produce it.
   const restEnv = execFileSync(

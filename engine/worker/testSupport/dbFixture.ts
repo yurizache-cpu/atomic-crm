@@ -13,7 +13,23 @@ import { execFileSync } from "node:child_process";
 import { Pool } from "pg";
 import { createWorkerDatabase } from "../../db/workerDatabase.ts";
 import type { WorkerDatabase } from "../../db/types.ts";
+import {
+  deleteFixtureGovernance,
+  recordGovernance,
+  type FixtureGovernance,
+  type GovernanceOptions,
+} from "./governanceFixture.ts";
 import { assertLocalTestDatabases } from "./localDatabase.ts";
+
+export {
+  deleteFixtureGovernance,
+  FIXTURE_GLOBAL_LIMIT_MICROS,
+  FIXTURE_MODELS,
+  FIXTURE_PROVIDER,
+  FIXTURE_TENANT_LIMIT_MICROS,
+  type FixtureGovernance,
+  type GovernanceOptions,
+} from "./governanceFixture.ts";
 
 const DEFAULT_PORT = process.env.SUPABASE_DB_PORT ?? "54322";
 const HOST = process.env.SUPABASE_DB_HOST ?? "127.0.0.1";
@@ -65,7 +81,7 @@ export function provisionWorkerRole(): void {
 }
 
 /** The migration that must be applied for any of these suites to mean anything. */
-const REQUIRED_MIGRATION = "20260916120000";
+const REQUIRED_MIGRATION = "20260917120000";
 
 /**
  * Refuses to run against the wrong database.
@@ -87,7 +103,7 @@ export async function assertTargetDatabase(admin: Pool): Promise<void> {
   if (applied < REQUIRED_MIGRATION) {
     throw new Error(
       `Refusing to run: ${ADMIN_URL.replace(/:[^:@/]*@/, ":***@")} is at migration ${applied}, ` +
-        `but ${REQUIRED_MIGRATION} (the Phase 1D agent runtime, with its owner-review amendment) is required. ` +
+        `but ${REQUIRED_MIGRATION} (Phase 1D.1 runtime governance: prices, spend limits and the lease-time kill switch) is required. ` +
         "This is almost certainly the wrong stack — the isolated e2e stack is on port 54342 " +
         "(npx supabase start --workdir .supabase-e2e), and 54322 is the other working copy's " +
         "atomic-crm-demo. Set SUPABASE_DB_PORT.",
@@ -143,6 +159,10 @@ export const TENANT_B = "b0000000-0000-4000-8000-00000000000b";
  * organisation they target. An ACTIVE stop is never deleted (an ENABLE ALWAYS
  * trigger refuses it), so a stop a failed test left active is cleared first,
  * recorded on the row as dbtest cleanup, the way an owner clears one.
+ *
+ * The tenants' spend limits go after the runs (a budget refusal names its
+ * limit) and before the companies and tenants they target. An ACTIVE limit is
+ * never deleted either, so it is ended first, the way an owner retires one.
  */
 export async function deleteCompanyOsRows(
   admin: Pool,
@@ -156,6 +176,10 @@ export async function deleteCompanyOsRows(
         set cleared_by = 'dbtest', cleared_reason = 'dbtest cleanup'
       where tenant_id = any($1::uuid[]) and cleared_at is null`,
     "delete from ops.execution_stops where tenant_id = any($1::uuid[])",
+    `update ops.spend_limits
+        set ended_by = 'dbtest', end_reason = 'dbtest cleanup'
+      where tenant_id = any($1::uuid[]) and ended_at is null`,
+    "delete from ops.spend_limits where tenant_id = any($1::uuid[])",
     "delete from ops.tasks where tenant_id = any($1::uuid[])",
     "delete from ops.agents where tenant_id = any($1::uuid[])",
     "delete from ops.departments where tenant_id = any($1::uuid[])",
@@ -166,34 +190,61 @@ export async function deleteCompanyOsRows(
 }
 
 /**
- * Removes the GLOBAL execution stops these suites trip.
+ * The tenant-less stops these suites create: a global stop or an all-tenant
+ * job_kind stop whose reason starts with `dbtest`, and any stop the spend
+ * ceiling sweep tripped (`system:spend_ceiling`, which a worker's reaper tick
+ * trips on its own once a suite exhausts a ceiling). The ceiling's stops are
+ * taken whatever their reason, because the database writes it: this fixture
+ * already refuses any database that is not on this machine.
+ */
+const FIXTURE_STOPS = `(
+     (scope in ('global', 'job_kind') and tenant_id is null and reason like 'dbtest%')
+  or tripped_by = 'system:spend_ceiling')`;
+
+/**
+ * Removes the tenant-less execution stops these suites trip.
  *
- * A global stop has no tenant, so deleteCompanyOsRows cannot reach it; a suite
- * marks its own with a reason that starts with `dbtest`. Delete the runs that
- * name one first (they belong to a fixture tenant). Not optional: a global stop
- * left active refuses every agent run on this database, in every later suite.
+ * Such a stop has no tenant, so deleteCompanyOsRows cannot reach it. Delete the
+ * runs that name one first (they belong to a fixture tenant). Not optional: a
+ * global stop left active holds every external job on this database, in every
+ * later suite, and a kind stop holds every job of its kind.
  */
 export async function deleteFixtureStops(admin: Pool): Promise<void> {
   await admin.query(
     `update ops.execution_stops
         set cleared_by = 'dbtest', cleared_reason = 'dbtest cleanup'
-      where scope = 'global' and reason like 'dbtest%' and cleared_at is null`,
+      where ${FIXTURE_STOPS} and cleared_at is null`,
   );
-  await admin.query(
-    "delete from ops.execution_stops where scope = 'global' and reason like 'dbtest%'",
-  );
+  await admin.query(`delete from ops.execution_stops where ${FIXTURE_STOPS}`);
+}
+
+/**
+ * What a run needs to start (ADR 0017): a current price for its provider and
+ * model, a global ceiling and its tenants' budgets, by default for TENANT_A and
+ * TENANT_B. See recordGovernance for exactly what it records and retires.
+ */
+export function configureGovernance(
+  admin: Pool,
+  options: Partial<GovernanceOptions> = {},
+): Promise<FixtureGovernance> {
+  return recordGovernance(admin, {
+    ...options,
+    tenantIds: options.tenantIds ?? [TENANT_A, TENANT_B],
+  });
 }
 
 /**
  * Creates the two tenants and clears anything a previous run left.
  *
  * Tenant A owns the local CRM; B deliberately does not, so "a tenant that may
- * not touch public.*" is a real case rather than a hypothetical one.
+ * not touch public.*" is a real case rather than a hypothetical one. Both get
+ * the governance a run needs to start, whose ids it resolves to.
  */
-export async function resetFixtures(admin: Pool): Promise<void> {
+export async function resetFixtures(admin: Pool): Promise<FixtureGovernance> {
   await assertTargetDatabase(admin);
   await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
   await deleteFixtureStops(admin);
+  await deleteFixtureGovernance(admin);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],
@@ -213,6 +264,7 @@ export async function resetFixtures(admin: Pool): Promise<void> {
        set owns_local_crm = excluded.owns_local_crm, slug = excluded.slug`,
     [TENANT_A, TENANT_B],
   );
+  return configureGovernance(admin);
 }
 
 /**
@@ -231,6 +283,7 @@ export async function cleanupFixtures(admin: Pool | undefined): Promise<void> {
   if (!admin) return;
   await deleteCompanyOsRows(admin, [TENANT_A, TENANT_B]);
   await deleteFixtureStops(admin);
+  await deleteFixtureGovernance(admin);
   await admin.query(
     `delete from ops.job_events where tenant_id = any($1::uuid[])`,
     [[TENANT_A, TENANT_B]],

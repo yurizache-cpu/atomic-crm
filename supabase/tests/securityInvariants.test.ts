@@ -464,7 +464,8 @@ const INVARIANTS: Invariant[] = [
         marker: /Resolves the tenant from the live lease/,
       },
       {
-        file: "engine/worker/runOneJob.ts",
+        // Moved from runOneJob.ts with the shared attempt helpers (Phase 1D.1).
+        file: "engine/worker/attempt.ts",
         marker: /tenant context mismatch/,
       },
       {
@@ -1244,7 +1245,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-31",
     statement:
-      "An active execution stop refuses every new agent run it covers, at request time and again immediately before the call, serialised with tripping so a returned trip is seen by every later start; any covering stop wins over a cleared narrower one; a stop that cannot be read refuses; every refusal is recorded naming the stop; and a stop is cleared only by a recorded owner act, and cannot be deleted while active, truncated, or rewritten except by redaction.",
+      "An active execution stop refuses every new agent run it covers at request time, recording the refusal naming the stop, and holds every run it covers again immediately before the call, recording nothing, so that run's job is deferred and the same run starts only after the stop is cleared; both checks are serialised with tripping so a returned trip is seen by every later request and start; any covering stop wins over a cleared narrower one; a stop that cannot be read refuses; and a stop is cleared only by a recorded owner act, and cannot be deleted while active, truncated, or rewritten except by redaction.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -1259,7 +1260,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/agent_runtime.sql",
         marker:
-          /K3: a stop tripped after the request did not refuse the run at start/,
+          /K3: a stop tripped after the lease did not hold the run at start/,
       },
       {
         file: "supabase/tests/agent_runtime.sql",
@@ -1274,7 +1275,7 @@ const INVARIANTS: Invariant[] = [
         // The ORDER, lock before read, needs two sessions.
         file: "engine/domain/agentRuns.dbtest.ts",
         marker:
-          /makes a start wait for a trip in flight, and the start refuses its run once the trip commits/,
+          /makes a start wait for a trip in flight, and the start holds its run once the trip commits, deferring its job under that stop/,
       },
       {
         file: "engine/domain/agentRuns.dbtest.ts",
@@ -1289,7 +1290,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/agentRunRuntime.dbtest.ts",
         marker:
-          /refuses a run at request under a global stop and at start under an agent stop, with no provider call, and runs once cleared/,
+          /refuses a run at request under a global stop and holds it at the lease and at start under an agent stop, with no provider call, and runs that same run once cleared/,
       },
       {
         file: "supabase/tests/agent_runtime.sql",
@@ -1318,7 +1319,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "It covers agent runs only. It does not refuse leasing other job kinds, has no integration or tool scope (no tools exist), no UI, no budget and no spend ceiling (ADR 0010 addendum). The owner can DISABLE TRIGGER, as for SI-22 and SI-23. A stop does not interrupt a call already started.",
+      "It states the agent-run part of the switch. Holding every external job at the lease, the job_kind scope and the pre-call re-check for every handler are SI-37 (Phase 1D.1); the spend ceiling that trips the switch is SI-36. There is no tool scope (no tools exist) and no UI. The owner can DISABLE TRIGGER, as for SI-22 and SI-23. A stop does not interrupt a call already started.",
   },
   {
     id: "SI-32",
@@ -1458,6 +1459,392 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The Phase 1C owner services still accept a caller-declared correlation_id for their own lifecycle events (ADR 0016 §5 residual); agent run facts never read it. An idempotency key is not a secret and grants nothing: it names a request inside one tenant.",
+  },
+  {
+    id: "SI-35",
+    statement:
+      "Model cost is never invented: a run starts only with a current, unexpired price version of its own provider and model, recorded by an owner act, immutable once recorded, never shipped by a migration, and never replaced by an older version when the latest has expired; the start records that version and the worst-case reservation the database derives from the claimed context and the route ceiling; the estimate and the charge are derived by the database from complete, consistent usage on every write path; an outcome whose cost is unknown stays charged at its reservation; and only a refusal with no response body is charged nothing.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /P7: an expired latest price version fell back to an older unexpired one/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /P11: an application role reached the model prices/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /a refusal that carries a provider response id is charged its reservation/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /C4: a raw settlement kept a caller''s figures instead of deriving them/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /A10: a run whose model has no current price \(%\) was not refused before any call/,
+      },
+      {
+        file: "supabase/tests/referenceData.mjs",
+        marker: /model_prices/,
+      },
+      {
+        file: "supabase/migrations/20260917120000_runtime_governance.sql",
+        marker:
+          /runtime governance shipped price or limit rows; both are owner data/,
+      },
+      {
+        // The database's zero charge relies on this adapter contract.
+        file: "engine/models/openaiResponses.test.ts",
+        marker:
+          /rejects every non-2xx answer with no response id, no model and no usage, whatever its body claims/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker:
+          /reports to the start the same output ceiling the request carries, which is the route's/,
+      },
+      {
+        file: "engine/domain/spendSettlement.dbtest.ts",
+        marker:
+          /records its price version, an estimate from complete and consistent usage, and a charge equal to that estimate/,
+      },
+      {
+        file: "engine/domain/spendSettlement.dbtest.ts",
+        marker: /that carries no response id, no response model and no usage/,
+      },
+      {
+        file: "engine/domain/runtimeGovernanceMirrors.dbtest.ts",
+        marker:
+          /is never exceeded by the request the handler sends, for adversarial agent and task text at every column limit/,
+      },
+      {
+        file: "engine/domain/runtimeGovernanceMirrors.dbtest.ts",
+        marker:
+          /has the database's route output ceilings equal to MODEL_ROUTE_POLICIES/,
+      },
+      {
+        file: "engine/domain/claimContext.dbtest.ts",
+        marker:
+          /waits until the prepare transaction ends when it edits the claimed/,
+      },
+      {
+        file: "engine/domain/operatorCatalog.dbtest.ts",
+        marker: /never fall back to an older version of an expired model/,
+      },
+      {
+        file: "engine/domain/runtimeGovernanceMirrors.dbtest.ts",
+        marker:
+          /sends the provider exactly the output ceiling the database reserved for/,
+      },
+      {
+        // The zero charge is only for the four refusal categories.
+        file: "engine/domain/spendSettlement.dbtest.ts",
+        marker: /is charged its reservation for a failed run of category/,
+      },
+    ],
+    caveat:
+      "An estimate is usage times a recorded list price, not an invoice. The reservation assumes a byte-level tokenizer and that max_output_tokens bounds every generated token; a provider that breaks either needs another ceiling before it is priced. An owner's raw UPDATE that states a reservation is outside the boundary, like every owner act (SI-22). Prices are keyed on the configured model id, so a route should name a pinned snapshot. The Phase 1C length checks trim only spaces, so an owner can store text longer than its nominal limit; the start then reserves for the real text.",
+  },
+  {
+    id: "SI-36",
+    statement:
+      "Spend is bounded before any call: a run starts only when an active global daily ceiling and its tenant's daily budget exist and every applicable limit can absorb its worst-case reservation, checked under per-scope locks taken after the kill-switch lock and only under READ COMMITTED, so two starts racing at a limit cannot both admit on a stale total; exhaustion by settled spend is recorded naming the limit version, contention with calls in flight records nothing and retries, and no worker can record a spend refusal; a stalled worker cannot hold the spend locks past its idle-transaction bound; and a global ceiling exhausted by settled spend trips a system execution stop that never absorbs or clears an owner's stop and that only a person clears.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /A1: a run started with no global ceiling configured/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /A4: a start settled spend cannot absorb was not recorded cancelled by that limit version/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /A5: a start that fits settled spend but not the calls in flight was not refused with OS429/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /A12: a missing tenant budget beside a contended ceiling was not refused as unconfigured with no limit/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /A9: a worker recorded budget_exhausted through fail_agent_run/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /W4: a settlement that raised a charge above its reservation did not take the spend locks first/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /ran under REPEATABLE READ instead of refusing/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /E2: the ceiling sweep tripped on reservations still in flight/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /E7: the ceiling sweep tripped on a refusal recorded before the day of the ceiling began/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /K2: clearing the system global stop cleared or uncovered the owner/,
+      },
+      {
+        file: "engine/db/workerDatabase.test.ts",
+        marker:
+          /sets a statement timeout and an idle-in-transaction timeout, transaction-locally, before the work/,
+      },
+      {
+        file: "engine/worker/runWorker.test.ts",
+        marker:
+          /runs the ceiling check after the stale-run sweep, in its own transaction, as ops_worker/,
+      },
+      {
+        file: "engine/worker/failures.test.ts",
+        marker:
+          /treats spend contention with calls in flight as transient, so the job retries on its backoff/,
+      },
+      {
+        file: "engine/domain/spendAdmission.dbtest.ts",
+        marker:
+          /the second waits on the spend lock, then raises OS429 and records nothing/,
+      },
+      {
+        file: "engine/domain/spendAdmission.dbtest.ts",
+        marker: /lets only the admissible number of calls happen at once/,
+      },
+      {
+        file: "engine/domain/spendRefusals.dbtest.ts",
+        marker:
+          /records a start that settled spend cannot absorb as cancelled, refused, budget_exhausted naming the budget version, with no provider call/,
+      },
+      {
+        file: "engine/domain/idleTransaction.dbtest.ts",
+        marker:
+          /is ended by the server, lets the admission waiting on its lock proceed in bounded time/,
+      },
+      {
+        file: "engine/domain/spendCeilingInFlight.dbtest.ts",
+        marker:
+          /never trips the ceiling stop for a start refused only by contention/,
+      },
+      {
+        file: "engine/domain/spendCeiling.dbtest.ts",
+        marker: /keeps an owner's global stop as a separate row/,
+      },
+      {
+        file: "engine/domain/executionStopOutcome.dbtest.ts",
+        marker: /is recorded as its own stop and printed stopped/,
+      },
+      {
+        file: "engine/domain/spendRefusals.dbtest.ts",
+        marker: /as budget_exhausted, not as a contended retry/,
+      },
+      {
+        file: "engine/domain/spendCeilingRace.dbtest.ts",
+        marker:
+          /record one system stop, and only the sweep whose own transaction recorded it answers with its id/,
+      },
+    ],
+    caveat:
+      "A call already in flight is never interrupted because a limit was crossed during it; its outcome is recorded and the next start sees the total. A run refused only by contention retries on its job's backoff and fails after five attempts. Tenant and company budgets refuse but never trip a stop. The global spend lock serialises every start fleet-wide. Erasing today's runs frees today's budget; erasure is an owner act. Agent and task budgets are not built.",
+  },
+  {
+    id: "SI-37",
+    statement:
+      "There is one execution stop evaluator, and it holds work at the lease as well as before every external call: every job kind is classified external or internal and the worker refuses a registry that disagrees; no queued job whose kind is not internal is leased while an active stop covers it, and holding it consumes no attempt; a stop may name one external kind and never any other kind; organisational coordinates come only from facts fixed when the job was requested, and an unknown one fails closed within its tenant; and a stop found after the lease, by the runtime's pre-call check or by the handler's own start, returns the job to the queue with its attempt restored, keeps no durable start and calls nothing.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /W1: ops\.lease_job does not hold the kill-switch lock shared once it has read the stops/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /W6: ops\.job_execution_stop does not hold the kill-switch lock shared once it has read the stops/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /W7: ops\.defer_job does not hold the kill-switch lock shared once it has read the stops/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /a queued job an active stop covers was leased or spent an attempt/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /a job whose task has a department and an assignee/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /K5: a deferral did not return the job to the queue 30 seconds later with its attempt restored/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /K1 a raw kind stop on an internal kind/,
+      },
+      {
+        file: "engine/worker/runOneJob.test.ts",
+        marker:
+          /discards the handler's durable start, defers the job, and never calls or settles when a stop covers it/,
+      },
+      {
+        file: "engine/worker/runOneJob.test.ts",
+        marker:
+          /fails closed, rolling the prepare back with no call, when the stop check answers anything but one stop id or none/,
+      },
+      {
+        file: "engine/worker/jobKinds.test.ts",
+        marker:
+          /refuses an external kind registered as a transactional handler, which the stop check would never hold before a call/,
+      },
+      {
+        file: "engine/domain/killSwitchLease.dbtest.ts",
+        marker:
+          /stop with no attempt spent and no job event, and runs with exactly one provider call once the stop is cleared/,
+      },
+      {
+        file: "engine/domain/killSwitchLease.dbtest.ts",
+        marker: /the postmark ledger retention job purges under a global stop/,
+      },
+      {
+        file: "engine/domain/externalCallDeferral.dbtest.ts",
+        marker: /prepared, never called or settled, its attempt restored/,
+      },
+      {
+        file: "engine/domain/externalCallDeferral.dbtest.ts",
+        marker:
+          /is held at the lease by a company stop in its own tenant, whose company it does not know/,
+      },
+      {
+        file: "engine/domain/runtimeGovernanceMirrors.dbtest.ts",
+        marker:
+          /has the database's external and internal job kinds equal to EXTERNAL_JOB_KINDS and INTERNAL_JOB_KINDS/,
+      },
+      {
+        // The ORDER, lock before read, needs two sessions.
+        file: "engine/domain/killSwitchLease.dbtest.ts",
+        marker:
+          /waits for the trip to commit, then leases nothing the stop covers/,
+      },
+      {
+        file: "engine/domain/preCallStopCheck.dbtest.ts",
+        marker: /waits for the trip to commit, then defers the job it covers/,
+      },
+    ],
+    caveat:
+      "A stop does not interrupt a call already started. An agent run whose job was leased before the trip is still cancelled at start (SI-31); one not yet leased is held and runs once the stop is cleared. A job that no agent run or task names is covered only by global, tenant and kind stops unless an unknown coordinate matches within its tenant. The held-job scan costs a coordinate lookup per queued job only while an organisational stop is active. The owner can DISABLE TRIGGER, as for SI-22.",
+  },
+  {
+    id: "SI-38",
+    statement:
+      "The domain creates that integrations will retry are idempotent: ops.create_task and ops.record_event, given a tenant-scoped key, return the row the same semantic request created with no second row or fact, refuse a different request under that key, and converge under concurrency; the request fingerprint is derived by the database from the stored row, independent of the session time zone, and fixed once stored.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /I1: replaying a task create stored a second task or a second task\.created fact/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /I2: % conflicting creates ran \(expected 11\), or one stored a task/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /I5: a raw insert with a key and no fingerprint was not given one/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /I6: replica mode silenced tasks_request_identity_update; the guard must be ENABLE ALWAYS/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker:
+          /I7: the request fingerprint changed with the session time zone/,
+      },
+      {
+        file: "supabase/tests/runtime_governance.sql",
+        marker: /I9: replaying an event recorded a second fact/,
+      },
+      {
+        file: "engine/domain/companyOs.test.ts",
+        marker:
+          /forwards a task's idempotency key as the thirteenth and last argument of ops\.create_task/,
+      },
+      {
+        file: "engine/domain/domainIdempotency.dbtest.ts",
+        marker:
+          /converge on one task and one task\.created fact when the requests match, the second waiting for the first to commit/,
+      },
+      {
+        file: "engine/domain/domainIdempotency.dbtest.ts",
+        marker: /converge on one event when the facts match/,
+      },
+    ],
+    caveat:
+      "The key is optional: a caller without one keeps the non-deduplicated create, and the future wrapper contract (ADR 0015 §4) must require one from every integration. create_company, create_department and create_agent refuse a retry through their slug keys instead of returning the row. The caller-declared correlation_id residual (PHASE_1C_REPORT Appendix A item 7) is still open, and correlation is not part of either fingerprint.",
+  },
+  {
+    id: "SI-39",
+    statement:
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, it withholds any key-shaped value a worker published, and its only acts are recording a price version and setting or retiring a spend limit.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "engine/cli/operator.test.ts",
+        marker:
+          /reads only ADMIN_DATABASE_URL from its environment, never a provider key or a model routing variable/,
+      },
+      {
+        file: "engine/cli/operator.test.ts",
+        marker: /in a read-only transaction/,
+      },
+      {
+        file: "engine/domain/runtimeReadModelRoutes.test.ts",
+        marker:
+          /never prints a key-shaped model id or worker id that a worker published/,
+      },
+      {
+        file: "engine/domain/executionStops.test.ts",
+        marker:
+          /decides that this act recorded the stop by the transaction clock/,
+      },
+      {
+        file: "engine/domain/operatorReadOnly.dbtest.ts",
+        marker: /with SQLSTATE 25006/,
+      },
+      {
+        file: "engine/domain/operatorRuntime.dbtest.ts",
+        marker:
+          /prints no task or agent text, result, idempotency key or connection string/,
+      },
+    ],
+    caveat:
+      "It is an owner tool: anyone holding ADMIN_DATABASE_URL can do more than it offers. Its lists are bounded (runs 200, prices and limits 500, workers 50) and only the held-job count reports hitting its cap. Worker routes are what each worker published at boot, not a live read of its environment.",
   },
 ];
 

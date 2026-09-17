@@ -981,3 +981,116 @@ describe("an ambiguous provider outcome is never recorded as a known failure", (
     expect(agentRunStatusForCategory(error.category)).toBe("indeterminate");
   });
 });
+
+describe("only an answer with a body carries evidence that a model ran, which the database's zero charge relies on", () => {
+  // ADR 0017 §2. The database charges a failed run nothing only when the failure
+  // is a refusal AND carries no usage, no provider response id and no response
+  // model. That is sound only while this adapter records a response model for
+  // every 2xx answer whose body it parses (the requested model when the body
+  // names none) and a response id only when that body carries a well-formed one,
+  // and none of the three for an HTTP refusal, whatever the refusal's body
+  // claims. A 2xx whose body cannot be read or parsed carries neither, but it is
+  // `unknown`, so it is indeterminate and charged at least its reservation. A 200
+  // with a terminal `failed` status always carries a model, so it is never
+  // charged 0.
+
+  /** An error body that also claims, in every field a careless adapter might read, that a model ran. */
+  const errorBodyClaimingARun = (request: RecordedRequest) => ({
+    ...completedBody(),
+    ...errorBodyEchoing(request, { code: "insufficient_quota" }),
+  });
+
+  /** A null-body status cannot be built with a body. */
+  const NULL_BODY_STATUSES = new Set([304]);
+
+  it("rejects every non-2xx answer with no response id, no model and no usage, whatever its body claims", async () => {
+    const carried: number[] = [];
+    // A Response can only be built with a status from 200 to 599.
+    for (let status = 300; status <= 599; status += 1) {
+      const error = await failureOf(
+        run((request) =>
+          NULL_BODY_STATUSES.has(status)
+            ? new Response(null, {
+                status,
+                headers: { "x-request-id": "req_http" },
+              })
+            : jsonResponse(status, errorBodyClaimingARun(request), {
+                "x-request-id": "req_http",
+                "openai-model": "gpt-test-2026-01-01",
+              }),
+        ),
+      );
+      expect(error.providerRequestId).toBe("req_http");
+      if (
+        error.providerResponseId !== null ||
+        error.model !== null ||
+        error.usage !== null
+      ) {
+        carried.push(status);
+      }
+    }
+    expect(carried).toEqual([]);
+  });
+
+  it("rejects each definitive refusal the database may charge nothing with no evidence of a run", async () => {
+    for (const status of [400, 401, 403, 404, 413, 422, 429]) {
+      const error = await failureOf(
+        run((request) => jsonResponse(status, errorBodyClaimingARun(request))),
+      );
+      expect(agentRunStatusForCategory(error.category)).toBe("failed");
+      expect(error).toMatchObject({
+        providerResponseId: null,
+        model: null,
+        usage: null,
+      });
+    }
+  });
+
+  it("carries the body's response id, model and usage for a 200 whose terminal status is failed", async () => {
+    for (const [code, category] of [
+      ["server_error", "invalid_response"],
+      ["rate_limit_exceeded", "rate_limit"],
+    ] as const) {
+      const error = await failureOf(
+        run(() =>
+          jsonResponse(
+            200,
+            completedBody({ status: "failed", error: { code } }),
+          ),
+        ),
+      );
+      expect(error).toMatchObject({
+        category,
+        code,
+        providerResponseId: "resp_0123abc",
+        model: "gpt-test-2026-01-01",
+      });
+      expect(error.usage).toMatchObject({ inputTokens: 321, outputTokens: 45 });
+    }
+  });
+
+  it("still carries a model for a 200 rate-limit failure whose body names no id, no model and no usage", async () => {
+    // The requested model is the fallback, so a refusal-category answer that
+    // had a body can never look like an answer that had none.
+    const error = await failureOf(
+      run(() =>
+        jsonResponse(
+          200,
+          completedBody({
+            id: undefined,
+            model: undefined,
+            usage: undefined,
+            status: "failed",
+            error: { code: "rate_limit_exceeded" },
+          }),
+        ),
+      ),
+    );
+    expect(error).toMatchObject({
+      category: "rate_limit",
+      providerResponseId: null,
+      usage: null,
+      model: REQUEST.model,
+    });
+  });
+});

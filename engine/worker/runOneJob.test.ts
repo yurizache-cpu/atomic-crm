@@ -54,7 +54,15 @@ interface FakeOptions {
    * omits the column.
    */
   leaseRemainingMs?: string | number | null;
+  /** Rows ops.job_execution_stop() answers. Default: one row, no stop. */
+  stopCheck?: readonly unknown[];
+  /** Rows ops.defer_job() answers. Default: one row naming STOP_ID. */
+  deferral?: readonly unknown[];
+  /** A statement fragment whose query raises, as a failing function does. */
+  failStatement?: string;
 }
+
+const STOP_ID = "5e0c1d2a-7b3f-4c8d-9e1f-2a3b4c5d6e7f";
 
 const fakeDb = (options: FakeOptions = {}) => {
   const calls: Recorded[] = [];
@@ -63,6 +71,8 @@ const fakeDb = (options: FakeOptions = {}) => {
   const rolledBack: number[] = [];
   let transaction = 0;
   let resumeCall = 0;
+  /** Transactions begun and not yet committed or rolled back. */
+  let open = 0;
 
   const leased = options.leased === undefined ? JOB : options.leased;
   const contextTenant =
@@ -83,8 +93,23 @@ const fakeDb = (options: FakeOptions = {}) => {
       const tx: TxClient = {
         async query(sql, params) {
           calls.push({ tx: mine, sql, params });
+          if (options.failStatement && sql.includes(options.failStatement)) {
+            throw Object.assign(new Error("function raised an exception"), {
+              code: "42501",
+            });
+          }
           if (sql.includes("ops.lease_job")) {
             return { rows: leased ? [leased] : [] } as never;
+          }
+          if (sql.includes("ops.job_execution_stop")) {
+            return {
+              rows: [...(options.stopCheck ?? [{ stop_id: null }])],
+            } as never;
+          }
+          if (sql.includes("ops.defer_job")) {
+            return {
+              rows: [...(options.deferral ?? [{ stop_id: STOP_ID }])],
+            } as never;
           }
           if (sql.includes("ops.resume_lease")) {
             const configured = options.resume?.[resumeCall];
@@ -121,6 +146,7 @@ const fakeDb = (options: FakeOptions = {}) => {
           return { rows: [] } as never;
         },
       };
+      open += 1;
       try {
         const result = await fn(tx);
         committed.push(mine);
@@ -128,6 +154,8 @@ const fakeDb = (options: FakeOptions = {}) => {
       } catch (error) {
         rolledBack.push(mine);
         throw error;
+      } finally {
+        open -= 1;
       }
     },
     async identity() {
@@ -141,6 +169,7 @@ const fakeDb = (options: FakeOptions = {}) => {
     calls,
     committed,
     rolledBack,
+    openTransactions: () => open,
     sqlIn: (n: number) => calls.filter((c) => c.tx === n).map((c) => c.sql),
   };
 };
@@ -1212,5 +1241,287 @@ describe("the call is logged without its error", () => {
     expect(finishedAt).toBeGreaterThan(startedAt);
     expect(lines[finishedAt].fields?.detail).toBe("error");
     expect(JSON.stringify(lines)).not.toContain("sentinel-prompt-text");
+  });
+});
+
+// --- The kill switch before the call (ADR 0017 §6) --------------------------
+
+const SAVEPOINT = "savepoint external_call_prepare";
+const RELEASE = "release savepoint external_call_prepare";
+const ROLLBACK_TO = "rollback to savepoint external_call_prepare";
+
+/** A prepare that writes through a capability, standing in for a durable start. */
+const writingPrepare = (
+  overrides: ExternalOverrides = {},
+): ExternalOverrides => ({
+  prepareCapabilities: ["purgeInboundEmailLedger"],
+  prepare: async (_job, capabilities) => {
+    await capabilities.purgeInboundEmailLedger();
+    return { kind: "call", state: { step: "started" } };
+  },
+  ...overrides,
+});
+
+describe("an execution stop holds an external job immediately before its call", () => {
+  it("commits a prepare that settles without asking whether a stop covers the job", async () => {
+    const { db, sqlIn, committed } = fakeDb();
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: externalRegistry({
+        prepare: async () => ({ kind: "settled", detail: "refused_by_stop" }),
+      }),
+    });
+    expect(result).toMatchObject({
+      outcome: "succeeded",
+      detail: "refused_by_stop",
+    });
+    const tx2 = sqlIn(2);
+    expect(tx2.some((s) => s.includes("ops.job_execution_stop"))).toBe(false);
+    expect(tx2.some((s) => s.includes("ops.defer_job"))).toBe(false);
+    expect(tx2.indexOf(RELEASE)).toBeGreaterThan(tx2.indexOf(SAVEPOINT));
+    expect(
+      tx2.findIndex((s) => s.includes("ops.complete_job")),
+    ).toBeGreaterThan(tx2.indexOf(RELEASE));
+    expect(committed).toEqual([1, 2]);
+  });
+
+  it("takes the savepoint after the trusted resume and before the handler's prepare runs", async () => {
+    const fake = fakeDb();
+    let seenAtPrepare: string[] = [];
+    await runOneJob(fake.db, {
+      workerId: "w1",
+      registry: externalRegistry({
+        prepare: async () => {
+          seenAtPrepare = fake.sqlIn(2);
+          return { kind: "call", state: null };
+        },
+      }),
+    });
+    expect(seenAtPrepare.at(-1)).toBe(SAVEPOINT);
+    expect(
+      seenAtPrepare.findIndex((s) => s.includes("ops.current_tenant_id")),
+    ).toBeLessThan(seenAtPrepare.indexOf(SAVEPOINT));
+  });
+
+  it("asks the stop check after prepare asked for the call, releases the savepoint when none covers the job, and calls exactly once", async () => {
+    const call = vi.fn(async () => "called");
+    const settle = vi.fn(async () => "settled=ok");
+    const { db, calls, sqlIn } = fakeDb({ stopCheck: [{ stop_id: null }] });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: externalRegistry(writingPrepare({ call, settle })),
+    });
+    expect(result).toMatchObject({
+      outcome: "succeeded",
+      detail: "settled=ok",
+    });
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
+    const tx2 = sqlIn(2);
+    const writeAt = tx2.findIndex((s) =>
+      s.includes("purge_inbound_email_ledger"),
+    );
+    const checkAt = tx2.findIndex((s) => s.includes("ops.job_execution_stop"));
+    expect(tx2.indexOf(SAVEPOINT)).toBeLessThan(writeAt);
+    expect(checkAt).toBeGreaterThan(writeAt);
+    expect(tx2.indexOf(RELEASE)).toBeGreaterThan(checkAt);
+    expect(tx2).not.toContain(ROLLBACK_TO);
+    expect(calls.some((c) => c.sql.includes("ops.defer_job"))).toBe(false);
+    // The check is runtime SQL: it takes no argument a handler could choose.
+    const check = calls.find((c) => c.sql.includes("ops.job_execution_stop"));
+    expect(check?.sql).toBe("select ops.job_execution_stop() as stop_id");
+    expect(check?.params).toBeUndefined();
+  });
+
+  it("discards the handler's durable start, defers the job, and never calls or settles when a stop covers it", async () => {
+    const call = vi.fn(async () => "called");
+    const settle = vi.fn(async () => "settled");
+    const lines: { event: WorkerLogEvent; fields?: WorkerLogFields }[] = [];
+    const { db, calls, committed, rolledBack, sqlIn } = fakeDb({
+      stopCheck: [{ stop_id: STOP_ID }],
+      deferral: [{ stop_id: STOP_ID }],
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      log: (event, fields) => lines.push({ event, fields }),
+      registry: externalRegistry(writingPrepare({ call, settle })),
+    });
+
+    expect(result).toMatchObject({
+      outcome: "deferred",
+      jobId: JOB.id,
+      tenantId: JOB.tenant_id,
+      detail: `held by execution stop ${STOP_ID}`,
+    });
+    expect(result.failureClass).toBeUndefined();
+    expect(call).not.toHaveBeenCalled();
+    expect(settle).not.toHaveBeenCalled();
+    // The prepare transaction commits the deferral, and it is the last one.
+    expect(committed).toEqual([1, 2]);
+    expect(rolledBack).toEqual([]);
+    const tx2 = sqlIn(2);
+    const writeAt = tx2.findIndex((s) =>
+      s.includes("purge_inbound_email_ledger"),
+    );
+    const checkAt = tx2.findIndex((s) => s.includes("ops.job_execution_stop"));
+    const rollbackAt = tx2.indexOf(ROLLBACK_TO);
+    const deferAt = tx2.findIndex((s) => s.includes("ops.defer_job"));
+    expect(writeAt).toBeGreaterThan(tx2.indexOf(SAVEPOINT));
+    expect(checkAt).toBeGreaterThan(writeAt);
+    expect(rollbackAt).toBeGreaterThan(checkAt);
+    expect(deferAt).toBeGreaterThan(rollbackAt);
+    expect(tx2.at(-1)).toBe("select ops.defer_job() as stop_id");
+    expect(tx2).not.toContain(RELEASE);
+    // A deferral is not a completion and not a failure.
+    expect(calls.some((c) => c.sql.includes("ops.complete_job"))).toBe(false);
+    expect(calls.some((c) => c.sql.includes("ops.settle_job_failure"))).toBe(
+      false,
+    );
+    const events = lines.map((line) => line.event);
+    expect(events).toContain("job.deferred");
+    expect(events).not.toContain("job.external_call_started");
+    expect(events).not.toContain("job.attempt_failed");
+    expect(
+      lines.find((line) => line.event === "job.deferred")?.fields,
+    ).toMatchObject({
+      jobId: JOB.id,
+      detail: `held by execution stop ${STOP_ID}`,
+    });
+  });
+
+  it("fails the attempt as transient, with the prepare rolled back and no call, when the stop was cleared before the deferral", async () => {
+    const call = vi.fn(async () => "called");
+    const { db, calls, committed, rolledBack } = fakeDb({
+      stopCheck: [{ stop_id: STOP_ID }],
+      deferral: [{ stop_id: null }],
+      settleReturns: "retry",
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: externalRegistry(writingPrepare({ call })),
+    });
+    expect(call).not.toHaveBeenCalled();
+    expect(rolledBack).toContain(2);
+    expect(committed).toEqual([1, 3]);
+    expect(result).toMatchObject({
+      outcome: "retry",
+      failureClass: "transient",
+    });
+    expect(result.detail).toMatch(/cleared before it could be deferred/);
+    const settle = calls.find((c) => c.sql.includes("ops.settle_job_failure"));
+    expect(settle).toMatchObject({ tx: 3 });
+    expect(settle?.params?.[1]).toBe("transient");
+  });
+
+  it("fails closed, rolling the prepare back with no call, when the stop check answers anything but one stop id or none", async () => {
+    const malformed: readonly (readonly unknown[])[] = [
+      [],
+      [{}],
+      [{ stop_id: undefined }],
+      [{ stop_id: null }, { stop_id: null }],
+      [{ stop_id: STOP_ID }, { stop_id: STOP_ID }],
+      [{ stop_id: STOP_ID.toUpperCase() }],
+      [{ stop_id: ` ${STOP_ID}` }],
+      [{ stop_id: "" }],
+      [{ stop_id: "not-a-stop" }],
+      [{ stop_id: 42 }],
+      [{ stop_id: false }],
+      [{ stop_id: { id: STOP_ID } }],
+      [null],
+    ];
+    for (const stopCheck of malformed) {
+      const call = vi.fn(async () => "called");
+      const { db, calls, committed, rolledBack } = fakeDb({
+        stopCheck,
+        settleReturns: "failed",
+      });
+      const result = await runOneJob(db, {
+        workerId: "w1",
+        registry: externalRegistry(writingPrepare({ call })),
+      });
+      expect(call).not.toHaveBeenCalled();
+      expect(rolledBack).toContain(2);
+      expect(committed).not.toContain(2);
+      expect(result.failureClass).toBe("security");
+      expect(result.detail).toMatch(/ops\.job_execution_stop answered/);
+      expect(calls.some((c) => c.sql.includes("ops.defer_job"))).toBe(false);
+    }
+  });
+
+  it("fails closed, rolling the deferral back with no call, when the deferral answers anything but one stop id or none", async () => {
+    for (const deferral of [
+      [],
+      [{}],
+      [{ stop_id: "held" }],
+      [{ stop_id: 7 }],
+    ]) {
+      const call = vi.fn(async () => "called");
+      const { db, committed, rolledBack } = fakeDb({
+        stopCheck: [{ stop_id: STOP_ID }],
+        deferral,
+        settleReturns: "failed",
+      });
+      const result = await runOneJob(db, {
+        workerId: "w1",
+        registry: externalRegistry(writingPrepare({ call })),
+      });
+      expect(call).not.toHaveBeenCalled();
+      expect(rolledBack).toContain(2);
+      expect(committed).not.toContain(2);
+      expect(result.outcome).not.toBe("deferred");
+      expect(result.failureClass).toBe("security");
+      expect(result.detail).toMatch(/ops\.defer_job answered/);
+    }
+  });
+
+  it("fails closed, with no call, when the stop check itself raises", async () => {
+    const call = vi.fn(async () => "called");
+    const { db, committed, rolledBack } = fakeDb({
+      failStatement: "ops.job_execution_stop",
+      settleReturns: "failed",
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: externalRegistry(writingPrepare({ call })),
+    });
+    expect(call).not.toHaveBeenCalled();
+    expect(rolledBack).toContain(2);
+    expect(committed).not.toContain(2);
+    expect(result.failureClass).toBe("security");
+  });
+
+  it("never asks the stop check when prepare throws, and records the failure as before", async () => {
+    const { db, calls, rolledBack } = fakeDb({ settleReturns: "retry" });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: externalRegistry({
+        prepare: async () => {
+          throw new Error("prepare exploded");
+        },
+      }),
+    });
+    expect(rolledBack).toContain(2);
+    expect(calls.some((c) => c.sql.includes("ops.job_execution_stop"))).toBe(
+      false,
+    );
+    expect(result).toMatchObject({ outcome: "retry", failureClass: "unknown" });
+  });
+
+  it("still starts the call only once no transaction is open", async () => {
+    const fake = fakeDb({ stopCheck: [{ stop_id: null }] });
+    const openAtCall: number[] = [];
+    await runOneJob(fake.db, {
+      workerId: "w1",
+      registry: externalRegistry(
+        writingPrepare({
+          call: async () => {
+            openAtCall.push(fake.openTransactions());
+            return "called";
+          },
+        }),
+      ),
+    });
+    expect(openAtCall).toEqual([0]);
+    expect(fake.committed).toEqual([1, 2, 3]);
   });
 });

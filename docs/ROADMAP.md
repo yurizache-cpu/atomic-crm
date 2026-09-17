@@ -283,4 +283,79 @@ Phase 1D has not started. ~~It waits on the owner's review of ADRs 0002 and 0003
 - No `tool_invocations`, typed tool registry, memory, budgets, spend ceiling, UI switch or CRM access.
 - The `CRMProvider` ordering note still applies before any agent reads CRM data.
 
-**Next:** the owner's review of the report's classification. The next major milestone is decided in a separate roadmap review, aimed at a real, testable clinic flow. The report's §28 is a list of proposed follow-up work, not an accepted phase.
+**Next:** the owner's review of the report's classification. The next major milestone is decided in a separate roadmap review, aimed at a real, testable clinic flow. The report's §28 is a list of proposed follow-up work, not an accepted phase. *(2026-09-17: decided; see the owner review under Status update 2026-09-17.)*
+
+---
+
+## Status update 2026-09-17
+
+**Phase 1D.1, runtime governance closure, is built, committed and pushed on `feature/runtime-governance`, and CI VERIFIED (run 35220094426 on `b4dee040`, 2026-09-17; only the historical `e2e-test` and Prettier checks are red, identical to the baseline).** It is a short bridge phase between the first model call and the first real clinic flow. See [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md) and [ADR 0017](adr/0017-runtime-governance.md) (Accepted by the owner 2026-09-17, below). It discharges most of what ADR 0010 left owed; see that ADR's 2026-09-17 addendum.
+
+**Built:**
+- **Prices:** versioned, owner-recorded model prices. They are never shipped by a migration, never used after they expire, and never replaced by an older version.
+- **Cost:** derived by the database from usage and the price version recorded at start. An unknown outcome stays charged at its reservation.
+- **Spend limits:** a global daily ceiling, tenant daily budgets and optional company limits. The global ceiling and the tenant budget must exist; every configured limit, company limits included, must absorb a run's worst-case reservation before the run starts. They are checked under per-scope locks, so two workers racing at a limit cannot both spend.
+- **Ceiling stop:** a global ceiling exhausted by settled spend trips the existing kill switch, with origin `system`.
+- **Kill switch:** the same switch now holds every non-internal job at the lease, without consuming an attempt. It can name one external job kind, and the runtime re-checks it before any external call. A stop an agent run's start finds holds that run, and the runtime defers its job.
+- **Domain retries:** `create_task` and `record_event` are idempotent under a tenant-scoped key.
+- **Runtime module:** the `external_call` flow lives in its own module.
+- **Operator view:** `npm run ops`, read-only by default.
+
+**Not built, deliberately:** a UI, tools, WhatsApp, CRM-writing agents, browser automation, agent and task budgets, and any live provider call.
+
+**Explicit blocker: BASELINE Q8.** Real patient or clinical text may not reach a model until the owner decides:
+- the multi-tenant processor roles;
+- the provider's retention and zero-data-retention status;
+- the DPA/DPIA;
+- the classification of task text.
+
+Phase 2A may be built and tested with synthetic data before then. See DECISIONS.md.
+
+~~**Next:** the owner reviews ADR 0017, the ADR 0010 addendum and the report's classification; the owner pushes the branch and CI verifies it. The first real clinic flow (Phase 2A) is scoped in the report's final section, as a proposal only.~~ *(Superseded by the owner review below.)*
+
+### Owner review 2026-09-17
+
+**The owner accepts the Phase 1D.1 runtime governance architecture, and ADR 0017 is Accepted.** Four owner decisions come with it, recorded in the ADR's owner-review addendum:
+- **A. Fail closed.** Without governance configuration there is no model call.
+- **B. Stopped jobs are held.** A stopped job is held or deferred, never cancelled: no attempt is spent because it is stopped, nothing is called, and it runs only after an explicit clear.
+  - **Made true at the review:** an agent run leased before a trip is now held at its start, and the runtime defers its job; the same run runs once the stop is cleared. See [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md).
+  - **E. Confirmed by the owner, 2026-09-17:** a new request made while a stop covers it is still refused at request time. It is recorded `cancelled` / `execution_stopped`, no job is created, no provider is called and nothing is deferred. A stop before admission refuses new work; a stop after admission holds the work already admitted.
+- **C. Waiting is allowed.** A request may wait, bounded, for a prepare in progress.
+- **D. The spend-ceiling stop stays.** It is cleared only by a person. A new day, a budget change, a price change or lower observed spend never resumes execution.
+
+~~**Committed locally, not pushed.**~~ *(2026-09-17: pushed by the owner and CI VERIFIED, run 35220094426 on `b4dee040`, which adds owner decision E.)* The phase is committed on `feature/runtime-governance` in four commits: schema and domain; engine, CLIs and the driver-backed proofs (they compile only with the new start signature, so they ship with it); security invariants; documentation. CI runs once the owner pushes it, and the phase is CI VERIFIED only after that.
+
+**Next phase: PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT. The owner accepts the direction. The phase is NOT started.** It waits for the Phase 1D.1 CI result and its own brief. *(The CI result came in on 2026-09-17: verified, run 35220094426.)* Where the report's §14 (the proposed Phase 2A scope) differs, this section governs.
+
+**Flow:** inbound test ingress → idempotent task → `lead_triage` capability → agent run → structured advisory triage → human review → operator queue.
+
+**Allowed in 2A:**
+- verified inbound webhook infrastructure;
+- synthetic or test messages;
+- a minimal message ledger, without persisting the message body wherever possible;
+- idempotent `create_task`;
+- `lead_triage` structured output;
+- read-only CRM and contact lookup;
+- a response draft that a person reviews;
+- the current pricing, budget and kill-switch governance;
+- operator CLI visibility;
+- consent, `do_not_contact` and retention enforcement.
+
+**Not allowed in 2A:**
+- the model sending WhatsApp messages on its own;
+- the model writing CRM data;
+- generic tools;
+- browser automation;
+- RAG or memory;
+- multi-agent delegation;
+- autonomous loops;
+- real clinical or patient text sent to a model while Q8 is open;
+- UI or isometric work.
+
+**BASELINE Q8 stays open and explicit.** It blocks REAL PATIENT DATA, not synthetic Phase 2A development and testing. It is not answered by assumption. Until the owner decides it, none of these may be sent to a real LLM provider:
+- a real patient's message body;
+- clinical text;
+- psychotherapy information;
+- health data.
+
+Synthetic data is allowed.

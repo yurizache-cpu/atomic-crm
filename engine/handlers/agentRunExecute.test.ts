@@ -13,6 +13,7 @@ import {
 import { fingerprintModelRequest } from "../models/fingerprint.ts";
 import {
   createModelRouter,
+  MODEL_ROUTE_POLICIES,
   type ModelRouter,
   type StructuredModelResult,
 } from "../models/router.ts";
@@ -66,6 +67,7 @@ type TxClient = Parameters<Parameters<WorkerDatabase["withTransaction"]>[0]>[0];
 // these calls, through real worker processes.
 
 const RUN_ID = "0f2d5c8e-6b1a-4c3e-9d7f-1a2b3c4d5e6f";
+const STOP_ID = "5a0e2c1d-7b3f-4e8a-9c6d-2f1e0d3c4b5a";
 const OTHER_RUN_ID = "9b2e4f1a-3c5d-4e6f-8a7b-0c1d2e3f4a5b";
 const TENANT_ID = "aaaaaaaa-0000-0000-0000-000000000001";
 const OTHER_TENANT_ID = "bbbbbbbb-0000-0000-0000-000000000002";
@@ -120,6 +122,8 @@ const routerOver = (provider: ModelProvider): ModelRouter =>
 interface CapabilityScript {
   readonly claim?: unknown;
   readonly start?: string;
+  /** Thrown by startAgentRun instead of answering, as a raising start does. */
+  readonly startError?: Error;
   readonly refuse?: string;
   readonly complete?: string;
   readonly fail?: string;
@@ -134,6 +138,7 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
   });
   const startAgentRun = vi.fn(async (_start: AgentRunStart) => {
     used.push("startAgentRun");
+    if (script.startError) throw script.startError;
     return script.start ?? "running";
   });
   const refuseAgentRun = vi.fn(async (_code: string) => {
@@ -210,6 +215,10 @@ const runCycle = async (
   );
   if (prepared.kind === "settled") {
     return { prepared, detail: prepared.detail, called: false };
+  }
+  if (prepared.kind === "held") {
+    // A held prepare completes nothing, so there is no job detail.
+    return { prepared, detail: "", called: false };
   }
   const context = (options.context ?? idleContext)();
   const startedAt = Date.now();
@@ -490,6 +499,36 @@ describe("a lease too short to bound a call starts nothing", () => {
 });
 
 describe("only the token `running` means call", () => {
+  it("holds a run whose start found an execution stop, without calling or settling it", async () => {
+    const { provider, handler, caps } = setup(
+      { type: "respond", content: VALID },
+      { start: "stopped" },
+    );
+    const { prepared, called } = await runCycle(handler, caps);
+    expect(prepared).toEqual({ kind: "held" });
+    expect(called).toBe(false);
+    expect(caps.used).toEqual(["claimAgentRun", "startAgentRun"]);
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("never reads a look-alike of `stopped` as held", async () => {
+    for (const token of [
+      "Stopped",
+      " stopped",
+      "stopped\n",
+      "execution_stopped",
+    ]) {
+      const { provider, handler, caps } = setup(
+        { type: "respond", content: VALID },
+        { start: token },
+      );
+      const { prepared, called } = await runCycle(handler, caps);
+      expect(prepared.kind).toBe("settled");
+      expect(called).toBe(false);
+      expect(provider.calls).toHaveLength(0);
+    }
+  });
+
   it("settles without calling on every other token start returns", async () => {
     for (const [token, shown] of [
       ["cancelled", "cancelled"],
@@ -535,8 +574,45 @@ describe("the stored fingerprint is of the request the provider actually receive
         "fake",
         TASK_ASSESSMENT_PROMPT_VERSION,
       ),
+      maxOutputTokens: MODEL_ROUTE_POLICIES.standard.maxOutputTokens,
     });
     expect(start.inputFingerprint).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("reports to the start the same output ceiling the request carries, which is the route's", async () => {
+    const { provider, handler, caps } = setup({
+      type: "respond",
+      content: VALID,
+    });
+    await runCycle(handler, caps);
+    const [start] = caps.startAgentRun.mock.calls[0];
+    expect(start.maxOutputTokens).toBe(provider.calls[0].maxOutputTokens);
+    expect(start.maxOutputTokens).toBe(
+      MODEL_ROUTE_POLICIES.standard.maxOutputTokens,
+    );
+  });
+});
+
+/** What ops.start_agent_run raises when spend is contended by calls in flight. */
+const budgetContended = () =>
+  Object.assign(
+    new Error(
+      "ops.start_agent_run: the spend limits cannot absorb this run beside the calls in flight; try again after they settle",
+    ),
+    { code: "OS429" },
+  );
+
+describe("a start refused by spend contention calls nothing and records nothing", () => {
+  it("lets the start's budget contention error through unchanged, and never calls the provider", async () => {
+    const contended = budgetContended();
+    const { provider, handler, caps } = setup(
+      { type: "respond", content: VALID },
+      { startError: contended },
+    );
+    const error = await rejectionOf(runCycle(handler, caps));
+    expect(error).toBe(contended);
+    expect(caps.used).toEqual(["claimAgentRun", "startAgentRun"]);
+    expect(provider.calls).toHaveLength(0);
   });
 });
 
@@ -981,9 +1057,21 @@ describe("no task text, prompt, model output or provider text reaches a detail o
 
 /** A database that answers the runtime's and the agent run capabilities' SQL. */
 const scriptedDb = (
-  script: { readonly payload?: unknown; readonly complete?: string } = {},
+  script: {
+    readonly payload?: unknown;
+    readonly complete?: string;
+    /** Thrown by ops.start_agent_run instead of answering. */
+    readonly startError?: Error;
+    /** What ops.start_agent_run answers; running by default. */
+    readonly start?: string;
+    /** What ops.defer_job answers. */
+    readonly defer?: string | null;
+    /** What ops.settle_job_failure answers. */
+    readonly settle?: string;
+  } = {},
 ) => {
   const calls: { tx: number; sql: string; params?: readonly unknown[] }[] = [];
+  const rolledBack: number[] = [];
   const job = jobFor(script.payload ?? { agent_run_id: RUN_ID });
   let transaction = 0;
   const row = (value: object) => ({ rows: [value] }) as never;
@@ -1010,7 +1098,14 @@ const scriptedDb = (
             return row({ claim: startClaim() });
           }
           if (sql.includes("ops.start_agent_run")) {
-            return row({ status: "running" });
+            if (script.startError) throw script.startError;
+            return row({ status: script.start ?? "running" });
+          }
+          if (sql.includes("ops.job_execution_stop")) {
+            return row({ stop_id: null });
+          }
+          if (sql.includes("ops.defer_job")) {
+            return row({ stop_id: script.defer ?? null });
           }
           if (sql.includes("ops.complete_agent_run")) {
             return row({ status: script.complete ?? "succeeded" });
@@ -1024,12 +1119,17 @@ const scriptedDb = (
           }
           if (sql.includes("ops.complete_job")) return row({ ok: true });
           if (sql.includes("ops.settle_job_failure")) {
-            return row({ result: "failed" });
+            return row({ result: script.settle ?? "failed" });
           }
           return { rows: [] } as never;
         },
       };
-      return fn(tx);
+      try {
+        return await fn(tx);
+      } catch (error) {
+        rolledBack.push(mine);
+        throw error;
+      }
     },
     async identity() {
       throw new Error("not used");
@@ -1038,7 +1138,7 @@ const scriptedDb = (
   };
   const statements = (fragment: string) =>
     calls.filter((call) => call.sql.includes(fragment));
-  return { db, statements };
+  return { db, calls, statements, rolledBack };
 };
 
 describe("through the real runtime", () => {
@@ -1072,6 +1172,105 @@ describe("through the real runtime", () => {
         "fake",
         TASK_ASSESSMENT_PROMPT_VERSION,
       ),
+    );
+    // The output ceiling, last, is the route's, and the one the provider got.
+    expect(start.params).toHaveLength(5);
+    expect(start.params?.[4]).toBe(
+      MODEL_ROUTE_POLICIES.standard.maxOutputTokens,
+    );
+    expect(start.params?.[4]).toBe(provider.calls[0].maxOutputTokens);
+  });
+
+  it("settles a start refused by spend contention as a retryable failure, with the prepare rolled back and no call", async () => {
+    const provider = createFakeModelProvider({
+      type: "respond",
+      content: VALID,
+    });
+    const { db, statements, rolledBack } = scriptedDb({
+      startError: budgetContended(),
+      settle: "retry",
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: createHandlerRegistry({ modelRouter: routerOver(provider) }),
+    });
+    expect(result.outcome).toBe("retry");
+    expect(result.detail).toMatch(/^OS429: /);
+    expect(provider.calls).toHaveLength(0);
+    expect(rolledBack).toEqual([2]);
+    // Never asked the stop check or completed the job: the start raised first.
+    expect(statements("ops.job_execution_stop")).toHaveLength(0);
+    expect(statements("ops.complete_job")).toHaveLength(0);
+    const [settle] = statements("ops.settle_job_failure");
+    expect(settle.tx).toBe(3);
+    // Recorded as understood and retryable: ops.settle_job_failure retries a
+    // transient failure while attempts remain.
+    expect(result.failureClass).toBe("transient");
+    expect(settle.params?.[1]).toBe("transient");
+  });
+
+  it("defers the job of a run its start found stopped, in the prepare transaction and without leaving the start's savepoint, and calls nothing", async () => {
+    const provider = createFakeModelProvider({
+      type: "respond",
+      content: VALID,
+    });
+    const { db, calls, statements, rolledBack } = scriptedDb({
+      start: "stopped",
+      defer: STOP_ID,
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: createHandlerRegistry({ modelRouter: routerOver(provider) }),
+    });
+
+    expect(result).toMatchObject({
+      outcome: "deferred",
+      detail: `held by execution stop ${STOP_ID}`,
+    });
+    expect(provider.calls).toHaveLength(0);
+    expect(rolledBack).toEqual([]);
+    const tx2 = calls.filter((call) => call.tx === 2).map((call) => call.sql);
+    const start = tx2.findIndex((sql) => sql.includes("ops.start_agent_run"));
+    const release = tx2.findIndex((sql) => sql.startsWith("release savepoint"));
+    const defer = tx2.findIndex((sql) => sql.includes("ops.defer_job"));
+    // The start's kill-switch lock is still held when the job is deferred.
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(release).toBeGreaterThan(start);
+    expect(defer).toBeGreaterThan(release);
+    expect(tx2.some((sql) => sql.startsWith("rollback to savepoint"))).toBe(
+      false,
+    );
+    // Neither the pre-call check, nor a completion, nor a failure settlement.
+    expect(statements("ops.job_execution_stop")).toHaveLength(0);
+    expect(statements("ops.complete_job")).toHaveLength(0);
+    expect(statements("ops.complete_agent_run")).toHaveLength(0);
+    expect(statements("ops.fail_agent_run")).toHaveLength(0);
+    expect(statements("ops.settle_job_failure")).toHaveLength(0);
+    expect(calls.some((call) => call.tx === 3)).toBe(false);
+  });
+
+  it("rolls the prepare back and retries when the start found a stop but the deferral finds none, and calls nothing", async () => {
+    const provider = createFakeModelProvider({
+      type: "respond",
+      content: VALID,
+    });
+    const { db, statements, rolledBack } = scriptedDb({
+      start: "stopped",
+      defer: null,
+      settle: "retry",
+    });
+    const result = await runOneJob(db, {
+      workerId: "w1",
+      registry: createHandlerRegistry({ modelRouter: routerOver(provider) }),
+    });
+
+    expect(result.outcome).toBe("retry");
+    expect(result.failureClass).toBe("transient");
+    expect(provider.calls).toHaveLength(0);
+    expect(rolledBack).toEqual([2]);
+    expect(statements("ops.complete_job")).toHaveLength(0);
+    expect(statements("ops.settle_job_failure").map((call) => call.tx)).toEqual(
+      [3],
     );
   });
 

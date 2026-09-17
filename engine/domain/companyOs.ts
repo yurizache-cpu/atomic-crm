@@ -66,6 +66,12 @@ export interface CreateTaskInput {
   readonly parentTaskId?: string;
   readonly priority?: number;
   readonly dueAt?: Date;
+  /**
+   * Caller-chosen, tenant-scoped deduplication data (ADR 0017 §7). The same key
+   * for the same request resolves to the task it created; for a different
+   * request it is refused (invalid_state). Grants nothing.
+   */
+  readonly idempotencyKey?: string;
 }
 
 export type EventSubjectType = "company" | "department" | "agent" | "task";
@@ -76,6 +82,8 @@ export interface RecordEventInput {
   readonly type: string;
   readonly subject?: { readonly type: EventSubjectType; readonly id: string };
   readonly payload?: Record<string, unknown>;
+  /** As on CreateTaskInput: the same fact is recorded once per key. */
+  readonly idempotencyKey?: string;
 }
 
 export interface RequestTaskExecutionInput {
@@ -87,6 +95,8 @@ export interface RequestTaskExecutionInput {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
+// The tasks_/events_idempotency_key_format CHECKs, character for character.
+const IDEMPOTENCY_KEY = /^[\x21-\x7e]{1,200}$/;
 
 function requireUuid(value: unknown, field: string): string {
   if (typeof value !== "string" || !UUID.test(value)) {
@@ -99,6 +109,17 @@ function optionalUuid(value: unknown, field: string): string | null {
   return value === undefined || value === null
     ? null
     : requireUuid(value, field);
+}
+
+function optionalIdempotencyKey(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string" || !IDEMPOTENCY_KEY.test(value)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "idempotencyKey must be 1 to 200 printable ASCII characters",
+    );
+  }
+  return value;
 }
 
 /**
@@ -294,7 +315,7 @@ export async function createTask(
   const [tenant, source, correlation, causation] = contextParams(context);
   return callForId(
     tx,
-    "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) as result",
+    "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) as result",
     [
       tenant,
       requireUuid(input.companyId, "companyId"),
@@ -308,6 +329,7 @@ export async function createTask(
       input.dueAt ?? null,
       correlation,
       causation,
+      optionalIdempotencyKey(input.idempotencyKey),
     ],
   );
 }
@@ -365,7 +387,7 @@ export async function recordEvent(
   const [tenant, source, correlation, causation] = contextParams(context);
   return callForId(
     tx,
-    "select ops.record_event($1, $2, $3, $4, $5, $6, $7, $8, $9) as result",
+    "select ops.record_event($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) as result",
     [
       tenant,
       requireUuid(input.companyId, "companyId"),
@@ -376,6 +398,7 @@ export async function recordEvent(
       JSON.stringify(input.payload ?? {}),
       correlation,
       causation,
+      optionalIdempotencyKey(input.idempotencyKey),
     ],
   );
 }

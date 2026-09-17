@@ -29,6 +29,10 @@ export type WorkerLogEvent =
   | "job.retry_scheduled"
   | "job.terminal_failure"
   | "job.settlement_refused"
+  // An execution stop covered an external job immediately before its call.
+  // The job is queued again without consuming an attempt; `detail` names the
+  // stop and nothing else.
+  | "job.deferred"
   // An external_call handler's call, which runs outside every transaction.
   // `detail` on the finish line is "ok" or "error" and nothing else: the
   // error is a provider's text, and a provider's text can echo a prompt.
@@ -37,7 +41,10 @@ export type WorkerLogEvent =
   | "lease.recovered"
   // Agent runs left "running" by a worker that died mid-call, settled by the
   // reaper tick. `count` only.
-  | "agent_run.stale_settled";
+  | "agent_run.stale_settled"
+  // The global daily spend ceiling tripped a global execution stop on the
+  // reaper tick. `detail` is the stop id.
+  | "spend_ceiling.tripped";
 
 export interface WorkerLogFields {
   workerId?: string;

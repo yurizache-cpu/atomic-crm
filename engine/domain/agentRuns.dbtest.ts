@@ -11,366 +11,92 @@
 //     resolves to the first run (or is refused) instead of creating a second;
 //   * a lease-bound capability's share lock keeps the reaper, a re-lease and the
 //     stale-run sweep off a job whose lease ran out while the step held it;
-//   * a start whose lease ran out while it waited on a lock refuses before it
-//     writes anything, even when every gate still admits the run;
-//   * the sweep passes over a run, or a job, that another transaction holds;
+//   * a start whose lease ran out while it waited on a lock (the task's, or a
+//     spend lock after its claim) refuses before it writes anything, even when
+//     every gate still admits the run;
 //   * a trip and a start (or a request, or a clear) are serialised: each waits
-//     for the other, and decides on what the other committed;
-//   * a request naming a run a worker holds refuses without waiting on it;
-//   * the owner's stop CLI, as a real process, trips, lists and clears.
+//     for the other, and decides on what the other committed; a job not yet
+//     leased when a trip commits stays queued.
 //
-// Every wait is read from pg_stat_activity while the waiting call is still
-// unsettled; a call that never waited fails its case. It lives in engine/domain
-// because only there may a test import the domain services, the worker
-// capabilities and the database fixture together (eslint.config.js). All data
-// is synthetic office-operations text.
+// The sweep beside held rows and requests about a held run are in
+// agentRunHeldRuns.dbtest.ts; the owner's stop CLI is in
+// executionStopCli.dbtest.ts. Every wait is read from pg_stat_activity while the
+// waiting call is still unsettled; a call that never waited fails its case. It
+// lives in engine/domain because only there may a test import the domain
+// services, the worker capabilities and the database fixture together
+// (eslint.config.js). All data is synthetic office-operations text.
 
-import { spawn } from "node:child_process";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import type { TxClient, WorkerDatabase } from "../db/types.ts";
-import { createWorkerDatabase } from "../db/workerDatabase.ts";
-import { AGENT_RUN_EXECUTE_KIND } from "../handlers/agentRunExecute.ts";
+import type { WorkerDatabase } from "../db/types.ts";
 import {
-  grantCapabilities,
-  type AgentRunCompletion,
-} from "../worker/capabilities.ts";
-import {
-  ADMIN_URL,
-  adminPool,
-  cleanupFixtures,
   enqueue,
-  provisionWorkerRole,
   readJob,
   resetFixtures,
   TENANT_A,
   TENANT_B,
-  workerDatabase,
 } from "../worker/testSupport/dbFixture.ts";
 import {
   isRowLocked,
   openSession,
   waitUntilBlocked,
-  whileRowLocked,
+  type TransactionSession,
 } from "../worker/testSupport/transactionSession.ts";
 import { requestAgentRun, type RequestAgentRunInput } from "./agentRuns.ts";
-import {
-  assignTask,
-  createAgent,
-  createCompany,
-  createDepartment,
-  createTask,
-  requestTaskExecution,
-} from "./companyOs.ts";
 import { CompanyOsError } from "./errors.ts";
+import { clearExecutionStop, tripExecutionStop } from "./executionStops.ts";
+import { formatMicrosAsUsd } from "./money.ts";
+import { setSpendLimit } from "./spendLimits.ts";
 import {
-  clearExecutionStop,
-  listExecutionStops,
-  tripExecutionStop,
-  type ExecutionStopTarget,
-} from "./executionStops.ts";
-
-const SOURCE = "dbtest-agent-runs";
-const HOLDER = "dbtest-agent-runs-holder";
-const OTHER = "dbtest-agent-runs-other";
-const STOP_CLI = "engine/cli/executionStop.ts";
-
-/** Long enough to take a step inside the lease; short enough to run out while the step is held. */
-const SHORT_LEASE_SECONDS = 3;
-/** Bounds every call that must NOT wait: a wait becomes 55P03 instead of a hang. */
-const LOCK_TIMEOUT = "2s";
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
-
-const TRIP = { reason: "dbtest kill switch drill", actor: "dbtest" };
-const CLEAR = { reason: "dbtest drill over", actor: "dbtest" };
-const START = Object.freeze({
-  provider: "fake",
-  model: "fake-model-1",
-  promptVersion: "task_assessment.v1",
-  inputFingerprint: "f".repeat(64),
-});
-const COMPLETION: AgentRunCompletion = Object.freeze({
-  result: {
-    outcome: "completed",
-    summary: "Order paper, toner and coffee before Friday.",
-    proposed_next_steps: ["Check the stock list."],
-  },
-  responseModel: "fake-model-1",
-  finishReason: "completed",
-  providerRequestId: "fake-req-1",
-  providerResponseId: "fake-resp-1",
-  usage: null,
-  latencyMs: 5,
-});
+  agentRunProbes,
+  agentTarget,
+  capabilities,
+  CLEAR,
+  closeAgentRunDatabases,
+  COMPLETION,
+  createAssignedTask,
+  HOLDER,
+  openAgentRunDatabases,
+  opsRowsWritten,
+  OTHER,
+  ownerContext,
+  rejectionOf,
+  resume,
+  runInput,
+  SHORT_LEASE_SECONDS,
+  START,
+  TRIP,
+} from "./testSupport/agentRunSessions.ts";
 
 let admin: Pool;
 let owner: WorkerDatabase;
 let worker: WorkerDatabase;
 
-beforeAll(async () => {
-  provisionWorkerRole();
-  admin = adminPool();
-  // Owner transactions use the worker's adapter pointed at the admin
-  // connection, as companyOs.dbtest.ts does. Several at once: two sessions and
-  // a one-shot transaction can be open together.
-  owner = createWorkerDatabase({ connectionString: ADMIN_URL, max: 4 });
-  worker = workerDatabase(4);
+beforeAll(() => {
+  ({ admin, owner, worker } = openAgentRunDatabases());
 }, 60_000);
 
-afterAll(async () => {
-  await worker?.close();
-  await owner?.close();
-  await cleanupFixtures(admin);
-  await admin?.end();
-});
+afterAll(() => closeAgentRunDatabases({ admin, owner, worker }));
 
 beforeEach(async () => {
   await resetFixtures(admin);
 });
 
-// ---------------------------------------------------------------------------
-// Fixtures and probes
-// ---------------------------------------------------------------------------
-
-interface Office {
-  readonly tenantId: string;
-  readonly companyId: string;
-  readonly departmentId: string;
-  readonly agentId: string;
-  readonly otherAgentId: string;
-  readonly taskId: string;
-}
-
-const ownerContext = (tenantId: string) => ({ tenantId, source: SOURCE });
-
-async function createAssignedTask(
-  tx: TxClient,
-  office: Pick<Office, "tenantId" | "companyId" | "departmentId" | "agentId">,
-  title: string,
-): Promise<string> {
-  const ctx = ownerContext(office.tenantId);
-  const taskId = await createTask(tx, ctx, {
-    companyId: office.companyId,
-    departmentId: office.departmentId,
-    type: "operations.supply_order",
-    title,
-  });
-  await assignTask(tx, ctx, taskId, office.agentId);
-  return taskId;
-}
-
-/** A company, a department, two agents, and a task assigned to the first. */
-function buildOffice(
-  tenantId: string = TENANT_A,
-  slug = "dbtest-office",
-): Promise<Office> {
-  return owner.withTransaction(async (tx) => {
-    const ctx = ownerContext(tenantId);
-    const companyId = await createCompany(tx, ctx, { slug, name: "Office" });
-    const departmentId = await createDepartment(tx, ctx, {
-      companyId,
-      slug: "operations",
-      name: "Operations",
-    });
-    const agentId = await createAgent(tx, ctx, {
-      companyId,
-      departmentId,
-      slug: "office-assistant",
-      name: "Office assistant",
-      role: "Operations assistant",
-    });
-    const otherAgentId = await createAgent(tx, ctx, {
-      companyId,
-      departmentId,
-      slug: "front-desk",
-      name: "Front desk",
-      role: "Front desk assistant",
-    });
-    const taskId = await createAssignedTask(
-      tx,
-      { tenantId, companyId, departmentId, agentId },
-      "Prepare next week's office supply order",
-    );
-    return { tenantId, companyId, departmentId, agentId, otherAgentId, taskId };
-  });
-}
-
-const runInput = (
-  office: Office,
-  idempotencyKey: string,
-  overrides: Partial<RequestAgentRunInput> = {},
-): RequestAgentRunInput => ({
-  taskId: office.taskId,
-  agentId: office.agentId,
-  capability: "task_assessment",
-  idempotencyKey,
-  ...overrides,
-});
-
-function requestRun(office: Office, idempotencyKey: string): Promise<string> {
-  return owner.withTransaction((tx) =>
-    requestAgentRun(
-      tx,
-      ownerContext(office.tenantId),
-      runInput(office, idempotencyKey),
-    ),
-  );
-}
-
-const agentTarget = (office: Office): ExecutionStopTarget => ({
-  scope: "agent",
-  tenantId: office.tenantId,
-  companyId: office.companyId,
-  agentId: office.agentId,
-});
-
-interface RunRow {
-  status: string;
-  job_id: string | null;
-  stop_id: string | null;
-  error_category: string | null;
-  error_code: string | null;
-  job_attempt: number | null;
-  provider: string | null;
-}
-
-async function readRun(runId: string): Promise<RunRow> {
-  const { rows } = await admin.query<RunRow>(
-    `select status, job_id, stop_id, error_category, error_code, job_attempt, provider
-       from ops.agent_runs where id = $1`,
-    [runId],
-  );
-  if (!rows[0]) throw new Error("the agent run under test does not exist");
-  return rows[0];
-}
-
-async function countRows(sql: string, params: unknown[]): Promise<number> {
-  const { rows } = await admin.query<{ n: number }>(sql, params);
-  return Number(rows[0].n);
-}
-
-const runsIn = (tenantIds: string[]) =>
-  countRows(
-    "select count(*)::int as n from ops.agent_runs where tenant_id = any($1::uuid[])",
-    [tenantIds],
-  );
-const jobsIn = (tenantIds: string[]) =>
-  countRows(
-    "select count(*)::int as n from ops.jobs where tenant_id = any($1::uuid[])",
-    [tenantIds],
-  );
-
-/** Resolves to what the promise rejected with; fails the test if it resolved. */
-async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
-  try {
-    await promise;
-  } catch (error) {
-    return error;
-  }
-  throw new Error("expected a rejection, but the call succeeded");
-}
-
-// The worker's side, step by step, in the order runOneJob takes it.
-
-/** TX1: lease the queue head and commit. */
-function leaseHead(
-  workerId: string,
-  leaseSeconds = 60,
-): Promise<string | null> {
-  return worker.withTransaction(async (tx) => {
-    await tx.query("set local role ops_worker");
-    const { rows } = await tx.query<{ id: string | null }>(
-      "select id from ops.lease_job($1, $2)",
-      [workerId, leaseSeconds],
-    );
-    return rows[0]?.id ?? null;
-  });
-}
-
-/** How every later runtime transaction begins. */
-async function resume(
-  tx: TxClient,
-  workerId: string,
-  jobId: string,
-): Promise<void> {
-  await tx.query("set local role ops_worker");
-  const { rows } = await tx.query<{ id: string | null }>(
-    "select id from ops.resume_lease($1, $2)",
-    [workerId, jobId],
-  );
-  if (rows[0]?.id !== jobId) {
-    throw new Error(
-      "the lease could not be resumed; the case would prove nothing",
-    );
-  }
-}
-
-/** The capabilities exactly as the handler receives them. */
-const capabilities = (tx: TxClient) =>
-  grantCapabilities(tx, ["claimAgentRun", "startAgentRun", "completeAgentRun"]);
-
-/** A whole prepare transaction, committed: claim, then start. Resolves to the start's token. */
-function prepare(workerId: string, jobId: string): Promise<string> {
-  return worker.withTransaction(async (tx) => {
-    await resume(tx, workerId, jobId);
-    await capabilities(tx).claimAgentRun();
-    return capabilities(tx).startAgentRun(START);
-  });
-}
-
-/** A worker-role statement in its own transaction, bounded so that waiting is an error. */
-function asWorker<T>(sql: string, params: unknown[] = []): Promise<T[]> {
-  return worker.withTransaction(async (tx) => {
-    await tx.query("set local role ops_worker");
-    await tx.query(`set local lock_timeout = '${LOCK_TIMEOUT}'`);
-    const { rows } = await tx.query<T>(sql, params);
-    return rows;
-  });
-}
-
-const reap = async () =>
-  Number(
-    (await asWorker<{ n: number }>("select ops.reap_expired_leases() as n"))[0]
-      .n,
-  );
-const sweep = async () =>
-  Number(
-    (
-      await asWorker<{ n: number }>("select ops.settle_stale_agent_runs() as n")
-    )[0].n,
-  );
-const leaseAsOther = async () =>
-  (
-    await asWorker<{ id: string | null }>(
-      "select id from ops.lease_job($1, 60)",
-      [OTHER],
-    )
-  )[0]?.id ?? null;
-
-/**
- * Rows this transaction has inserted, updated or deleted in ops, counting those a
- * rolled-back savepoint undid. A refusal that raised after a write leaves no row
- * behind to read; it leaves this count.
- */
-async function opsRowsWritten(tx: TxClient): Promise<number> {
-  const { rows } = await tx.query<{ n: number }>(
-    "select coalesce(sum(n_tup_ins + n_tup_upd + n_tup_del), 0)::int as n from pg_stat_xact_user_tables where schemaname = 'ops'",
-  );
-  return Number(rows[0]?.n ?? 0);
-}
-
-async function waitUntilLeaseEnded(jobId: string): Promise<void> {
-  const deadline = Date.now() + (SHORT_LEASE_SECONDS + 10) * 1000;
-  for (;;) {
-    const { rows } = await admin.query<{ ended: boolean }>(
-      "select lease_expires_at <= clock_timestamp() as ended from ops.jobs where id = $1",
-      [jobId],
-    );
-    if (rows[0]?.ended) return;
-    if (Date.now() > deadline) throw new Error("the short lease never ended");
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-}
+const {
+  blockingPids,
+  buildOffice,
+  countRows,
+  jobsIn,
+  leaseAsOther,
+  leaseHead,
+  prepare,
+  readRun,
+  reap,
+  requestRun,
+  runsIn,
+  sweep,
+  waitUntilLeaseEnded,
+} = agentRunProbes(() => ({ admin, owner, worker }));
 
 // ---------------------------------------------------------------------------
 // Requesting an agent run
@@ -630,6 +356,12 @@ describe("a run capability holding its leased job past the lease's expiry", () =
   // afterwards still admits the run. Only that second look at the clock keeps
   // the start from answering `running` — the one token that means "call" — on a
   // lease that is no longer live, and it looks before the start writes anything.
+  //
+  // The start's transaction holds no claim here. A claim share-locks the task
+  // for the rest of its transaction (ADR 0017 §2), so after one no owner can
+  // take that row; but the capability does not require a claim first, and the
+  // start's own task lock is what this case makes it wait on. The wait that the
+  // runtime's claim-then-start order still meets is the next case.
   it("refuses a start whose lease ran out while it waited on the task lock, and leaves the run pending", async () => {
     const office = await buildOffice();
     const runId = await requestRun(office, "start-behind-task-lock");
@@ -639,144 +371,147 @@ describe("a run capability holding its leased job past the lease's expiry", () =
     const taskLock = openSession(owner);
     try {
       await start.run((tx) => resume(tx, HOLDER, jobId));
-      expect(
-        await start.run((tx) => capabilities(tx).claimAgentRun()),
-      ).toMatchObject({ action: "start", agent_run_id: runId });
       const locked = await taskLock.run((tx) =>
         tx.query("select 1 from ops.tasks where id = $1 for update", [
           office.taskId,
         ]),
       );
       expect(locked.rows).toHaveLength(1);
-      const startPid = await start.pid;
-      const lockPid = await taskLock.pid;
-      // The savepoint keeps the session readable once the start has failed.
-      const writtenBefore = await start.run(opsRowsWritten);
-      await start.run((tx) => tx.query("savepoint start_attempt"));
-
-      const status = start.run((tx) => capabilities(tx).startAgentRun(START));
-      await waitUntilBlocked(admin, startPid, status);
-      const { rows: blockers } = await admin.query<{ pids: number[] }>(
-        "select pg_blocking_pids($1) as pids",
-        [startPid],
-      );
-      expect(blockers[0].pids).toEqual([lockPid]);
-      await waitUntilLeaseEnded(jobId);
-      await taskLock.end("commit");
-
-      const refused = await rejectionOf(status);
-      expect(refused).toMatchObject({ code: "42501" });
-      expect((refused as Error).message).toMatch(
-        /the lease on this job ran out while the start waited; nothing was started/,
-      );
-      await start.run((tx) => tx.query("rollback to savepoint start_attempt"));
-      expect(
-        await start.run(opsRowsWritten),
-        "ops rows the start wrote before it refused",
-      ).toBe(writtenBefore);
-      await start.end("rollback");
+      await expectStartRefusedAfterWait(start, jobId, {
+        holderPid: await taskLock.pid,
+        release: () => taskLock.end("commit"),
+      });
     } finally {
       await taskLock.end("rollback");
       await start.end("rollback");
     }
 
-    expect(await readRun(runId)).toMatchObject({
-      status: "pending",
-      job_attempt: null,
-      provider: null,
-      error_code: null,
-    });
-    const { rows: facts } = await admin.query<{ type: string }>(
-      "select type from ops.events where subject_type = 'agent_run' and subject_id = $1 order by seq",
-      [runId],
-    );
-    expect(facts.map((fact) => fact.type)).toEqual(["agent_run.requested"]);
+    await expectRunUntouched(runId);
+  }, 30_000);
+
+  // What the SQL suite cannot prove: the same second look at the clock in the
+  // runtime's own order. After its claim the start cannot meet the task lock,
+  // but it still waits on the spend locks, the last locks it takes (ADR 0017
+  // §4). Here an owner's limit act holds the global one: setting the value
+  // already in force records nothing, and still holds the lock until it commits.
+  it("refuses a start whose lease ran out while it waited on a spend lock after its claim, and leaves the run pending", async () => {
+    const office = await buildOffice();
+    const runId = await requestRun(office, "start-behind-spend-lock");
+    const jobId = (await readRun(runId)).job_id as string;
+    const ceiling = await activeGlobalLimit();
+    expect(await leaseHead(HOLDER, SHORT_LEASE_SECONDS)).toBe(jobId);
+    const start = openSession(worker);
+    const limitAct = openSession(owner);
+    try {
+      await start.run((tx) => resume(tx, HOLDER, jobId));
+      expect(
+        await start.run((tx) => capabilities(tx).claimAgentRun()),
+      ).toMatchObject({ action: "start", agent_run_id: runId });
+      const inForce = await limitAct.run((tx) =>
+        setSpendLimit(
+          tx,
+          { scope: "global" },
+          { dailyUsd: ceiling.dailyUsd, timezone: "UTC" },
+          { reason: "dbtest ceiling unchanged", actor: "dbtest" },
+        ),
+      );
+      expect(inForce).toBe(ceiling.id);
+      await expectStartRefusedAfterWait(start, jobId, {
+        holderPid: await limitAct.pid,
+        release: () => limitAct.end("commit"),
+        waitEvent: "advisory",
+      });
+    } finally {
+      await limitAct.end("rollback");
+      await start.end("rollback");
+    }
+
+    await expectRunUntouched(runId);
+    expect(await activeGlobalLimit()).toEqual(ceiling);
   }, 30_000);
 });
 
-// ---------------------------------------------------------------------------
-// The stale-run sweep skips what another transaction holds
-// ---------------------------------------------------------------------------
-
-/**
- * The sweep, run while the run row and then the job row is held by another
- * transaction, in the modes a capability holds them. It must settle neither.
- */
-async function expectSweepSkipsWhileHeld(
-  runId: string,
-  jobId: string,
-  status: string,
-): Promise<void> {
-  await whileRowLocked(
-    admin,
-    "select 1 from ops.agent_runs where id = $1 for update",
-    [runId],
-    async () => {
-      expect(await sweep(), "while the run row is held").toBe(0);
-    },
-  );
-  await whileRowLocked(
-    admin,
-    "select 1 from ops.jobs where id = $1 for share",
-    [jobId],
-    async () => {
-      expect(await sweep(), "while the job row is held").toBe(0);
-    },
-  );
-  expect((await readRun(runId)).status).toBe(status);
+interface HeldLock {
+  /** The backend that holds the lock the start must wait on. */
+  readonly holderPid: number;
+  /** Ends the holder's transaction. */
+  readonly release: () => Promise<void>;
+  /** The wait event the start must be seen on, when it matters. */
+  readonly waitEvent?: string;
 }
 
-describe("the stale-run sweep beside a transaction holding a run or its job", () => {
-  // What the SQL suite cannot prove: SKIP LOCKED needs a lock someone else
-  // holds. A stale running run is passed over, not waited on and not settled,
-  // while either its run or its job is held, and is settled once released.
-  it("skips a running run with an ended lease while its run or its job is held, and settles it once released", async () => {
-    const office = await buildOffice();
-    const runId = await requestRun(office, "stale-running");
-    const jobId = (await readRun(runId)).job_id as string;
-    expect(await leaseHead(HOLDER)).toBe(jobId);
-    expect(await prepare(HOLDER, jobId)).toBe("running");
-    await admin.query(
-      "update ops.jobs set lease_expires_at = now() - interval '1 second' where id = $1",
-      [jobId],
+/**
+ * Runs the start in `start`, proves it waits on `held`, lets the lease run out,
+ * releases the holder, and proves the start then refused on the clock without
+ * leaving a written row. The savepoint keeps the session readable once the
+ * start has failed.
+ */
+async function expectStartRefusedAfterWait(
+  start: TransactionSession,
+  jobId: string,
+  held: HeldLock,
+): Promise<void> {
+  const startPid = await start.pid;
+  const writtenBefore = await start.run(opsRowsWritten);
+  await start.run((tx) => tx.query("savepoint start_attempt"));
+
+  const status = start.run((tx) => capabilities(tx).startAgentRun(START));
+  await waitUntilBlocked(admin, startPid, status, held.waitEvent);
+  expect(await blockingPids(startPid)).toEqual([held.holderPid]);
+  await waitUntilLeaseEnded(jobId);
+  await held.release();
+
+  const refused = await rejectionOf(status);
+  expect(refused).toMatchObject({ code: "42501" });
+  expect((refused as Error).message).toMatch(
+    /the lease on this job ran out while the start waited; nothing was started/,
+  );
+  await start.run((tx) => tx.query("rollback to savepoint start_attempt"));
+  expect(
+    await start.run(opsRowsWritten),
+    "ops rows the start wrote before it refused",
+  ).toBe(writtenBefore);
+  await start.end("rollback");
+}
+
+/** The run is exactly as its request left it: pending, unpriced, with one fact. */
+async function expectRunUntouched(runId: string): Promise<void> {
+  const { rows } = await admin.query<Record<string, unknown>>(
+    `select status, job_attempt, provider, error_code, price_id,
+            reserved_cost_micros, charged_cost_micros
+       from ops.agent_runs where id = $1`,
+    [runId],
+  );
+  expect(rows[0]).toEqual({
+    status: "pending",
+    job_attempt: null,
+    provider: null,
+    error_code: null,
+    price_id: null,
+    reserved_cost_micros: null,
+    charged_cost_micros: null,
+  });
+  const { rows: facts } = await admin.query<{ type: string }>(
+    "select type from ops.events where subject_type = 'agent_run' and subject_id = $1 order by seq",
+    [runId],
+  );
+  expect(facts.map((fact) => fact.type)).toEqual(["agent_run.requested"]);
+}
+
+/** The global ceiling in force: its id, and its daily amount in USD. */
+async function activeGlobalLimit(): Promise<{ id: string; dailyUsd: string }> {
+  const { rows } = await admin.query<{ id: string; micros: string }>(
+    `select id, daily_limit_micros::text as micros
+       from ops.spend_limits
+      where scope = 'global' and ended_at is null`,
+  );
+  if (rows.length !== 1) {
+    throw new Error(
+      "no global ceiling is in force; the case would prove nothing",
     );
-
-    await expectSweepSkipsWhileHeld(runId, jobId, "running");
-
-    expect(await sweep()).toBe(1);
-    expect(await readRun(runId)).toMatchObject({
-      status: "indeterminate",
-      error_category: "interrupted",
-    });
-  }, 30_000);
-
-  // What the SQL suite cannot prove: the sweep's second pass, for a pending
-  // run whose job ended before anything started, skips held rows the same way.
-  it("skips a pending run whose job already failed while its run or its job is held, and settles it once released", async () => {
-    const office = await buildOffice();
-    const runId = await requestRun(office, "orphaned-pending");
-    const jobId = (await readRun(runId)).job_id as string;
-    expect(await leaseHead(HOLDER)).toBe(jobId);
-    // The attempt ends before any start, as a handler's permanent error does.
-    await worker.withTransaction(async (tx) => {
-      await resume(tx, HOLDER, jobId);
-      const { rows } = await tx.query<{ result: string }>(
-        "select ops.settle_job_failure($1, 'permanent', 'dbtest: ended before start') as result",
-        [jobId],
-      );
-      expect(rows[0].result).toBe("failed");
-    });
-
-    await expectSweepSkipsWhileHeld(runId, jobId, "pending");
-
-    expect(await sweep()).toBe(1);
-    expect(await readRun(runId)).toMatchObject({
-      status: "failed",
-      error_category: "job_failed",
-      error_code: "job_failed",
-    });
-  }, 30_000);
-});
+  }
+  return { id: rows[0].id, dailyUsd: formatMicrosAsUsd(rows[0].micros) };
+}
 
 // ---------------------------------------------------------------------------
 // The kill switch between concurrent transactions
@@ -785,13 +520,21 @@ describe("the stale-run sweep beside a transaction holding a run or its job", ()
 describe("the kill switch between concurrent transactions", () => {
   // What the SQL suite cannot prove (N7 checks only the lock MODES): a trip
   // WAITING for a start that has already read the switch, and the next start
-  // deciding on what that trip committed.
-  it("makes a trip wait for a start in flight, and a start that begins after the trip refuses its run", async () => {
+  // deciding on what that trip committed. That next start's job was leased
+  // before the trip, so its start holds the run and writes nothing (owner
+  // decision B; the runtime would then defer the job). A job not yet leased
+  // when the trip commits is never leased while the stop is active (ADR 0017
+  // §6), and stays queued with its attempts untouched.
+  it("makes a trip wait for a start in flight, a start that begins after the trip holds its run, and a job not yet leased stays queued", async () => {
     const office = await buildOffice();
     const inFlight = await requestRun(office, "start-in-flight");
     const later = await requestRun(office, "start-after-trip");
+    const notLeased = await requestRun(office, "leased-after-trip");
     const inFlightJob = (await readRun(inFlight)).job_id as string;
+    const laterJob = (await readRun(later)).job_id as string;
+    const notLeasedJob = (await readRun(notLeased)).job_id as string;
     expect(await leaseHead(HOLDER)).toBe(inFlightJob);
+    expect(await leaseHead(OTHER)).toBe(laterJob);
     const start = openSession(worker);
     const trip = openSession(owner);
     try {
@@ -814,14 +557,24 @@ describe("the kill switch between concurrent transactions", () => {
         status: "running",
         stop_id: null,
       });
-      const laterJob = (await readRun(later)).job_id as string;
-      expect(await leaseHead(OTHER)).toBe(laterJob);
-      expect(await prepare(OTHER, laterJob)).toBe("cancelled");
+      expect(tripped).toMatch(/^[0-9a-f-]{36}$/);
+      expect(await prepare(OTHER, laterJob)).toBe("stopped");
       expect(await readRun(later)).toMatchObject({
-        status: "cancelled",
-        error_code: "execution_stopped",
-        stop_id: tripped,
+        status: "pending",
+        error_code: null,
+        stop_id: null,
         provider: null,
+      });
+
+      expect(await leaseHead(OTHER)).toBeNull();
+      expect(await readJob(admin, notLeasedJob)).toMatchObject({
+        status: "queued",
+        attempts: 0,
+        lease_owner: null,
+      });
+      expect(await readRun(notLeased)).toMatchObject({
+        status: "pending",
+        stop_id: null,
       });
     } finally {
       await start.end("rollback");
@@ -831,8 +584,10 @@ describe("the kill switch between concurrent transactions", () => {
 
   // What the SQL suite cannot prove: that the start reads the stops only AFTER
   // it holds the lock. A start that read first would wait just the same, and
-  // then act on the switch as it was before the trip committed.
-  it("makes a start wait for a trip in flight, and the start refuses its run once the trip commits", async () => {
+  // then act on the switch as it was before the trip committed. Once the trip
+  // commits, the start holds the run (owner decision B), and the deferral in
+  // the same transaction, under the lock the start still holds, finds the stop.
+  it("makes a start wait for a trip in flight, and the start holds its run once the trip commits, deferring its job under that stop", async () => {
     const office = await buildOffice();
     const runId = await requestRun(office, "trip-in-flight");
     const jobId = (await readRun(runId)).job_id as string;
@@ -849,15 +604,27 @@ describe("the kill switch between concurrent transactions", () => {
       const status = start.run((tx) => capabilities(tx).startAgentRun(START));
       await waitUntilBlocked(admin, startPid, status, "advisory");
       await trip.end("commit");
-      expect(await status).toBe("cancelled");
+      expect(await status).toBe("stopped");
+      const deferred = await start.run(async (tx) => {
+        const { rows } = await tx.query<{ stop_id: string | null }>(
+          "select ops.defer_job() as stop_id",
+        );
+        return rows[0]?.stop_id ?? null;
+      });
+      expect(deferred).toBe(stopId);
       await start.end("commit");
 
       expect(await readRun(runId)).toMatchObject({
-        status: "cancelled",
-        error_code: "execution_stopped",
-        stop_id: stopId,
+        status: "pending",
+        error_code: null,
+        stop_id: null,
         provider: null,
         job_attempt: null,
+      });
+      expect(await readJob(admin, jobId)).toMatchObject({
+        status: "queued",
+        attempts: 0,
+        lease_owner: null,
       });
     } finally {
       await trip.end("rollback");
@@ -978,266 +745,4 @@ describe("the kill switch between concurrent transactions", () => {
       await trip.end("rollback");
     }
   }, 30_000);
-});
-
-// ---------------------------------------------------------------------------
-// AR-07: refusals about a held run never wait on it
-// ---------------------------------------------------------------------------
-
-describe("a request that names a run a worker holds", () => {
-  // What the SQL suite cannot prove: that these refusals are decided on plain
-  // reads. Only a second session holding the run shows that neither request
-  // waits on it (a wait here fails as 55P03 under the lock timeout, and with
-  // the request holding the task it would deadlock with the worker's start),
-  // and that the worker then carries on.
-  it("refuses a retry of it and a second job for it without waiting on the worker's lock, and the worker's start still proceeds", async () => {
-    const office = await buildOffice();
-    const ctx = ownerContext(office.tenantId);
-    const runId = await requestRun(office, "held-by-worker");
-    const jobId = (await readRun(runId)).job_id as string;
-    expect(await leaseHead(HOLDER)).toBe(jobId);
-    const step = openSession(worker);
-    try {
-      await step.run((tx) => resume(tx, HOLDER, jobId));
-      await step.run((tx) => capabilities(tx).claimAgentRun());
-      expect(await isRowLocked(admin, "ops.agent_runs", runId)).toBe(true);
-
-      const retry = await rejectionOf(
-        owner.withTransaction(async (tx) => {
-          await tx.query(`set local lock_timeout = '${LOCK_TIMEOUT}'`);
-          return requestAgentRun(
-            tx,
-            ctx,
-            runInput(office, "retry-of-held", { retryOfRunId: runId }),
-          );
-        }),
-      );
-      expect(retry).toBeInstanceOf(CompanyOsError);
-      expect(retry).toMatchObject({ code: "invalid_state" });
-      expect((retry as Error).message).toMatch(/only a finished run/);
-
-      const secondJob = await rejectionOf(
-        owner.withTransaction(async (tx) => {
-          await tx.query(`set local lock_timeout = '${LOCK_TIMEOUT}'`);
-          return requestTaskExecution(tx, ctx, {
-            taskId: office.taskId,
-            kind: AGENT_RUN_EXECUTE_KIND,
-            payload: { agent_run_id: runId },
-            idempotencyKey: "second-job-for-held",
-          });
-        }),
-      );
-      expect(secondJob).toBeInstanceOf(CompanyOsError);
-      expect(secondJob).toMatchObject({ code: "invalid_state" });
-      expect((secondJob as Error).message).toMatch(/already has its job/);
-
-      expect(
-        await step.run((tx) => capabilities(tx).startAgentRun(START)),
-      ).toBe("running");
-      await step.end("commit");
-    } finally {
-      await step.end("rollback");
-    }
-
-    expect(await readRun(runId)).toMatchObject({
-      status: "running",
-      job_id: jobId,
-    });
-    expect(await runsIn([office.tenantId])).toBe(1);
-    expect(await jobsIn([office.tenantId])).toBe(1);
-  }, 30_000);
-});
-
-// ---------------------------------------------------------------------------
-// The owner's stop CLI and the stop list
-// ---------------------------------------------------------------------------
-
-interface CliResult {
-  readonly code: number | null;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function runStopCli(
-  args: readonly string[],
-  connectionString: string = ADMIN_URL,
-): Promise<CliResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [STOP_CLI, ...args], {
-      env: { ...process.env, ADMIN_DATABASE_URL: connectionString },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (chunk) => (stdout += String(chunk)));
-    child.stderr.on("data", (chunk) => (stderr += String(chunk)));
-    child.once("error", reject);
-    child.once("close", (code) => resolve({ code, stdout, stderr }));
-  });
-}
-
-/** The tool's JSON lines; anything else on the stream (a Node warning) is ignored. */
-const jsonLines = (text: string): Record<string, unknown>[] =>
-  text
-    .split("\n")
-    .filter((line) => line.startsWith("{"))
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-
-/** The parts of a connection string that must never appear in the tool's output. */
-function connectionPieces(connectionString: string): string[] {
-  const url = new URL(connectionString);
-  return [
-    connectionString,
-    "postgresql://",
-    url.password,
-    `${url.hostname}:${url.port}`,
-  ].filter(Boolean);
-}
-
-describe("the owner's execution stop CLI, as a real process", () => {
-  // What neither the SQL suite nor the CLI's unit tests can prove: the owner
-  // tool as a separate PROCESS on its own connection against the real
-  // functions, with a run requested through the domain between its commands,
-  // and none of its output carrying the connection string it was given.
-  it("trips a scoped stop, lists it, refuses a covered run, clears it, lists it as history, and never prints the connection string", async () => {
-    const office = await buildOffice();
-    const outputs: CliResult[] = [];
-    const cli = async (args: readonly string[]) => {
-      const result = await runStopCli(args);
-      outputs.push(result);
-      expect(result.code, `${args[0]}: ${result.stderr}`).toBe(0);
-      return jsonLines(result.stdout);
-    };
-
-    const [tripped] = await cli([
-      "trip",
-      "--scope",
-      "tenant",
-      "--tenant",
-      office.tenantId,
-      "--reason",
-      "dbtest cli drill",
-      "--actor",
-      "dbtest",
-    ]);
-    expect(tripped).toMatchObject({ result: "stopped" });
-    const stopId = String(tripped.stopId);
-
-    expect((await cli(["list"])).find((s) => s.id === stopId)).toMatchObject({
-      scope: "tenant",
-      tenantId: office.tenantId,
-      reason: "dbtest cli drill",
-      trippedBy: "dbtest",
-      trippedAt: expect.stringMatching(ISO_UTC),
-      clearedAt: null,
-    });
-
-    const refused = await requestRun(office, "cli-refused");
-    expect(await readRun(refused)).toMatchObject({
-      status: "cancelled",
-      error_code: "execution_stopped",
-      stop_id: stopId,
-      job_id: null,
-    });
-
-    expect(
-      await cli([
-        "clear",
-        "--id",
-        stopId,
-        "--reason",
-        "dbtest cli drill over",
-        "--actor",
-        "dbtest",
-      ]),
-    ).toEqual([{ result: "cleared", stopId }]);
-
-    expect((await cli(["list"])).map((s) => s.id)).not.toContain(stopId);
-    expect(
-      (await cli(["list", "--all"])).find((s) => s.id === stopId),
-    ).toMatchObject({
-      clearedBy: "dbtest",
-      clearedReason: "dbtest cli drill over",
-      clearedAt: expect.stringMatching(ISO_UTC),
-    });
-
-    const allowed = await readRun(await requestRun(office, "cli-allowed"));
-    expect(allowed).toMatchObject({ status: "pending", stop_id: null });
-    expect(allowed.job_id).not.toBeNull();
-
-    expect(outputs).toHaveLength(5);
-    for (const { stdout, stderr } of outputs) {
-      for (const piece of connectionPieces(ADMIN_URL)) {
-        expect(stdout).not.toContain(piece);
-        expect(stderr).not.toContain(piece);
-      }
-    }
-  }, 60_000);
-
-  // What the CLI's unit tests cannot prove: the REAL server's refusal of a
-  // connection, whose message names the user, reported by its SQLSTATE alone.
-  it("reports a connection the database refuses by its SQLSTATE alone, naming no part of the connection string", async () => {
-    const url = new URL(ADMIN_URL);
-    url.password = "dbtest-not-the-password";
-
-    const result = await runStopCli(["list"], url.toString());
-
-    expect(result.code).toBe(1);
-    expect(jsonLines(result.stdout)).toEqual([]);
-    expect(jsonLines(result.stderr)).toEqual([
-      { error: "28P01", message: expect.any(String) },
-    ]);
-    for (const piece of [...connectionPieces(url.toString()), url.username]) {
-      expect(result.stderr).not.toContain(piece);
-    }
-  }, 30_000);
-});
-
-describe("listing execution stops", () => {
-  // What the domain's unit tests cannot prove: the list's filter against real
-  // rows. They see only the parameters it sends, not which rows those select.
-  it("lists only active stops by default, and every stop newest first with includeCleared", async () => {
-    const office = await buildOffice();
-    const tenantStop = await owner.withTransaction((tx) =>
-      tripExecutionStop(
-        tx,
-        { scope: "tenant", tenantId: office.tenantId },
-        TRIP,
-      ),
-    );
-    const companyStop = await owner.withTransaction((tx) =>
-      tripExecutionStop(
-        tx,
-        {
-          scope: "company",
-          tenantId: office.tenantId,
-          companyId: office.companyId,
-        },
-        TRIP,
-      ),
-    );
-    expect(
-      await owner.withTransaction((tx) =>
-        clearExecutionStop(tx, tenantStop, CLEAR),
-      ),
-    ).toBe(true);
-
-    const active = await owner.withTransaction((tx) => listExecutionStops(tx));
-    const all = await owner.withTransaction((tx) =>
-      listExecutionStops(tx, { includeCleared: true }),
-    );
-
-    const ours = (rows: readonly { id: string }[]) =>
-      rows
-        .map((row) => row.id)
-        .filter((id) => id === tenantStop || id === companyStop);
-    expect(ours(active)).toEqual([companyStop]);
-    expect(active.every((row) => row.clearedAt === null)).toBe(true);
-    expect(ours(all)).toEqual([companyStop, tenantStop]);
-    expect(all.find((row) => row.id === tenantStop)).toMatchObject({
-      clearedBy: "dbtest",
-      clearedReason: CLEAR.reason,
-      clearedAt: expect.stringMatching(ISO_UTC),
-    });
-  });
 });
