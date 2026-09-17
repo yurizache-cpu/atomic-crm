@@ -376,3 +376,25 @@ Phase 2A's position is unchanged: it waits for this phase's CI result and its ow
 - **H. A backfilled lead profile's `acquired_at` is derived** from the contact's earliest trustworthy evidence, never overwrites an existing profile, stays one per contact and idempotent, and is documented as derived.
 
 **Production-readiness gate (recorded, not part of this phase).** These do not block Phase 1D.2 CI, and they remain blockers or risks to a real production deployment where they apply: the `users` edge function (`patchUser` ordering, half-state administrator paths); `delete_note_attachments`; committed development-secret debt; and the makefile deploy path, which does not use the database gate. BASELINE Q8 is separate and still blocks real patient or clinical data from reaching an LLM provider.
+
+### Architecture acceleration review (2026-09-17) — owner decisions I–O accepted
+
+**Open-source-first, adapter-first, core stays ours.** Where a mature capability exists as genuinely free, self-hostable open source, integrate it behind one of our adapters; otherwise build it with Claude Code. Source-available, fair-code and Enterprise-gated software does not qualify; AGPL/GPL is flagged, never adopted silently. Read [ARCHITECTURE_ACCELERATION_REVIEW.md](ARCHITECTURE_ACCELERATION_REVIEW.md): a research document that changed no code, added no dependency and cloned nothing. Its §14 decisions were **accepted by the owner on 2026-09-17** and its §15 source-reuse policy was **approved as written**.
+
+- **Never replaced:** tenancy, the Company OS domain, the engine (leases, idempotency, events), provider routing, spend accounting, the kill switch, governance and approval semantics.
+- **Integrate soon, each behind one port:** pgvector (PostgreSQL License) for RAG; OpenTelemetry and Prometheus (Apache-2.0) for observability; Umami (MIT) for site analytics; Playwright (Apache-2.0, already here) for browser work.
+- **Rejected under the owner's policy:** n8n (Sustainable Use License), Evolution API (added branding conditions and a phone-home licence gate), WAHA Plus (paid closed image), Arize Phoenix (Elastic License 2.0), and every unofficial WhatsApp gateway for the production patient channel (ban risk).
+- **Deferred:** Qdrant, Gotify, Grafana (AGPL), Langfuse (MIT core, Enterprise `ee/`), Node-RED, Kestra (OSS has no tenancy, RBAC or audit log), Chatwoot (MIT core + proprietary `enterprise/`, and it would hold patient conversations).
+- **Phase 2A takes no new dependency.** The revised sequence puts WhatsApp (2B), the operator surface (2C), observability (2D), scheduling and follow-up (3A), RAG (3B) and growth (3C) after it, each adding a dependency only in the phase that needs it.
+
+**Owner decisions I–O, accepted 2026-09-17** (review §14; [DECISIONS.md](DECISIONS.md)). They continue the letter sequence — A–E belong to ADR 0017, F–H to Phase 1D.2:
+
+- **I. Open-source-first, adapter-first** is confirmed as stated above.
+- **J. WhatsApp runs on the official Meta Cloud API** (paid, not open source) behind our own `CommunicationPort`; every unofficial gateway is rejected for the production patient channel, because a banned number is a patient-channel outage. This is a cost and data-processing decision, separate from Q8, and it means we build that adapter: one HTTPS call out, one webhook in, the ledger ours.
+- **K. cal.diy is reference only**, despite the MIT relicensing; revisit only if scheduling grows beyond one clinic.
+- **L. AGPL posture:** Grafana is allowed only as an internal, unmodified, self-hosted viewer if we ever need it, and Twenty is reference only. No AGPL/GPL/LGPL code enters proprietary Company OS source without owner review of that specific dependency and use.
+- **M. An omnichannel inbox is not a Phase 2 goal.** Chatwoot and any external patient conversation store stay deferred; conversation state stays authoritative in our database.
+- **N. Observability lands in Phase 2D**, after the first real flow exists.
+- **O. Q8 remains OPEN**, unchanged by this review.
+
+**OSS source reuse is approved** (review §15). Once a component is approved for implementation, cloning, downloading, running, modifying and forking its upstream repository is allowed and encouraged where it materially reduces engineering work; cloning candidates merely to evaluate them during a research review is not. **Fork is not the default.** Choose the mode by shape: a library or package → **package**; a large standalone application → **external service behind an adapter**; substantial persistent source modifications → **fork**; a small, clearly permissive reusable module → **source extraction**; adoption dearer than building → **reference only, build it ourselves**. The objective is not to avoid forks — it is the lowest total implementation + maintenance + upgrade + exit cost. Every reuse passes the license gate (§15.1) first, and the first real adoption creates `docs/OSS_PROVENANCE.md` with the fields listed in §15.3; no placeholder is created before then.
