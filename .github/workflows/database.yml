@@ -1,0 +1,97 @@
+name: 🗄️ Database
+# The live-database proof, defined once and called by both workflows: check.yml
+# runs it on every push and pull request, and deploy.yml runs it before the
+# hosted database deploy. A job's `needs:` cannot reach a job in another
+# workflow run, so the deploy could never wait on check.yml's copy. Calling this
+# file from deploy.yml gates the deploy on the commit it ships, in the same run:
+# a local `uses:` runs this file from the caller's own commit.
+#
+# Deliberately unconditional. It has no trigger of its own, no job or step
+# condition and no concurrency group (a group matching the caller's would cancel
+# it), and the caller passes it no secrets. The draft pull request condition
+# lives on check.yml's calling job. scripts/production-scope-database-gate.mjs
+# refuses a copy of this file that could pass without running every suite below,
+# and a hosted deploy that does not wait for it (Phase 1D.2).
+on:
+    workflow_call:
+
+permissions:
+    contents: read
+
+jobs:
+    # The database guarantees are the ones this project actually rests on, and
+    # until now nothing executed them anywhere but one developer's machine.
+    # `npm run test:db` fails closed when it cannot reach a database, so this job
+    # cannot silently degrade into a no-op the way a skipped suite would.
+    database:
+        name: 🗄️ Database security & reproducibility
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        env:
+            # Derived from `project_id` in supabase/config.toml. The runner
+            # requires this to be named rather than guessed: on a machine with
+            # more than one Supabase stack, attaching to the wrong database
+            # would silently verify the wrong schema.
+            SUPABASE_DB_CONTAINER: supabase_db_atomic-crm-demo
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+
+            - name: 📥 Download deps
+              run: npm ci
+
+            - name: 🐘 Start Supabase
+              run: npx supabase start
+
+            # Runs the hand-written security migrations' own assertions as a
+            # side effect: each raises if its end state is wrong.
+            - name: 🔒 RLS, tenant isolation and grant surface
+              run: npm run test:db
+
+            # The worker runtime against a real Postgres, through the real
+            # `pg` pool and the real constrained login role. The SQL suites
+            # above cannot cover this: they prove the DATABASE's behaviour with
+            # psql, and say nothing about whether the application driver's
+            # connection reuse carries a tenant from one job into the next.
+            # Spawns real worker processes for the concurrency cases.
+            - name: ⚙️ Worker runtime, pooling and concurrency
+              run: npm run test:db:engine
+
+            # Every other database check starts from an empty schema, so a
+            # migration that mishandles rows already in the database is
+            # invisible to them. This one resets the stack to the last
+            # migration before 20260911232039_pending_delta.sql, loads legacy
+            # data (supabase/tests/upgrade/), requires the owner guard to halt
+            # the upgrade, performs the documented owner bootstrap, resumes,
+            # replays the idempotent backfills and asserts the legacy data kept
+            # its meaning (Phase 1D.2). It leaves the fixture in place; the next
+            # step resets the stack. The workdir is a flag, never an
+            # environment variable: the runner refuses a container that is not
+            # the one this workdir's config.toml names.
+            - name: ⬆️ Upgrade replay over existing data
+              run: npm run test:db:upgrade -- --workdir .
+
+            # A hosted project is initialised from migrations alone: the
+            # development data never reaches it (SI-25). Replay exactly that, and
+            # prove the global reference data a production database needs is
+            # there without it, while nothing tenant-specific is.
+            - name: 🌱 Production-like replay (migrations only)
+              run: npx supabase db reset --local --no-seed
+
+            - name: 🔎 Reference data without the development data
+              run: node supabase/tests/referenceData.mjs --without-seed
+
+            # Proves the database can be rebuilt from the repository alone. The
+            # seed once inserted into a table no migration created, so a clean
+            # reconstruction was impossible and nothing caught it.
+            - name: ♻️ Clean reconstruction from scratch
+              run: npx supabase db reset --local
+
+            - name: 🔒 Same guarantees after the reset
+              run: npm run test:db

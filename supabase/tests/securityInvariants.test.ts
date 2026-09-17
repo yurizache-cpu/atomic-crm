@@ -949,7 +949,7 @@ const INVARIANTS: Invariant[] = [
         marker: /no Company OS tenant/,
       },
       {
-        file: ".github/workflows/check.yml",
+        file: ".github/workflows/database.yml",
         marker: /run: node supabase\/tests\/referenceData\.mjs --without-seed/,
       },
     ],
@@ -1845,6 +1845,176 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "It is an owner tool: anyone holding ADMIN_DATABASE_URL can do more than it offers. Its lists are bounded (runs 200, prices and limits 500, workers 50) and only the held-job count reports hitting its cap. Worker routes are what each worker published at boot, not a live read of its environment.",
+  },
+  {
+    id: "SI-40",
+    statement:
+      "No hosted Supabase deploy runs before the live-database suites pass on the commit it ships, in the same workflow run: every workflow job that can reach a hosted project, by a hosted command, a credential or a machine GitHub does not host, has no job-level condition, directly needs a plain call of .github/workflows/database.yml, deploys the tree it checked out and runs only on push or workflow_dispatch; database.yml is exactly the reviewed job, running test:db, test:db:engine, the upgrade replay over legacy data, a migrations-only replay with the reference data check and a clean reconstruction followed by test:db, in that order, with nothing that can skip, change or replace a suite; and check.yml calls the same definition and runs no copy of it.",
+    provenBy: ["static guard", "unit test", "live database"],
+    enforcedBy: [
+      {
+        file: "scripts/production-scope-database-gate.mjs",
+        marker:
+          /export const DATABASE_GATE_RULE = "deploy-without-database-gate"/,
+      },
+      {
+        file: "scripts/production-scope.mjs",
+        marker:
+          /violations = \[\.\.\.checkProductionScope\(files\), \.\.\.checkDeployGate\(files\)\]/,
+      },
+      {
+        file: "scripts/test/production-scope-database-gate.test.mjs",
+        marker:
+          /refuses a hosted deploy that does not directly wait for a plain call of the gate/,
+      },
+      {
+        file: "scripts/test/production-scope-database-gate.test.mjs",
+        marker:
+          /refuses a database gate that can pass without running every suite/,
+      },
+      {
+        file: "scripts/test/production-scope-database-gate.test.mjs",
+        marker:
+          /refuses a broken gate from the command line deploy-supabase runs/,
+      },
+      {
+        file: ".github/workflows/deploy.yml",
+        marker: /^\s*needs: \[gate, database\]\s*$/m,
+      },
+      {
+        file: ".github/workflows/deploy.yml",
+        marker: /^\s*uses: \.\/\.github\/workflows\/database\.yml\s*$/m,
+      },
+      {
+        file: ".github/workflows/database.yml",
+        marker: /^\s*workflow_call:\s*$/m,
+      },
+      {
+        file: ".github/workflows/database.yml",
+        marker: /^\s*run: npm run test:db:upgrade -- --workdir \.\s*$/m,
+      },
+      {
+        file: ".github/workflows/check.yml",
+        marker: /^\s*uses: \.\/\.github\/workflows\/database\.yml\s*$/m,
+      },
+    ],
+    caveat:
+      "The workflows are proven by reading them; GitHub has run neither until the owner pushes. The guard is line-based and refuses what it cannot read, but it does not follow an npm or node script, a third-party action's code or a credential held in a configuration variable. The makefile's deploy target, run by a person, is not gated by the live suites (SI-03's caveat). Branch protection is repository configuration, and check.yml's database check is now reported under its caller's name.",
+  },
+  {
+    id: "SI-41",
+    statement:
+      "No application role can make a CRM owner, and no upgrade makes one on trust: the signup trigger writes only operators, whatever the user metadata says; the only path outside the application is public.bootstrap_owner, which no application role can execute, which runs only at READ COMMITTED under a lock on sales held until commit, only while no active owner exists, and only for an enabled CRM user whose auth account is confirmed, unbanned and not deleted, and which sets both owner columns and records the act; an upgrade that finds an active legacy administrator and no active owner halts until a person runs it, and every remaining administrator without the owner role then becomes a recorded operator; and is_admin() requires the owner role, the administrator flag and an enabled row.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker: /can execute public\.bootstrap_owner/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker:
+          /bootstrap_owner does not hold SHARE ROW EXCLUSIVE on public\.sales until commit/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker: /ran at REPEATABLE READ instead of refusing it first/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker: /an active owner already exists%/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker:
+          /is_admin\(\) accepted administrator = true without role = owner/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker: /is_admin\(\) accepted a disabled owner/,
+      },
+      {
+        file: "supabase/tests/owner_provisioning.sql",
+        marker: /handle_new_user trusted metadata that claims ownership/,
+      },
+      {
+        file: "supabase/migrations/20260917180200_owner_bootstrap.sql",
+        marker: /lock table public\.sales in share row exclusive mode;/,
+      },
+      {
+        file: "supabase/migrations/20260917180200_owner_bootstrap.sql",
+        marker:
+          /revoke all on function public\.bootstrap_owner\(uuid, text, text\) from public, anon, authenticated, service_role;/,
+      },
+      {
+        file: "supabase/migrations/20260917180300_legacy_administrators_upgrade_guard.sql",
+        marker: /upgrade halted: active administrator\(s\)/,
+      },
+      {
+        file: "supabase/migrations/20260917180300_legacy_administrators_upgrade_guard.sql",
+        marker: /are still administrators without the owner role/,
+      },
+      {
+        file: "supabase/tests/upgrade/upgrade_assertions.sql",
+        marker: /the upgrade created % owners, expected the 1 a person chose/,
+      },
+      {
+        file: "supabase/tests/upgrade/halted_assertions.sql",
+        marker: /an owner exists before any person chose one/,
+      },
+      {
+        file: "supabase/tests/referenceData.mjs",
+        marker:
+          /no CRM owner or administrator: a person bootstraps the first one/,
+      },
+      {
+        file: "scripts/test/run-db-upgrade-test.test.mjs",
+        marker: /the owner guard halt is the only accepted halt/,
+      },
+    ],
+    caveat:
+      "Whoever holds the database credential can do anything, and once every owner is disabled the bootstrap works again (break glass); the function makes that act explicit, checked and recorded. In-app promotions by an owner write no log row. The users edge function still creates an administrator without the owner role when it reuses an existing auth account, and still lets such a row edit other users' auth email and ban state (SECURITY.md, patchUser); e2e fixtures create the same half state.",
+  },
+  {
+    id: "SI-42",
+    statement:
+      "Every contact has exactly one lead profile, so its do_not_contact opt-out can always be recorded by an application user who may access the contact and never by one who may not: new contacts get one from their insert trigger, contacts that predate lead profiles get one from an idempotent backfill that never changes an existing profile, and an upgrade replay over legacy data proves it.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/crm_data_invariants.sql",
+        marker: /contacts without exactly one lead profile/,
+      },
+      {
+        file: "supabase/tests/crm_data_invariants.sql",
+        marker:
+          /create_lead_profile_after_contact_insert is missing or not enabled/,
+      },
+      {
+        file: "supabase/migrations/20260917180100_backfill_legacy_lead_profiles.sql",
+        marker: /still have no lead profile after the legacy backfill/,
+      },
+      {
+        file: "supabase/tests/upgrade/upgrade_assertions.sql",
+        marker:
+          /the operator cannot record do_not_contact for their own legacy contact/,
+      },
+      {
+        file: "supabase/tests/upgrade/upgrade_assertions.sql",
+        marker:
+          /the operator changed the consent flag of a contact they do not own/,
+      },
+      {
+        file: "supabase/tests/rls_tenant_isolation.sql",
+        marker: /do_not_contact consent flag/,
+      },
+      {
+        file: "scripts/run-db-upgrade-test.mjs",
+        marker: /"20260917180100_backfill_legacy_lead_profiles\.sql"/,
+      },
+    ],
+    caveat:
+      "A backfilled profile starts with do_not_contact false: the legacy schema had no opt-out field, and an opt-out recorded only in notes or tags cannot be read by a migration. A restore run with triggers disabled can break the invariant again; crm_data_invariants.sql is where that shows. The SQL function public.merge_contacts, unlike the edge function, still deletes the loser without folding its profile (SI-09 covers the edge function).",
   },
 ];
 

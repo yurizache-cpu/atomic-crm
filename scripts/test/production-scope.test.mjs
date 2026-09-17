@@ -1022,6 +1022,10 @@ describe("production scope: the development seed stays local", () => {
           content: read(".github/workflows/check.yml"),
         },
         {
+          path: ".github/workflows/database.yml",
+          content: read(".github/workflows/database.yml"),
+        },
+        {
           path: ".claude/scripts/e2e-smoke.sh",
           content: read(".claude/scripts/e2e-smoke.sh"),
         },
