@@ -163,3 +163,31 @@ Its executable form is SI-26: the static migration guard and the migration and d
 4. **§5, agents gain no model configuration.** `ops.agents` has no provider, model or prompt column. A run's route comes from its capability (ADR 0016 §9).
 
 **Not changed:** tenant as the only isolation boundary, the composite-key integrity of §3, the task state machine of §6 (a run never transitions its task), SI-26, and every owner decision in the 2026-09-13 addendum.
+
+---
+
+## Addendum 2026-09-17 — what Phase 1D.1 changes in this record
+
+[ADR 0017](0017-runtime-governance.md) closes PHASE_1C_REPORT Appendix A item 8 for the creates future integrations will retry. `supabase/migrations/20260917120000_runtime_governance.sql` makes these changes additively. It re-asserts the whole `ops` end state, and no earlier migration was edited.
+
+1. **§4 and §7: `ops.create_task` and `ops.record_event` gain an optional, tenant-scoped idempotency key.**
+   - `ops.tasks` and `ops.events` gain `idempotency_key` and `request_fingerprint`, with a partial unique index on `(tenant_id, idempotency_key)`.
+   - The fingerprint is sha256 of a JSON array over the semantic request. An insert trigger derives it from the stored row, so a caller never supplies it, and it is fixed once stored.
+   - Replaying the same request returns the same id, with no second row or second fact. A different request under the same key is `OS409`. Concurrent duplicates converge on one row.
+   - Both functions were dropped and recreated with the key as the last argument, so every positional caller still resolves to the one overload.
+2. **§4: the owner surface grows.**
+   - New owner services: `ops.record_model_price`, `ops.set_spend_limit`, `ops.retire_spend_limit` and `ops.spend_status`. All are SECURITY INVOKER and executable by no application role.
+   - `ops.trip_execution_stop` gains a trailing `p_job_kind`.
+   - The future wrapper contract is unchanged.
+3. **§8: the bridge is unchanged,** and `ops.task_executable_kinds()` is still exactly `{agent_run.execute}`.
+   - Every job kind is now classified. `ops.external_job_kinds()` returns `{agent_run.execute}`, and `ops.internal_job_kinds()` returns `{postmark.ledger_retention}`.
+   - The kill switch holds every queued kind that is not internal.
+   - A job's company, department and agent come only from facts fixed when it was requested: its agent run, or the company of the task that requested it. They are never taken from a task's current department or assignee. This is the lease-time resolution through `ops.task_jobs` that §8 anticipated. The refusal is a hold that consumes no attempt.
+
+**Not changed:**
+- tenant as the only isolation boundary;
+- a company limit is organisation only, not isolation;
+- the composite-key integrity of §3;
+- the task state machine;
+- SI-26;
+- the caller-declared `correlation_id` residual (Appendix A item 7), which stays recorded and open.

@@ -249,3 +249,70 @@ Phase 1D lets one agent call a language model once about one task. [ADR 0016](ad
 - A provider error code that fits the lowercase code shape is stored as reported, up to 100 characters.
 - The scanner's older `assigned-server-secret` name rule still misses prefixed and JSON-quoted forms of its existing names. The new `VITE_` provider-name rule covers the model-provider case.
 - The kill switch has no UI, no budgets and no spend ceiling (ADR 0010 addendum).
+
+---
+
+## 11. Phase 1D.1 — runtime governance (2026-09-17)
+
+This phase closes the governance gaps Phase 1D left before the runtime is connected to a real business flow. [ADR 0017](adr/0017-runtime-governance.md) records the decisions; SI-35 to SI-39 are the invariants, and SI-13, SI-14 and SI-31 were restated. Results and counts are in [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md).
+
+**Cost is a safety property, and it is now enforced before the call.**
+- **The worker is the untrusted side.** It reports usage and the output ceiling it will send. The database chooses the price version, derives the worst-case reservation from the rows the claim handed out (share-locked until the prepare commits), and derives the estimate and the charge.
+- **Admission fails closed.** A run starts only when:
+  - a current price exists for its provider and model;
+  - a global ceiling and its tenant's budget exist;
+  - every applicable limit can absorb the reservation.
+
+  Everything is checked under per-scope locks, and only under READ COMMITTED.
+- **A missing price or limit refuses the run** and records why.
+- **An unknown outcome is never cheaper than its reservation.**
+- **Prices are never shipped by a migration** (`referenceData.mjs --without-seed` proves none exists after migrations alone). They are never used past their expiry, and a stale version never falls back to an older one.
+
+**Spend cannot be pushed through by a worker.**
+- A worker cannot record a spend refusal: five more error codes are reserved.
+- It cannot lower a reservation, and it cannot make an estimate or a charge: the run guard derives both on every write path.
+- A stalled worker cannot hold the fleet-wide spend lock past `idle_in_transaction_session_timeout`. The connection adapter also no longer crashes the process when the server ends a checked-out session.
+
+**The kill switch now holds every external job.**
+- **One evaluator.** A stop is checked when a job is leased, and again before any external call by the runtime itself, not by the handler.
+- **Consuming nothing.** A held job consumes no attempt. A stop found after the lease keeps no durable start, calls nothing and defers the job; the same job runs once the stop is cleared.
+- **Total classification.** Every job kind is classified, and a kind nobody classified is held rather than leased.
+- **The spend ceiling** trips a stop of origin `system`. It never absorbs or clears an owner's incident stop, and only a person clears it.
+
+**No new reachable surface.**
+- **Data API.** `ops` stays off it. The probe now also requires the two new tables and the five new functions to exist (15 relations, 96 functions, 705 requests over REST and GraphQL with five credentials: none reached `ops`).
+- **Grants.** No application role holds anything on prices or limits. The worker gains EXECUTE on three argument-less capabilities, plus the new start signature, and no table privilege.
+- **Operator CLI.** `npm run ops` reads only `ADMIN_DATABASE_URL` and runs its reads in read-only transactions. It prints no result, prompt, task text, key or connection string, and it never needs a provider key: the routes it shows are what each of the 50 most recently seen workers published in its heartbeat, stopped and crashed ones included.
+
+**Owner review (2026-09-17).** The owner accepted ADR 0017 with four decisions: (A) no model call without a current price, the global ceiling, the tenant budget and any configured company limit; (B) a stopped job is held or deferred, never cancelled; (C) a concurrent request may wait, within the existing lock and timeout bounds, for a prepare in progress; (D) only a person clears the spend-ceiling stop. The review found decision B untrue for a run whose job was leased before a trip. That is fixed, with the rest of the review:
+- **Held at start.** `ops.start_agent_run` answers `stopped` when an active stop covers the run, before any other gate, and writes nothing: the run stays `pending`, with no stop, error code, price or charge.
+- **Deferred, not cancelled.** The runtime calls `ops.defer_job()` in the same transaction, under the kill-switch lock the start still holds, so the stop cannot be cleared in between. No attempt is spent and nothing is called. After an explicit clear, the next lease runs the same run, and every gate is checked again at its start.
+- **Request time is unchanged.** A request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, and no job is created.
+- **The lease fails closed.** `ops.lease_job` refuses (`OS403`) when row security would hide the stops, like every other reader of the switch.
+- **Spend status reads plainly.** `ops.spend_status()` reports `settled_exhausted` and `new_run_admission`, and `npm run ops -- status` reports `globalCeilingConfigured`, so no row reads as room to start. `blocked` means that limit admits no run with a reservation above zero; `conditional` means it admits only a reservation that fits `remaining_micros`, while the price, the other limits and the stops still decide.
+- **Q8 is unchanged.** Only synthetic data may reach a real provider.
+
+**Found and fixed during the phase** (adversarial reviews and the owner review; details in the report):
+
+| Finding | Severity | Fix |
+| --- | --- | --- |
+| The input reservation was computed from rows that could change between claim and start, so it might not bound the prompt sent | Medium | The claim share-locks the task and agent rows; the start reserves from those rows, measured after JSON escaping |
+| A 200 that reported failure, with no usage, would have been charged 0 | Medium | Zero only with no usage, no response id and no response model; adapter contract pinned for every non-2xx status |
+| The ceiling sweep would have tripped a fleet-wide stop on reservations still in flight | Medium | Trips only on settled spend; contention records nothing and retries |
+| An automatic trip and an owner's trip on the same target shared one row | Medium | `origin` is part of the target |
+| A stalled worker could hold the fleet-wide spend lock indefinitely | Medium | `idle_in_transaction_session_timeout`; the session error no longer kills the process |
+| Missing tenant budget beside a contended ceiling failed on a constraint instead of being recorded | Medium | Admission clears the limit id on an unconfigured answer (test A12) |
+| A raw insert could create a `job_kind` stop on a kind that holds nothing | Low | The insert guard refuses it on every write path |
+| The ceiling sweep did not refuse a row-security-filtered read | Low | `OS403`, like every other governance reader |
+| Two ceiling sweeps racing could both report the one stop as their own trip | Low | A sweep reports a stop only when its own transaction recorded it; two-session driver test |
+| Decision B did not hold for a run whose job was leased before a trip: the start recorded the run `cancelled` and the job completed on that attempt, so a clear resumed nothing | Blocking (against the owner decision) | The start answers `stopped` and writes nothing, and the runtime defers the job in the same transaction (SQL K3, driver and unit tests) |
+| `ops.lease_job` read the switch even when row security would hide the stops, which reads as "no stop" | Low | `OS403`, like every other reader of the switch (SQL G7) |
+
+**Recorded, not changed.**
+- **Q8 is open.** BASELINE Q8 (multi-tenant processor roles, provider retention, LGPD) is an explicit blocker for any real patient or clinical text reaching a model: **only synthetic data** may reach a live provider. No live call was made in this phase.
+- **Owner acts are unconstrained.** An owner's raw UPDATE can state a reservation, and an owner can erase today's runs, which frees today's budget. Both are owner acts, outside the boundary like `DISABLE TRIGGER`.
+- **Text length.** The Phase 1C length checks trim only spaces. Reservations still hold, because they are computed from the real text.
+- **Estimates are not invoices.** An estimate is usage times a recorded list price.
+- **Owner sessions have no idle bound.** Transactions opened through `createWorkerDatabase` (the worker and every `npm run` CLI) have one; an owner session opened in psql or Studio does not. A global limit change left open there makes every start waiting behind it fail at its `statement_timeout` (57014, transient), each failure spends a job attempt, and after the last attempt the job fails and the run is recorded `failed` / `job_failed`. Make owner limit changes through `npm run ops`.
+- **Request-time refusal awaits confirmation.** A request made while a stop covers it is still refused and recorded, because no job exists yet; reading decision B as not covering it is flagged for the owner to confirm, not settled by assumption.
+- **The generic pre-call check keeps one race.** For an external handler other than the agent run, a stop cleared between the runtime's check and its deferral makes that attempt fail through the transient path: an attempt is spent and nothing is called. The agent run path cannot meet that race.

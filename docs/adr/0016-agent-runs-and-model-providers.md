@@ -236,3 +236,30 @@ The settling transaction stores input, output, total, cached and reasoning token
 
      PHASE_1D_REPORT §20 records the mutation results.
 2. **The SDK rationale is corrected** (fact 3, §8 and Alternatives). The official SDK can run with zero retries: by default it retries connection errors, timeouts, 408, 409, 429 and 5xx twice, and `maxRetries: 0` turns that off (openai-node README, checked 2026-09-16). The `fetch` adapter stays, for the reasons §8 now gives.
+
+---
+
+## Addendum 2026-09-17 — what Phase 1D.1 changes in this record
+
+[ADR 0017](0017-runtime-governance.md), accepted by the owner on 2026-09-17, builds runtime governance on top of this record. Everything above stands, except the points listed here. `supabase/migrations/20260917120000_runtime_governance.sql` makes these changes; no earlier migration was edited.
+
+1. **§10 is superseded for cost.** Usage is still recorded as §10 describes. Cost is no longer absent: the database derives it from usage and an owner-recorded, versioned price. The price version is chosen when the run starts and recorded on the run. A run with no current, unexpired price is refused before any call (`price_unavailable`). An outcome whose cost is unknown is charged at its reservation. Prices are still never a constraint and never a migration row.
+2. **§3 and §6: `ops.start_agent_run` takes a fifth argument, the output ceiling the worker will send.** A ceiling that differs from the database's route policy is refused as `route_policy_mismatch`.
+   - Before `running` commits, the start also checks the price and the spend limits, under per-scope locks taken after the kill-switch lock.
+   - A run that settled spend cannot absorb is recorded `cancelled` / `refused` / `budget_exhausted`, naming the limit.
+   - A run that fits only once calls in flight settle raises `OS429` and records nothing. Its job retries on its backoff.
+   - Only `running` means call. A new answer token, `stopped`, means an execution stop holds the run: the start checks the stops before any other gate, writes nothing, and leaves the run `pending`, and the runtime defers the job (items 5 and 6).
+3. **§6: `ops.claim_agent_run` share-locks the task and agent rows it returns** for the rest of the prepare transaction. The input ceiling the start reserves is therefore computed from the same text the worker builds the prompt from.
+4. **§2: the reserved error codes grow by five:** `price_unavailable`, `route_policy_mismatch`, `spend_ceiling_unconfigured`, `budget_unconfigured` and `budget_exhausted`. A worker cannot record any of them. `spend_limit_id` is set exactly when the code is `budget_exhausted`, and it must name an active limit that applies to the run.
+5. **§3: the `external_call` shape moves to its own module** (`engine/worker/externalCall.ts`) without changing at-most-once.
+   - The runtime re-checks the kill switch after a prepare that answered `call`, and before committing it.
+   - A covering stop discards the handler's durable start at a savepoint and defers the job without consuming an attempt.
+   - For agent runs the start itself finds the stop and answers `stopped`, so there is no durable start to discard. The handler reports the prepare as held, and the runtime defers the job (`ops.defer_job`) in the same transaction, under the kill-switch lock the start holds, so the stop cannot be cleared in between. If the deferral finds no covering stop, the whole prepare rolls back and the attempt fails through the transient path; nothing is called.
+   - Every worker transaction bounds its idle time, so a stalled worker cannot hold the fleet-wide spend lock.
+6. **§11: the kill switch now also works at the lease.**
+   - A queued `agent_run.execute` job that a stop covers is not leased, and its run stays `pending` until the stop is cleared.
+   - A run whose job was leased before the trip is held at start, and its job is deferred with its attempt restored and a `deferred` job event naming the stop. The run stays `pending`, and after an explicit clear the same run starts, with every gate checked again (owner decision B, 2026-09-17). This supersedes §11's recording of a start-time refusal as a `cancelled` run.
+   - Request-time refusal is unchanged from §11: a request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, with no job. No job exists yet, so decision B is read as not covering it; that reading awaits the owner's confirmation.
+   - The `job_kind` scope stops every agent run at once.
+   - A stop tripped by the spend ceiling has origin `system`, and never absorbs or clears an owner's stop.
+   - The "not built" list loses budgets, the spend ceiling, and lease-time refusal. The UI remains unbuilt.
