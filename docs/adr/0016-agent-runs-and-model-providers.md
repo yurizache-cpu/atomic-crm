@@ -259,7 +259,7 @@ The settling transaction stores input, output, total, cached and reasoning token
 6. **§11: the kill switch now also works at the lease.**
    - A queued `agent_run.execute` job that a stop covers is not leased, and its run stays `pending` until the stop is cleared.
    - A run whose job was leased before the trip is held at start, and its job is deferred with its attempt restored and a `deferred` job event naming the stop. The run stays `pending`, and after an explicit clear the same run starts, with every gate checked again (owner decision B, 2026-09-17). This supersedes §11's recording of a start-time refusal as a `cancelled` run.
-   - Request-time refusal is unchanged from §11: a request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, with no job. No job exists yet, so decision B is read as not covering it; that reading awaits the owner's confirmation.
+   - Request-time refusal is unchanged from §11: a request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, with no job. No job is created and nothing is deferred. The owner confirmed this on 2026-09-17 (ADR 0017 owner review, decision E): a stop before admission refuses new work, and a stop after admission holds the work already admitted.
    - The `job_kind` scope stops every agent run at once.
    - A stop tripped by the spend ceiling has origin `system`, and never absorbs or clears an owner's stop.
    - The "not built" list loses budgets, the spend ceiling, and lease-time refusal. The UI remains unbuilt.

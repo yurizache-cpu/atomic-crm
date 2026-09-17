@@ -37,7 +37,7 @@ The owner did not decide ADR 0010, which stays Proposed; its 2026-09-17 addendum
   - The job returns to `queued` with its attempt restored, 30 s later, with a `deferred` job event naming the stop.
   - While the stop stays active, the lease holds the job. After an explicit clear, the next lease runs the same run, and every gate is checked again at its start.
   - If the deferral finds no covering stop, the two readings disagree: the whole prepare rolls back, the attempt fails through the transient path, and nothing is called.
-- **Request-time refusal is unchanged.** A request made under a covering stop is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, and no job is created. No job exists yet, so decision B is read as not covering it. That reading awaits the owner's explicit confirmation (§13, item 12).
+- **Request-time refusal is unchanged.** A request made under a covering stop is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, and no job is created. No job is created, the provider is not called, and nothing is deferred. **The owner confirmed this as decision E (2026-09-17):** a stop before admission refuses new work; a stop after admission holds the work already admitted (§13, item 12).
 - **Tests.** SQL K3 in `agent_runtime.sql`; driver tests in `externalCallDeferral`, `agentRunRuntime` and `agentRuns` (two sessions); unit tests in `agentRunExecute.test.ts`. SI-31 and SI-37 were restated.
 
 **The spend status is unambiguous.** `ops.spend_status()` renames `exhausted` to `settled_exhausted` and adds `new_run_admission` (`blocked` or `conditional`). `npm run ops -- status` also reports `globalCeilingConfigured`. The budget model is unchanged (§2).
@@ -568,7 +568,7 @@ The simulation did not touch the real index. The phase was committed afterwards,
 
 **Recorded at the owner review (2026-09-17):**
 
-12. **Request-time refusal under a stop.** A request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped` and creates no job. No job exists yet, so the refusal is read as outside decision B, which is about stopped jobs. That reading awaits the owner's explicit confirmation; it is not settled by assumption.
+12. **Request-time refusal under a stop.** A request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped` and creates no job. No job exists yet, so the refusal is outside decision B, which is about work already admitted. *(Decided 2026-09-17: the owner confirmed this as decision E, recorded in ADR 0017's owner review. No code changed.)*
 13. **The generic pre-call race.** For an external handler other than the agent run, a stop cleared between the pre-call check and the deferral makes the attempt fail through the transient path: one attempt is spent, and nothing is called (§4). The agent-run path cannot meet it.
 14. **The owner-session idle bound.** Three kinds of transaction hold the global spend lock:
     - a start, only for the end of its transaction;
@@ -643,7 +643,7 @@ The simulation did not touch the real index. The phase was committed afterwards,
 **What the classification does not cover:**
 - **Real patient data.** It does **not** cover it. BASELINE Q8 blocks any real patient or clinical text from reaching a model (§13, item 1).
 - **CI.** The phase is committed locally and not pushed. The classification becomes CI VERIFIED only after the owner pushes this branch, and CI shows every check this phase touches green, with only the historical `e2e-test` and Prettier checks red (§13, item 2).
-- **Owner decisions.** The owner accepted ADR 0017 on 2026-09-17, with decisions A to D ("Owner review" above; §13, item 3). ADR 0010 stays Proposed. One reading still awaits the owner's explicit confirmation: request-time refusal under a stop (§13, item 12).
+- **Owner decisions.** The owner accepted ADR 0017 on 2026-09-17, with decisions A to D ("Owner review" above; §13, item 3). ADR 0010 stays Proposed. The owner also confirmed decision E on 2026-09-17: a request made under a stop is refused before any job exists (§13, item 12). No owner decision is pending for this phase.
 - **Phase 2A scope.** The owner accepted the direction as PHASE 2A — SYNTHETIC LEAD TRIAGE PILOT (ROADMAP, owner review 2026-09-17). Where §14 differs, the roadmap governs.
 
 **Phase 2A has not been started.**

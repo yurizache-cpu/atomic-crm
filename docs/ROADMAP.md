@@ -319,7 +319,7 @@ Phase 2A may be built and tested with synthetic data before then. See DECISIONS.
 - **A. Fail closed.** Without governance configuration there is no model call.
 - **B. Stopped jobs are held.** A stopped job is held or deferred, never cancelled: no attempt is spent because it is stopped, nothing is called, and it runs only after an explicit clear.
   - **Made true at the review:** an agent run leased before a trip is now held at its start, and the runtime defers its job; the same run runs once the stop is cleared. See [PHASE_1D1_REPORT.md](PHASE_1D1_REPORT.md).
-  - **Awaiting the owner's confirmation:** a request made while a stop covers it is still refused at request time, before any job exists. This is read as outside decision B.
+  - **E. Confirmed by the owner, 2026-09-17:** a new request made while a stop covers it is still refused at request time. It is recorded `cancelled` / `execution_stopped`, no job is created, no provider is called and nothing is deferred. A stop before admission refuses new work; a stop after admission holds the work already admitted.
 - **C. Waiting is allowed.** A request may wait, bounded, for a prepare in progress.
 - **D. The spend-ceiling stop stays.** It is cleared only by a person. A new day, a budget change, a price change or lower observed spend never resumes execution.
 

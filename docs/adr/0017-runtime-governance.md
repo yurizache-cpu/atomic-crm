@@ -258,7 +258,7 @@ On the `call` path this leaves a known edge: a stop cleared between the check an
 
 - A run whose job was leased **before** a trip is held at start, and its job is deferred: it returns to `queued` with its attempt restored, 30 seconds later, with a `deferred` job event naming the stop. While the stop stays active, the lease holds the job. After an explicit clear, the next lease runs the **same** run, and its start checks every gate again.
 - A run whose job was **not yet leased** is held at the lease, and runs once the stop is explicitly cleared. Its start then re-checks every gate.
-- Request-time refusal is unchanged: a request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop, and no job is created. No job exists yet, so decision B, which is about stopped jobs, is read as not covering it. That reading awaits the owner's explicit confirmation (owner review, below).
+- Request-time refusal is unchanged, by owner decision E (owner review, below): a request made while a stop covers it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop. No job is created, the provider is not called, and nothing is deferred. A stop before admission refuses new work; a stop after admission holds the work already admitted.
 - `execution_stopped` stays reserved, and is still used at request time.
 - A call in flight is still never interrupted.
 - After a deferral, attempt numbers repeat. At-most-once is unaffected, because a deferred attempt leaves no durable start behind: a `held` start wrote none, and the `call` path discards its own.
@@ -368,7 +368,7 @@ Each needs `--actor` and a reason or source, and parses amounts as exact decimal
 
 ## Owner review — 2026-09-17
 
-**Accepted**, with four owner decisions. Every other decision above stands as corrected here.
+**Accepted**, with five owner decisions (E confirms where B ends). Every other decision above stands as corrected here.
 
 1. **A. Fail closed without governance configuration.** A model call does not begin unless the runtime resolves an active price version, the mandatory global daily ceiling, the mandatory tenant daily budget, and any configured company limit. Missing configuration is a refusal, never a fallback: no default prices and no unlimited budgets.
    - **Guards:** the gates of `ops.start_agent_run` (§1, §3); the request-time pre-check in `ops.request_agent_run`, which refuses before any job; and the migration's assertion that no migration ships a price or a limit.
@@ -383,6 +383,16 @@ Each needs `--actor` and a reason or source, and parses amounts as exact decimal
    - **Guards:** `ops.enforce_spend_ceiling()` can only trip (§5). The only clear is `ops.clear_execution_stop`, through `npm run execution-stop`, whose tools refuse the `system:` prefix for a human act.
    - **Tests:** SQL E4 and E8 (`runtime_governance.sql`); the driver-backed `spendCeiling.dbtest.ts` and `executionStopOutcome.dbtest.ts`.
 
+5. **E. A stop before admission refuses new work; a stop after admission holds existing work.** Confirmed by the owner on 2026-09-17, as the final decision of the review. A new request that arrives while an applicable execution stop is active keeps today's behaviour:
+   - it is recorded `cancelled` / `refused` / `execution_stopped`, naming the stop;
+   - no job is created;
+   - the provider is not called;
+   - no deferred work is created.
+
+   The distinction is intentional. Decision B covers only work already admitted: a job, and its run, that exists when the stop is found. Nothing is changed in code: this is what the code already does.
+   - **Guards:** `ops.request_agent_run` reads the stops under the shared kill-switch lock and records the refusal before any job is enqueued (§6, ADR 0016 §11).
+   - **Tests:** SQL K1 in `agent_runtime.sql` (every covering scope: recorded, refused, no job); the driver-backed `agentRuns.dbtest.ts` (a request made after a trip, and a request that waited for a trip, are recorded as refused by that stop with no job) and `agentRunRuntime.dbtest.ts` (a request under a global stop creates no job, and the worker stays idle).
+
 ### What the review changed
 
 1. **Decision B for agent runs leased before a trip.** This was the one blocking finding of the review's verification. Before the review, the start cancelled such a run as `execution_stopped`, its job completed on that attempt, and a clear resumed nothing. The start now answers `stopped`, the handler returns `held`, and the runtime defers the job, so the same run starts after the clear (§6).
@@ -394,7 +404,6 @@ The remaining corrections in the body are wording, from the review's adversarial
 
 ### Recorded, not decided
 
-- **Request-time refusal under a stop.** A request made while a stop covers it is still recorded `cancelled` / `refused` / `execution_stopped`, with no job. It is read as outside decision B, which is about stopped jobs. That reading awaits the owner's explicit confirmation.
 - **The generic pre-call race.** On the `call` path, a stop cleared between the check and the deferral spends an attempt, although nothing is called (§6). The agent run path cannot meet it.
 - **An owner session with no idle bound.** A global limit change left open in psql or Studio makes every waiting start fail at its statement timeout, spending attempts (Consequences).
 - **Zero-priced reservations** are admitted at start under a limit that settled spend has exactly reached (§3).
