@@ -369,3 +369,10 @@ Synthetic data is allowed.
 - A new upgrade replay (`npm run test:db:upgrade`) runs in that gate, so a migration that mishandles existing rows is no longer invisible.
 
 Phase 2A's position is unchanged: it waits for this phase's CI result and its own brief.
+
+**Owner review 2026-09-17: the three implementation choices are accepted** (PHASE_1D2_REPORT.md §16):
+- **F. Legacy administrators are never promoted automatically.** The upgrade is a two-step operational procedure: the chain halts at `20260917180300` while no active owner exists, a person runs `public.bootstrap_owner` for the chosen user, the same deploy runs again, and the remaining legacy administrators become recorded operators. A production deployment can intentionally stop there (PERMISSIONS.md §3).
+- **G. The deal-stage repair preserves the business `updated_at`.** A representation repair must not manufacture an interaction timestamp.
+- **H. A backfilled lead profile's `acquired_at` is derived** from the contact's earliest trustworthy evidence, never overwrites an existing profile, stays one per contact and idempotent, and is documented as derived.
+
+**Production-readiness gate (recorded, not part of this phase).** These do not block Phase 1D.2 CI, and they remain blockers or risks to a real production deployment where they apply: the `users` edge function (`patchUser` ordering, half-state administrator paths); `delete_note_attachments`; committed development-secret debt; and the makefile deploy path, which does not use the database gate. BASELINE Q8 is separate and still blocks real patient or clinical data from reaching an LLM provider.

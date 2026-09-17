@@ -7,6 +7,7 @@
 | **Purpose** | Close pre-main safety debt before Phase 2A, and nothing else. Four findings an automated reviewer (Codex) raised on PR #1 were investigated and dispositioned. They sit in historical files outside the Phase 1D.1 diff, but any of them could block a merge or deploy to `main`. |
 | **Out of scope, untouched** | Phase 2A, WhatsApp, lead triage, tools, UI, the agent runtime, CRM redesign, `main`, any deploy, and unrelated backlog. |
 | **CI** | **Not run.** An agent never pushes; the owner pushes and CI verifies. |
+| **Owner review** | 2026-09-17: the three implementation choices are **accepted** as owner decisions F, G and H (§16). |
 | **Classification** | **READY FOR CI** (§15) |
 
 ## 1. Summary
@@ -155,6 +156,8 @@ So an LGPD opt-out cannot be recorded for a legacy contact by any application pa
 - `acquired_at`: `first_seen`, as the trigger uses it. When that is empty, the earliest evidence the row carries (`last_seen` or its first note) is used rather than the upgrade time; `now()` is the last resort, as in the trigger.
 - `last_interaction_at`: the later of `last_seen` and the latest note. The note trigger keeps it at the latest note date, and the legacy note→`last_seen` trigger only exists since `20260127140209` and never advanced an empty `last_seen`.
 - everything else keeps its table default (`operational_status = 'active'`, `do_not_contact = false`).
+
+A backfilled `acquired_at` is therefore a **derived** value, the earliest evidence the row already held, and not a recorded acquisition time; reports that use it for legacy contacts should say so (owner decision H).
 
 It asserts that every contact has a profile and that `contact_id` is still unique. Profiles are keyed to their own contact and scoped through `can_access_contact`, so no ownership boundary can be crossed (`public.*` has no tenant column; the boundary is the `sales` owner).
 
@@ -370,7 +373,7 @@ Local runs of the `claude` project pick up an ignored, stale copy at `.claude/wo
    - SECURITY.md's open items (`users`/`patchUser` ordering, `delete_note_attachments`, committed development secrets);
    - the `users` function half-state paths (§4 residual);
    - the ungated makefile deploy target.
-5. **Owner decisions this phase made within its brief, reversible if the owner disagrees:**
+5. ~~**Owner decisions this phase made within its brief, reversible if the owner disagrees:**~~ *(Accepted by the owner 2026-09-17 as decisions F, G and H, §16.)*
    - B-strict over auto-promotion (§4);
    - preserving `updated_at` in the deal backfill (§3);
    - the evidence-based `acquired_at` fallback (§5).
@@ -389,3 +392,48 @@ BASELINE Q8 still stands: synthetic data only until the owner decides it.
 ## 15. Classification
 
 **READY FOR CI.**
+
+## 16. Owner review (2026-09-17)
+
+The owner accepts the three implementation choices of this phase. Push and Phase 2A both still wait.
+
+### F — Legacy administrator upgrade: ACCEPTED
+
+Historical `administrator = true` rows are **never** promoted to owner automatically: that flag cannot be treated as trustworthy evidence of ownership. The intended production upgrade is a deliberate **two-step operational procedure**:
+
+1. the migration chain reaches the owner guard (`20260917180300`);
+2. if no active owner exists and legacy administrators need resolving, the upgrade **halts**;
+3. an authorised person holding the database credential runs the documented `public.bootstrap_owner` procedure for the chosen user;
+4. the migrations resume, by running the same deploy again;
+5. the remaining legacy administrator rows become operators, and each change is recorded in `public.owner_provisioning_log`.
+
+A production deployment can therefore intentionally stop at this migration and must be resumed after the explicit bootstrap. The runbook says so first: [PERMISSIONS.md §3](PERMISSIONS.md), "Owner bootstrap". Weakening this into automatic promotion is rejected; the upgrade replay keeps that shape as mutation U6, and it must stay killed.
+
+### G — Deal `updated_at`: ACCEPTED
+
+The legacy deal-stage repair preserves each deal's existing business `updated_at`. A migration that repairs a representation must not manufacture a false business-interaction timestamp. `upgrade_assertions.sql` 1b and mutation U2 hold this.
+
+### H — Lead profile `acquired_at`: ACCEPTED
+
+For a missing historical lead profile, `acquired_at` is derived from the earliest trustworthy evidence the contact already holds (`first_seen`, else the earlier of `last_seen` and its first note), not from the migration's execution time; `now()` remains only the last resort. The requirements stand, each with its proof:
+
+| Requirement | Proof |
+| --- | --- |
+| Never overwrite an existing lead profile | `NOT EXISTS` + `ON CONFLICT DO NOTHING`; the replay applies the backfill twice and the values hold |
+| Exactly one profile per applicable contact | `upgrade_assertions.sql` 3a, `crm_data_invariants.sql`, the unique `contact_id` asserted by the migration |
+| Reruns stay idempotent | the replay's second application (step 6/7) |
+| Tenant boundaries stay intact | each profile is keyed to its own contact and scoped through `can_access_contact`; `upgrade_assertions.sql` 3c (the operator sees and changes only their own) |
+| A derived value is documented as derived | §5, [ARCHITECTURE.md](ARCHITECTURE.md) (lead profiles), and the migration header |
+
+### Scope boundary and the production-readiness gate
+
+Phase 1D.2 is **not** expanded to fix unrelated historical backlog. These stay recorded for the production-readiness gate. They do **not** block this phase's CI, but where they apply they **do** block, or are risks to, a future real production deployment:
+
+- the `users` edge function: `patchUser` ordering and the half-state administrator paths (§4 residual; SECURITY.md §4);
+- `delete_note_attachments` (SECURITY.md §4);
+- committed development-secret debt (SECURITY.md §4);
+- the makefile deploy path, which does not use the database gate (§6.5; SI-40 caveat).
+
+BASELINE **Q8** is separate and unchanged: no real patient message body, clinical text, psychotherapy information or health data may reach an LLM provider until the owner decides it.
+
+**Classification after the owner review:** READY FOR CI. Not pushed. Phase 2A not started.
