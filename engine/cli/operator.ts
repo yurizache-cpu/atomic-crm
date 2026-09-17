@@ -1,0 +1,501 @@
+// The owner's operator tool (ADR 0017 §9): what the runtime is doing, and the
+// three narrow governance acts.
+//
+//   npm run ops -- status
+//   npm run ops -- stops [--all]
+//   npm run ops -- routes
+//   npm run ops -- prices [--all]
+//   npm run ops -- limits [--all]
+//   npm run ops -- spend [--tenant <uuid>]
+//   npm run ops -- runs [--tenant <uuid>] [--status <status>] [--limit <n>]
+//   npm run ops -- indeterminate [--tenant <uuid>]
+//   npm run ops -- price record --provider <name> --model <id>
+//                  --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal>
+//                  [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no
+//                  --effective-from <ISO instant> --expires-at <ISO instant>
+//                  --source <text> --actor <label>
+//   npm run ops -- limit set --scope global|tenant|company [--tenant <uuid>]
+//                  [--company <uuid>] --daily-usd <decimal> --timezone <IANA name>
+//                  --reason <text> --actor <label>
+//   npm run ops -- limit retire --id <uuid> --reason <text> --actor <label>
+//
+// READ-ONLY BY DEFAULT. Every read command runs `set transaction read only` as
+// the first statement of its transaction, so it cannot change anything, even
+// through a function with a side effect. The only mutations are the three acts
+// above: explicit, narrow, each naming who and why, none with a force flag.
+// Tripping and clearing stops stay in `npm run execution-stop`.
+//
+// ENVIRONMENT. The one variable read is ADMIN_DATABASE_URL, the owner connection.
+// The tool never reads a provider key or a model routing variable: `routes` shows
+// what the most recently seen workers, stopped ones included, published into
+// their heartbeat detail, so the provider key and the owner connection string
+// never need to share a process.
+//
+// OUTPUT. One JSON object per line on stdout, printed only after the transaction
+// committed: one per row for a list (nothing for an empty one), always one object
+// for `status`, and one for each act. Amounts are exact decimal text. Never a
+// run's result, a prompt, task or agent text, a connection string or a key. Exit
+// codes and the failure line are cliOutput.ts's: 0, 2 on a usage error, 1 when
+// the database or the domain refused.
+
+import type { TxClient, WorkerDatabase } from "../db/types.ts";
+import { createWorkerDatabase } from "../db/workerDatabase.ts";
+import {
+  AGENT_RUN_STATUSES,
+  isAgentRunStatus,
+  type AgentRunStatus,
+} from "../domain/agentRunStateMachine.ts";
+import { listExecutionStops } from "../domain/executionStops.ts";
+import {
+  listModelPrices,
+  recordModelPrice,
+  type ModelPriceAct,
+  type ModelPriceInput,
+} from "../domain/modelPrices.ts";
+import {
+  listRecentRuns,
+  listRunsNeedingAttention,
+  listWorkerRoutes,
+  readRuntimeStatus,
+} from "../domain/runtimeReadModel.ts";
+import {
+  SPEND_LIMIT_SCOPES,
+  isSpendLimitScope,
+  listSpendLimits,
+  readSpendStatus,
+  retireSpendLimit,
+  setSpendLimit,
+  type SpendLimitAct,
+  type SpendLimitTarget,
+  type SpendLimitValue,
+} from "../domain/spendLimits.ts";
+import {
+  EXIT_USAGE,
+  isEntryPoint,
+  missingAdminUrlLine,
+  parseFlags,
+  readAdminDatabaseUrl,
+  runOwnerTransaction,
+  usageLine,
+  type FlagArity,
+} from "./cliOutput.ts";
+
+export {
+  ADMIN_DATABASE_URL,
+  EXIT_OK,
+  EXIT_REFUSED,
+  EXIT_USAGE,
+} from "./cliOutput.ts";
+
+type ReadCommand =
+  | { readonly kind: "status" }
+  | { readonly kind: "stops"; readonly includeCleared: boolean }
+  | { readonly kind: "routes" }
+  | { readonly kind: "prices"; readonly includeHistory: boolean }
+  | { readonly kind: "limits"; readonly includeHistory: boolean }
+  | { readonly kind: "spend"; readonly tenantId?: string }
+  | {
+      readonly kind: "runs";
+      readonly tenantId?: string;
+      readonly status?: AgentRunStatus;
+      readonly limit?: number;
+    }
+  | { readonly kind: "indeterminate"; readonly tenantId?: string };
+
+type ActCommand =
+  | {
+      readonly kind: "price record";
+      readonly input: ModelPriceInput;
+      readonly act: ModelPriceAct;
+    }
+  | {
+      readonly kind: "limit set";
+      readonly target: SpendLimitTarget;
+      readonly value: SpendLimitValue;
+      readonly act: SpendLimitAct;
+    }
+  | {
+      readonly kind: "limit retire";
+      readonly limitId: string;
+      readonly act: SpendLimitAct;
+    };
+
+export type OperatorCommand =
+  | ReadCommand
+  | ActCommand
+  | { readonly kind: "usage_error"; readonly message: string };
+
+type CommandName = (ReadCommand | ActCommand)["kind"];
+
+export const OPERATOR_SYNOPSIS =
+  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label>";
+
+/** The first statement of every read command's transaction. */
+export const READ_ONLY_TRANSACTION = "set transaction read only";
+
+interface CommandGrammar {
+  readonly readOnly: boolean;
+  readonly flags: ReadonlyMap<string, FlagArity>;
+  readonly required: readonly string[];
+}
+
+const grammar = (
+  readOnly: boolean,
+  values: readonly string[],
+  switches: readonly string[] = [],
+  required: readonly string[] = [],
+): CommandGrammar => ({
+  readOnly,
+  flags: new Map<string, FlagArity>([
+    ...values.map((name): [string, FlagArity] => [name, "value"]),
+    ...switches.map((name): [string, FlagArity] => [name, "switch"]),
+  ]),
+  required,
+});
+
+// Every command, whether it only reads, and every flag it takes. A Map, so a
+// name like `constructor` or `__proto__` cannot find an inherited entry.
+const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
+  CommandName,
+  CommandGrammar
+>([
+  ["status", grammar(true, [])],
+  ["stops", grammar(true, [], ["all"])],
+  ["routes", grammar(true, [])],
+  ["prices", grammar(true, [], ["all"])],
+  ["limits", grammar(true, [], ["all"])],
+  ["spend", grammar(true, ["tenant"])],
+  ["runs", grammar(true, ["tenant", "status", "limit"])],
+  ["indeterminate", grammar(true, ["tenant"])],
+  [
+    "price record",
+    grammar(
+      false,
+      [
+        "provider",
+        "model",
+        "input-usd-per-mtok",
+        "output-usd-per-mtok",
+        "cached-input-usd-per-mtok",
+        "reasoning-in-output",
+        "effective-from",
+        "expires-at",
+        "source",
+        "actor",
+      ],
+      [],
+      [
+        "provider",
+        "model",
+        "input-usd-per-mtok",
+        "output-usd-per-mtok",
+        "reasoning-in-output",
+        "effective-from",
+        "expires-at",
+        "source",
+        "actor",
+      ],
+    ),
+  ],
+  [
+    "limit set",
+    grammar(
+      false,
+      [
+        "scope",
+        "tenant",
+        "company",
+        "daily-usd",
+        "timezone",
+        "reason",
+        "actor",
+      ],
+      [],
+      ["scope", "daily-usd", "timezone", "reason", "actor"],
+    ),
+  ],
+  [
+    "limit retire",
+    grammar(false, ["id", "reason", "actor"], [], ["id", "reason", "actor"]),
+  ],
+]);
+
+/** The commands that take a subcommand, and the subcommands each takes. */
+const GROUPS: ReadonlyMap<string, readonly string[]> = new Map([
+  ["price", ["record"]],
+  ["limit", ["set", "retire"]],
+]);
+
+const LIMIT_TEXT = /^[0-9]{1,6}$/;
+
+const usageError = (message: string): OperatorCommand => ({
+  kind: "usage_error",
+  message,
+});
+
+const isCommandName = (value: string): value is CommandName =>
+  COMMANDS.has(value as CommandName);
+
+/** The command name and the tokens after it, or the usage error that names neither. */
+function splitCommand(
+  argv: readonly string[],
+):
+  | { readonly name: CommandName; readonly rest: readonly string[] }
+  | { readonly message: string } {
+  const [first, second, ...others] = argv;
+  if (first === undefined) {
+    return { message: "no command given" };
+  }
+  const subcommands = GROUPS.get(first);
+  if (subcommands !== undefined) {
+    const name = `${first} ${second}`;
+    if (second === undefined || !subcommands.includes(second)) {
+      return {
+        message: `${first} needs a subcommand: ${subcommands.join(" or ")}`,
+      };
+    }
+    return isCommandName(name)
+      ? { name, rest: others }
+      : { message: `unknown command ${JSON.stringify(name)}` };
+  }
+  // A subcommand is always its own argument: one argument "price record" is not
+  // the command `price record`, and is refused rather than guessed.
+  if (first.includes(" ") || !isCommandName(first)) {
+    return {
+      message: `unknown command ${JSON.stringify(first)}; expected ${[...COMMANDS.keys()].join(", ")}`,
+    };
+  }
+  return { name: first, rest: argv.slice(1) };
+}
+
+type Values = ReadonlyMap<string, string>;
+
+function buildRuns(values: Values): OperatorCommand {
+  const status = values.get("status");
+  if (status !== undefined && !isAgentRunStatus(status)) {
+    return usageError(
+      `--status must be one of ${AGENT_RUN_STATUSES.join(", ")}`,
+    );
+  }
+  const limitText = values.get("limit");
+  if (limitText !== undefined && !LIMIT_TEXT.test(limitText)) {
+    return usageError("--limit must be a whole number");
+  }
+  return {
+    kind: "runs",
+    tenantId: values.get("tenant"),
+    status,
+    limit: limitText === undefined ? undefined : Number(limitText),
+  };
+}
+
+function buildPriceRecord(values: Values): OperatorCommand {
+  const reasoning = values.get("reasoning-in-output");
+  if (reasoning !== "yes" && reasoning !== "no") {
+    return usageError("--reasoning-in-output must be yes or no");
+  }
+  return {
+    kind: "price record",
+    input: {
+      provider: values.get("provider") as string,
+      model: values.get("model") as string,
+      inputUsdPerMtok: values.get("input-usd-per-mtok") as string,
+      cachedInputUsdPerMtok: values.get("cached-input-usd-per-mtok"),
+      outputUsdPerMtok: values.get("output-usd-per-mtok") as string,
+      reasoningInOutput: reasoning === "yes",
+      effectiveFrom: values.get("effective-from") as string,
+      expiresAt: values.get("expires-at") as string,
+    },
+    act: {
+      source: values.get("source") as string,
+      actor: values.get("actor") as string,
+    },
+  };
+}
+
+function buildLimitSet(values: Values): OperatorCommand {
+  const scope = values.get("scope");
+  if (!isSpendLimitScope(scope)) {
+    return usageError(
+      `--scope must be one of ${SPEND_LIMIT_SCOPES.join(", ")}`,
+    );
+  }
+  return {
+    kind: "limit set",
+    target: {
+      scope,
+      tenantId: values.get("tenant"),
+      companyId: values.get("company"),
+    },
+    value: {
+      dailyUsd: values.get("daily-usd") as string,
+      timezone: values.get("timezone") as string,
+    },
+    act: actFrom(values),
+  };
+}
+
+const actFrom = (values: Values): SpendLimitAct => ({
+  reason: values.get("reason") as string,
+  actor: values.get("actor") as string,
+});
+
+/**
+ * Parses the arguments after the script name. Pure: it reads nothing but `argv`,
+ * never modifies it, and decides only syntax. Whether a value is valid is the
+ * domain's answer, and whether it exists is the database's.
+ */
+export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
+  const split = splitCommand(argv);
+  if ("message" in split) return usageError(split.message);
+  const { name, rest } = split;
+  const commandGrammar = COMMANDS.get(name) as CommandGrammar;
+  const parsed = parseFlags(rest, {
+    command: name,
+    accepted: commandGrammar.flags,
+    required: commandGrammar.required,
+    takenElsewhere: (flag) =>
+      [...COMMANDS.values()].some((other) => other.flags.has(flag)),
+  });
+  if (!parsed.ok) return usageError(parsed.message);
+  const { values, switches } = parsed.flags;
+
+  switch (name) {
+    case "status":
+    case "routes":
+      return { kind: name };
+    case "stops":
+      return { kind: "stops", includeCleared: switches.has("all") };
+    case "prices":
+    case "limits":
+      return { kind: name, includeHistory: switches.has("all") };
+    case "spend":
+    case "indeterminate":
+      return { kind: name, tenantId: values.get("tenant") };
+    case "runs":
+      return buildRuns(values);
+    case "price record":
+      return buildPriceRecord(values);
+    case "limit set":
+      return buildLimitSet(values);
+    case "limit retire":
+      return {
+        kind: "limit retire",
+        limitId: values.get("id") as string,
+        act: actFrom(values),
+      };
+  }
+}
+
+/** Whether a command only reads, and so runs in a read-only transaction. */
+export const isReadOnlyCommand = (
+  command: ReadCommand | ActCommand,
+): command is ReadCommand => COMMANDS.get(command.kind)?.readOnly === true;
+
+async function runRead(
+  tx: TxClient,
+  command: ReadCommand,
+): Promise<readonly object[]> {
+  switch (command.kind) {
+    case "status":
+      return [await readRuntimeStatus(tx)];
+    case "stops":
+      return listExecutionStops(tx, { includeCleared: command.includeCleared });
+    case "routes":
+      return listWorkerRoutes(tx);
+    case "prices":
+      return listModelPrices(tx, { includeHistory: command.includeHistory });
+    case "limits":
+      return listSpendLimits(tx, { includeHistory: command.includeHistory });
+    case "spend":
+      return readSpendStatus(tx, { tenantId: command.tenantId });
+    case "runs":
+      return listRecentRuns(tx, {
+        tenantId: command.tenantId,
+        status: command.status,
+        limit: command.limit,
+      });
+    case "indeterminate":
+      return listRunsNeedingAttention(tx, { tenantId: command.tenantId });
+  }
+}
+
+async function runAct(
+  tx: TxClient,
+  command: ActCommand,
+): Promise<readonly object[]> {
+  switch (command.kind) {
+    case "price record": {
+      const priceId = await recordModelPrice(tx, command.input, command.act);
+      return [{ result: "recorded", priceId }];
+    }
+    case "limit set": {
+      const limitId = await setSpendLimit(
+        tx,
+        command.target,
+        command.value,
+        command.act,
+      );
+      return [{ result: "set", limitId, scope: command.target.scope }];
+    }
+    case "limit retire": {
+      const retired = await retireSpendLimit(tx, command.limitId, command.act);
+      return [
+        {
+          result: retired ? "retired" : "already_retired",
+          limitId: command.limitId,
+        },
+      ];
+    }
+  }
+}
+
+export interface OperatorCliDependencies {
+  /** Only ADMIN_DATABASE_URL is ever read from it. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly stdout: (line: string) => void;
+  readonly stderr: (line: string) => void;
+  /** Opens the owner connection. Production passes createWorkerDatabase. */
+  readonly openDatabase: (connectionString: string) => WorkerDatabase;
+}
+
+/** Runs one command and resolves to the process exit code. Never rejects on a database failure. */
+export async function runOperatorCli(
+  argv: readonly string[],
+  dependencies: OperatorCliDependencies,
+): Promise<number> {
+  const { stdout, stderr } = dependencies;
+  const command = parseOperatorArgs(argv);
+  if (command.kind === "usage_error") {
+    stderr(usageLine(command.message, OPERATOR_SYNOPSIS));
+    return EXIT_USAGE;
+  }
+
+  const connectionString = readAdminDatabaseUrl(dependencies.env);
+  if (connectionString === undefined) {
+    stderr(missingAdminUrlLine());
+    return EXIT_USAGE;
+  }
+
+  return runOwnerTransaction({
+    connectionString,
+    openDatabase: dependencies.openDatabase,
+    streams: { stdout, stderr },
+    work: async (tx) => {
+      if (!isReadOnlyCommand(command)) return runAct(tx, command);
+      await tx.query(READ_ONLY_TRANSACTION);
+      return runRead(tx, command);
+    },
+  });
+}
+
+if (await isEntryPoint(import.meta.url)) {
+  process.exitCode = await runOperatorCli(process.argv.slice(2), {
+    env: process.env,
+    stdout: (line) => process.stdout.write(`${line}\n`),
+    stderr: (line) => process.stderr.write(`${line}\n`),
+    // One connection: a command is one transaction.
+    openDatabase: (connectionString) =>
+      createWorkerDatabase({ connectionString, max: 1 }),
+  });
+}

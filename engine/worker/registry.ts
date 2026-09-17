@@ -18,6 +18,7 @@ import {
 } from "../handlers/postmarkLedgerRetention.ts";
 import type { ModelRouter } from "../models/router.ts";
 import { createRegistry, type HandlerRegistry } from "./handlerRegistry.ts";
+import { assertRegistryClassified } from "./jobKinds.ts";
 
 export interface HandlerRegistryDependencies {
   readonly modelRouter: ModelRouter;
@@ -26,10 +27,14 @@ export interface HandlerRegistryDependencies {
 export function createHandlerRegistry(
   dependencies: HandlerRegistryDependencies,
 ): HandlerRegistry {
-  return createRegistry([
+  const registry = createRegistry([
     postmarkLedgerRetention,
     createAgentRunExecuteHandler({ modelRouter: dependencies.modelRouter }),
   ]);
+  // Every kind here is external or internal, with the matching shape (ADR 0017
+  // §6): the kill switch holds exactly the external ones.
+  assertRegistryClassified(registry);
+  return registry;
 }
 
 /**

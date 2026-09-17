@@ -129,6 +129,7 @@ const START: AgentRunStart = {
   model: "fake-model-1",
   promptVersion: "task_assessment.v1",
   inputFingerprint: "a".repeat(64),
+  maxOutputTokens: 8000,
 };
 
 const USAGE: AgentRunUsage = {
@@ -200,7 +201,7 @@ describe("the agent run capabilities send fixed SQL with bound parameters, and n
     },
     {
       name: "startAgentRun",
-      sql: "select ops.start_agent_run($1, $2, $3, $4) as status",
+      sql: "select ops.start_agent_run($1, $2, $3, $4, $5) as status",
       invoke: (granted) =>
         granted.startAgentRun({ ...START, ...SMUGGLED } as AgentRunStart),
       params: [
@@ -208,6 +209,7 @@ describe("the agent run capabilities send fixed SQL with bound parameters, and n
         START.model,
         START.promptVersion,
         START.inputFingerprint,
+        START.maxOutputTokens,
       ],
     },
     {

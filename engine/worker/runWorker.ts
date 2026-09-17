@@ -13,13 +13,15 @@
 //     recovered them only inside `ops.lease_job`, which meant recovery was a
 //     side effect of new work arriving. The tick runs whether or not anything
 //     is queued. After reaping, the same tick settles agent runs a dead worker
-//     left "running" — in its OWN transaction, so a failure there can never
-//     undo or block lease recovery.
+//     left "running", then enforces the global daily spend ceiling (ADR 0017
+//     §5) — each in its OWN transaction, so a failure there can never undo or
+//     block lease recovery.
 //
 // Signals are NOT handled here. The caller owns the AbortSignal, so this
 // function stays a plain async function that tests can drive.
 
 import type { WorkerDatabase } from "../db/types.ts";
+import { STOP_ID_PATTERN } from "./externalCall.ts";
 import { describeError } from "./failures.ts";
 import type { HandlerRegistry } from "./handlerRegistry.ts";
 import { silentLogger, type WorkerLogger } from "./log.ts";
@@ -44,6 +46,13 @@ export interface RunWorkerOptions {
   maxIterations?: number;
   now?: () => number;
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
+  /**
+   * The detail of the boot heartbeat, which ops.worker_instances keeps until a
+   * later heartbeat names another. main.ts puts the route summary here, so an
+   * operator can read what this worker routes to without its environment. It
+   * never holds a key or a connection string.
+   */
+  startDetail?: string;
 }
 
 export interface WorkerStats {
@@ -56,6 +65,8 @@ export interface WorkerStats {
   leaseRecoveries: number;
   /** Agent runs left "running" by a worker that died mid-call, settled by the reaper tick. */
   staleRunsSettled: number;
+  /** Leased jobs an execution stop sent back to the queue before their call. */
+  deferred: number;
 }
 
 const DEFAULTS = {
@@ -97,6 +108,7 @@ export async function runWorker(
     maxIterations,
     now = () => Date.now(),
     sleep = defaultSleep,
+    startDetail = "started",
   } = options;
 
   if (!workerId.trim()) {
@@ -112,6 +124,7 @@ export async function runWorker(
     pollFailures: 0,
     leaseRecoveries: 0,
     staleRunsSettled: 0,
+    deferred: 0,
   };
 
   const heartbeat = async (detail?: string) => {
@@ -165,7 +178,39 @@ export async function runWorker(
     }
   };
 
-  await heartbeat("started");
+  // Contained like the stale-run settlement, for the same reason. The ceiling
+  // only ever subtracts capability (it trips a global stop, it never clears
+  // one), and a start already refuses any run the ceiling cannot absorb, so a
+  // tick that fails costs a later trip, not an overspend.
+  const enforceSpendCeiling = async () => {
+    try {
+      const stopId = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ stop_id?: unknown }>(
+          "select ops.enforce_spend_ceiling() as stop_id",
+        );
+        return rows[0]?.stop_id ?? null;
+      });
+      if (stopId === null) return;
+      if (typeof stopId === "string" && STOP_ID_PATTERN.test(stopId)) {
+        log("spend_ceiling.tripped", { workerId, detail: stopId });
+        return;
+      }
+      // Not a value to echo: say only that the answer was not a stop id.
+      log("worker.poll_failed", {
+        workerId,
+        detail:
+          "spend ceiling enforcement failed: ops.enforce_spend_ceiling answered something other than a stop id",
+      });
+    } catch (error) {
+      log("worker.poll_failed", {
+        workerId,
+        detail: `spend ceiling enforcement failed: ${describeError(error)}`,
+      });
+    }
+  };
+
+  await heartbeat(startDetail);
   log("worker.started", { workerId });
 
   let lastHeartbeat = now();
@@ -183,6 +228,7 @@ export async function runWorker(
         if (now() - lastReap >= reapIntervalMs) {
           await reap();
           await settleStaleAgentRuns();
+          await enforceSpendCeiling();
           lastReap = now();
         }
         if (now() - lastHeartbeat >= heartbeatIntervalMs) {
@@ -243,6 +289,12 @@ export async function runWorker(
         case "failed":
           stats.leased += 1;
           stats.failed += 1;
+          break;
+        case "deferred":
+          // Queued again, not ready for a while: the next poll finds other
+          // work or an empty queue, and an empty queue is what sleeps.
+          stats.leased += 1;
+          stats.deferred += 1;
           break;
       }
     }

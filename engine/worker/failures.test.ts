@@ -43,6 +43,12 @@ describe("SQLSTATE mapping", () => {
     expect(classifyError({ code: "57014" })).toBe("transient");
     expect(classifyError({ code: "ECONNREFUSED" })).toBe("transient");
   });
+
+  it("treats spend contention with calls in flight as transient, so the job retries on its backoff", () => {
+    expect(classifyError({ code: "OS429", severity: "ERROR" })).toBe(
+      "transient",
+    );
+  });
 });
 
 describe("the default is unknown, never transient", () => {

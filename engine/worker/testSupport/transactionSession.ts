@@ -223,9 +223,19 @@ export async function whileRowLocked<T>(
  * True when another transaction holds a lock on the row that FOR UPDATE
  * conflicts with (a share lock included), measured without waiting for it.
  */
+export type LockProbeTable =
+  | "ops.jobs"
+  | "ops.agent_runs"
+  | "ops.tasks"
+  | "ops.agents"
+  | "ops.companies"
+  | "ops.departments"
+  | "ops.spend_limits"
+  | "ops.execution_stops";
+
 export async function isRowLocked(
   admin: Pool,
-  table: "ops.jobs" | "ops.agent_runs",
+  table: LockProbeTable,
   id: string,
 ): Promise<boolean> {
   const client = await admin.connect();

@@ -44,6 +44,12 @@ export interface AgentRunStart {
   readonly model: string;
   readonly promptVersion: string;
   readonly inputFingerprint: string;
+  /**
+   * The output-token ceiling the request will carry: the route policy's. The
+   * database reserves spend against its own copy of that policy and refuses a
+   * start whose ceiling disagrees (ADR 0017 §2).
+   */
+  readonly maxOutputTokens: number;
 }
 
 export interface AgentRunUsage {
@@ -90,8 +96,9 @@ export interface Capabilities {
    */
   claimAgentRun(): Promise<AgentRunClaim>;
   /**
-   * Re-checks every gate and the execution stops, then records the run as
-   * running. Only the token `running` means "call the provider".
+   * Re-checks every gate, the execution stops, the price and the spend limits,
+   * then records the run as running. Only the token `running` means "call the
+   * provider". Spend contention raises OS429 and records nothing.
    */
   startAgentRun(start: AgentRunStart): Promise<string>;
   /** Fails a pending run this worker cannot attempt, with a short code. */
@@ -159,12 +166,13 @@ function allCapabilities(tx: TxClient): Capabilities {
 
     async startAgentRun(start) {
       const { rows } = await tx.query<{ status: unknown }>(
-        "select ops.start_agent_run($1, $2, $3, $4) as status",
+        "select ops.start_agent_run($1, $2, $3, $4, $5) as status",
         [
           start.provider,
           start.model,
           start.promptVersion,
           start.inputFingerprint,
+          start.maxOutputTokens,
         ],
       );
       return statusOf(rows, "ops.start_agent_run");

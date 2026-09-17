@@ -24,6 +24,8 @@ import {
   assertWorkerIdentity,
   createWorkerDatabase,
 } from "../db/workerDatabase.ts";
+import { formatWorkerDetail, summarizeRoutes } from "../models/routeSummary.ts";
+import type { ModelRouter } from "../models/router.ts";
 import { createModelRouterFromEnv } from "../models/routingConfig.ts";
 import { createLogger } from "./log.ts";
 import { createHandlerRegistry } from "./registry.ts";
@@ -90,6 +92,18 @@ export function resolveWorkerId(
   return `${name}:${uniqueSuffix}`;
 }
 
+/**
+ * The boot heartbeat's detail: this worker's resolved routes (provider, model
+ * and policy per tier), so the operator CLI can report them from the database
+ * without reading any routing or provider variable itself (ADR 0017 §9).
+ * It carries no key: the summary has no field that could hold one.
+ */
+export function workerStartDetail(
+  router: Pick<ModelRouter, "resolve">,
+): string {
+  return formatWorkerDetail("started", summarizeRoutes(router));
+}
+
 export async function main(): Promise<void> {
   const connectionString = process.env.OPS_WORKER_DATABASE_URL;
   if (!connectionString) {
@@ -113,6 +127,7 @@ export async function main(): Promise<void> {
   const leaseSeconds = readInt("OPS_WORKER_LEASE_SECONDS", 60);
   const modelRouter = createModelRouterFromEnv(process.env);
   assertLeaseFitsModelRoutes(leaseSeconds, modelRouter.maxConfiguredTimeoutMs);
+  const startDetail = workerStartDetail(modelRouter);
 
   const log = createLogger();
   const db = createWorkerDatabase({
@@ -148,6 +163,7 @@ export async function main(): Promise<void> {
       reapIntervalMs: readInt("OPS_WORKER_REAP_INTERVAL_MS", 30_000),
       leaseSeconds,
       log,
+      startDetail,
     });
   } finally {
     await db.close();

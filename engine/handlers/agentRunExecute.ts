@@ -1,13 +1,15 @@
 // The agent run handler: ONE model call for ONE run, never two.
 //
-// It is an external_call handler (engine/worker/runOneJob.ts), and each phase
+// It is an external_call handler (engine/worker/externalCall.ts), and each phase
 // has exactly one job:
 //
 //   prepare  (TX2a, committed) claim the run the LEASE is bound to, refuse what
 //            cannot be attempted, and record `running` BEFORE any call leaves
-//            the process. Only the database's token `running` means "call";
-//            every other token means the run is already settled, and nothing
-//            is called.
+//            the process. Only the database's token `running` means "call".
+//            `stopped` means an execution stop holds the run: nothing was
+//            written, and the runtime defers the job (owner decision B). Every
+//            other token means the run is already settled, and nothing is
+//            called.
 //   call     (no transaction) exactly one router invocation. No retry, no loop,
 //            no second call on any error.
 //   settle   (TX2b) record the result or the failure for THIS attempt. A run the
@@ -233,7 +235,7 @@ const isAbortReason = (reason: unknown): boolean =>
 /**
  * Did the LEASE deadline end this call, rather than shutdown?
  *
- * runOneJob aborts the call's signal with `AbortSignal.any([shutdown,
+ * The external_call runtime aborts the call's signal with `AbortSignal.any([shutdown,
  * AbortSignal.timeout(deadline - now)])`, so an aborted signal's reason names
  * whichever came first: a TimeoutError is the deadline, anything else (an
  * AbortError from shutdown) is not. A signal not yet aborted past the deadline
@@ -384,17 +386,30 @@ export function createAgentRunExecuteHandler(
         model: route.model,
         promptVersion: prompt.promptVersion,
         inputFingerprint,
+        // The ceiling buildModelRequest put in the request above. The database
+        // reserves spend against it and refuses one that is not the route's.
+        maxOutputTokens: route.policy.maxOutputTokens,
       });
-      // Only `running` means "call". `cancelled` (a gate or a stop),
-      // `already_running`, `indeterminate`, a finished status, or a token
-      // nobody defined all mean the same thing here: never call.
+      // A start that raises (budget contention is OS429) records nothing: it
+      // rolls the prepare transaction back, the job retries on its backoff and
+      // the run stays pending, so nothing is called.
+      //
+      // Only `running` means "call". `stopped` is held: the start wrote
+      // nothing and still holds the kill-switch lock, so the runtime defers the
+      // job in this transaction and the run stays pending until the stop is
+      // cleared. `cancelled` (a gate), `already_running`, `indeterminate`,
+      // a finished status, or a token nobody defined all mean the same thing
+      // here: never call.
+      if (status === "stopped") {
+        return { kind: "held" };
+      }
       if (status !== "running") {
         return {
           kind: "settled",
           detail: describeRun(claim.agent_run_id, status),
         };
       }
-      // The start can wait on the task, organisation and kill-switch locks. A
+      // The start can wait on the task, organisation, kill-switch and spend locks. A
       // lease that ran short meanwhile starts nothing: throwing rolls the prepare
       // transaction back, so `running` is never committed and no call follows.
       if (budget.remainingMs() < MIN_CALL_BUDGET_MS) {

@@ -76,6 +76,7 @@ const TRANSIENT_SQLSTATES = new Set([
   "57P01", // admin_shutdown
   "57P02", // crash_shutdown
   "57P03", // cannot_connect_now
+  "OS429", // ops.start_agent_run: the spend limits cannot absorb a run beside calls in flight (ADR 0017 §3)
 ]);
 
 const TRANSIENT_SYSCALL_CODES = new Set([

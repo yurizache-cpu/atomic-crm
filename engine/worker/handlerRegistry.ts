@@ -82,6 +82,13 @@ export interface PrepareBudget {
 export type PrepareOutcome<TState> =
   /** Nothing to call. `detail` completes the job in the prepare transaction. */
   | { readonly kind: "settled"; readonly detail: string }
+  /**
+   * A gate inside prepare found an execution stop covering the job, still holds
+   * the kill-switch lock, and recorded nothing. The runtime defers the job in the
+   * same transaction (owner decision B, ADR 0017 §6): nothing is called, the
+   * attempt is given back, and the job waits until the stop is cleared.
+   */
+  | { readonly kind: "held" }
   /** Commit the prepare transaction, then make the call with `state`. */
   | { readonly kind: "call"; readonly state: TState };
 
