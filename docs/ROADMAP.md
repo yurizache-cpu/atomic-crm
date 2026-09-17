@@ -61,7 +61,7 @@ Audit and documentation. No functional change. Deliverables: `BASELINE_REPORT.md
 **Goal.** A deployed instance that a real person can log into, with the critical holes closed, before any real data exists.
 
 **Scope.**
-- **Owner bootstrap.** Today no code path can create the first owner (`is_admin()` requires `role='owner'`; the trigger hardcodes `operator`; signup is off; `authenticated` has no INSERT on `sales`; the bootstrap UI was deleted). Build a deliberate, auditable provisioning procedure and document it.
+- **Owner bootstrap.** Today no code path can create the first owner (`is_admin()` requires `role='owner'`; the trigger hardcodes `operator`; signup is off; `authenticated` has no INSERT on `sales`; the bootstrap UI was deleted). Build a deliberate, auditable provisioning procedure and document it. *(2026-09-17, Phase 1D.2: built. `public.bootstrap_owner` is a person's act with the database credential, recorded in `public.owner_provisioning_log`; an upgrade with legacy administrators halts until a person runs it. Runbook: PERMISSIONS.md §3, "Owner bootstrap"; SI-41. The `users`/`patchUser` item below is still open.)*
 - Fix `delete_note_attachments` (any authenticated user can delete any file via the service role).
 - Fix the `users`/`patchUser` ordering bug (auth email and ban state mutate before the owner check).
 - Decide and act on the MCP function (Q6) — at minimum add audience validation, stop trusting `x-forwarded-host`, close the nested-CTE bypass in `validateSql`, stop logging raw SQL containing personal data, and stop connecting as superuser. *(Done 2026-09-13: the function is removed and kept out of the committed deploy paths; ADR 0011 addendum, SI-03.)*
@@ -359,3 +359,13 @@ Phase 2A may be built and tested with synthetic data before then. See DECISIONS.
 - health data.
 
 Synthetic data is allowed.
+
+### Phase 1D.2 — pre-main safety closure (2026-09-17)
+
+**Built on `feature/pre-main-safety` (from `feature/clinical-phase-1` at `c0c07c37`), not pushed.** A debt-closure phase that exists only to settle four automated-review (Codex) findings on PR #1 before anything reaches `main`. It adds no product functionality and does not start Phase 2A. See [PHASE_1D2_REPORT.md](PHASE_1D2_REPORT.md).
+
+- Three findings in `20260911232039_pending_delta.sql` were reproduced on legacy data and fixed by forward migrations: legacy deals keep their stage; legacy contacts get their lead profile, so an opt-out can be recorded; legacy administrators are neither silently dropped nor promoted on trust, and the owner bootstrap above closes the fresh-deployment deadlock.
+- The fourth finding was confirmed from source and fixed: `deploy.yml` now runs the same live-database gate as `check.yml`, from one reusable workflow, in the same run and on the same commit, before any hosted Supabase push.
+- A new upgrade replay (`npm run test:db:upgrade`) runs in that gate, so a migration that mishandles existing rows is no longer invisible.
+
+Phase 2A's position is unchanged: it waits for this phase's CI result and its own brief.
