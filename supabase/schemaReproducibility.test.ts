@@ -136,6 +136,12 @@ describe("declarative schema vs migrations", () => {
       "agent_runtime",
       "agent_run_ambiguous_provider_failures",
       "runtime_governance",
+      // Phase 1D.2: each backfill and the owner path raise if their end state
+      // is wrong, so a no-op on an upgraded database cannot pass silently.
+      "backfill_legacy_deal_pipeline_stage",
+      "backfill_legacy_lead_profiles",
+      "owner_bootstrap",
+      "legacy_administrators_upgrade_guard",
     ]) {
       const file = migrationFiles.find((f) => f.includes(name));
       expect(file, `missing migration: ${name}`).toBeDefined();

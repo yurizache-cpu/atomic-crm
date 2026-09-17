@@ -28,6 +28,7 @@
     "prepare": "husky",
     "update-changelog": "gh api 'repos/{owner}/{repo}/releases' --paginate -q '.[] | \"## \\(.tag_name) - \\(.published_at[:10])\\n\\n\\(.body)\\n\"' > CHANGELOG.md",
     "test:db": "node ./scripts/run-db-tests.mjs",
+    "test:db:upgrade": "node ./scripts/run-db-upgrade-test.mjs",
     "check:local-exposure": "node ./scripts/local-exposure.mjs",
     "check:production-scope": "node ./scripts/production-scope.mjs",
     "worker": "node engine/worker/main.ts",

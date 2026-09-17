@@ -19,6 +19,8 @@ alter table public.lead_profiles enable row level security;
 alter table public.acquisition_attributions enable row level security;
 alter table public.loss_reasons enable row level security;
 alter table public.inbound_emails enable row level security;
+-- Deliberately no policy: no application role reads or writes it (06_grants.sql).
+alter table public.owner_provisioning_log enable row level security;
 
 -- Companies
 create policy "company_select_scoped" on public.companies for select to authenticated using (

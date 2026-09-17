@@ -278,6 +278,71 @@ begin
 end;
 $$;
 
+CREATE OR REPLACE FUNCTION "public"."bootstrap_owner"("p_user_id" "uuid", "p_actor" "text", "p_reason" "text") RETURNS bigint
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+declare
+  v_sales_id bigint;
+  v_disabled boolean;
+begin
+  if current_setting('transaction_isolation') <> 'read committed' then
+    raise exception 'bootstrap_owner must run at READ COMMITTED, not %',
+      current_setting('transaction_isolation');
+  end if;
+  if p_user_id is null
+     or coalesce(btrim(p_actor), '') = ''
+     or coalesce(btrim(p_reason), '') = '' then
+    raise exception 'bootstrap_owner needs an auth user id, an actor and a reason';
+  end if;
+
+  -- Serialises two bootstraps, and any concurrent write to sales, so the check
+  -- below reads the state this update commits into. Held until commit.
+  lock table public.sales in share row exclusive mode;
+
+  if exists (
+    select 1
+      from public.sales s
+     where s.role = 'owner'
+       and s.administrator
+       and not s.disabled
+  ) then
+    raise exception 'an active owner already exists; further owners are promoted by an owner in the application';
+  end if;
+
+  select s.id, s.disabled
+    into v_sales_id, v_disabled
+    from public.sales s
+   where s.user_id = p_user_id;
+  if v_sales_id is null then
+    raise exception 'no CRM user belongs to auth user %', p_user_id;
+  end if;
+  if v_disabled then
+    raise exception 'CRM user % is disabled', v_sales_id;
+  end if;
+  if not exists (
+    select 1
+      from auth.users u
+     where u.id = p_user_id
+       and u.email_confirmed_at is not null
+       and u.deleted_at is null
+       and (u.banned_until is null or u.banned_until <= now())
+  ) then
+    raise exception 'auth user % is unconfirmed, banned or deleted', p_user_id;
+  end if;
+
+  update public.sales
+     set role = 'owner',
+         administrator = true
+   where id = v_sales_id;
+
+  insert into public.owner_provisioning_log (sales_id, user_id, action, actor, reason)
+  values (v_sales_id, p_user_id, 'bootstrap_owner', btrim(p_actor), btrim(p_reason));
+
+  return v_sales_id;
+end;
+$$;
+
 CREATE OR REPLACE FUNCTION "public"."merge_contacts"("loser_id" bigint, "winner_id" bigint) RETURNS bigint
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
