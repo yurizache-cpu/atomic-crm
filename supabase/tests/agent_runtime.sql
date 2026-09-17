@@ -25,6 +25,22 @@
 --
 --   * Section N pins, case by case, every change the adversarial review (v2) made.
 --
+-- PHASE 1D.1 (20260917120000_runtime_governance.sql) changed what a start needs, and
+-- this suite follows it without weakening any case above:
+--   * A run reaches `running` only with a current price for its provider and model,
+--     a global ceiling and its tenant's budget. The fixtures record one synthetic
+--     price and limits too large ever to refuse, inside this rolled-back
+--     transaction; every raw owner UPDATE to running names that price and a
+--     reservation, because the update guard requires both.
+--   * ops.start_agent_run takes the worker's output ceiling as a fifth argument
+--     (8000 for the standard route task_assessment uses).
+--   * ops.lease_job takes the kill-switch lock shared and holds a queued external job
+--     a stop covers. So the lock-mode cases (N7) run before anything leases, and
+--     build their lease without ops.lease_job; every case that proves a start-time
+--     refusal leases first and trips after. The hold itself, prices, cost, limits,
+--     admission, the ceiling sweep and idempotent creates are attacked in
+--     supabase/tests/runtime_governance.sql.
+--
 -- ONE TRANSACTION, ROLLED BACK, as in company_domain_core.sql. A lease taken here
 -- expires at now() + 60 s, and now() is this transaction's start. ops.current_tenant_id()
 -- judges that against now(), but the run capabilities and the sweep judge it on the
@@ -138,7 +154,7 @@ as $f$
   select * from (values
     ('claim_agent_run', 'select ops.claim_agent_run()'),
     ('refuse_agent_run', 'select ops.refuse_agent_run(''no_route'')'),
-    ('start_agent_run', 'select ops.start_agent_run(''fake'', ''fake-model-1'', ''task_assessment.v1'', repeat(''f'', 64))'),
+    ('start_agent_run', 'select ops.start_agent_run(''fake'', ''fake-model-1'', ''task_assessment.v1'', repeat(''f'', 64), 8000)'),
     ('complete_agent_run', 'select ops.complete_agent_run(''{"outcome": "completed", "summary": "ok", "proposed_next_steps": []}''::jsonb, ''fake-model-1'', ''completed'', null, null, 1, 1, 2, 0, 0, 5)'),
     ('fail_agent_run', 'select ops.fail_agent_run(''timeout'', ''deadline'', null, null, null, null, null, null, null, null, 5)')
   ) as c (capability, statement)
@@ -210,6 +226,26 @@ begin
   if v_job.id is distinct from p_job then
     raise exception '%: the lease went to %, not the fixture job %; this case would prove nothing', p_label, v_job.id, p_job;
   end if;
+end
+$f$;
+
+-- A lease installed by hand, as the owner: the row ops.lease_job would write, and
+-- the context it would install, without the kill-switch lock it takes. Only N7 uses
+-- it, to see which lock a LATER call takes. Returns as the owner.
+create function pg_temp.raw_lease(p_worker text, p_job uuid)
+returns void
+language plpgsql
+as $f$
+begin
+  update ops.jobs
+     set status = 'leased', lease_owner = p_worker, leased_at = now(),
+         lease_expires_at = now() + interval '60 seconds', attempts = attempts + 1, updated_at = now()
+   where id = p_job and status = 'queued';
+  if not found then
+    raise exception 'fixture: job % is not queued, so it cannot be leased by hand', p_job;
+  end if;
+  perform set_config('app.worker_id', p_worker, true);
+  perform set_config('app.job_id', p_job::text, true);
 end
 $f$;
 
@@ -323,7 +359,7 @@ declare
 begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   if v_state = 'running' then
     v_state := ops.complete_agent_run(pg_temp.valid_result(), 'fake-model-1', 'completed',
                                       'fake-req-1', 'fake-resp-1', 120, 60, 180, 0, 0, 42);
@@ -386,12 +422,15 @@ begin
 end
 $f$;
 
+-- A start records the price version of its own provider and model and a reservation
+-- (Phase 1D.1): the update guard refuses a raw start without them.
 create function pg_temp.running_facts()
 returns text
 language sql
 as $f$
   select 'status = ''running'', provider = ''fake'', model = ''fake-model-1'', '
-      || 'prompt_version = ''task_assessment.v1'', input_fingerprint = repeat(''c'', 64), job_attempt = 1'
+      || 'prompt_version = ''task_assessment.v1'', input_fingerprint = repeat(''c'', 64), job_attempt = 1, '
+      || format('price_id = %L, reserved_cost_micros = 1000', pg_temp.id('price_fake'))
 $f$;
 
 create function pg_temp.run_status(p_run uuid)
@@ -613,6 +652,23 @@ begin
 end
 $$;
 
+-- Runtime governance (Phase 1D.1). A run starts only with a current price for its
+-- provider and model, a global ceiling and its tenant's budget. One synthetic price
+-- for the fake route, and limits no case here can exhaust, all rolled back with the
+-- rest. Refusals by price and budget are runtime_governance.sql's subject.
+do $$
+begin
+  perform pg_temp.remember('price_fake', ops.record_model_price(
+    'fake', 'fake-model-1', 1.25, 2.5, true, now() - interval '1 minute', now() + interval '1 day',
+    'sql suite synthetic price', 'ar1d-owner', 0.125));
+  perform ops.set_spend_limit('global', 1000000000000, 'UTC', 'ar1d-test: sql suite ceiling', 'ar1d-owner');
+  perform ops.set_spend_limit('tenant', 1000000000000, 'UTC', 'ar1d-test: sql suite budget', 'ar1d-owner',
+                              pg_temp.id('tenant_a'));
+  perform ops.set_spend_limit('tenant', 1000000000000, 'UTC', 'ar1d-test: sql suite budget', 'ar1d-owner',
+                              pg_temp.id('tenant_b'));
+end
+$$;
+
 -- ===========================================================================
 -- A. THE SURFACE.
 -- ===========================================================================
@@ -623,13 +679,13 @@ declare
   c_capabilities constant regprocedure[] := array[
     'ops.claim_agent_run()',
     'ops.refuse_agent_run(text)',
-    'ops.start_agent_run(text, text, text, text)',
+    'ops.start_agent_run(text, text, text, text, integer)',
     'ops.complete_agent_run(jsonb, text, text, text, text, integer, integer, integer, integer, integer, integer)',
     'ops.fail_agent_run(text, text, text, text, text, integer, integer, integer, integer, integer, integer)',
     'ops.settle_stale_agent_runs()']::regprocedure[];
   c_owner_services constant regprocedure[] := array[
     'ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid)',
-    'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid)',
+    'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)',
     'ops.clear_execution_stop(uuid, text, text)',
     'ops.active_execution_stop(uuid, uuid, uuid, uuid)',
     'ops.request_task_execution(uuid, uuid, text, text, jsonb, text, uuid, uuid)']::regprocedure[];
@@ -710,6 +766,17 @@ begin
        where n.nspname = 'ops' and p.proname = 'request_agent_run') <> 1 then
     raise exception 'A4: ops.request_agent_run has an overload this suite does not attack';
   end if;
+  -- Phase 1D.1 changed the start's and the trip's signatures by dropping the old one
+  -- first; a surviving old overload would be a door this suite never attacks.
+  select string_agg(format('%s x%s', f.name, f.n), ', ') into v_bad
+    from (select c.name, (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                           where n.nspname = 'ops' and p.proname = c.name) as n
+            from unnest(array['start_agent_run', 'trip_execution_stop', 'clear_execution_stop',
+                              'active_execution_stop', 'request_task_execution']) as c (name)) f
+   where f.n <> 1;
+  if v_bad is not null then
+    raise exception 'A4: an agent runtime function has an overload this suite does not attack: %', v_bad;
+  end if;
 
   -- A5. Exactly one task-executable kind.
   if ops.task_executable_kinds() is distinct from array['agent_run.execute']::text[] then
@@ -751,17 +818,157 @@ begin
   -- A9. The helpers the review added are reached only through the code that calls
   --     them, and the lease helper confers nothing: SECURITY INVOKER, it runs with the
   --     rights of the capability that calls it.
+  --     Phase 1D.1 routes the start and the switch through more helpers, on the same
+  --     terms; ops.leased_job() is the new lease helper, and confers nothing either.
   select string_agg(format('%s:%s', r.rolname, f), ', ') into v_bad
     from unnest(array['ops.agent_run_lease_attempt()', 'ops.execution_stop_lock_key()',
                       'ops.agent_run_reserved_error_codes()', 'ops.guard_execution_stop_delete()',
-                      'ops.refuse_execution_stop_truncate()']::regprocedure[]) as f
+                      'ops.refuse_execution_stop_truncate()',
+                      'ops.leased_job()', 'ops.external_job_kinds()', 'ops.internal_job_kinds()',
+                      'ops.require_read_committed(text)', 'ops.agent_run_route_policies()',
+                      'ops.agent_run_input_token_ceiling(jsonb)',
+                      'ops.execution_stop_covers(text, uuid, uuid, uuid, uuid, text, uuid, text, uuid, uuid, uuid)',
+                      'ops.covering_execution_stop(uuid, text, uuid, uuid, uuid)',
+                      'ops.job_covering_stop(uuid, uuid, text)',
+                      'ops.current_model_price(text, text, timestamptz)',
+                      'ops.agent_run_reservation_micros(uuid, integer, integer)',
+                      'ops.agent_run_estimated_cost_micros(uuid, integer, integer, integer, integer, integer)',
+                      'ops.spend_lock_namespace()', 'ops.spend_lock_key(text, uuid, uuid)',
+                      'ops.spend_window_start(text, timestamptz)',
+                      'ops.spend_window_total(text, uuid, uuid, timestamptz)',
+                      'ops.spend_admission(uuid, uuid, bigint, boolean)',
+                      'ops.guard_execution_stop_update()', 'ops.guard_agent_run_update()',
+                      'ops.guard_agent_run_insert()']::regprocedure[]) as f
    cross join unnest(c_roles) as r (rolname)
    where has_function_privilege(r.rolname, f, 'EXECUTE');
   if v_bad is not null then
     raise exception 'A9: a Phase 1D helper is executable by an application role: %', v_bad;
   end if;
-  if (select p.prosecdef from pg_proc p where p.oid = 'ops.agent_run_lease_attempt()'::regprocedure) then
-    raise exception 'A9: ops.agent_run_lease_attempt() is SECURITY DEFINER';
+  select string_agg(p.oid::regprocedure::text, ', ') into v_bad
+    from pg_proc p
+   where p.oid in ('ops.agent_run_lease_attempt()'::regprocedure, 'ops.leased_job()'::regprocedure)
+     and p.prosecdef;
+  if v_bad is not null then
+    raise exception 'A9: a lease helper is SECURITY DEFINER: %', v_bad;
+  end if;
+end
+$$;
+
+-- ===========================================================================
+-- N7 (first part). WHO TAKES THE KILL-SWITCH LOCK, AND IN WHICH MODE.
+--    Runs here, before section B, not with the rest of section N: a transaction-level
+--    advisory lock is held until the transaction ends, so once section B's lease
+--    (ops.lease_job takes it shared since Phase 1D.1) or section C's first request
+--    takes it, no later block could see it being taken. For the same reason N7b builds
+--    its lease with a raw owner UPDATE instead of ops.lease_job; that the lease takes
+--    the lock is proven in runtime_governance.sql, section K. Each case runs in a
+--    subtransaction that is rolled back, which releases what that case took. What one
+--    connection cannot prove is what the lock BUYS: a trip waiting for a start in
+--    flight, and a start or request waiting for a trip. That belongs to the
+--    driver-backed suite.
+-- ===========================================================================
+do $$
+declare
+  ta constant uuid := pg_temp.id('tenant_a');
+  v_run   uuid;
+  v_job   uuid;
+  v_stop  uuid;
+  v_state text;
+  v_modes text[];
+begin
+  -- N7a. Every party locks one fixed, immutable key.
+  if ops.execution_stop_lock_key() is distinct from -1743835370934658107::bigint
+     or ops.execution_stop_lock_key() is distinct from hashtextextended('ops.execution_stops', 0)
+     or (select p.provolatile from pg_proc p where p.oid = 'ops.execution_stop_lock_key()'::regprocedure) <> 'i' then
+    raise exception 'N7a: ops.execution_stop_lock_key() is not the one fixed, immutable key (%)', ops.execution_stop_lock_key();
+  end if;
+
+  if pg_temp.stop_lock_modes() <> '{}'::text[] then
+    raise exception 'N7: the kill-switch lock is held before any case took it; the cases below would prove nothing';
+  end if;
+
+  -- N7b. ops.start_agent_run takes it SHARED. The run is linked by the bridge directly,
+  --      and its lease installed by hand, so no request or lease took the lock first.
+  begin
+    v_run := pg_temp.raw_pending_run('task_c');
+    v_job := ops.request_task_execution(ta, pg_temp.id('task_c'), 'agent_run.execute', 'ar1d-bridge',
+                                        jsonb_build_object('agent_run_id', v_run));
+    perform pg_temp.raw_lease('ar1d-worker-lock', v_job);
+    perform pg_temp.as_worker();
+    if ops.current_tenant_id() is distinct from ta then
+      raise exception 'N7b: the hand-built lease did not install tenant A; this case would prove nothing';
+    end if;
+    perform ops.claim_agent_run();
+    perform pg_temp.as_owner();
+    v_modes := pg_temp.stop_lock_modes();
+    if v_modes <> '{}'::text[] then
+      raise exception 'N7b: the bridge, the hand-built lease or the claim already took the kill-switch lock (%); this case would prove nothing', v_modes;
+    end if;
+    perform pg_temp.as_worker();
+    v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
+    perform pg_temp.as_owner();
+    v_modes := pg_temp.stop_lock_modes();
+    if v_state is distinct from 'running' then
+      raise exception 'N7b: the fixture start returned %; this case would prove nothing', v_state;
+    end if;
+    if v_modes is distinct from array['ShareLock'] then
+      raise exception 'N7b: ops.start_agent_run does not hold the kill-switch lock shared once it has read the stops (held: %); that it takes it BEFORE the read needs two sessions: engine/domain/agentRuns.dbtest.ts', v_modes;
+    end if;
+    raise exception using errcode = 'C1CAC', message = 'rolled back';
+  exception when sqlstate 'C1CAC' then null;
+  end;
+  if pg_temp.stop_lock_modes() <> '{}'::text[] then
+    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
+  end if;
+
+  -- N7c. ops.request_agent_run takes it SHARED.
+  begin
+    perform pg_temp.request('ar1d-n7-request', 'tenant_a', 'task_c', 'agent_a1');
+    v_modes := pg_temp.stop_lock_modes();
+    if v_modes is distinct from array['ShareLock'] then
+      raise exception 'N7c: ops.request_agent_run does not hold the kill-switch lock shared once it has read the stops (held: %); that it takes it BEFORE the read needs two sessions: engine/domain/agentRuns.dbtest.ts', v_modes;
+    end if;
+    raise exception using errcode = 'C1CAC', message = 'rolled back';
+  exception when sqlstate 'C1CAC' then null;
+  end;
+  if pg_temp.stop_lock_modes() <> '{}'::text[] then
+    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
+  end if;
+
+  -- N7d. ops.trip_execution_stop takes it EXCLUSIVELY.
+  begin
+    perform ops.trip_execution_stop('global', 'ar1d-test: lock witness', 'ar1d-owner');
+    v_modes := pg_temp.stop_lock_modes();
+    if v_modes is distinct from array['ExclusiveLock'] then
+      raise exception 'N7d: ops.trip_execution_stop did not take the kill-switch lock exclusively (held: %)', v_modes;
+    end if;
+    raise exception using errcode = 'C1CAC', message = 'rolled back';
+  exception when sqlstate 'C1CAC' then null;
+  end;
+  if pg_temp.stop_lock_modes() <> '{}'::text[] then
+    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
+  end if;
+
+  -- N7e. ops.clear_execution_stop takes it EXCLUSIVELY. The stop is inserted raw, so no
+  --      trip took the lock first.
+  begin
+    insert into ops.execution_stops (scope, reason, tripped_by)
+    values ('global', 'ar1d-test: lock witness', 'ar1d-owner')
+    returning id into v_stop;
+    v_modes := pg_temp.stop_lock_modes();
+    if v_modes <> '{}'::text[] then
+      raise exception 'N7e: inserting a stop took the kill-switch lock (%); this case would prove nothing', v_modes;
+    end if;
+    perform ops.clear_execution_stop(v_stop, 'ar1d-test: lock witness cleared', 'ar1d-owner');
+    v_modes := pg_temp.stop_lock_modes();
+    if v_modes is distinct from array['ExclusiveLock'] then
+      raise exception 'N7e: ops.clear_execution_stop did not take the kill-switch lock exclusively (held: %)', v_modes;
+    end if;
+    raise exception using errcode = 'C1CAC', message = 'rolled back';
+  exception when sqlstate 'C1CAC' then null;
+  end;
+  if pg_temp.stop_lock_modes() <> '{}'::text[] then
+    raise exception 'N7: a rolled-back case left the kill-switch lock held after the last case';
   end if;
 end
 $$;
@@ -837,118 +1044,6 @@ begin
     raise exception 'B: could not settle the fixture job';
   end if;
   perform pg_temp.as_owner();
-end
-$$;
-
--- ===========================================================================
--- N7 (first part). WHO TAKES THE KILL-SWITCH LOCK, AND IN WHICH MODE.
---    Runs here, not with the rest of section N: a transaction-level advisory lock is
---    held until the transaction ends, so once section C's first request takes it no
---    later block could see it being taken. Each case runs in a subtransaction that is
---    rolled back, which releases what that case took. What one connection cannot
---    prove is what the lock BUYS: a trip waiting for a start in flight, and a start
---    or request waiting for a trip. That belongs to the driver-backed suite.
--- ===========================================================================
-do $$
-declare
-  ta constant uuid := pg_temp.id('tenant_a');
-  v_run   uuid;
-  v_job   uuid;
-  v_stop  uuid;
-  v_state text;
-  v_modes text[];
-begin
-  -- N7a. Every party locks one fixed, immutable key.
-  if ops.execution_stop_lock_key() is distinct from -1743835370934658107::bigint
-     or ops.execution_stop_lock_key() is distinct from hashtextextended('ops.execution_stops', 0)
-     or (select p.provolatile from pg_proc p where p.oid = 'ops.execution_stop_lock_key()'::regprocedure) <> 'i' then
-    raise exception 'N7a: ops.execution_stop_lock_key() is not the one fixed, immutable key (%)', ops.execution_stop_lock_key();
-  end if;
-
-  if pg_temp.stop_lock_modes() <> '{}'::text[] then
-    raise exception 'N7: the kill-switch lock is held before any case took it; the cases below would prove nothing';
-  end if;
-
-  -- N7b. ops.start_agent_run takes it SHARED. The run is linked by the bridge directly,
-  --      so no request took the lock first.
-  begin
-    v_run := pg_temp.raw_pending_run('task_c');
-    v_job := ops.request_task_execution(ta, pg_temp.id('task_c'), 'agent_run.execute', 'ar1d-bridge',
-                                        jsonb_build_object('agent_run_id', v_run));
-    perform pg_temp.lease('N7b', 'ar1d-worker-lock', v_job);
-    perform pg_temp.as_worker();
-    perform ops.claim_agent_run();
-    perform pg_temp.as_owner();
-    v_modes := pg_temp.stop_lock_modes();
-    if v_modes <> '{}'::text[] then
-      raise exception 'N7b: the bridge, lease or claim already took the kill-switch lock (%); this case would prove nothing', v_modes;
-    end if;
-    perform pg_temp.as_worker();
-    v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
-    perform pg_temp.as_owner();
-    v_modes := pg_temp.stop_lock_modes();
-    if v_state is distinct from 'running' then
-      raise exception 'N7b: the fixture start returned %; this case would prove nothing', v_state;
-    end if;
-    if v_modes is distinct from array['ShareLock'] then
-      raise exception 'N7b: ops.start_agent_run does not hold the kill-switch lock shared once it has read the stops (held: %); that it takes it BEFORE the read needs two sessions: engine/domain/agentRuns.dbtest.ts', v_modes;
-    end if;
-    raise exception using errcode = 'C1CAC', message = 'rolled back';
-  exception when sqlstate 'C1CAC' then null;
-  end;
-  if pg_temp.stop_lock_modes() <> '{}'::text[] then
-    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
-  end if;
-
-  -- N7c. ops.request_agent_run takes it SHARED.
-  begin
-    perform pg_temp.request('ar1d-n7-request', 'tenant_a', 'task_c', 'agent_a1');
-    v_modes := pg_temp.stop_lock_modes();
-    if v_modes is distinct from array['ShareLock'] then
-      raise exception 'N7c: ops.request_agent_run does not hold the kill-switch lock shared once it has read the stops (held: %); that it takes it BEFORE the read needs two sessions: engine/domain/agentRuns.dbtest.ts', v_modes;
-    end if;
-    raise exception using errcode = 'C1CAC', message = 'rolled back';
-  exception when sqlstate 'C1CAC' then null;
-  end;
-  if pg_temp.stop_lock_modes() <> '{}'::text[] then
-    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
-  end if;
-
-  -- N7d. ops.trip_execution_stop takes it EXCLUSIVELY.
-  begin
-    perform ops.trip_execution_stop('global', 'ar1d-test: lock witness', 'ar1d-owner');
-    v_modes := pg_temp.stop_lock_modes();
-    if v_modes is distinct from array['ExclusiveLock'] then
-      raise exception 'N7d: ops.trip_execution_stop did not take the kill-switch lock exclusively (held: %)', v_modes;
-    end if;
-    raise exception using errcode = 'C1CAC', message = 'rolled back';
-  exception when sqlstate 'C1CAC' then null;
-  end;
-  if pg_temp.stop_lock_modes() <> '{}'::text[] then
-    raise exception 'N7: a rolled-back case left the kill-switch lock held; the next case would prove nothing';
-  end if;
-
-  -- N7e. ops.clear_execution_stop takes it EXCLUSIVELY. The stop is inserted raw, so no
-  --      trip took the lock first.
-  begin
-    insert into ops.execution_stops (scope, reason, tripped_by)
-    values ('global', 'ar1d-test: lock witness', 'ar1d-owner')
-    returning id into v_stop;
-    v_modes := pg_temp.stop_lock_modes();
-    if v_modes <> '{}'::text[] then
-      raise exception 'N7e: inserting a stop took the kill-switch lock (%); this case would prove nothing', v_modes;
-    end if;
-    perform ops.clear_execution_stop(v_stop, 'ar1d-test: lock witness cleared', 'ar1d-owner');
-    v_modes := pg_temp.stop_lock_modes();
-    if v_modes is distinct from array['ExclusiveLock'] then
-      raise exception 'N7e: ops.clear_execution_stop did not take the kill-switch lock exclusively (held: %)', v_modes;
-    end if;
-    raise exception using errcode = 'C1CAC', message = 'rolled back';
-  exception when sqlstate 'C1CAC' then null;
-  end;
-  if pg_temp.stop_lock_modes() <> '{}'::text[] then
-    raise exception 'N7: a rolled-back case left the kill-switch lock held after the last case';
-  end if;
 end
 $$;
 
@@ -1622,7 +1717,10 @@ begin
         || case when v_to in ('running', 'succeeded') then
              ', provider = coalesce(provider, ''fake''), model = coalesce(model, ''fake-model-1''), '
              || 'prompt_version = coalesce(prompt_version, ''task_assessment.v1''), '
-             || 'input_fingerprint = coalesce(input_fingerprint, repeat(''c'', 64)), job_attempt = coalesce(job_attempt, 1)'
+             || 'input_fingerprint = coalesce(input_fingerprint, repeat(''c'', 64)), job_attempt = coalesce(job_attempt, 1), '
+             -- Phase 1D.1: a start carries its price version and reservation.
+             || format('price_id = coalesce(price_id, %L), reserved_cost_micros = coalesce(reserved_cost_micros, 1000)',
+                       pg_temp.id('price_fake'))
            else '' end
         || case v_to
              when 'succeeded' then format(', result = %L, error_category = null, error_code = null', pg_temp.valid_result())
@@ -1968,7 +2066,10 @@ $q$, pg_temp.id('tenant_a'), pg_temp.id('task_j')));
 
 -- K1, K4, K5, K7. For every scope: trip (twice), a covered request is RECORDED
 -- cancelled by that stop with no job, a request outside the scope proceeds,
--- clearing is reported once, and clearing restores requests.
+-- clearing is reported once, and clearing restores requests. Phase 1D.1 adds the
+-- job_kind scope, here for one tenant and the agent run kind; its all-tenant form,
+-- its shape refusals, the stop origin and the lease-time hold are
+-- runtime_governance.sql, section K.
 do $$
 declare
   ta  constant uuid := pg_temp.id('tenant_a');
@@ -1984,26 +2085,30 @@ declare
 begin
   for v_case in
     select * from (values
-      ('global',     null::uuid, null::uuid, null::uuid, null::uuid, 'task_k_b',     'agent_b',          'tenant_b'),
-      ('tenant',     ta,         null,       null,       null,       'task_k_b',     'agent_b',          'tenant_b'),
-      ('company',    ta,         ca1,        null,       null,       'task_k_a2',    'agent_a2',         'tenant_a'),
-      ('department', ta,         ca1,        da1,        null,       'task_k_a1s',   'agent_a1_support', 'tenant_a'),
-      ('agent',      ta,         ca1,        null,       ga1,        'task_k_a1two', 'agent_a1_two',     'tenant_a')
-    ) as c (scope, tenant_id, company_id, department_id, agent_id, other_task, other_agent, other_tenant)
+      ('global',     null::uuid, null::uuid, null::uuid, null::uuid, null::text,          'task_k_b',     'agent_b',          'tenant_b'),
+      ('tenant',     ta,         null,       null,       null,       null,                'task_k_b',     'agent_b',          'tenant_b'),
+      ('company',    ta,         ca1,        null,       null,       null,                'task_k_a2',    'agent_a2',         'tenant_a'),
+      ('department', ta,         ca1,        da1,        null,       null,                'task_k_a1s',   'agent_a1_support', 'tenant_a'),
+      ('agent',      ta,         ca1,        null,       ga1,        null,                'task_k_a1two', 'agent_a1_two',     'tenant_a'),
+      ('job_kind',   ta,         null,       null,       null,       'agent_run.execute', 'task_k_b',     'agent_b',          'tenant_b')
+    ) as c (scope, tenant_id, company_id, department_id, agent_id, job_kind, other_task, other_agent, other_tenant)
   loop
     v_stop := ops.trip_execution_stop(v_case.scope, format('ar1d-test: %s stop', v_case.scope), 'ar1d-owner',
-                                      v_case.tenant_id, v_case.company_id, v_case.department_id, v_case.agent_id);
+                                      v_case.tenant_id, v_case.company_id, v_case.department_id, v_case.agent_id,
+                                      v_case.job_kind);
 
     -- K5. Tripping the same target again is the same stop, unchanged.
     v_again := ops.trip_execution_stop(v_case.scope, 'ar1d-test: tripped again', 'ar1d-owner',
-                                       v_case.tenant_id, v_case.company_id, v_case.department_id, v_case.agent_id);
+                                       v_case.tenant_id, v_case.company_id, v_case.department_id, v_case.agent_id,
+                                       v_case.job_kind);
     if v_again is distinct from v_stop then
       raise exception 'K5: tripping the same % target twice returned a second stop', v_case.scope;
     end if;
     if (select count(*) from ops.execution_stops s
          where s.cleared_at is null and s.scope = v_case.scope
            and s.tenant_id is not distinct from v_case.tenant_id and s.company_id is not distinct from v_case.company_id
-           and s.department_id is not distinct from v_case.department_id and s.agent_id is not distinct from v_case.agent_id) <> 1
+           and s.department_id is not distinct from v_case.department_id and s.agent_id is not distinct from v_case.agent_id
+           and s.job_kind is not distinct from v_case.job_kind) <> 1
        or (select s.reason from ops.execution_stops s where s.id = v_stop) <> format('ar1d-test: %s stop', v_case.scope) then
     raise exception 'K5: tripping a % target twice left more than one active stop, or rewrote it', v_case.scope;
     end if;
@@ -2054,8 +2159,8 @@ begin
     v_scopes := v_scopes + 1;
   end loop;
 
-  if v_scopes <> 5 then
-    raise exception 'K1: % of the 5 stop scopes were exercised', v_scopes;
+  if v_scopes <> 6 then
+    raise exception 'K1: % of the 6 stop scopes were exercised', v_scopes;
   end if;
 end
 $$;
@@ -2089,35 +2194,50 @@ begin
 end
 $$;
 
--- K3. A stop tripped AFTER the request refuses at ops.start_agent_run, on a real
---     lease: recorded cancelled, never running, no fact of a call.
+-- K3. A stop tripped AFTER the lease holds the run at ops.start_agent_run, on a real
+--     lease: the start answers stopped and writes nothing, so the run stays pending
+--     with no fact of a call, and the job is deferred with its attempt given back
+--     (owner decision B, 2026-09-17; ADR 0017 §6).
 do $$
 declare
-  v_run   uuid;
-  v_stop  uuid;
-  v_claim jsonb;
-  v_state text;
-  r       ops.agent_runs;
+  v_run      uuid;
+  v_stop     uuid;
+  v_claim    jsonb;
+  v_state    text;
+  v_deferred uuid;
+  v_job      ops.jobs;
+  r          ops.agent_runs;
 begin
   v_run := pg_temp.leased_run('ar1d-k-late-stop', 'task_k_a1two', 'agent_a1_two');
-  v_stop := ops.trip_execution_stop('agent', 'ar1d-test: tripped after the request', 'ar1d-owner',
+  v_stop := ops.trip_execution_stop('agent', 'ar1d-test: tripped after the lease', 'ar1d-owner',
                                     pg_temp.id('tenant_a'), pg_temp.id('company_a1'), null, pg_temp.id('agent_a1_two'));
   perform pg_temp.as_worker();
   v_claim := ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
+  v_deferred := ops.defer_job();
   perform pg_temp.as_owner();
   if v_claim ->> 'action' is distinct from 'start' then
     raise exception 'K3: the claim did not offer the run for a start (%); this case would prove nothing', v_claim;
   end if;
   select * into r from ops.agent_runs where id = v_run;
-  if v_state is distinct from 'cancelled' or r.status <> 'cancelled' or r.error_category <> 'refused'
-     or r.error_code <> 'execution_stopped' or r.stop_id is distinct from v_stop
-     or r.started_at is not null or r.provider is not null or r.job_attempt is not null then
-    raise exception 'K3: a stop tripped after the request did not refuse the run at start (start returned %, run % / % / stop %)',
+  if v_state is distinct from 'stopped' or r.status <> 'pending' or r.error_code is not null
+     or r.stop_id is not null or r.started_at is not null or r.completed_at is not null
+     or r.provider is not null or r.job_attempt is not null or r.price_id is not null
+     or r.charged_cost_micros is not null then
+    raise exception 'K3: a stop tripped after the lease did not hold the run at start (start returned %, run % / % / stop %)',
       v_state, r.status, r.error_code, r.stop_id;
   end if;
-  if pg_temp.run_event_types(v_run) is distinct from array['agent_run.requested', 'agent_run.cancelled'] then
-    raise exception 'K3: a run refused at start recorded %', pg_temp.run_event_types(v_run);
+  if pg_temp.run_event_types(v_run) is distinct from array['agent_run.requested'] then
+    raise exception 'K3: a run held at start recorded %', pg_temp.run_event_types(v_run);
+  end if;
+  select * into v_job from ops.jobs where id = r.job_id;
+  if v_deferred is distinct from v_stop or v_job.status <> 'queued' or v_job.attempts <> 0
+     or v_job.lease_owner is not null
+     or not exists (select 1 from ops.job_events e
+                     where e.job_id = v_job.id and e.event = 'deferred'
+                       and e.detail = format('held by execution stop %s', v_stop)) then
+    raise exception 'K3: the held run''s job was not deferred by its stop with the attempt given back (defer %, job % / attempts %)',
+      v_deferred, v_job.status, v_job.attempts;
   end if;
   perform ops.clear_execution_stop(v_stop, 'ar1d-test: cleared', 'ar1d-owner');
 end
@@ -2305,7 +2425,7 @@ begin
   perform pg_temp.remember('run_l_success', v_run);
   perform pg_temp.as_worker();
   v_claim := ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   select * into v_started from ops.agent_runs where id = v_run;
   perform pg_temp.as_worker();
@@ -2366,7 +2486,7 @@ declare
 begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   v_state := ops.complete_agent_run(pg_temp.valid_result(), 'model id with spaces', 'Completed Loudly',
                                     'request id with spaces', repeat('x', 201), -1, -2, -3, -4, -5, -6);
   perform pg_temp.as_owner();
@@ -2419,7 +2539,7 @@ begin
     v_run := pg_temp.leased_run(format('ar1d-l-invalid-%s', v_n), 'task_l', 'agent_a1');
     perform pg_temp.as_worker();
     perform ops.claim_agent_run();
-    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
     v_state := ops.complete_agent_run(v_case.envelope, 'fake-model-1', 'completed', 'fake-req', 'fake-resp', 1, 1, 2, 0, 0, 5);
     perform pg_temp.as_owner();
     select * into r from ops.agent_runs where id = v_run;
@@ -2443,7 +2563,7 @@ begin
     v_run := pg_temp.leased_run(format('ar1d-l-valid-%s', v_n), 'task_l', 'agent_a1');
     perform pg_temp.as_worker();
     perform ops.claim_agent_run();
-    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
     v_state := ops.complete_agent_run(v_case.envelope, 'fake-model-1', 'completed', 'fake-req', 'fake-resp', 1, 1, 2, 0, 0, 5);
     perform pg_temp.as_owner();
     select * into r from ops.agent_runs where id = v_run;
@@ -2489,7 +2609,7 @@ begin
     v_run := pg_temp.leased_run(format('ar1d-l-fail-%s', v_n), 'task_l', 'agent_a1');
     perform pg_temp.as_worker();
     perform ops.claim_agent_run();
-    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
     v_state := ops.fail_agent_run(v_case.reported, 'provider_code', 'fake-model-2', 'fake-req', 'fake-resp', 10, 0, 10, 0, 0, 7);
     perform pg_temp.as_owner();
     select * into r from ops.agent_runs where id = v_run;
@@ -2505,7 +2625,7 @@ begin
   v_run := pg_temp.leased_run('ar1d-l-fail-odd-code', 'task_l', 'agent_a1');
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform ops.fail_agent_run('timeout', 'Provider Said: No', null, null, null, null, null, null, null, null, null);
   perform pg_temp.as_owner();
   if (select error_code from ops.agent_runs where id = v_run) is not null then
@@ -2525,11 +2645,11 @@ declare
 begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_first := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_first := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   v_state := pg_temp.run_state(v_run);
   perform pg_temp.as_worker();
-  v_second := ops.start_agent_run('other', 'other-model', 'task_assessment.v9', repeat('e', 64));
+  v_second := ops.start_agent_run('other', 'other-model', 'task_assessment.v9', repeat('e', 64), 8000);
   perform pg_temp.as_owner();
   if v_first is distinct from 'running' or v_second is distinct from 'already_running' or pg_temp.run_state(v_run) is distinct from v_state then
     raise exception 'L4: a second start changed a running run (returned %, then %)', v_first, v_second;
@@ -2598,7 +2718,7 @@ begin
   v_run := pg_temp.leased_run('ar1d-l-refuse-running', 'task_l', 'agent_a1');
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   v_state := pg_temp.run_state(v_run);
   perform pg_temp.as_worker();
@@ -2625,7 +2745,7 @@ declare
 begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   if v_state is distinct from 'running' then
     raise exception 'L7: the first attempt did not start the run (%); this case would prove nothing', v_state;
@@ -2646,7 +2766,7 @@ begin
     -- Only the attempt that started a run is refused a claim; an earlier attempt's run is settled.
     raise exception 'L7: the next attempt''s claim on a run an earlier attempt left running was refused (% %)', sqlstate, sqlerrm;
   end;
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   select * into r from ops.agent_runs where id = v_run;
   if v_claim ->> 'action' is distinct from 'settled' or v_claim ->> 'status' is distinct from 'indeterminate'
@@ -2691,15 +2811,15 @@ begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
   perform pg_temp.expect_refused('L8 a start naming a malformed provider', 'OS400',
-    $q$select ops.start_agent_run('Fake Provider', 'fake-model-1', 'task_assessment.v1', repeat('f', 64))$q$);
+    $q$select ops.start_agent_run('Fake Provider', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000)$q$);
   perform pg_temp.expect_refused('L8 a start naming a malformed model', 'OS400',
-    $q$select ops.start_agent_run('fake', 'model with spaces', 'task_assessment.v1', repeat('f', 64))$q$);
+    $q$select ops.start_agent_run('fake', 'model with spaces', 'task_assessment.v1', repeat('f', 64), 8000)$q$);
   perform pg_temp.expect_refused('L8 a start naming a malformed prompt version', 'OS400',
-    $q$select ops.start_agent_run('fake', 'fake-model-1', 'v1', repeat('f', 64))$q$);
+    $q$select ops.start_agent_run('fake', 'fake-model-1', 'v1', repeat('f', 64), 8000)$q$);
   perform pg_temp.expect_refused('L8 a start naming a malformed input fingerprint', 'OS400',
-    $q$select ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('F', 64))$q$);
+    $q$select ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('F', 64), 8000)$q$);
   perform pg_temp.expect_refused('L8 a start naming no provider', 'OS400',
-    $q$select ops.start_agent_run(null, 'fake-model-1', 'task_assessment.v1', repeat('f', 64))$q$);
+    $q$select ops.start_agent_run(null, 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000)$q$);
   perform pg_temp.as_owner();
   if pg_temp.run_status(v_run) is distinct from 'pending'
      or (select started_at from ops.agent_runs where id = v_run) is not null then
@@ -2745,7 +2865,7 @@ begin
 
     perform pg_temp.as_worker();
     perform ops.claim_agent_run();
-    v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+    v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
     perform pg_temp.as_owner();
 
     perform ops.set_company_status(ta, pg_temp.id('company_a2'), 'active', 'ar1d-test');
@@ -2787,7 +2907,7 @@ begin
   v_released := pg_temp.leased_run('ar1d-m-released', 'task_m', 'agent_a1', 'ar1d-worker-m2');
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   v_job := pg_temp.job_of(v_released);
   update ops.jobs set lease_expires_at = now() - interval '1 second' where id = v_job;
@@ -2797,7 +2917,7 @@ begin
   v_live := pg_temp.leased_run('ar1d-m-live', 'task_m', 'agent_a1', 'ar1d-worker-m3');
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := v_state || ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := v_state || ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
 
   -- M4. Pending, and its job failed before any start.
@@ -2825,7 +2945,7 @@ begin
   v_expired := pg_temp.leased_run('ar1d-m-expired', 'task_m', 'agent_a1', 'ar1d-worker-m1');
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := v_state || ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := v_state || ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   update ops.jobs set lease_expires_at = now() - interval '1 second' where id = pg_temp.job_of(v_expired);
 
@@ -2947,7 +3067,7 @@ begin
   perform pg_temp.expect_refused_with('N1a: claim on a lease that ran out during the transaction', '42501',
     'no longer live', 'select ops.claim_agent_run()');
   perform pg_temp.expect_refused_with('N1b: start on a lease that ran out during the transaction', '42501',
-    'no longer live', $q$select ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64))$q$);
+    'no longer live', $q$select ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000)$q$);
   perform pg_temp.expect_refused_with('N1e: refuse on a lease that ran out during the transaction', '42501',
     'no longer live', $q$select ops.refuse_agent_run('no_route')$q$);
   perform pg_temp.as_owner();
@@ -2956,7 +3076,7 @@ begin
   perform pg_temp.remember('run_n1_running', v_run);
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  if ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64)) is distinct from 'running' then
+  if ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000) is distinct from 'running' then
     raise exception 'N1: the start on the live lease did not start the run; this case would prove nothing';
   end if;
   perform pg_temp.as_owner();
@@ -2986,7 +3106,7 @@ begin
   v_job := pg_temp.job_of(v_run);
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   update ops.jobs set lease_expires_at = now() - interval '1 second' where id = v_job;
   perform pg_temp.lease('N3', 'ar1d-worker-n3-second', v_job);
@@ -2995,7 +3115,7 @@ begin
   end if;
 
   perform pg_temp.as_worker();
-  v_state := ops.start_agent_run('other', 'other-model', 'task_assessment.v9', repeat('e', 64));
+  v_state := ops.start_agent_run('other', 'other-model', 'task_assessment.v9', repeat('e', 64), 8000);
   perform pg_temp.as_owner();
   select * into r from ops.agent_runs where id = v_run;
   if v_state is distinct from 'indeterminate' then
@@ -3028,7 +3148,7 @@ begin
   v_job := pg_temp.job_of(v_run);
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   update ops.jobs set lease_expires_at = now() - interval '1 second' where id = v_job;
   perform pg_temp.lease('N4', 'ar1d-worker-n4-second', v_job);
@@ -3056,11 +3176,15 @@ $$;
 
 -- N5. Error codes only the database records are never taken from a worker: fail drops
 --     them, refuse replaces them with configuration, and neither raises. The oracle is
---     the literal list, never the database's helper.
+--     the literal list, never the database's helper. Phase 1D.1 reserves the five
+--     governance refusals too, so a worker cannot make its own failure read as a
+--     price, route-policy or budget decision.
 do $$
 declare
   c_reserved constant text[] := array['execution_stopped', 'execution_interrupted', 'database_contract',
-                                      'job_failed', 'job_ended_before_start'];
+                                      'job_failed', 'job_ended_before_start',
+                                      'price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
+                                      'budget_unconfigured', 'budget_exhausted'];
   -- Not reserved: it only begins like a reserved code, so it is kept.
   c_lookalike constant text := 'execution_stopped_upstream';
   v_code text;
@@ -3080,7 +3204,7 @@ begin
     v_run := pg_temp.leased_run(format('ar1d-n5-fail-%s', v_n), 'task_n', 'agent_a1');
     perform pg_temp.as_worker();
     perform ops.claim_agent_run();
-    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+    perform ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
     v_err := pg_temp.attempt(format(
       'select ops.fail_agent_run(''timeout'', %L, null, null, null, null, null, null, null, null, 5)', v_code));
     perform pg_temp.as_owner();
@@ -3128,7 +3252,7 @@ declare
 begin
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  if ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64)) is distinct from 'running' then
+  if ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000) is distinct from 'running' then
     raise exception 'N6: the control run did not start; this case would prove nothing';
   end if;
   perform pg_temp.as_owner();
@@ -3670,7 +3794,7 @@ begin
   v_fact_1 := pg_temp.record_near_lifecycle_facts(ta, ca1, v_run);
   perform pg_temp.as_worker();
   perform ops.claim_agent_run();
-  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64));
+  v_state := ops.start_agent_run('fake', 'fake-model-1', 'task_assessment.v1', repeat('f', 64), 8000);
   perform pg_temp.as_owner();
   v_fact_2 := pg_temp.record_near_lifecycle_facts(ta, ca1, v_run);
   v_state := v_state || '>' || pg_temp.worker_completes();
@@ -3846,6 +3970,10 @@ begin
   end if;
   if exists (select 1 from pg_trigger where tgname in ('ar1d_skip_stop_insert', 'zz_ar1d_business_fact')) then
     raise exception 'agent_runtime.sql left a probe trigger behind';
+  end if;
+  if exists (select 1 from ops.model_prices where recorded_by = 'ar1d-owner')
+     or exists (select 1 from ops.spend_limits where set_by = 'ar1d-owner') then
+    raise exception 'agent_runtime.sql left a synthetic price or spend limit behind';
   end if;
 end
 $$;

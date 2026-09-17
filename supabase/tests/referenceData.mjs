@@ -5,7 +5,9 @@
 //                                                         present exactly once
 //   node supabase/tests/referenceData.mjs --without-seed  also: no loss reasons,
 //                                                         no Company OS tenant,
-//                                                         no CRM rows
+//                                                         no CRM rows, and no
+//                                                         model price or spend
+//                                                         limit
 //
 // `npm run test:db` runs the first form against the seeded local stack. CI runs
 // the second after replaying migrations alone, which is how a hosted project is
@@ -132,6 +134,21 @@ try {
     check(tenants === "0", `no Company OS tenant (found ${tenants})`);
     check(companies === "0", `no Company OS company (found ${companies})`);
     check(contacts === "0", `no CRM contact (found ${contacts})`);
+
+    // Prices and spend limits are owner data (ADR 0017): a migration that shipped
+    // one would price runs, or admit spend, with a number nobody recorded.
+    const [[modelPrices, spendLimits]] = psql(
+      `select (select count(*) from ops.model_prices),
+              (select count(*) from ops.spend_limits);`,
+    );
+    check(
+      modelPrices === "0",
+      `no model price: prices are recorded by an owner act, never shipped by a migration (found ${modelPrices})`,
+    );
+    check(
+      spendLimits === "0",
+      `no spend limit: limits are set by an owner act, never shipped by a migration (found ${spendLimits})`,
+    );
   }
 } catch (error) {
   console.error(`reference data could not be checked: ${error.message}`);

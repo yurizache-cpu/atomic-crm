@@ -187,10 +187,12 @@ declare
   v_bad text;
 begin
   -- A1. Tables. Phase 1D (2026-09-14) adds agent_runs and execution_stops, which
-  --     are backend-only on exactly the same terms.
+  --     are backend-only on exactly the same terms. Phase 1D.1 (2026-09-17) adds
+  --     model_prices and spend_limits: owner data no application role may touch
+  --     (supabase/tests/runtime_governance.sql, section G).
   select string_agg(format('%s:%s:%s', r.rolname, t.relname, p.priv), ', ') into v_bad
     from unnest(array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
-                      'agent_runs', 'execution_stops']) as t (relname)
+                      'agent_runs', 'execution_stops', 'model_prices', 'spend_limits']) as t (relname)
    cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r (rolname)
    cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as p (priv)
    where has_table_privilege(r.rolname, format('ops.%I', t.relname), p.priv);
@@ -223,6 +225,11 @@ begin
   --     owner services it adds (request_agent_run and the stop functions) are
   --     executable by no application role. supabase/tests/agent_runtime.sql
   --     attacks both halves.
+  --     Phase 1D.1 (2026-09-17, 20260917120000_runtime_governance.sql) gives the
+  --     start its output ceiling as a fifth argument and adds exactly three
+  --     argument-free worker capabilities: the pre-call stop check, the deferral it
+  --     permits, and the ceiling sweep. The price and limit services it adds are
+  --     executable by no application role (supabase/tests/runtime_governance.sql).
   with expected (rolname, fn) as (values
     ('service_role', 'ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)'::regprocedure),
     ('ops_worker',   'ops.lease_job(text, integer)'::regprocedure),
@@ -238,10 +245,13 @@ begin
     ('ops_worker',   'ops.reap_expired_leases()'::regprocedure),
     ('ops_worker',   'ops.claim_agent_run()'::regprocedure),
     ('ops_worker',   'ops.refuse_agent_run(text)'::regprocedure),
-    ('ops_worker',   'ops.start_agent_run(text, text, text, text)'::regprocedure),
+    ('ops_worker',   'ops.start_agent_run(text, text, text, text, integer)'::regprocedure),
     ('ops_worker',   'ops.complete_agent_run(jsonb, text, text, text, text, integer, integer, integer, integer, integer, integer)'::regprocedure),
     ('ops_worker',   'ops.fail_agent_run(text, text, text, text, text, integer, integer, integer, integer, integer, integer)'::regprocedure),
-    ('ops_worker',   'ops.settle_stale_agent_runs()'::regprocedure)
+    ('ops_worker',   'ops.settle_stale_agent_runs()'::regprocedure),
+    ('ops_worker',   'ops.job_execution_stop()'::regprocedure),
+    ('ops_worker',   'ops.defer_job()'::regprocedure),
+    ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -265,7 +275,10 @@ begin
   -- A5. The SECURITY DEFINER surface, pinned. Every Company OS *service* is
   --     INVOKER. Phase 1D (2026-09-14) adds the six agent run capabilities, which
   --     are lease-bound DEFINER exactly like the Phase 1B capability: they take no
-  --     tenant and reach only the run bound to the live lease's job.
+  --     tenant and reach only the run bound to the live lease's job. Phase 1D.1
+  --     (2026-09-17) adds three more on the same terms: job_execution_stop and
+  --     defer_job reach only the leased job, and enforce_spend_ceiling takes no
+  --     argument and can only trip a global stop.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -273,7 +286,8 @@ begin
                            'purge_inbound_email_ledger', 'reap_expired_leases', 'resume_lease',
                            'settle_job_failure', 'worker_heartbeat', 'worker_stopped',
                            'claim_agent_run', 'refuse_agent_run', 'start_agent_run',
-                           'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs');
+                           'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
+                           'job_execution_stop', 'defer_job', 'enforce_spend_ceiling');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;
@@ -286,10 +300,12 @@ begin
     raise exception 'A6: ops table(s) % lack ENABLE + FORCE row level security', v_bad;
   end if;
 
-  -- A7. Guard triggers exist and survive replica mode.
+  -- A7. Guard triggers exist and survive replica mode. Phase 1D.1 adds the guard
+  --     that fixes a task's idempotency key and request fingerprint.
   select string_agg(g.name, ', ') into v_bad
     from unnest(array['companies_guard_update', 'departments_guard_update', 'agents_guard_update',
-                      'tasks_guard_update', 'events_refuse_update', 'task_jobs_refuse_update']) as g (name)
+                      'tasks_guard_update', 'events_refuse_update', 'task_jobs_refuse_update',
+                      'tasks_request_identity_update']) as g (name)
    where not exists (
      select 1 from pg_trigger tg
        join pg_class c on c.oid = tg.tgrelid
@@ -334,7 +350,7 @@ begin
   end if;
 
   foreach v_table in array array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
-                                 'agent_runs', 'execution_stops'] loop
+                                 'agent_runs', 'execution_stops', 'model_prices', 'spend_limits'] loop
     v_tried := v_tried + 1;
     begin
       execute format('select count(*) from ops.%I', v_table) into v_n;
