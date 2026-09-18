@@ -399,16 +399,33 @@ Phase 2A's position is unchanged: it waits for this phase's CI result and its ow
 
 **OSS source reuse is approved** (review §15). Once a component is approved for implementation, cloning, downloading, running, modifying and forking its upstream repository is allowed and encouraged where it materially reduces engineering work; cloning candidates merely to evaluate them during a research review is not. **Fork is not the default.** Choose the mode by shape: a library or package → **package**; a large standalone application → **external service behind an adapter**; substantial persistent source modifications → **fork**; a small, clearly permissive reusable module → **source extraction**; adoption dearer than building → **reference only, build it ourselves**. The objective is not to avoid forks — it is the lowest total implementation + maintenance + upgrade + exit cost. Every reuse passes the license gate (§15.1) first, and the first real adoption creates `docs/OSS_PROVENANCE.md` with the fields listed in §15.3; no placeholder is created before then.
 
-### Phase 2A — synthetic lead triage pilot (2026-09-17) — BUILT, not pushed
+### Phase 2A — synthetic lead triage pilot (2026-09-17/18) — INTEGRATED
 
-**Built on `feature/phase-2a-synthetic-triage`, from `feature/clinical-phase-1` at `d2843913`.** The first end-to-end Company OS workflow, and deliberately the smallest one that proves the path. Read [PHASE_2A_REPORT.md](PHASE_2A_REPORT.md).
+**Built on `feature/phase-2a-synthetic-triage`, from `feature/clinical-phase-1` at `d2843913`, then merged into `feature/clinical-phase-1` by PR #4 on 2026-09-18.** The merge commit is `3a124a421ce8ab12a78c52b69cfaee41aa11f20a` and the final implementation head is `e5bef7530904ebac67785ccd03a70328a5ab340f`. The integrated commits are `35ea6c03`, `d944d860` and `e5bef753`. `main` is untouched, and no production deploy took place. The first end-to-end Company OS workflow, and deliberately the smallest one that proves the path. Read [PHASE_2A_REPORT.md](PHASE_2A_REPORT.md) (§17 records the integration).
 
-- **The flow:** a synthetic message is admitted once → one `lead_triage` task carrying the message → one explicitly requested agent run → the Phase 1D/1D.1 runtime executes it under the kill switch, the price, the spend limits and at-most-once external-call semantics → the validated advisory result opens a human review item → a person decides, once, and the decision is final.
-- **What was added:** one capability (`lead_triage`, standard route, its output contract enforced by the database as well as the worker), two tables (`ops.inbound_messages`, `ops.review_items`), one ingress service, one review service, one derivation trigger, a minimal `CommunicationPort` with a synthetic adapter, and five `npm run ops -- triage` subcommands. **No new job kind, no new dependency, no new worker capability.**
+- **The flow:** a synthetic message is admitted once → one `lead_triage` task carrying the message → one explicitly requested agent run → the Phase 1D/1D.1 runtime executes it under the kill switch, the price, the spend limits and at-most-once external-call semantics → the provider's validated result is settled, and its job completed, in one transaction that commits first → the human review item is derived in a SEPARATE transaction afterwards → a person decides, once, and the decision is final.
+- **What was added:** one capability (`lead_triage`, standard route, its output contract enforced by the database as well as the worker), two tables (`ops.inbound_messages`, `ops.review_items`), one ingress service, one review service, one post-settlement step (`engine/worker/afterSettlement.ts` → `ops.open_review_for_settled_job`, a job-bound worker function), a minimal `CommunicationPort` with a synthetic adapter, and the `npm run ops -- triage` subcommands. The derivation trigger this step replaced is still present, but INERT. **No new job kind, no new dependency, no new worker capability.**
 - **What was reused:** the whole engine. `agent_run.execute` already existed, and the pilot rides it.
-- **Boundaries, enforced rather than promised:** only `synthetic` messages are admitted and only when `COMPANY_OS_SYNTHETIC_INGRESS=enabled` (SI-44); an inbound message becomes work at most once (SI-43); a model's answer never acts, accepting is refused for a do-not-contact lead, and accepting performs no action because no outbound transport and no CRM write path exist (SI-45).
-- **Evidence:** 14 SQL suites, 193 driver-backed cases (11 new end-to-end, 1 new capability mirror), 52 security invariants, and a reproducible demonstration (`npm run lead-triage:demo`).
-- **Q8 is unchanged and still open.** No real provider was called; there is no live mode.
-- **Focused pre-push review (2026-09-18, report §15):** three P1s fixed in one fix commit — a review-queue failure could discard a paid answer (the settlement now never waits on the queue, and `triage recover` restores a missing review); consent could come from the untrusted envelope (it now comes only from a trusted `ContactPolicy`); and consent failed open for a retried run (it is now found by task and fails closed). Each fix was red before and green after. Evidence after the fix: 14 SQL suites, 202 driver-backed cases, 1563 `functions` unit tests, the upgrade replay.
+- **Boundaries, enforced rather than promised:** only `synthetic` messages are admitted and only when `COMPANY_OS_SYNTHETIC_INGRESS=enabled` (SI-44); an inbound message becomes work at most once (SI-43); a model's answer never acts, accepting is refused for a do-not-contact lead, and accepting performs no action because no outbound transport and no CRM write path exist (SI-45). Phase 2A introduces no CRM mutation path. Existing worker capabilities may touch non-CRM public-schema infrastructure such as `public.inbound_emails`.
+- **Final evidence (CI run 35377851431 on `e5bef753`):**
+  - `test:db` 14/14;
+  - `test:db:engine` 205/205 in 30 files, including the settlement regression (3/3) and the lead triage pilot (20/20);
+  - `functions` 1570/1570;
+  - security invariants 52/52;
+  - migration guard 131/131;
+  - upgrade replay PASS;
+  - typecheck, ESLint, build, secret scan, production scope and signing key green.
 
-**Next: Phase 2B — the official WhatsApp Cloud API transport behind the same port (owner decision J), outbound with the consent gate on the acting side, and a read-only CRM contact lookup. Q8 must be answered before a real message is carried.**
+  Only the accepted baseline reds remain: e2e 9 failed / 1 skipped, and Prettier on `sampleCsv.test.ts` and `canAccess.test.ts`. Phase 2A caused no new regressions. There is also a reproducible demonstration (`npm run lead-triage:demo`).
+- **Q8 is unchanged and still open.** No real provider was called; there is no live mode.
+- **Focused pre-push review (2026-09-18, report §15):** three P1s fixed in one fix commit — a review-queue failure could discard a paid answer (the settlement now never waits on the queue, and `triage recover` restores a missing review); consent could come from the untrusted envelope (it now comes only from a trusted `ContactPolicy`); and consent failed open for a retried run (it is now found by task and fails closed). Each fix was red before and green after.
+- **Final review (2026-09-18, report §16):** the §15 subtransaction did not isolate the settlement, because a statement timeout or a cancellation still rolled a paid settlement back (reproduced red). Settlement and review are now separate transactions. TX A settles the AgentRun, persists the result, completes the job and commits. TX B then derives the review on its own. If TX B fails, the run stays succeeded, the result stays durable, the provider is not called again, and `triage recover` derives the review idempotently.
+
+**NEXT: Phase 2B — not started.** The expected direction:
+
+- the official WhatsApp Cloud API behind `CommunicationPort` (owner decision J);
+- a read-only CRM `ContactPolicy`;
+- an outbound action boundary that checks consent afresh at the moment it acts;
+- a decision on conversations and threading, where required.
+
+Q8 must be resolved before real patient message content is sent to a real LLM.

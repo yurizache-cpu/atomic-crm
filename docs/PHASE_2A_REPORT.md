@@ -4,7 +4,8 @@
 | --- | --- |
 | **Base** | `feature/clinical-phase-1` at `d2843913b7dc61dff67bfe30f7231593ba705176` |
 | **Branch** | `feature/phase-2a-synthetic-triage` |
-| **Date** | 2026-09-17 |
+| **Date** | Built 2026-09-17; integrated 2026-09-18 |
+| **Status** | **INTEGRATED, and the phase is closed (§17).** Merged into `feature/clinical-phase-1` by [PR #4](https://github.com/yurizache-cpu/atomic-crm/pull/4), merge commit `3a124a421ce8ab12a78c52b69cfaee41aa11f20a`; final implementation head `e5bef7530904ebac67785ccd03a70328a5ab340f`; final reviewed CI run 35377851431. Phase 2B has not started. |
 | **What it is** | The first end-to-end Company OS workflow: a synthetic inbound message becomes one task, one agent run, one advisory result and one human decision. |
 | **Data** | **Synthetic only.** BASELINE Q8 is open and unchanged; no real message, patient or clinical text is used, and the database admits no other source kind (SI-44). |
 | **New dependency** | **None.** `package.json` gains one script and no package. |
@@ -536,8 +537,81 @@ touch nothing in `public.*`. That was false: the pre-existing
 That table is not CRM contact data, so the Phase 2A boundary holds as now
 worded: **Phase 2A introduces no CRM mutation path.**
 
+## 17. Integration (2026-09-18)
+
+| | |
+| --- | --- |
+| PR | [#4](https://github.com/yurizache-cpu/atomic-crm/pull/4), **merged** into `feature/clinical-phase-1` with a normal merge commit (not squashed, not rebased) |
+| Merge commit | `3a124a421ce8ab12a78c52b69cfaee41aa11f20a`, with parents `d2843913` (base) and `e5bef753` (head); its tree is identical to `e5bef753` |
+| Final implementation head | `e5bef7530904ebac67785ccd03a70328a5ab340f` |
+| Integrated commits | `35ea6c03f7aa2871a59419723b038466ee40f5bd` (implementation), `d944d860598ebbacfef880f6dc22bc7bd3a057e2` (pre-push review, §15), `e5bef7530904ebac67785ccd03a70328a5ab340f` (final review, §16) |
+| Final reviewed CI | run 35377851431 (pull request, on `e5bef753`) |
+| `main` | Unchanged. No production deploy took place: `deploy.yml` runs only on a push to `main`. |
+
+**Final evidence (CI run 35377851431):**
+
+| Check | Result |
+| --- | --- |
+| `test:db` | 14/14, before and after the clean reset |
+| `test:db:engine` | 205/205 in 30 files |
+| Settlement regression (`leadTriageSettlement.dbtest.ts`) | 3/3 |
+| Lead triage pilot (`leadTriagePilot.dbtest.ts`) | 20/20 |
+| `functions` | 1570/1570 |
+| Security invariants | 52/52 |
+| Migration guard | 131/131 |
+| Upgrade replay | PASS |
+| Typecheck, ESLint, build, secret scan | green |
+| Production scope, signing key | green |
+
+The accepted historical baseline failures were identical to the base's run
+(35286306085 on `d2843913`):
+
+- **e2e:** 9 failed / 1 skipped.
+- **Prettier:** `src/components/atomic-crm/dataImport/sampleCsv.test.ts` and
+  `src/components/atomic-crm/providers/commons/canAccess.test.ts`. Phase 2A
+  touches neither file.
+
+**Phase 2A caused no new regressions.**
+
+**Owner decisions at merge:**
+
+1. The absence of a Codex automated review is accepted. Its usage limit was
+   exhausted, and the focused red/green review in §15 and §16 stands.
+2. The legacy review trigger stays in place and INERT (§16). Neither an ADR nor
+   a migration will be created merely to delete it.
+3. The historical CI reds are accepted only as verified above.
+4. No new regression is accepted.
+5. BASELINE Q8 remains OPEN.
+
+**The final architecture, as integrated:**
+
+```
+provider call
+→ validate the result
+→ TX A   settle the AgentRun, persist the result, complete the job, COMMIT
+→ TX B   derive the human review (ops.open_review_for_settled_job), COMMIT on its own
+→ if TX B fails: the AgentRun stays succeeded, the result stays durable,
+  the provider is not called again, and `triage recover` derives the
+  missing review idempotently
+```
+
+**These boundaries remain true.** Q8 is OPEN. No real patient data was used,
+and synthetic-only ingress is the Phase 2A boundary. No outbound send exists.
+Phase 2A introduces no CRM mutation path. Existing worker capabilities may
+touch non-CRM public-schema infrastructure such as `public.inbound_emails`.
+Phase 2A adds no new OSS and no dependency. Nothing of Phase 2B exists yet.
+
+**Next: Phase 2B, which has not started.** The expected direction:
+
+- the official WhatsApp Cloud API behind `CommunicationPort`;
+- a read-only CRM `ContactPolicy`;
+- an outbound action boundary that checks consent afresh at the moment it acts;
+- a decision on conversations and threading, where required.
+
+Q8 must be resolved before real patient message content is sent to a real LLM.
+
 ---
 
-**Classification: PHASE 2A IMPLEMENTATION COMPLETE, with the final review's P1
-closed (§16). READY FOR REVIEW.** No production deploy, `main` untouched, and no
-new dependency. The §16 fix commit is not pushed.
+**Classification: PHASE 2A INTEGRATED — CLOSED.** It was merged by PR #4
+(`3a124a42`). `main` is untouched, there was no production deploy, and there is
+no new dependency. Phase 2B has not started.
