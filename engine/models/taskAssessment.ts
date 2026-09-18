@@ -29,6 +29,25 @@
 
 import { z } from "zod";
 import { defineOutputContract, type OutputContract } from "./outputContract.ts";
+import {
+  AGENT_LABEL_MAX_LENGTH,
+  boundedText,
+  promptDocumentFields,
+  truncateText,
+  type AgentRunPromptContext,
+  type BuiltPrompt,
+} from "./promptText.ts";
+
+// Re-exported so that everything importing them from here before Phase 2A
+// extracted promptText.ts keeps working.
+export {
+  AGENT_DESCRIPTION_MAX_LENGTH,
+  TASK_DESCRIPTION_MAX_LENGTH,
+  TRUNCATION_MARKER,
+  truncateText,
+  type AgentRunPromptContext,
+  type BuiltPrompt,
+} from "./promptText.ts";
 
 export const TASK_ASSESSMENT_CAPABILITY = "task_assessment";
 export const TASK_ASSESSMENT_PROMPT_VERSION = "task_assessment.v1";
@@ -47,33 +66,6 @@ export interface TaskAssessment {
 export const SUMMARY_MAX_LENGTH = 1000;
 export const MAX_PROPOSED_NEXT_STEPS = 10;
 export const PROPOSED_STEP_MAX_LENGTH = 300;
-
-/** Blank text is not an answer. The database applies the same `\S` test. */
-const HAS_NON_WHITESPACE = /\S/;
-
-/** With the `u` flag a surrogate pair is one code point, so this matches only an unpaired half. */
-const UNPAIRED_SURROGATE = /\p{Cs}/u;
-
-/**
- * Text Postgres cannot hold at all: U+0000, and a surrogate that is not half of
- * a pair. Both are legal in a JavaScript string and as a JSON escape, and jsonb
- * refuses both on INPUT ("unsupported Unicode escape sequence", "Unicode low
- * surrogate must follow a high surrogate"). Admitting them here would make the
- * statement that stores the result throw before ops.agent_run_result_valid()
- * runs, instead of recording an answered call as failed.
- */
-const NUL = String.fromCharCode(0);
-
-const isStorableText = (text: string): boolean =>
-  !text.includes(NUL) && !UNPAIRED_SURROGATE.test(text);
-
-const boundedText = (maxLength: number) =>
-  z
-    .string()
-    .min(1)
-    .max(maxLength)
-    .regex(HAS_NON_WHITESPACE)
-    .refine(isStorableText);
 
 const taskAssessmentSchema = z.strictObject({
   outcome: z.enum(["completed", "needs_input", "blocked"]),
@@ -126,55 +118,6 @@ export const taskAssessmentContract: OutputContract<TaskAssessment> =
       }),
   });
 
-/** Exactly what ops.claim_agent_run() returns, camelCased by the handler. */
-export interface AgentRunPromptContext {
-  readonly agent: {
-    readonly name: string;
-    readonly role: string;
-    readonly description: string | null;
-  };
-  readonly task: {
-    readonly type: string;
-    readonly title: string;
-    readonly description: string | null;
-    readonly priority: number;
-    readonly dueAt: string | null;
-  };
-}
-
-export interface BuiltPrompt {
-  readonly promptVersion: string;
-  readonly instructions: string;
-  readonly input: string;
-}
-
-export const TASK_DESCRIPTION_MAX_LENGTH = 4000;
-export const AGENT_DESCRIPTION_MAX_LENGTH = 2000;
-export const TRUNCATION_MARKER = "…[truncated]";
-
-// The database already bounds these (ops.agents name/role <= 200 and ops.tasks
-// title <= 300 after trimming, type <= 100). Capping here too costs nothing and
-// keeps a padded value from growing the prompt past what the columns imply.
-const AGENT_LABEL_MAX_LENGTH = 200;
-const TASK_TITLE_MAX_LENGTH = 300;
-const TASK_TYPE_MAX_LENGTH = 100;
-
-/**
- * Keeps the first `maxLength` code units and marks the cut. Never splits a
- * surrogate pair: half a character is not text, and JSON.stringify would
- * escape it into noise the model then has to read.
- */
-export function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  const lastKept = text.charCodeAt(maxLength - 1);
-  const end =
-    lastKept >= 0xd800 && lastKept <= 0xdbff ? maxLength - 1 : maxLength;
-  return `${text.slice(0, end)}${TRUNCATION_MARKER}`;
-}
-
-const truncateNullable = (text: string | null, maxLength: number) =>
-  text === null ? null : truncateText(text, maxLength);
-
 const instructionsFor = (name: string, role: string): string =>
   [
     `You are ${JSON.stringify(name)}, an AI employee whose role is ${JSON.stringify(role)}.`,
@@ -203,29 +146,13 @@ export function buildTaskAssessmentPrompt(
   const name = truncateText(context.agent.name, AGENT_LABEL_MAX_LENGTH);
   const role = truncateText(context.agent.role, AGENT_LABEL_MAX_LENGTH);
 
-  // Fields are PICKED, never spread: the object the handler passes may be wider
-  // than this type (ids, tenant, timestamps), and none of that may reach a
-  // provider. The key order here is the byte order of the prompt.
+  // The key order here is the byte order of the prompt, and the request
+  // fingerprint is computed over it.
+  const { agent, task } = promptDocumentFields(context);
   const document = {
     capability: TASK_ASSESSMENT_CAPABILITY,
-    agent: {
-      name,
-      role,
-      description: truncateNullable(
-        context.agent.description,
-        AGENT_DESCRIPTION_MAX_LENGTH,
-      ),
-    },
-    task: {
-      type: truncateText(context.task.type, TASK_TYPE_MAX_LENGTH),
-      title: truncateText(context.task.title, TASK_TITLE_MAX_LENGTH),
-      description: truncateNullable(
-        context.task.description,
-        TASK_DESCRIPTION_MAX_LENGTH,
-      ),
-      priority: context.task.priority,
-      due_at: context.task.dueAt,
-    },
+    agent,
+    task,
   };
 
   return Object.freeze({

@@ -308,3 +308,23 @@ Every run capability first share-locks the leased job and requires the lease to 
 | `OS403` | a governance reader for whom row security would filter prices, limits, runs or stops |
 | `OS409` | a different price version at the same moment; a limit version whose time zone differs from the active one; an idempotency key naming a different task or event request; a price, limit, stop or run rewritten outside its one allowed change |
 | `OS429` | a start the limits cannot absorb beside calls in flight; nothing is recorded, and the job retries |
+
+## 13. The lead triage review queue (Phase 2A, 2026-09-17/18)
+
+`ops.inbound_messages` and `ops.review_items`, and the services that write them. See [PHASE_2A_REPORT.md](PHASE_2A_REPORT.md).
+
+| Role | Tables | Functions |
+| --- | --- | --- |
+| `anon`, `authenticated` | nothing (no USAGE on `ops` at all) | nothing |
+| `service_role` | nothing | nothing new: still only `ops.enqueue_job` |
+| `ops_worker` | **nothing** on either table, not even SELECT | EXECUTE on `ops.open_review_for_settled_job(text, uuid)` (final review, 2026-09-18); nothing else new |
+| `postgres` (owner) | everything | everything, including the owner services below |
+| PUBLIC | — | **nothing**: every new function is revoked explicitly |
+
+**Owner services.** `ops.admit_inbound_message`, `ops.record_review_decision`, `ops.open_review_for_run` and `ops.open_missing_reviews` are SECURITY INVOKER and executable by no application role; `npm run ops -- triage` and `npm run lead-triage:demo` call them over `ADMIN_DATABASE_URL`. `supabase/tests/lead_triage_pilot.sql` G5 switches to each application role and is refused every one of them at the door.
+
+**The worker's post-settlement step.** It is SECURITY DEFINER and runs after the lease has ended.
+
+| Function | Why it is safe to expose to `ops_worker` |
+| --- | --- |
+| `ops.open_review_for_settled_job(p_worker_id, p_job_id)` | The runtime calls it only after TX2b has committed the run's settlement and completed its job, in a transaction of its own, so nothing it does or suffers reaches the settlement. It takes no tenant, run, result or consent argument: it reads the tenant and the run from the completed `agent_run.execute` job, and refuses (`OS403`) any worker but the one the job's `succeeded` event names, the trust model of `ops.resume_lease`. It returns NULL for a job that is not a completed agent run job. The review is derived only by `ops.open_review_for_run`, from the stored, database-validated result and the consent the admission recorded, and only once per run, so the most a worker can do with it is open a review the recovery would open anyway. |

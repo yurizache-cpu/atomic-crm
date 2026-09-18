@@ -24,6 +24,10 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import type { WorkerDatabase } from "../db/types.ts";
+import {
+  AGENT_RUN_CAPABILITIES,
+  SUPPORTED_CAPABILITIES,
+} from "../models/capabilityContracts.ts";
 import { modelRequestByteSize } from "../models/requestSize.ts";
 import { buildModelRequest, MODEL_ROUTE_POLICIES } from "../models/router.ts";
 import {
@@ -119,6 +123,26 @@ describe("the vocabulary the worker and the database share", () => {
     expect(sorted([...rows[0].external, ...rows[0].internal])).toEqual(
       sorted(REGISTERED_HANDLER_KINDS),
     );
+  });
+
+  // The database decides which capabilities may be requested; this worker
+  // decides which it can execute. A capability the database offers and the
+  // worker lacks is refused as `capability_unsupported` — recorded, and
+  // nothing called — so the two must be added in the same change.
+  it("has a prompt and a contract for every capability the database offers", async () => {
+    const { rows } = await admin.query<{
+      capability: string;
+      model_route: string;
+    }>("select capability, model_route from ops.agent_run_capabilities()");
+
+    expect([...rows].map((row) => row.capability).sort()).toEqual(
+      [...SUPPORTED_CAPABILITIES].sort(),
+    );
+    for (const row of rows) {
+      const binding = AGENT_RUN_CAPABILITIES.get(row.capability);
+      expect(binding?.contract.name).toBe(row.capability);
+      expect(MODEL_ROUTE_NAMES).toContain(row.model_route);
+    }
   });
 });
 

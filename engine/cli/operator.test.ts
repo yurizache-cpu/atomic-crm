@@ -18,6 +18,7 @@ import {
   LIMIT_SET,
   PRICE_RECORD,
   READS,
+  REVIEW,
   RUNS_WITH_OPTIONS,
   TENANT,
 } from "./testSupport/operatorArgv.ts";
@@ -41,7 +42,7 @@ const serverError = (code: string, message: string) =>
   Object.assign(new Error(message), { code, severity: "ERROR" });
 
 /** What an idle runtime answers: empty lists, a window, no held jobs, and each act's id. */
-const idle = (sql: string): unknown[] => {
+const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   if (sql.includes("left join ops.agent_runs r on r.started_at")) {
     return [{ since: SINCE, generated_at: NOW, status: null, count: 0 }];
   }
@@ -50,6 +51,20 @@ const idle = (sql: string): unknown[] => {
   if (sql.includes("ops.record_model_price")) return [{ result: PRICE }];
   if (sql.includes("ops.set_spend_limit")) return [{ result: LIMIT }];
   if (sql.includes("ops.retire_spend_limit")) return [{ result: true }];
+  if (sql.includes("ops.open_missing_reviews")) return [{ result: 2 }];
+  if (sql.includes("ops.record_review_decision")) {
+    // The decision is params[2]: the subcommand chose it, and it reaches the
+    // database as a bound value rather than as SQL.
+    return [
+      {
+        result: {
+          review_item_id: REVIEW,
+          status: params[2],
+          recorded: true,
+        },
+      },
+    ];
+  }
   return [];
 };
 
@@ -174,6 +189,10 @@ describe("running the operator tool", () => {
       { result: "recorded", priceId: PRICE },
       { result: "set", limitId: LIMIT, scope: "tenant" },
       { result: "retired", limitId: LIMIT },
+      { result: "recorded", reviewItemId: REVIEW, status: "accepted" },
+      { result: "recorded", reviewItemId: REVIEW, status: "rejected" },
+      { result: "recorded", reviewItemId: REVIEW, status: "needs_edit" },
+      { result: "recovered", opened: 2 },
     ]);
   });
 

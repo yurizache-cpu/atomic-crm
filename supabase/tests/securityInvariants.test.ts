@@ -674,7 +674,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are the pinned lease-bound worker capabilities.",
+      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are a pinned set: its lease-bound capabilities and the worker runtime's own functions.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -2015,6 +2015,133 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "A backfilled profile starts with do_not_contact false: the legacy schema had no opt-out field, and an opt-out recorded only in notes or tags cannot be read by a migration. A restore run with triggers disabled can break the invariant again; crm_data_invariants.sql is where that shows. The SQL function public.merge_contacts, unlike the edge function, still deletes the loser without folding its profile (SI-09 covers the edge function).",
+  },
+  {
+    id: "SI-43",
+    statement:
+      "An inbound message becomes work at most once. The admission identity is (tenant, source kind, external message id), and the task and the agent run are created under that same tenant-scoped key, so a redelivery converges on the one task and the one run and calls a provider no second time; the same identity carrying a different message is refused rather than answered.",
+    provenBy: ["live database", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker: /that message id was already admitted with a different message/,
+      },
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker: /constraint inbound_messages_identity_key unique/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /A2: a redelivery created more work/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /B1: a reused message id with a different body was admitted/,
+      },
+      {
+        file: "engine/domain/leadTriagePilot.dbtest.ts",
+        marker: /is admitted once and calls the provider once/,
+      },
+    ],
+    caveat:
+      "Identity is what the transport reports. A transport that reuses an id for a genuinely different message makes the second one a conflict, not a second admission — which is the fail-closed direction, and the reason the fingerprint covers the sender and the body. A redelivery arriving while the first admission is still uncommitted waits on its row lock and then converges.",
+  },
+  {
+    id: "SI-44",
+    statement:
+      "Only synthetic messages can be admitted while Q8 is open, and only in a process that was explicitly told to admit them: the database accepts no other source kind, and the transport does not exist unless COMPANY_OS_SYNTHETIC_INGRESS is exactly 'enabled'. No HTTP route, edge function or webhook reaches the ingress at all.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker: /only synthetic messages are admitted in this phase/,
+      },
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker: /constraint inbound_messages_source_kind_check/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /C4: a non-synthetic transport was admitted in Phase 2A/,
+      },
+      {
+        file: "engine/communication/syntheticIngress.test.ts",
+        marker: /stays off when the flag is/,
+      },
+      {
+        file: "engine/communication/syntheticIngress.test.ts",
+        marker: /is off when the flag is absent/,
+      },
+      {
+        // "No edge function reaches it": an edge function importing anything
+        // outside supabase/functions, engine/ included, is refused.
+        file: "scripts/production-scope.mjs",
+        marker: /"function-imports-outside-functions"/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /G5: an application role reached the pilot/,
+      },
+    ],
+    caveat:
+      "Whoever holds the database credential can insert a row directly, and whoever runs the process can set the variable; this keeps a real transport from being reached by accident or by configuration drift, not from a deliberate act. Adding a real transport is a Phase 2B migration, and Q8 must be answered before it exists.",
+  },
+  {
+    id: "SI-45",
+    statement:
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action, because Phase 2A has no outbound transport and no CRM write path.",
+    provenBy: ["live database", "driver-backed test", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker:
+          /this lead must not be contacted, so its draft cannot be accepted/,
+      },
+      {
+        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        marker: /this item is already %s, and a decision is final/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /F8: a draft for a do-not-contact lead was accepted/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /F4: a decided item was decided again/,
+      },
+      {
+        file: "engine/domain/leadTriagePilot.dbtest.ts",
+        marker: /opens no review when the model answers outside its contract/,
+      },
+      {
+        file: "engine/domain/leadTriagePilot.dbtest.ts",
+        marker: /the draft can never be accepted/,
+      },
+      {
+        file: "supabase/migrations/20260918120000_lead_triage_review_after_settlement.sql",
+        marker:
+          /a trigger on ops\.agent_runs opens a review inside the settlement/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /I1: a review is still opened inside the settlement/,
+      },
+      {
+        file: "engine/domain/leadTriageSettlement.dbtest.ts",
+        marker: /a paid answer whose review is cancelled while it opens/,
+      },
+      {
+        file: "engine/domain/leadTriageSettlement.dbtest.ts",
+        marker:
+          /a paid answer whose review waits on a lock until the statement times out/,
+      },
+      {
+        file: "engine/communication/syntheticIngress.test.ts",
+        marker: /offers no way to send anything/,
+      },
+    ],
+    caveat:
+      "The review item is opened by the worker runtime's post-settlement step (ops.open_review_for_settled_job), in its own transaction after the settlement committed; if it fails, or the worker dies before it runs, the run stays settled and ops.open_missing_reviews (npm run ops -- triage recover) opens it later, and until then the answer waits unreviewed with only the worker's log line to say so. The database owner is outside it as it is outside every other guard. Consent is SNAPSHOTTED at admission: a later opt-out is not propagated to an admitted message, which is harmless only because accepting performs no action. The moment an outbound transport or a CRM write exists, consent must be read again on the acting side, and what an accepted decision authorises must be decided again, explicitly.",
   },
 ];
 

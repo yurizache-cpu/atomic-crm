@@ -24,9 +24,12 @@
 //   * external_call: ONE call to a service outside the database, which must not
 //     be issued twice and must never hold a transaction open while it waits.
 //     The work is split into `prepare` (a committed transaction), `call` (no
-//     transaction, no capabilities) and `settle` (a second transaction). See
-//     runOneJob.ts for why each boundary is where it is.
+//     transaction, no capabilities) and `settle` (a second transaction), and
+//     once `settle` has committed, the steps it declared to follow it, each in
+//     a transaction of its own. See runOneJob.ts and externalCall.ts for why
+//     each boundary is where it is.
 
+import type { AfterSettlementStep } from "./afterSettlement.ts";
 import type { CapabilityName, Capabilities } from "./capabilities.ts";
 import type { LeasedJob } from "./job.ts";
 
@@ -123,6 +126,12 @@ export interface ExternalCallHandlerDefinition<
   readonly prepareCapabilities: readonly KP[];
   /** Granted to `settle` only. `call` is granted nothing. */
   readonly settleCapabilities: readonly KS[];
+  /**
+   * What runs once `settle` has COMMITTED, each step in a transaction of its
+   * own (afterSettlement.ts). A step can fail without reaching the settlement.
+   * Absent means nothing follows it.
+   */
+  readonly afterSettlement?: readonly AfterSettlementStep[];
   prepare(
     job: LeasedJob,
     capabilities: Pick<Capabilities, KP>,
@@ -178,6 +187,14 @@ function assertRunnable(definition: AnyHandlerDefinition): void {
           `handler "${definition.kind}" is an external_call handler without a ${list} list`,
         );
       }
+    }
+    if (
+      external.afterSettlement !== undefined &&
+      !Array.isArray(external.afterSettlement)
+    ) {
+      throw new Error(
+        `handler "${definition.kind}" declares afterSettlement that is not a list of steps`,
+      );
     }
     return;
   }

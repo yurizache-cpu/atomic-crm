@@ -279,6 +279,26 @@ async function main() {
       `ops.${fn} is missing from the catalogue; is the Phase 1D.1 migration (20260917120000_runtime_governance) applied?`,
     );
   }
+  // Phase 2A: the admission ledger, the review queue and their services, for
+  // the same reason — the matrix must attack them, not merely pass without them.
+  for (const relation of ["inbound_messages", "review_items"]) {
+    check(
+      relations.includes(relation),
+      `ops.${relation} is missing from the catalogue; is the Phase 2A migration (20260917190000_lead_triage_pilot) applied?`,
+    );
+  }
+  for (const fn of [
+    "admit_inbound_message",
+    "record_review_decision",
+    "open_review_for_run",
+    "open_missing_reviews",
+    "open_review_for_settled_job",
+  ]) {
+    check(
+      functions.includes(fn),
+      `ops.${fn} is missing from the catalogue; are the Phase 2A migrations (20260917190000, 20260918090000, 20260918120000) applied?`,
+    );
+  }
 
   // The live PostgREST configuration, not the file that is supposed to produce it.
   const restEnv = execFileSync(

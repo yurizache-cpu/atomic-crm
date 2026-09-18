@@ -21,6 +21,7 @@ import {
   TASK_ASSESSMENT_PROMPT_VERSION,
   type TaskAssessment,
 } from "../models/taskAssessment.ts";
+import type { AgentRunResult } from "../models/capabilityContracts.ts";
 import type { ModelProvider } from "../models/types.ts";
 import type {
   AgentRunCompletion,
@@ -222,7 +223,7 @@ const runCycle = async (
   }
   const context = (options.context ?? idleContext)();
   const startedAt = Date.now();
-  let outcome: CallOutcome<StructuredModelResult<TaskAssessment>>;
+  let outcome: CallOutcome<StructuredModelResult<AgentRunResult>>;
   try {
     const value = await handler.call(prepared.state, context);
     outcome = { ok: true, value, durationMs: Date.now() - startedAt };
@@ -264,6 +265,15 @@ describe("the handler declares its shape and is registered", () => {
       "failAgentRun",
     ]);
     expect(Object.isFrozen(handler)).toBe(true);
+  });
+
+  it("opens the review only after its settlement, never inside it", () => {
+    // The review is a step of its own that follows the committed settlement
+    // (engine/worker/afterSettlement.ts), so failing to open it cannot undo a
+    // paid answer. No settle capability opens one.
+    const { handler } = setup({ type: "respond", content: VALID });
+    expect([...(handler.afterSettlement ?? [])]).toEqual(["openRunReview"]);
+    expect(Object.isFrozen(handler.afterSettlement)).toBe(true);
   });
 
   it("is in the worker registry, and the exported kind list is exactly the registry's", () => {
