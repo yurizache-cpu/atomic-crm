@@ -3,14 +3,21 @@
 // VERIFIED 2026-09-18 against Meta's OFFICIAL developer documentation only
 // (docs/PHASE_2B_REPORT.md §3 lists every page and what it said):
 //
-//   * Graph API changelog / versioning: the latest version is v26.0
-//     (2026-07-29); v25.0 is supported until 2028-07-29.
-//   * WhatsApp Message API reference: documents v23.0, v24.0 and v25.0, and
-//     its send examples and OpenAPI spec use v25.0.
+//   * Graph API changelog / versioning: the newest Graph API version is v26.0
+//     (released 2026-07-29). v25.0 was released 2026-02-18 and is supported
+//     until 2028-07-29.
+//   * WhatsApp Cloud API "Send messages" and "Text messages" guides: their
+//     request examples call graph.facebook.com/v25.0, and the text-messages
+//     guide gives v25.0 as the example API version (re-verified in the
+//     pre-push review). The Message API reference's version selector, observed
+//     on the first pass as v23.0-v25.0, is rendered by JavaScript and could not
+//     be re-read.
 //
-// PINNED TO v25.0: the newest version the WhatsApp reference itself documents,
-// with the longest remaining support. The version is an adapter concern: no
-// Company Engine semantics depend on it.
+// PINNED TO v25.0 BECAUSE Meta's WhatsApp Cloud API documentation targets it
+// in its own request examples, and it is supported until 2028-07-29. It is NOT
+// the newest Graph API version: v26.0 exists, and the WhatsApp message
+// contract has not been verified against it, so the adapter does not move yet.
+// The version is an adapter concern: no Company Engine semantics depend on it.
 //
 // UPGRADE STRATEGY. Read the Graph API changelog and the WhatsApp changelog,
 // change META_GRAPH_API_VERSION in a reviewed commit, re-run the adapter's unit

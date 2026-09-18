@@ -155,17 +155,70 @@ describe("parsing an authenticated notification", () => {
     expect(parsed.messages[0].receivedAt).toEqual(new Date(NOW));
   });
 
-  it("ignores what it cannot admit without guessing: media, a username-only sender, a blank body", () => {
-    for (const overrides of [
-      { type: "image", text: undefined, image: { id: "media-1" } },
-      { from: undefined, from_user_id: "BR.bsuid.1" },
-      { text: { body: "   " } },
-      { from: "not-digits" },
-    ]) {
+  it("hands on every message Meta names, marking what is not text or has no sender number", () => {
+    // Nothing a sender wrote is acknowledged in silence: the database admits it
+    // or records a content-free refusal (ops.receive_whatsapp_message).
+    const cases: [
+      Record<string, unknown>,
+      { from: string | null; body: string | null },
+    ][] = [
+      [
+        { type: "image", text: undefined, image: { id: "media-1" } },
+        { from: "5511900000001", body: null },
+      ],
+      [
+        {
+          type: "audio",
+          text: undefined,
+          audio: { id: "voice-1", voice: true },
+        },
+        { from: "5511900000001", body: null },
+      ],
+      [
+        { from: undefined, from_user_id: "BR.bsuid.1" },
+        {
+          from: null,
+          body: "Oi, gostaria de saber como funciona a primeira consulta.",
+        },
+      ],
+      [
+        { from: "not-digits" },
+        {
+          from: null,
+          body: "Oi, gostaria de saber como funciona a primeira consulta.",
+        },
+      ],
+      [{ text: { body: "   " } }, { from: "5511900000001", body: "   " }],
+      [
+        { text: { body: `before${String.fromCharCode(0)}after` } },
+        { from: "5511900000001", body: null },
+      ],
+    ];
+    for (const [overrides, expected] of cases) {
       const parsed = parseWebhook(textPayload(overrides), NOW);
-      expect(parsed.messages).toEqual([]);
-      expect(parsed.ignored).toBe(1);
+      expect(parsed.ignored).toBe(0);
+      expect(parsed.messages).toHaveLength(1);
+      expect(parsed.messages[0]).toMatchObject({
+        externalMessageId: "wamid.SYNTHETIC0001",
+        ...expected,
+      });
     }
+  });
+
+  it("does not bound a body's length: the database decides, in characters", () => {
+    const long = "a".repeat(5000);
+    const parsed = parseWebhook(textPayload({ text: { body: long } }), NOW);
+    expect(parsed.messages[0].body).toBe(long);
+  });
+
+  it("dates a message with no readable timestamp now, and ignores only one with no usable id", () => {
+    expect(
+      parseWebhook(textPayload({ timestamp: "soon" }), NOW).messages[0]
+        .receivedAt,
+    ).toEqual(new Date(NOW));
+    const parsed = parseWebhook(textPayload({ id: undefined }), NOW);
+    expect(parsed.messages).toEqual([]);
+    expect(parsed.ignored).toBe(1);
   });
 
   it("reads statuses with the correlation this system sent and the first error code", () => {

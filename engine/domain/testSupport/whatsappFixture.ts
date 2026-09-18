@@ -94,7 +94,11 @@ export interface Clinic {
   readonly providerTarget: string;
 }
 
-/** One company, one triage agent, and one WhatsApp channel on `providerTarget`. */
+/**
+ * One company, one triage agent, and one WhatsApp channel on `providerTarget`.
+ * A production channel is configured inactive: the BASELINE Q8 real-data gate
+ * is closed, so it can be nothing else.
+ */
 export async function buildClinic(
   owner: WorkerDatabase,
   tenantId: string,
@@ -128,6 +132,7 @@ export async function buildClinic(
       mode,
       label: "dbtest channel",
       actor: "dbtest",
+      active: mode === "test",
     });
     return { tenantId, companyId, agentId, channelId, providerTarget };
   });

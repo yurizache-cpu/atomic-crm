@@ -326,6 +326,18 @@ export function parseAlterRelation(masked) {
     }
     return { kind: "ignored", rel, isTable };
   }
+  // A dropped constraint is reported by name, so a rule can pin the few that
+  // carry an invariant (Phase 2B: the BASELINE Q8 real-data gate).
+  const dropConstraint =
+    /^drop\s+constraint\s+(?:if\s+exists\s+)?([a-z_][a-z0-9_$]*)/.exec(rest);
+  if (dropConstraint) {
+    return {
+      kind: "drop-constraint",
+      rel,
+      constraint: dropConstraint[1],
+      isTable,
+    };
+  }
   // `rename column`, `owner to`, `add column`, constraints. OWNERSHIP is not
   // modelled: a view that is security_invoker but whose owner changes, or a
   // table owner (who bypasses RLS unless FORCE ROW LEVEL SECURITY is set), is

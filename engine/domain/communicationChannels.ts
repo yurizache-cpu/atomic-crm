@@ -8,9 +8,12 @@
 // across all tenants; configuring another tenant's target is refused.
 //
 // MODE. `test` carries synthetic traffic and may create work and send.
-// `production` may do neither while BASELINE Q8 is open: the database refuses
-// both, whatever this module is asked (ops.guard_inbound_message_q8,
-// ops.guard_outbound_message). Choosing `production` here only records intent.
+// `production` may do neither while the BASELINE Q8 real-data gate is closed:
+// a production channel can only be configured INACTIVE
+// (communication_channels_q8_real_data_gate, and ops.configure_whatsapp_channel
+// refuses the rest with OS403), so no real number is ever a live target; and
+// the database refuses a transport admission or a send on it whatever this
+// module is asked (ops.guard_inbound_message_q8, ops.guard_outbound_message).
 
 import type { TxClient } from "../db/types.ts";
 import { CompanyOsError, toDomainError } from "./errors.ts";

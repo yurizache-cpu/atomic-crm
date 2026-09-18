@@ -51,6 +51,13 @@ export interface SendReport {
    * send stays `sending`, and it may have been delivered.
    */
   readonly settlementRecorded: boolean;
+  /**
+   * What THIS invocation's one call produced, or null when it made none. With
+   * the provider message id, the evidence a send whose settlement failed would
+   * otherwise lose: an id and a class, never text.
+   */
+  readonly providerOutcome: OutboundOutcome["kind"] | null;
+  readonly providerMessageId: string | null;
 }
 
 export interface SendSeams {
@@ -93,6 +100,8 @@ export async function sendApprovedReview(
       providerCalled: false,
       blockedReason: null,
       settlementRecorded: true,
+      providerOutcome: null,
+      providerMessageId: null,
       ...overrides,
     });
   if (requested.status !== "authorized") {
@@ -114,6 +123,12 @@ export async function sendApprovedReview(
 
   // --- CALL: exactly one. -------------------------------------------------
   const outcome = await callOnce(transport, begun.request);
+  const evidence = {
+    providerCalled: true,
+    providerOutcome: outcome.kind,
+    providerMessageId:
+      outcome.kind === "accepted" ? outcome.providerMessageId : null,
+  };
   if (seams.afterCall) await seams.afterCall(requested.outboundMessageId);
 
   // --- TX3: settle. -------------------------------------------------------
@@ -126,13 +141,11 @@ export async function sendApprovedReview(
         outcome,
       ),
     );
-    return report(settled.status, { providerCalled: true });
+    return report(settled.status, evidence);
   } catch {
     // The call happened; its outcome is not on the record. The send stays
-    // `sending`, which is the truth: it may have been delivered.
-    return report("sending", {
-      providerCalled: true,
-      settlementRecorded: false,
-    });
+    // `sending`, which is the truth: it may have been delivered. What the call
+    // produced goes back to the operator, so it is not lost with the settle.
+    return report("sending", { ...evidence, settlementRecorded: false });
   }
 }

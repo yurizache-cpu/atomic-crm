@@ -120,6 +120,18 @@ function handleCreateView(ctx) {
   return true;
 }
 
+/**
+ * Constraints that carry an invariant, pinned by name. Dropping one is a
+ * finding only an owner-approved override can silence: the BASELINE Q8
+ * real-data gate (20260918170000) opens only by a reviewed decision.
+ */
+const PINNED_CONSTRAINTS = new Map([
+  [
+    "ops.communication_channels:communication_channels_q8_real_data_gate",
+    "the BASELINE Q8 real-data gate: while it holds, a production WhatsApp channel can exist only inactive. Dropping it lets a real number become a live target, which only an owner decision on Q8, the lawful basis and consent may allow.",
+  ],
+]);
+
 function handleAlterRelation(ctx) {
   const alter = parseAlterRelation(ctx.masked);
   if (!alter) return false;
@@ -176,6 +188,17 @@ function handleAlterRelation(ctx) {
       ctx.state.views.set(
         key,
         ctx.fromDo && alter.invoker === true ? UNKNOWN : alter.invoker,
+      );
+    }
+    return true;
+  }
+  if (alter.kind === "drop-constraint") {
+    const pinned = PINNED_CONSTRAINTS.get(`${key}:${alter.constraint}`);
+    if (pinned) {
+      ctx.at(
+        `constraint-dropped:${key}:${alter.constraint}`,
+        "constraint-dropped",
+        `${key} loses ${alter.constraint}, ${pinned}`,
       );
     }
     return true;

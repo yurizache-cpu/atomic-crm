@@ -14,7 +14,9 @@
 //     for the message (a wamid);
 //   * a 4xx carrying Meta's error body: rejected. Meta refused it, and the
 //     numeric code says why (a closed 24-hour window, a rate limit, a bad
-//     token). Nothing was sent;
+//     token). Nothing was sent. EXCEPT Meta's generic codes (1, 2, 131000,
+//     131016: an unknown or temporary service error), which say nothing about
+//     whether the message left: those are ambiguous, whatever the status;
 //   * everything else: AMBIGUOUS. A timeout or a network error after the
 //     request may have left, a 5xx, a 408, a redirect, a malformed or oversize
 //     success. Meta may have accepted the message. The system records that it
@@ -24,10 +26,16 @@
 // WHAT NEVER LEAVES THIS FILE: the access token, the recipient, the text, and
 // any provider message or error text. An outcome carries a code and a class.
 //
-// biz_opaque_callback_data rides at the top level of the request, where the
-// status webhook reference and the WhatsApp changelog place it. The v25.0
-// OpenAPI spec does not declare it; if Meta ever refused it, that refusal is a
-// definitive 4xx (failed), never an ambiguous send.
+// WHERE biz_opaque_callback_data GOES IS UNVERIFIED. Meta's status webhook
+// reference says only that it is a property "in the send message request";
+// no current Meta page shows its position, and the Message API reference's
+// request schema does not list it (re-checked 2026-09-18, pre-push review). It
+// rides at the top level here as an ASSUMPTION the live test-number probe must
+// settle (docs/PHASE_2B_REPORT.md §13). If Meta refuses it, that refusal is a
+// definitive 4xx: the send is recorded failed and never sent again. If Meta
+// ignores it, statuses carry no correlation, and a send whose outcome is
+// unknown can then be resolved only by its provider message id, which exists
+// only when a response was read.
 
 import type {
   OutboundOutcome,
@@ -69,6 +77,13 @@ export interface MetaTransportOptions {
 const DIGITS = /^[0-9]{1,32}$/;
 const WA_ID = /^[0-9]{6,20}$/;
 const PROVIDER_ID = /^[\x21-\x7e]{1,200}$/;
+
+/**
+ * Meta's generic error codes: an unknown or temporary service error, whose
+ * advice is to try again (Meta, "Error codes"). They do not say the message
+ * was NOT accepted, so a send that meets one is ambiguous, never failed.
+ */
+const AMBIGUOUS_CODES: ReadonlySet<number> = new Set([1, 2, 131000, 131016]);
 
 /**
  * Meta's numeric error codes, grouped by what they mean for a send
@@ -226,6 +241,9 @@ export function createMetaWhatsAppTransport(
       response.status !== 408
     ) {
       const code = errorCodeOf(body);
+      if (code !== null && AMBIGUOUS_CODES.has(code)) {
+        return ambiguous("provider_unknown_error");
+      }
       if (code === null) {
         return rejected(
           null,

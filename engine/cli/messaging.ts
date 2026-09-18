@@ -142,6 +142,19 @@ export function parseMessagingArgs(argv: readonly string[]): MessagingCommand {
       message: "--mode must be test or production",
     };
   }
+  // The closed BASELINE Q8 real-data gate, refused here before the database
+  // refuses it too (communication_channels_q8_real_data_gate).
+  if (
+    name === "channels set" &&
+    parsed.flags.values.get("mode") === "production" &&
+    !parsed.flags.switches.has("inactive")
+  ) {
+    return {
+      kind: "usage_error",
+      message:
+        "--mode production needs --inactive: the BASELINE Q8 real-data gate is closed, so a production channel can only be configured inactive",
+    };
+  }
   const status = parsed.flags.values.get("status");
   if (status !== undefined && !isOutboundStatus(status)) {
     return {
@@ -202,17 +215,43 @@ export async function runMessagingCli(
       ((accessToken: string) => createMetaWhatsAppTransport({ accessToken }))
     )(token);
     const db = dependencies.openDatabase(connectionString);
+    // Whether any transaction opened: before one does, a failure is a
+    // connection-phase error whose message can name the role or database, so
+    // it is reported by its code alone (cliOutput.ts describeFailure).
+    let opened = false;
+    const tracked: WorkerDatabase = {
+      withTransaction: (fn) =>
+        db.withTransaction((tx) => {
+          opened = true;
+          return fn(tx);
+        }),
+      identity: () => db.identity(),
+      close: () => db.close(),
+    };
     try {
-      const report = await sendApprovedReview(db, transport, {
+      const report = await sendApprovedReview(tracked, transport, {
         tenantId: get("tenant") as string,
         reviewId: get("review") as string,
         requestedBy: get("operator") as string,
         source: "operator-cli",
       });
       stdout(jsonLine(report));
+      if (!report.settlementRecorded) {
+        // The one call happened and its outcome is not on the record: the
+        // send stays `sending`. Never retried; a status callback or
+        // `outbound mark-indeterminate` settles it.
+        stderr(
+          jsonLine({
+            error: "settlement_not_recorded",
+            message:
+              "the provider was called once and its outcome could not be recorded; the send stays sending and is never sent again",
+          }),
+        );
+        return EXIT_REFUSED;
+      }
       return EXIT_OK;
     } catch (error) {
-      stderr(jsonLine(describeFailure(error, true)));
+      stderr(jsonLine(describeFailure(error, opened)));
       return EXIT_REFUSED;
     } finally {
       try {

@@ -4,7 +4,7 @@
 // the provider, and what it never prints. Sending itself is proven against a
 // real database in engine/domain/whatsappOutbound.dbtest.ts.
 import { describe, expect, it } from "vitest";
-import type { WorkerDatabase } from "../db/types.ts";
+import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import type { OutboundTransport } from "../communication/types.ts";
 import { parseMessagingArgs, runMessagingCli } from "./messaging.ts";
 
@@ -81,6 +81,34 @@ describe("parsing messaging arguments", () => {
     }
   });
 
+  it("refuses a production channel unless it is configured inactive (the closed Q8 gate)", () => {
+    const argv = [
+      "channels",
+      "set",
+      "--tenant",
+      TENANT,
+      "--company",
+      TENANT,
+      "--agent",
+      TENANT,
+      "--target",
+      "200000000000001",
+      "--label",
+      "x",
+      "--actor",
+      "unit",
+      "--mode",
+      "production",
+    ];
+    expect(parseMessagingArgs(argv)).toMatchObject({
+      kind: "usage_error",
+      message: expect.stringMatching(/^--mode production needs --inactive/),
+    });
+    expect(parseMessagingArgs([...argv, "--inactive"]).kind).toBe(
+      "channels set",
+    );
+  });
+
   it("refuses a channel mode other than test or production", () => {
     const argv = [
       "channels",
@@ -117,6 +145,85 @@ describe("running the messaging tool", () => {
     expect(code).toBe(2);
     expect(opened).toEqual({ databases: 0, transports: 0, calls: 0 });
     expect(out.join("\n")).toMatch(/WHATSAPP_ACCESS_TOKEN is required to send/);
+  });
+
+  it("reports a failure before any transaction opened by its code alone", async () => {
+    // A server refusal at connect time can name the role or the database.
+    const refusal = Object.assign(
+      new Error('permission denied for database "SENTINEL-DB"'),
+      { code: "42501", severity: "FATAL" },
+    );
+    const { out, deps } = harness({ failWith: refusal });
+    const code = await runMessagingCli(
+      SEND,
+      deps({ ADMIN_DATABASE_URL: ADMIN, WHATSAPP_ACCESS_TOKEN: TOKEN }),
+    );
+    expect(code).toBe(1);
+    expect(out.join("\n")).toContain('"error":"42501"');
+    expect(out.join("\n")).not.toMatch(/SENTINEL/);
+  });
+
+  it("exits 1 and keeps the provider's evidence when the one call cannot be settled", async () => {
+    const OUTBOUND = "00000000-0000-4000-8000-00000000000c";
+    const answers: Record<string, unknown> = {
+      request_outbound_send: {
+        outbound_message_id: OUTBOUND,
+        status: "authorized",
+        created: true,
+      },
+      begin_outbound_send: {
+        state: "send",
+        outbound_message_id: OUTBOUND,
+        provider_target: "200000000000001",
+        to: "5511900000001",
+        body: "SENTINEL-DRAFT",
+      },
+    };
+    const tx = {
+      async query(sql: string) {
+        const fn = /ops\.([a-z_]+)\(/.exec(sql)?.[1] ?? "";
+        if (fn === "settle_outbound_send") {
+          throw Object.assign(new Error("connection terminated"), {
+            code: "08006",
+          });
+        }
+        return { rows: [{ result: answers[fn] }] };
+      },
+    } as unknown as TxClient;
+    const database = {
+      withTransaction: async <T>(fn: (client: TxClient) => Promise<T>) =>
+        fn(tx),
+      identity: async () => {
+        throw new Error("unused");
+      },
+      close: async () => {},
+    } as unknown as WorkerDatabase;
+    const calls: string[] = [];
+    const out: string[] = [];
+    const code = await runMessagingCli(SEND, {
+      env: { ADMIN_DATABASE_URL: ADMIN, WHATSAPP_ACCESS_TOKEN: TOKEN },
+      stdout: (line) => out.push(line),
+      stderr: (line) => out.push(line),
+      openDatabase: () => database,
+      openTransport: () => ({
+        provider: "meta_whatsapp",
+        async send(request) {
+          calls.push(request.correlation);
+          return { kind: "accepted", providerMessageId: "wamid.UNIT0001" };
+        },
+      }),
+    });
+    expect(code).toBe(1);
+    expect(calls).toEqual([OUTBOUND]);
+    expect(JSON.parse(out[0])).toMatchObject({
+      status: "sending",
+      providerCalled: true,
+      settlementRecorded: false,
+      providerOutcome: "accepted",
+      providerMessageId: "wamid.UNIT0001",
+    });
+    expect(out.join("\n")).toContain("settlement_not_recorded");
+    expect(out.join("\n")).not.toMatch(/SENTINEL/);
   });
 
   it("prints neither the access token nor the database password when the database refuses", async () => {

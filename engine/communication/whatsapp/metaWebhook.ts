@@ -12,18 +12,19 @@
 //     and compared in constant time. An unauthentic body is never parsed.
 //
 // PARSING is tolerant of what Meta adds and strict about what this adapter
-// reads: an element it cannot read is COUNTED as ignored, never guessed at.
-// Only `text` messages from a sender with a WhatsApp id (digits) become
-// messages; a username-only sender (a business-scoped user id with no `from`),
-// media, reactions and the rest are ignored, because none can be admitted
-// without guessing who sent it or what it said.
+// reads. EVERY message Meta names with an id is handed to the database, which
+// decides what it becomes (Phase 2B pre-push review): a `text` message carries
+// its body; any other type (media, a voice note, a reaction...) carries none;
+// a sender known only by username (a business-scoped user id with no `from`)
+// carries no sender number. The database admits what it can and records a
+// content-free refusal for the rest, so nothing is acknowledged in silence.
+// Nothing here bounds a body's length: that is the database's decision, in
+// characters. Only an element with no usable message id, which could never be
+// keyed once, is COUNTED as ignored.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import {
-  BIZ_OPAQUE_CALLBACK_DATA_MAX_LENGTH,
-  WHATSAPP_TEXT_MAX_LENGTH,
-} from "./metaApi.ts";
+import { BIZ_OPAQUE_CALLBACK_DATA_MAX_LENGTH } from "./metaApi.ts";
 
 export interface SubscriptionQuery {
   readonly mode: string | null;
@@ -88,14 +89,21 @@ export function isAuthenticWebhook(
   );
 }
 
-/** One inbound text message, as the gateway hands it to the database. */
+/** One inbound message, as the gateway hands it to the database. */
 export interface WhatsAppInboundMessage {
   /** The receiving phone number id: selects a channel, never a tenant directly. */
   readonly providerTarget: string;
   readonly externalMessageId: string;
-  /** The sender's WhatsApp id: digits, with the country code. */
-  readonly from: string;
-  readonly body: string;
+  /**
+   * The sender's WhatsApp id (digits, with the country code), or null when
+   * the sender is known only by username.
+   */
+  readonly from: string | null;
+  /**
+   * The text of a `text` message; null for any other type, and for text the
+   * database cannot hold (a NUL character).
+   */
+  readonly body: string | null;
   readonly receivedAt: Date;
 }
 
@@ -145,13 +153,14 @@ const changeSchema = z.object({
     statuses: z.array(z.unknown()).max(1000).optional(),
   }),
 });
-const textMessageSchema = z.object({
+const inboundMessageSchema = z.object({
   id: z.string().regex(PROVIDER_ID),
-  from: z.string().regex(WA_ID),
-  timestamp: z.string().regex(UNIX_SECONDS),
-  type: z.literal("text"),
-  text: z.object({ body: z.string().min(1).max(WHATSAPP_TEXT_MAX_LENGTH) }),
+  from: z.unknown().optional(),
+  timestamp: z.unknown().optional(),
+  type: z.unknown().optional(),
+  text: z.unknown().optional(),
 });
+const textBodySchema = z.object({ body: z.string() });
 const statusSchema = z.object({
   id: z.string().regex(PROVIDER_ID),
   status: z.string().regex(/^[a-z_]{1,32}$/),
@@ -204,18 +213,28 @@ export function parseWebhook(
       const { value } = change.data;
       const providerTarget = value.metadata.phone_number_id;
       for (const rawMessage of value.messages ?? []) {
-        const message = textMessageSchema.safeParse(rawMessage);
-        if (!message.success || message.data.text.body.trim() === "") {
+        const message = inboundMessageSchema.safeParse(rawMessage);
+        if (!message.success) {
           ignored += 1;
           continue;
         }
+        const { from, timestamp, type, text } = message.data;
+        const textBody =
+          type === "text" ? textBodySchema.safeParse(text) : undefined;
         messages.push(
           Object.freeze({
             providerTarget,
             externalMessageId: message.data.id,
-            from: message.data.from,
-            body: message.data.text.body,
-            receivedAt: fromUnixSeconds(message.data.timestamp, now),
+            from: typeof from === "string" && WA_ID.test(from) ? from : null,
+            body:
+              textBody?.success === true &&
+              !textBody.data.body.includes("\u0000")
+                ? textBody.data.body
+                : null,
+            receivedAt:
+              typeof timestamp === "string" && UNIX_SECONDS.test(timestamp)
+                ? fromUnixSeconds(timestamp, now)
+                : new Date(now),
           }),
         );
       }

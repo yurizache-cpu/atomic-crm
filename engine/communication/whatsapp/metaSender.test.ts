@@ -139,6 +139,12 @@ describe("the outcome of the one call", () => {
       { kind: "ambiguous", errorClass: "provider_5xx" },
     ],
     [
+      "a 4xx carrying Meta's generic 'something went wrong' code is ambiguous, never failed",
+      async () =>
+        json(400, { error: { code: 131000, message: "Something went wrong" } }),
+      { kind: "ambiguous", errorClass: "provider_unknown_error" },
+    ],
+    [
       "a 408 is ambiguous",
       async () => new Response("", { status: 408 }),
       { kind: "ambiguous", errorClass: "unexpected_status" },

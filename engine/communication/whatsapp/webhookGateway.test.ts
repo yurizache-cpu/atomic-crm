@@ -14,6 +14,7 @@ import {
   PermanentStoreError,
   type GatewayConfig,
   type GatewayStore,
+  type MessageAnswer,
 } from "./webhookGateway.ts";
 
 const CONFIG: GatewayConfig = Object.freeze({
@@ -75,7 +76,7 @@ const post = (body: string, signature: string | undefined) => ({
 
 const recordingStore = (
   behaviour: {
-    message?: () => Promise<"admitted">;
+    message?: () => Promise<MessageAnswer>;
     status?: () => Promise<"updated">;
   } = {},
 ) => {
@@ -206,10 +207,50 @@ describe("an event delivery", () => {
     ).toBe(400);
   });
 
-  it("answers 200 when the store refuses permanently, so Meta does not redeliver forever", async () => {
+  it("answers 200 for a message refused ON THE RECORD, and for one malformed before any channel", async () => {
+    for (const message of [
+      async (): Promise<MessageAnswer> => "refused",
+      async (): Promise<MessageAnswer> => {
+        throw new PermanentStoreError("OS400");
+      },
+    ]) {
+      const { store } = recordingStore({ message });
+      const { log } = recordingLog();
+      expect(
+        (
+          await handleWebhookRequest(
+            post(payload, signed(payload)),
+            CONFIG,
+            store,
+            log,
+          )
+        ).status,
+      ).toBe(200);
+    }
+  });
+
+  it("does not acknowledge an unrouted message: 503, after handing every other item on", async () => {
+    const { store, seen } = recordingStore({ message: async () => "unrouted" });
+    const { lines, log } = recordingLog();
+    const answer = await handleWebhookRequest(
+      post(payload, signed(payload)),
+      CONFIG,
+      store,
+      log,
+    );
+    expect(answer.status).toBe(503);
+    expect(seen.statuses).toHaveLength(1);
+    // The business's own number id, so the operator can see which one.
+    expect(lines).toContain(
+      JSON.stringify({ event: "gateway.unrouted", target: "200000000000001" }),
+    );
+  });
+
+  it("answers 500, not 503, when a transient failure meets an unrouted message", async () => {
     const { store } = recordingStore({
-      message: async () => {
-        throw new PermanentStoreError("OS404");
+      message: async () => "unrouted",
+      status: async () => {
+        throw new Error("connection terminated");
       },
     });
     const { log } = recordingLog();
@@ -222,7 +263,7 @@ describe("an event delivery", () => {
           log,
         )
       ).status,
-    ).toBe(200);
+    ).toBe(500);
   });
 
   it("answers 500 when the store fails transiently, so Meta delivers again", async () => {
@@ -282,6 +323,12 @@ describe("what the gateway logs", () => {
       post(payload, signed(payload)),
       CONFIG,
       store,
+      log,
+    );
+    await handleWebhookRequest(
+      post(payload, signed(payload)),
+      CONFIG,
+      recordingStore({ message: async () => "unrouted" }).store,
       log,
     );
     await handleWebhookRequest(post(payload, "sha256=bad"), CONFIG, store, log);

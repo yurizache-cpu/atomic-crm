@@ -8,11 +8,16 @@
 // gateway passes what Meta signed; it never names a tenant, a company, an agent
 // or a consent state.
 //
-// FAILURE CLASSES. A domain refusal (a 4xx-class OS SQLSTATE, or a constraint
-// the functions let through) is PERMANENT: redelivering the same item cannot
-// change it, so Meta is answered 200. Anything else (a lost connection, a
-// deadlock, a serialization failure, OS429) is TRANSIENT: Meta is answered 500
-// and redelivers, and admission converges on what the item already became.
+// ANSWERS. ops.receive_whatsapp_message answers admitted, refused (it wrote a
+// durable content-free fact) or unrouted (not acknowledged, nothing stored);
+// see engine/communication/whatsapp/webhookGateway.ts for what Meta is told.
+//
+// FAILURE CLASSES. Only a TYPED domain refusal (OS400-OS409, raised before an
+// item could be tied to a channel) is PERMANENT, because redelivering the same
+// item cannot change it. Everything else, a constraint or data exception
+// included, is TRANSIENT: Meta is answered 500 and delivers again, admission
+// converges on what the item already became, and a failure that repeats is
+// repeated in the log rather than acknowledged once and forgotten.
 
 import type { WorkerDatabase } from "../db/types.ts";
 import {
@@ -30,8 +35,8 @@ export const GATEWAY_ROLE = "ops_gateway";
 
 const ASSUME_GATEWAY_ROLE = "set local role ops_gateway";
 
-/** Domain refusals (OS400-OS409), integrity and data exceptions. OS429 is transient. */
-const PERMANENT = /^(OS40[0-9]|23[0-9A-Z]{3}|22[0-9A-Z]{3})$/;
+/** Typed domain refusals only. OS429, and every 22xxx / 23xxx, are transient. */
+const PERMANENT = /^OS40[0-9]$/;
 
 const sqlstateOf = (error: unknown): string | null => {
   const code =
@@ -86,7 +91,8 @@ export function createGatewayStore(db: WorkerDatabase): GatewayStore {
           message.receivedAt,
         ],
       );
-      if (answer.state === "held") return "held";
+      if (answer.state === "refused") return "refused";
+      if (answer.state === "unrouted") return "unrouted";
       if (answer.state === "admitted") {
         return answer.replayed === true ? "replayed" : "admitted";
       }

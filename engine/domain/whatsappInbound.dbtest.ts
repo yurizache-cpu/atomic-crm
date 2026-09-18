@@ -28,6 +28,8 @@ import {
   metaPayload,
   provisionGatewayRole,
 } from "./testSupport/whatsappFixture.ts";
+import { configureWhatsAppChannel } from "./communicationChannels.ts";
+import { createGatewayStore } from "./whatsappGatewayStore.ts";
 
 let admin: Pool;
 let owner: WorkerDatabase;
@@ -155,7 +157,7 @@ describe("a signed delivery to a configured test channel", () => {
     ).toBe(1);
   });
 
-  it("refuses the same message id carrying a different message, and creates nothing", async () => {
+  it("refuses the same message id carrying a different message on the record, and creates nothing else", async () => {
     await buildClinic(owner, TENANT_A, TARGET_A);
     await deliver(
       gateway,
@@ -180,10 +182,16 @@ describe("a signed delivery to a configured test channel", () => {
       }),
       (line) => lines.push(line),
     );
-    // A conflict is permanent: acknowledged, recorded as refused, never retried.
+    // A conflict is permanent: acknowledged only with a durable, content-free
+    // refusal on the record, never retried.
     expect(answer.status).toBe(200);
-    expect(lines.join("\n")).toContain('"code":"OS409"');
+    expect(lines.join("\n")).toContain('"refusedMessages":1');
     expect(await inboundFor(TENANT_A)).toHaveLength(1);
+    const { rows } = await admin.query<{ payload: Record<string, unknown> }>(
+      "select payload from ops.events where tenant_id = $1 and type = 'communication.inbound_refused'",
+      [TENANT_A],
+    );
+    expect(rows.map((r) => r.payload.reason)).toEqual(["admission_refused"]);
   });
 });
 
@@ -217,7 +225,7 @@ describe("tenancy comes from the configured provider target, never the payload",
     });
   });
 
-  it("refuses an unknown or inactive target without admitting anything", async () => {
+  it("does not acknowledge a message for an unknown or paused target, and admits it once the channel is live again", async () => {
     const clinic = await buildClinic(owner, TENANT_A, TARGET_A);
     const lines: string[] = [];
     const unknown = await deliver(
@@ -227,8 +235,10 @@ describe("tenancy comes from the configured provider target, never the payload",
       }),
       (line) => lines.push(line),
     );
-    expect(unknown.status).toBe(200);
-    expect(lines.join("\n")).toContain('"code":"OS404"');
+    expect(unknown.status).toBe(503);
+    // The business's own number id, so an operator sees which one; never the sender.
+    expect(lines.join("\n")).toContain('"target":"299999999999999"');
+    expect(lines.join("\n")).not.toContain(LEAD);
 
     await owner.withTransaction((tx) =>
       tx.query(
@@ -236,18 +246,57 @@ describe("tenancy comes from the configured provider target, never the payload",
         [clinic.channelId],
       ),
     );
-    await deliver(
-      gateway,
-      metaPayload(TARGET_A, {
-        messages: [{ id: "wamid.IN0302", from: LEAD, body: BODY }],
-      }),
-    );
+    const paused = metaPayload(TARGET_A, {
+      messages: [{ id: "wamid.IN0302", from: LEAD, body: BODY }],
+    });
+    expect((await deliver(gateway, paused)).status).toBe(503);
     expect(
       await countRows(
         admin,
         "select count(*)::text as count from ops.inbound_messages",
       ),
     ).toBe(0);
+
+    // Meta delivers it again. The channel is live again, so it becomes work.
+    await owner.withTransaction((tx) =>
+      tx.query(
+        "update ops.communication_channels set active = true where id = $1",
+        [clinic.channelId],
+      ),
+    );
+    expect((await deliver(gateway, paused)).status).toBe(200);
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.inbound_messages where external_message_id = 'wamid.IN0302'",
+      ),
+    ).toBe(1);
+  });
+
+  it("does not acknowledge a message for a paused triage agent, and admits it once the agent is active", async () => {
+    const clinic = await buildClinic(owner, TENANT_A, TARGET_A);
+    const setAgent = (status: string) =>
+      owner.withTransaction((tx) =>
+        tx.query("select ops.set_agent_status($1, $2, $3, 'dbtest-whatsapp')", [
+          TENANT_A,
+          clinic.agentId,
+          status,
+        ]),
+      );
+    const payload = metaPayload(TARGET_A, {
+      messages: [{ id: "wamid.IN0303", from: LEAD, body: BODY }],
+    });
+    await setAgent("inactive");
+    expect((await deliver(gateway, payload)).status).toBe(503);
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.inbound_messages",
+      ),
+    ).toBe(0);
+    await setAgent("active");
+    expect((await deliver(gateway, payload)).status).toBe(200);
+    expect((await inboundFor(TENANT_A)).length).toBe(1);
   });
 
   it("gives the same WhatsApp id a separate conversation in each tenant", async () => {
@@ -275,17 +324,52 @@ describe("tenancy comes from the configured provider target, never the payload",
   });
 });
 
-describe("BASELINE Q8: a production channel creates no work", () => {
-  it("holds a message to a production target: no ledger row, no task, no run, only the fact", async () => {
+describe("BASELINE Q8: the real-data gate is closed", () => {
+  it("never makes a production channel live through the service", async () => {
+    const clinic = await buildClinic(owner, TENANT_A, TARGET_A);
+    const configure = (providerTarget: string, active?: boolean) =>
+      owner.withTransaction((tx) =>
+        configureWhatsAppChannel(tx, {
+          tenantId: TENANT_A,
+          companyId: clinic.companyId,
+          agentId: clinic.agentId,
+          providerTarget,
+          mode: "production",
+          label: "real number",
+          actor: "dbtest",
+          active,
+        }),
+      );
+    // A new live production channel, and the live test channel turned into one.
+    await expect(configure("200000000000909")).rejects.toThrow(
+      /real-data gate is closed/,
+    );
+    await expect(configure(TARGET_A)).rejects.toThrow(
+      /real-data gate is closed/,
+    );
+    // Inactive is allowed; re-activating it is refused like the rest.
+    await configure("200000000000909", false);
+    await expect(configure("200000000000909", true)).rejects.toThrow(
+      /real-data gate is closed/,
+    );
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.communication_channels where mode = 'production' and active",
+      ),
+    ).toBe(0);
+  });
+
+  it("does not acknowledge a message to a production target, and stores nothing about it", async () => {
     const clinic = await buildClinic(owner, TENANT_A, TARGET_A, "production");
     const payload = metaPayload(
       TARGET_A,
       { messages: [{ id: "wamid.IN0501", from: LEAD, body: BODY }] },
-      // A payload cannot vouch for itself.
-      { synthetic: true, mode: "test" },
+      // A payload cannot vouch for itself, or change the channel.
+      { synthetic: true, mode: "test", active: true },
     );
-    expect((await deliver(gateway, payload)).status).toBe(200);
-    expect((await deliver(gateway, payload)).status).toBe(200);
+    expect((await deliver(gateway, payload)).status).toBe(503);
+    expect((await deliver(gateway, payload)).status).toBe(503);
 
     expect(
       await countRows(
@@ -316,21 +400,128 @@ describe("BASELINE Q8: a production channel creates no work", () => {
       ),
     ).toBe(0);
 
-    // One held fact across both deliveries, naming the channel and nothing else.
-    const { rows: held } = await admin.query<{
-      payload: Record<string, unknown>;
-    }>(
-      "select payload from ops.events where tenant_id = $1 and type = 'communication.inbound_held'",
+    // Not acknowledged, so nothing about it is recorded either.
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.events where tenant_id = $1 and type in ('communication.inbound_held', 'communication.inbound_refused', 'communication.received')",
+        [TENANT_A],
+      ),
+    ).toBe(0);
+    const { rows: channel } = await admin.query<{
+      mode: string;
+      active: boolean;
+    }>("select mode, active from ops.communication_channels where id = $1", [
+      clinic.channelId,
+    ]);
+    expect(channel).toEqual([{ mode: "production", active: false }]);
+  });
+});
+
+describe("nothing is acknowledged in silence", () => {
+  it("acknowledges a message it cannot admit only with a content-free refusal on the record", async () => {
+    await buildClinic(owner, TENANT_A, TARGET_A);
+    const now = String(Math.floor(Date.now() / 1000));
+    const payload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          id: "100000000000001",
+          changes: [
+            {
+              field: "messages",
+              value: {
+                messaging_product: "whatsapp",
+                metadata: {
+                  display_phone_number: "15550000000",
+                  phone_number_id: TARGET_A,
+                },
+                messages: [
+                  {
+                    from: LEAD,
+                    id: "wamid.IN0901",
+                    timestamp: now,
+                    type: "image",
+                    image: { id: "media-1" },
+                  },
+                  {
+                    from_user_id: "BR.bsuid.1",
+                    id: "wamid.IN0902",
+                    timestamp: now,
+                    type: "text",
+                    text: { body: BODY },
+                  },
+                  {
+                    from: LEAD,
+                    id: "wamid.IN0903",
+                    timestamp: now,
+                    type: "text",
+                    text: { body: `${BODY} ${"x".repeat(4100)}` },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const lines: string[] = [];
+    expect((await deliver(gateway, payload, (l) => lines.push(l))).status).toBe(
+      200,
+    );
+    expect((await deliver(gateway, payload)).status).toBe(200);
+
+    // One fact per message across both deliveries: the reason, the channel and,
+    // with a sender number, the conversation. Never the body or the number.
+    const { rows } = await admin.query<{ payload: Record<string, unknown> }>(
+      "select payload from ops.events where tenant_id = $1 and type = 'communication.inbound_refused' order by payload ->> 'reason'",
       [TENANT_A],
     );
-    expect(held).toEqual([
-      {
-        payload: {
-          channel_id: clinic.channelId,
-          reason: "q8_production_channel",
-        },
-      },
+    expect(rows.map((r) => r.payload.reason)).toEqual([
+      "body_too_long",
+      "no_sender_number",
+      "unsupported_content",
     ]);
+    for (const { payload: fact } of rows) {
+      expect(
+        Object.keys(fact).every((k) =>
+          ["channel_id", "conversation_id", "reason"].includes(k),
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(fact)).not.toContain(LEAD);
+    }
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.inbound_messages",
+      ),
+    ).toBe(0);
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.tasks where description like '%SENTINEL%'",
+      ),
+    ).toBe(0);
+    expect(lines.join("\n")).not.toContain("SENTINEL");
+    expect(lines.join("\n")).not.toContain(LEAD);
+  });
+
+  it("admits a message whose timestamp is ahead of the database's clock", async () => {
+    await buildClinic(owner, TENANT_A, TARGET_A);
+    const answer = await createGatewayStore(gateway).receiveMessage({
+      providerTarget: TARGET_A,
+      externalMessageId: "wamid.IN0904",
+      from: LEAD,
+      body: BODY,
+      receivedAt: new Date(Date.now() + 3_600_000),
+    });
+    expect(answer).toBe("admitted");
+    expect(
+      await countRows(
+        admin,
+        "select count(*)::text as count from ops.inbound_messages where external_message_id = 'wamid.IN0904' and received_at <= now()",
+      ),
+    ).toBe(1);
   });
 });
 

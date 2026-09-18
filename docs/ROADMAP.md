@@ -423,23 +423,24 @@ Phase 2A's position is unchanged: it waits for this phase's CI result and its ow
 
 ### Phase 2B — official WhatsApp transport and human-approved outbound (2026-09-18) — BUILT, NOT PUSHED
 
-**Built on `feature/phase-2b-whatsapp-transport`, from `feature/clinical-phase-1` at `1e582d43`.** Committed locally and awaiting owner review; not pushed, so no CI run exists yet. `main` is untouched, and no deploy took place. Read [PHASE_2B_REPORT.md](PHASE_2B_REPORT.md) and [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), which is Proposed.
+**Built on `feature/phase-2b-whatsapp-transport`, from `feature/clinical-phase-1` at `1e582d43`: the implementation `04a6b87c` and one focused pre-push review fix commit (report §17).** Committed locally and awaiting owner review; not pushed, so no CI run exists yet. `main` is untouched, and no deploy took place. Read [PHASE_2B_REPORT.md](PHASE_2B_REPORT.md) and [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), which is Proposed.
 
 - **Inbound:** the official Meta Cloud API, pinned to Graph API v25.0, verified against Meta's documentation on 2026-09-18. `npm run whatsapp:gateway` checks `X-Hub-Signature-256` over the raw bytes before parsing, then calls `ops.receive_whatsapp_message` as the new `ops_gateway` role. That role holds no table and executes exactly two functions. The owner-configured provider target alone selects the tenant; a signed test-channel message becomes one Phase 2A triage, exactly once.
-- **Q8 on the channel:** each channel is `test` or `production`, set by the owner. While Q8 is open, a production channel's message is held as a fact with no content, and the database refuses a transport admission or a send on any non-test channel (SI-47).
+- **Q8 on the channel:** each channel is `test` or `production`, set by the owner. The real-data gate is closed and has no enabled value: a production channel can exist only inactive (a CHECK the owner's own statements meet; dropping it is a static-guard finding), so no real number is a live target, and the database refuses a transport admission or a send on any non-test channel (SI-47).
+- **Nothing is acknowledged in silence (SI-53, pre-push review):** a message is admitted, refused on the record as a content-free fact, or unrouted and answered 503 so Meta keeps it.
 - **Read-only CRM `ContactPolicy`:** `ops.crm_contact_by_phone` answers found, not_found, ambiguous or unavailable, and never writes the CRM (SI-48).
 - **Outbound:** accepting a review still sends nothing. `npm run messaging -- send` is a second, explicit act. The database checks the 24-hour window, exactly one CRM contact, a recorded false opt-out, a test channel and no stop, at the request and again immediately before the one provider call (SI-49). The send is at most once: ambiguity is `indeterminate`, and nothing resends (SI-50). Status callbacks reconcile idempotently inside the channel's tenant (SI-51).
 - **Conversations** group messages per (tenant, channel, contact); every message stays its own task and run.
 - **No new dependency, no new job kind, no worker capability, no CRM write path.**
-- **Local evidence (not CI):**
+- **Local evidence after the pre-push review (not CI):**
   - `test:db` 15/15;
-  - `test:db:engine` 236/236 in 32 files;
-  - `functions` 1625/1625;
-  - security invariants 59/59 (SI-46 to SI-52 added);
-  - migration guard 136/136;
+  - `test:db:engine` 240/240 in 32 files;
+  - `functions` 1638/1638;
+  - security invariants 60/60 (SI-46 to SI-53 added);
+  - migration guard 139/139;
   - upgrade replay PASS;
   - typecheck, ESLint, build, secret scan, production scope and signing key green;
-  - 10 deliberate guard breaks, each caught by name.
+  - 18 deliberate guard breaks, each caught by name.
 - **Not performed:** a live Meta call; no test credentials exist. Where `biz_opaque_callback_data` goes in a send is unverified, and a live test-number probe must settle it first.
 - **Owner decisions recorded, not made:**
   - Q8;

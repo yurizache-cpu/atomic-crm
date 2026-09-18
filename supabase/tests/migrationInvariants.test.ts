@@ -428,6 +428,17 @@ const REJECTED: Array<[string, string, RegExp]> = [
     "alter default privileges in schema ops grant execute on functions to ops_gateway;",
     /^default-privileges:ops:ops_gateway$/,
   ],
+  // The BASELINE Q8 real-data gate opens only by an owner-approved override.
+  [
+    "the BASELINE Q8 real-data gate dropped",
+    "alter table ops.communication_channels drop constraint communication_channels_q8_real_data_gate;",
+    /^constraint-dropped:ops\.communication_channels:communication_channels_q8_real_data_gate$/,
+  ],
+  [
+    "the BASELINE Q8 real-data gate dropped if it exists",
+    "alter table if exists ops.communication_channels drop constraint if exists communication_channels_q8_real_data_gate;",
+    /^constraint-dropped:ops\.communication_channels:communication_channels_q8_real_data_gate$/,
+  ],
   // --- Phase 1C: ops is backend-only for EVERY Data API role. ---------------
   // Bypass roles used to be exempt from the grant rules everywhere. In ops that
   // exemption was a hole: service_role holds no table privilege there, so a
@@ -836,6 +847,11 @@ const ACCEPTED: Array<[string, string]> = [
   [
     "EXECUTE on a named function granted to the webhook gateway",
     "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz) to ops_gateway;",
+  ],
+  [
+    // Only the pinned constraint is a finding; an ordinary one is not.
+    "an unpinned ops constraint dropped",
+    "alter table ops.conversations drop constraint if exists conversations_contact_ref_format;",
   ],
   [
     // The word `execute` also appears INSIDE string literals, where it is not a
