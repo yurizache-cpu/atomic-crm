@@ -4,6 +4,7 @@
 export const TENANT = "a0000000-0000-4000-8000-00000000000a";
 export const COMPANY = "b0000000-0000-4000-8000-00000000000b";
 export const LIMIT = "c0000000-0000-4000-8000-00000000000c";
+export const REVIEW = "e0000000-0000-4000-8000-00000000000e";
 
 /** The command words, then each flag as `--name value`, in the order given. */
 const argv = (
@@ -31,6 +32,20 @@ export const READS: readonly (readonly string[])[] = [
   ["runs", "--tenant", TENANT, "--status", "indeterminate", "--limit", "20"],
   ["indeterminate"],
   ["indeterminate", "--tenant", TENANT],
+  // Appended: RUNS_WITH_OPTIONS below is an index into this array.
+  ["triage", "list"],
+  [
+    "triage",
+    "list",
+    "--tenant",
+    TENANT,
+    "--status",
+    "pending",
+    "--limit",
+    "20",
+  ],
+  ["triage", "show", "--id", REVIEW],
+  ["triage", "show", "--id", REVIEW, "--tenant", TENANT],
 ];
 
 /** READS[RUNS_WITH_OPTIONS] is `runs` with a tenant, a status and a limit. */
@@ -63,11 +78,37 @@ export const LIMIT_RETIRE = argv("limit retire", {
   actor: "owner",
 });
 
-/** The only three mutations the tool offers. */
+export const TRIAGE_ACCEPT = argv("triage accept", {
+  id: REVIEW,
+  tenant: TENANT,
+  reviewer: "owner",
+  note: "reads fine, send after edit",
+});
+
+export const TRIAGE_REJECT = argv("triage reject", {
+  id: REVIEW,
+  tenant: TENANT,
+  reviewer: "owner",
+});
+
+export const TRIAGE_NEEDS_EDIT = argv("triage needs-edit", {
+  id: REVIEW,
+  tenant: TENANT,
+  reviewer: "owner",
+});
+
+/**
+ * Every mutation the tool offers: the three governance acts, and Phase 2A's
+ * three review decisions. A decision changes ops.review_items and nothing else
+ * — it sends nothing and writes nothing to the CRM.
+ */
 export const ACTS: readonly (readonly string[])[] = [
   PRICE_RECORD,
   LIMIT_SET,
   LIMIT_RETIRE,
+  TRIAGE_ACCEPT,
+  TRIAGE_REJECT,
+  TRIAGE_NEEDS_EDIT,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

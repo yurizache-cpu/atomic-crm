@@ -50,12 +50,11 @@ import {
   type StructuredModelResult,
 } from "../models/router.ts";
 import {
-  buildTaskAssessmentPrompt,
-  TASK_ASSESSMENT_CAPABILITY,
-  taskAssessmentContract,
-  type BuiltPrompt,
-  type TaskAssessment,
-} from "../models/taskAssessment.ts";
+  AGENT_RUN_CAPABILITIES,
+  type AgentRunResult,
+} from "../models/capabilityContracts.ts";
+import type { OutputContract } from "../models/outputContract.ts";
+import type { BuiltPrompt } from "../models/promptText.ts";
 import { normalizeLatencyMs, type ModelUsage } from "../models/types.ts";
 import type { Capabilities } from "../worker/capabilities.ts";
 import {
@@ -98,13 +97,19 @@ export interface AgentRunCallState {
   readonly route: ResolvedModelRoute;
   readonly prompt: BuiltPrompt;
   readonly promptVersion: string;
+  /**
+   * The capability's contract, resolved in prepare and carried here, so the
+   * call validates against the SAME contract whose JSON schema was sent and
+   * whose bytes the stored fingerprint covers.
+   */
+  readonly contract: OutputContract<AgentRunResult>;
 }
 
 export type AgentRunExecuteHandler = ExternalCallHandlerDefinition<
   PrepareCapability,
   SettleCapability,
   AgentRunCallState,
-  StructuredModelResult<TaskAssessment>
+  StructuredModelResult<AgentRunResult>
 >;
 
 const RUN_ID = z
@@ -344,7 +349,11 @@ export function createAgentRunExecuteHandler(
           detail: describeRun(claim.agent_run_id, claim.status),
         };
       }
-      if (claim.capability !== TASK_ASSESSMENT_CAPABILITY) {
+      // The database decides which capabilities exist; this worker decides
+      // which of them it can execute. One it does not know is refused and
+      // RECORDED, never guessed at and never called.
+      const binding = AGENT_RUN_CAPABILITIES.get(claim.capability);
+      if (!binding) {
         return refuse(
           capabilities,
           claim.agent_run_id,
@@ -359,7 +368,7 @@ export function createAgentRunExecuteHandler(
         throw new TransientError("lease too short to start a model call");
       }
 
-      const prompt = buildTaskAssessmentPrompt({
+      const prompt = binding.buildPrompt({
         agent: {
           name: claim.agent.name,
           role: claim.agent.role,
@@ -376,7 +385,7 @@ export function createAgentRunExecuteHandler(
       // The SAME builder the router sends with, so the stored fingerprint is a
       // fingerprint of the request the provider receives.
       const inputFingerprint = fingerprintModelRequest(
-        buildModelRequest(route, prompt, taskAssessmentContract),
+        buildModelRequest(route, prompt, binding.contract),
         route.provider,
         prompt.promptVersion,
       );
@@ -425,6 +434,7 @@ export function createAgentRunExecuteHandler(
           route,
           prompt,
           promptVersion: prompt.promptVersion,
+          contract: binding.contract,
         }),
       };
     },
@@ -434,7 +444,7 @@ export function createAgentRunExecuteHandler(
         return await modelRouter.executeStructured(
           state.route,
           state.prompt,
-          taskAssessmentContract,
+          state.contract,
           context.signal,
         );
       } catch (error) {
@@ -447,7 +457,7 @@ export function createAgentRunExecuteHandler(
 
     async settle(
       state,
-      outcome: CallOutcome<StructuredModelResult<TaskAssessment>>,
+      outcome: CallOutcome<StructuredModelResult<AgentRunResult>>,
       capabilities,
     ) {
       if (outcome.ok) {

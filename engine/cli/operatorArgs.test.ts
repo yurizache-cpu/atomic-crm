@@ -9,7 +9,11 @@ import {
   LIMIT_SET,
   PRICE_RECORD,
   READS,
+  REVIEW,
   TENANT,
+  TRIAGE_ACCEPT,
+  TRIAGE_NEEDS_EDIT,
+  TRIAGE_REJECT,
   withoutFlag,
 } from "./testSupport/operatorArgv.ts";
 
@@ -29,6 +33,15 @@ describe("parsing operator arguments", () => {
     [
       ["runs", "--limit", "20", "--status", "running", "--tenant", TENANT],
       { kind: "runs", tenantId: TENANT, status: "running", limit: 20 },
+    ],
+    [["triage", "list"], { kind: "triage list" }],
+    [
+      ["triage", "list", "--tenant", TENANT, "--status", "pending"],
+      { kind: "triage list", tenantId: TENANT, status: "pending" },
+    ],
+    [
+      ["triage", "show", "--id", REVIEW],
+      { kind: "triage show", reviewId: REVIEW },
     ],
   ])("parses %j", (argv, expected) => {
     expect(parseOperatorArgs(argv)).toEqual(expected);
@@ -97,8 +110,62 @@ describe("parsing operator arguments", () => {
     });
   });
 
+  it("parses each review decision from its subcommand, never from a flag", () => {
+    expect(parseOperatorArgs(TRIAGE_ACCEPT)).toEqual({
+      kind: "triage accept",
+      tenantId: TENANT,
+      input: {
+        reviewId: REVIEW,
+        decision: "accepted",
+        reviewer: "owner",
+        note: "reads fine, send after edit",
+      },
+    });
+    expect(parseOperatorArgs(TRIAGE_REJECT)).toMatchObject({
+      kind: "triage reject",
+      input: { decision: "rejected", note: undefined },
+    });
+    expect(parseOperatorArgs(TRIAGE_NEEDS_EDIT)).toMatchObject({
+      kind: "triage needs-edit",
+      input: { decision: "needs_edit" },
+    });
+    // There is no --decision to mistype, so a typo cannot become a decision.
+    expect(
+      parseOperatorArgs([...TRIAGE_REJECT, "--decision", "accepted"]),
+    ).toEqual({
+      kind: "usage_error",
+      message: 'unknown flag "--decision"',
+    });
+  });
+
   it.each<[string, readonly string[], string]>([
     ["no arguments", [], "no command given"],
+    [
+      "triage with no subcommand",
+      ["triage"],
+      "triage needs a subcommand: list or show or accept or reject or needs-edit",
+    ],
+    [
+      "an unknown triage subcommand",
+      ["triage", "approve"],
+      "triage needs a subcommand",
+    ],
+    [
+      "a review id as a positional argument",
+      ["triage", "show", REVIEW],
+      "unexpected argument",
+    ],
+    ["a decision with no item", withoutFlag(TRIAGE_ACCEPT, "id"), "needs --id"],
+    [
+      "a decision with no tenant scope",
+      withoutFlag(TRIAGE_ACCEPT, "tenant"),
+      "needs --tenant",
+    ],
+    [
+      "a decision naming nobody",
+      withoutFlag(TRIAGE_ACCEPT, "reviewer"),
+      "needs --reviewer",
+    ],
     ["an unknown command", ["stats"], "unknown command"],
     ["a command in the wrong case", ["STATUS"], "unknown command"],
     ["a flag in place of a command", ["--all"], "unknown command"],

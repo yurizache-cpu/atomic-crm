@@ -398,3 +398,16 @@ Phase 2A's position is unchanged: it waits for this phase's CI result and its ow
 - **O. Q8 remains OPEN**, unchanged by this review.
 
 **OSS source reuse is approved** (review §15). Once a component is approved for implementation, cloning, downloading, running, modifying and forking its upstream repository is allowed and encouraged where it materially reduces engineering work; cloning candidates merely to evaluate them during a research review is not. **Fork is not the default.** Choose the mode by shape: a library or package → **package**; a large standalone application → **external service behind an adapter**; substantial persistent source modifications → **fork**; a small, clearly permissive reusable module → **source extraction**; adoption dearer than building → **reference only, build it ourselves**. The objective is not to avoid forks — it is the lowest total implementation + maintenance + upgrade + exit cost. Every reuse passes the license gate (§15.1) first, and the first real adoption creates `docs/OSS_PROVENANCE.md` with the fields listed in §15.3; no placeholder is created before then.
+
+### Phase 2A — synthetic lead triage pilot (2026-09-17) — BUILT, not pushed
+
+**Built on `feature/phase-2a-synthetic-triage`, from `feature/clinical-phase-1` at `d2843913`.** The first end-to-end Company OS workflow, and deliberately the smallest one that proves the path. Read [PHASE_2A_REPORT.md](PHASE_2A_REPORT.md).
+
+- **The flow:** a synthetic message is admitted once → one `lead_triage` task carrying the message → one explicitly requested agent run → the Phase 1D/1D.1 runtime executes it under the kill switch, the price, the spend limits and at-most-once external-call semantics → the validated advisory result opens a human review item → a person decides, once, and the decision is final.
+- **What was added:** one capability (`lead_triage`, standard route, its output contract enforced by the database as well as the worker), two tables (`ops.inbound_messages`, `ops.review_items`), one ingress service, one review service, one derivation trigger, a minimal `CommunicationPort` with a synthetic adapter, and five `npm run ops -- triage` subcommands. **No new job kind, no new dependency, no new worker capability.**
+- **What was reused:** the whole engine. `agent_run.execute` already existed, and the pilot rides it.
+- **Boundaries, enforced rather than promised:** only `synthetic` messages are admitted and only when `COMPANY_OS_SYNTHETIC_INGRESS=enabled` (SI-44); an inbound message becomes work at most once (SI-43); a model's answer never acts, accepting is refused for a do-not-contact lead, and accepting performs no action because no outbound transport and no CRM write path exist (SI-45).
+- **Evidence:** 14 SQL suites, 193 driver-backed cases (11 new end-to-end, 1 new capability mirror), 52 security invariants, and a reproducible demonstration (`npm run lead-triage:demo`).
+- **Q8 is unchanged and still open.** No real provider was called; there is no live mode.
+
+**Next: Phase 2B — the official WhatsApp Cloud API transport behind the same port (owner decision J), outbound with the consent gate on the acting side, and a read-only CRM contact lookup. Q8 must be answered before a real message is carried.**
