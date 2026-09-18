@@ -299,6 +299,34 @@ async function main() {
       `ops.${fn} is missing from the catalogue; are the Phase 2A migrations (20260917190000, 20260918090000, 20260918120000) applied?`,
     );
   }
+  // Phase 2B: the WhatsApp channels, conversations and sends, the gateway's two
+  // functions and the owner's send services, for the same reason.
+  for (const relation of [
+    "communication_channels",
+    "conversations",
+    "outbound_messages",
+  ]) {
+    check(
+      relations.includes(relation),
+      `ops.${relation} is missing from the catalogue; is the Phase 2B migration (20260918150000_whatsapp_transport) applied?`,
+    );
+  }
+  for (const fn of [
+    "receive_whatsapp_message",
+    "receive_whatsapp_status",
+    "configure_whatsapp_channel",
+    "request_outbound_send",
+    "begin_outbound_send",
+    "settle_outbound_send",
+    "mark_outbound_indeterminate",
+    "crm_contact_by_phone",
+    "whatsapp_send_eligibility",
+  ]) {
+    check(
+      functions.includes(fn),
+      `ops.${fn} is missing from the catalogue; is the Phase 2B migration (20260918150000_whatsapp_transport) applied?`,
+    );
+  }
 
   // The live PostgREST configuration, not the file that is supposed to produce it.
   const restEnv = execFileSync(

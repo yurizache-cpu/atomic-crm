@@ -25,6 +25,7 @@
 | `anon` | Revoked. Default privileges also revoke tables, sequences and function execute. |
 | `authenticated` | `usage` on `public`; per-table grants; row visibility then narrowed by RLS |
 | `service_role` | `all` on all tables/sequences/functions — used by edge functions only, never reachable from a browser |
+| `ops_gateway` / `ops_gateway_login` | *(Phase 2B, 2026-09-18.)* The WhatsApp webhook gateway. NOLOGIN group role with USAGE on `ops` and EXECUTE on exactly two functions; its NOINHERIT login is created by `npm run gateway:provision`. No table, anywhere. See §14. |
 | `postgres` | ~~Superuser.~~ Not a superuser on Supabase (`rolsuper=false`), but `BYPASSRLS` *(corrected 2026-09-13)*. ~~**The MCP function's pool defaults to it**~~ The MCP function that pooled as it was removed on 2026-09-13; `merge_contacts` still pools it, as `authenticated` for each transaction (SI-27) — see [SECURITY.md](SECURITY.md) |
 
 Default privileges revoke from `anon`/`authenticated` for future objects, so a newly created table is not accidentally world-readable. That is the correct deny-by-default shape and it should be preserved.
@@ -328,3 +329,29 @@ Every run capability first share-locks the leased job and requires the lease to 
 | Function | Why it is safe to expose to `ops_worker` |
 | --- | --- |
 | `ops.open_review_for_settled_job(p_worker_id, p_job_id)` | The runtime calls it only after TX2b has committed the run's settlement and completed its job, in a transaction of its own, so nothing it does or suffers reaches the settlement. It takes no tenant, run, result or consent argument: it reads the tenant and the run from the completed `agent_run.execute` job, and refuses (`OS403`) any worker but the one the job's `succeeded` event names, the trust model of `ops.resume_lease`. It returns NULL for a job that is not a completed agent run job. The review is derived only by `ops.open_review_for_run`, from the stored, database-validated result and the consent the admission recorded, and only once per run, so the most a worker can do with it is open a review the recovery would open anyway. |
+
+## 14. The WhatsApp gateway and outbound sends (Phase 2B, 2026-09-18)
+
+`ops.communication_channels`, `ops.conversations` and `ops.outbound_messages`, the extended `ops.inbound_messages`, and the services that write them. See [PHASE_2B_REPORT.md](PHASE_2B_REPORT.md) and [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md).
+
+| Role | Tables | Functions |
+| --- | --- | --- |
+| `anon`, `authenticated` | nothing (no USAGE on `ops` at all) | nothing |
+| `service_role` | nothing | nothing new: still only `ops.enqueue_job` |
+| `ops_worker` | **nothing** on any new table | nothing new |
+| `ops_gateway` | **nothing**, not even SELECT | EXECUTE on `ops.receive_whatsapp_message(text, text, text, text, timestamptz)` and `ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)`; nothing else |
+| `postgres` (owner) | everything | everything, including the owner services below |
+| PUBLIC | — | **nothing**: every new function is revoked explicitly |
+
+**The gateway's login.** `ops_gateway_login` is LOGIN, NOINHERIT, a member of `ops_gateway`, with no BYPASSRLS (`scripts/provision-gateway-role.mjs`, `OPS_GATEWAY_PASSWORD`). The gateway store opens every transaction with `set local role ops_gateway`, so the login alone holds nothing. `npm run whatsapp:gateway` refuses to start on a superuser, a BYPASSRLS role, a role that is not a member, or `ops_gateway` itself. Never point it at the owner or `service_role`.
+
+**Why the two DEFINER functions are safe to expose to an internet-facing process.** The gateway calls them only after the HMAC over the raw body has verified under the app secret.
+
+| Function | Why |
+| --- | --- |
+| `ops.receive_whatsapp_message` | Takes a provider target, a message id, a sender id, a body and a time; never a tenant, company, agent or task. The target selects the ONE configured, active channel, and everything happens inside that channel's tenant. An unknown or inactive target is refused (OS404). A production channel's message is held as a fact with no content (BASELINE Q8), and a test channel's message goes through the Phase 2A admission, whose identity key makes a redelivery a lookup. The CRM is read, never written. |
+| `ops.receive_whatsapp_status` | Takes a provider target and one status. It moves only a send of that target's channel: by provider message id, or, for a send whose outcome is unknown, by this system's correlation AND the conversation's recipient. It never creates a send, never makes one sendable, and ignores duplicates, older news and undocumented states. |
+
+**Owner services.** `ops.configure_whatsapp_channel`, `ops.request_outbound_send`, `ops.begin_outbound_send`, `ops.settle_outbound_send`, `ops.mark_outbound_indeterminate`, `ops.crm_contact_by_phone`, `ops.whatsapp_send_eligibility` and `ops.admit_inbound_core` are SECURITY INVOKER and executable by no application role. `npm run messaging` calls them over `ADMIN_DATABASE_URL`. `supabase/tests/whatsapp_transport.sql` A4 switches to each application role, the gateway included, and is refused every one of them at the door.
+
+**Sending is the owner's act, not a role's.** No application role can create, begin or settle a send. The only path is `npm run messaging -- send`, run by a person holding the owner credential and `WHATSAPP_ACCESS_TOKEN`. The database re-checks eligibility at the moment of the call (SI-49).
