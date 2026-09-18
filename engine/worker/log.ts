@@ -38,6 +38,10 @@ export type WorkerLogEvent =
   // error is a provider's text, and a provider's text can echo a prompt.
   | "job.external_call_started"
   | "job.external_call_finished"
+  // A step declared to follow an external call's settlement failed, in its own
+  // transaction AFTER the settlement committed, so the settlement stands and
+  // the job stays complete. `detail` is the step's name and SQLSTATE only.
+  | "job.after_settlement_failed"
   | "lease.recovered"
   // Agent runs left "running" by a worker that died mid-call, settled by the
   // reaper tick. `count` only.

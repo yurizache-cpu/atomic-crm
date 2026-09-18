@@ -28,6 +28,14 @@
 //         except the handler's own `state`. If TX2b throws, TX3 records the
 //         failure exactly as it does for a transactional handler.
 //
+//   AFTER only once TX2b has COMMITTED: the steps the handler declared to
+//         follow its settlement (afterSettlement.ts), each in a transaction of
+//         its own. The lease ended with TX2b, and with it every way back to the
+//         settlement: a step that fails, waits, times out or is cancelled is
+//         logged and left to its recovery, and never reaches TX3, so it cannot
+//         schedule a retry. A prepare that settles made no call, and nothing
+//         follows it.
+//
 // THE KILL SWITCH, immediately before the call (ADR 0017 §6). TX2a takes a
 // savepoint before the handler's prepare. Only when prepare asks for the call,
 // the runtime asks the database whether an execution stop covers the leased job,
@@ -65,6 +73,7 @@ import {
   type AttemptScope,
   type RunOneJobResult,
 } from "./attempt.ts";
+import { runAfterSettlement } from "./afterSettlement.ts";
 import {
   grantCapabilities,
   type CapabilityName,
@@ -241,14 +250,16 @@ export async function runExternalCall(
   if (onCallFinished) await onCallFinished(scope.job);
 
   // --- TX2b: resume, settle, complete. -------------------------------------
+  let detail: string;
   try {
-    return succeeded(
-      scope,
-      await settleExternalCall(scope, prepared, callOutcome),
-    );
+    detail = await settleExternalCall(scope, prepared, callOutcome);
   } catch (error) {
     return failed(scope, error);
   }
+
+  // --- AFTER: the settlement is committed; nothing below can undo it. ------
+  await runAfterSettlement(scope, prepared.handler.afterSettlement ?? []);
+  return succeeded(scope, detail);
 }
 
 /**

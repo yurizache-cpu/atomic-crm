@@ -29,10 +29,12 @@ ops.jobs  (kind `agent_run.execute` — the kind that already existed)
    │  the Phase 1D/1D.1 runtime: kill switch, price, spend limits, at-most-once
    ▼
 ops.agent_runs → succeeded, with a result the DATABASE re-validated
-   │  AFTER UPDATE trigger, in its own subtransaction (a failure never undoes
-   │  the settlement; `triage recover` opens it later — §15)
+   │  settled, and its job completed, in ONE transaction that COMMITS first
    ▼
 ops.review_items  pending
+   │  opened AFTER that commit, in a transaction of its own
+   │  (ops.open_review_for_settled_job); if it fails, the settlement stands
+   │  and `triage recover` opens it later (§16)
    │  npm run ops -- triage list | show | accept | reject | needs-edit
    ▼
 a person decides, once, and the decision is final
@@ -44,7 +46,8 @@ and writes nothing to the CRM, because neither path exists (§8).
 ## 2. Architecture, and what it deliberately reuses
 
 The whole phase adds **one capability, two tables, three services and one
-trigger**. Everything else is the engine built in Phases 1A–1D.1:
+post-settlement step**. The step replaced a derivation trigger, which is now
+inert (§16). Everything else is the engine built in Phases 1A–1D.1:
 
 | Concern | Reused, unchanged |
 | --- | --- |
@@ -63,11 +66,19 @@ lacks is refused as `capability_unsupported` and recorded — nothing is guessed
 at, and nothing is called. A driver-backed test asserts the map and
 `ops.agent_run_capabilities()` agree.
 
+The second change, from the final review (§16), is that an external-call
+handler may declare steps that run AFTER its settlement has committed, each in
+a transaction of its own (`engine/worker/afterSettlement.ts`). The agent run
+handler declares one, `openRunReview`. A step is runtime SQL from a fixed list,
+never a capability, and it can fail without reaching the settlement.
+
 ## 3. Schema
 
-`supabase/migrations/20260917190000_lead_triage_pilot.sql`, and the pre-push
+`supabase/migrations/20260917190000_lead_triage_pilot.sql`, the pre-push
 review's fix `supabase/migrations/20260918090000_lead_triage_review_recovery.sql`
-(§15). Forward only; no sealed migration is touched.
+(§15), and the final review's fix
+`supabase/migrations/20260918120000_lead_triage_review_after_settlement.sql`
+(§16). Forward only; no sealed migration is touched.
 
 **`ops.agent_run_capabilities()`** gains `('lead_triage', 'standard')`.
 
@@ -133,15 +144,20 @@ role holds anything on either, and the operator reads them as the owner.
 
 ## 5. Review semantics
 
-- A review item is **derived**, never written by the worker or the ingress: an
-  `AFTER UPDATE` trigger on `ops.agent_runs` opens it (through
-  `ops.open_review_for_run`) when a `lead_triage` run settles `succeeded`. A run
-  that fails, is refused, or answers outside its contract opens nothing.
-- **The settlement never waits on the queue** (fixed in the pre-push review).
-  The derivation runs in its own subtransaction: if it fails, the run still
-  commits `succeeded` with its result, the job completes, and nothing can call
-  the provider again. `npm run ops -- triage recover` (`ops.open_missing_reviews`)
-  opens the missing review from the stored result, once.
+- A review item is **derived**, never written by the worker or the ingress:
+  `ops.open_review_for_run` opens it from the stored result of a `lead_triage`
+  run that settled `succeeded`. A run that fails, is refused, or answers
+  outside its contract opens nothing.
+- **The settlement never waits on the queue** (final form in §16). The run is
+  settled and its job completed in one transaction, which commits. Only then,
+  in a transaction of its own, does the worker ask the database to open the
+  review (`ops.open_review_for_settled_job`, which names the job the worker
+  completed and nothing else). If that fails in any way (an error, a lock
+  wait, a statement timeout, a cancellation, or a crash before it runs), the
+  run stays `succeeded` with its result, the job stays complete, and nothing
+  can call the provider again. `npm run ops -- triage recover`
+  (`ops.open_missing_reviews`) opens the missing review from the stored result,
+  once.
 - One review per run (`review_items_run_key`), and a finished run cannot be
   settled again, so a second review is unreachable from both directions.
 - `pending → accepted | rejected | needs_edit`, once. The same person recording
@@ -190,10 +206,14 @@ asserting it:
 
 - **No outbound transport exists.** `CommunicationPort` has no `send`; no code
   path in the repository can emit a message.
-- **No CRM write path exists.** The worker holds six capabilities
-  (`CAPABILITY_NAMES`, pinned by a test); none touches `public.*`. The pilot adds
-  none. The end-to-end test counts `public.contacts` before and after and asserts
-  it is unchanged.
+- **No CRM write path exists.** Phase 2A introduces no CRM mutation path. The
+  worker's capabilities (`CAPABILITY_NAMES`, pinned by a test) are unchanged
+  and touch no CRM record. They do touch non-CRM public-schema
+  infrastructure: the pre-existing `purgeInboundEmailLedger` deletes resolved
+  rows from `public.inbound_emails` (LGPD retention of the inbound email
+  ledger). The pilot adds no capability, and its post-settlement step reaches
+  only `ops.*`. The end-to-end test counts `public.contacts` before and after
+  and asserts it is unchanged.
 - The pilot uses a **synthetic contact reference**, not a CRM key, so it also
   adds no FK from the engine into `public.*` (CLAUDE.md rule 1). Wiring a real
   contact, read-only and behind a port, is Phase 2B's work.
@@ -212,29 +232,33 @@ npm run ops -- triage recover [--tenant <uuid>] [--limit <n>]
 ```
 
 `triage recover` (pre-push review) opens the review of any succeeded
-`lead_triage` run that has none — the case where opening it failed as the run
-settled. It derives it from the stored result and opens nothing twice.
+`lead_triage` run that has none: the case where the worker's post-settlement
+step failed, or never ran because the worker died after the settlement
+committed. It derives the review from the stored result and opens nothing
+twice.
 
 A listing never returns the advice; `show` does. Neither prints a connection
 string, a key or a prompt. An item another tenant owns prints nothing at all.
 
 ## 10. Tests
 
-After the pre-push review's fix (§15):
+After the final review's fix (§16). The pre-push review's figures are in §15.
 
 | Suite | Result |
 | --- | --- |
-| `supabase/tests/lead_triage_pilot.sql` (new; sections A–H) | 14 SQL suites pass in `npm run test:db` (was 13) |
-| `supabase/tests/opsDataApiExposure.mjs` (Phase 2A presence checks added) | pass — REST and GraphQL, 5 credentials, 17 relations, 104 functions |
-| `engine/domain/leadTriagePilot.dbtest.ts` (new, 20 cases) | `npm run test:db:engine` **202 pass** (was 181; +20 here, +1 capability mirror) |
+| `supabase/tests/lead_triage_pilot.sql` (new; sections A–I) | 14 SQL suites pass in `npm run test:db` (was 13) |
+| `supabase/tests/opsDataApiExposure.mjs` (Phase 2A presence checks added) | pass: REST and GraphQL, 5 credentials, 17 relations, 104 function names, 775 requests, none reached `ops` |
+| `engine/domain/leadTriagePilot.dbtest.ts` (new, 20 cases) and `leadTriageSettlement.dbtest.ts` (new, 3 cases, §16) | `npm run test:db:engine` **205 pass** in 30 files (was 181; +20 and +3 here, +1 capability mirror) |
 | `engine/communication/syntheticIngress.test.ts` / `syntheticContactPolicy.test.ts` (new) | 33 / 6 |
 | `engine/models/leadTriage.test.ts` (new) | 29 |
 | `engine/domain/leadIntake.test.ts` / `reviewQueue.test.ts` (new) | 26 / 27 |
 | `engine/cli` (extended) | 202 |
-| Security invariants (SI-43, SI-44, SI-45 added) | 52 |
-| `functions` unit project | 1563 |
-| Upgrade replay (`npm run test:db:upgrade`), both Phase 2A migrations in the chain | pass |
-| Typecheck, ESLint (0 errors), build, secret scan, production scope, signing key | green |
+| `engine/worker/afterSettlement.test.ts` (new, §16) | 4 |
+| Security invariants (SI-43, SI-44, SI-45 added; SI-21 and SI-45 restated in §16) | 52 |
+| `functions` unit project | 1570 in 60 files |
+| Guard tests (`production-scope` x4, `dev-signing-key`, `scan-build-artifacts`) | 176 |
+| Upgrade replay (`npm run test:db:upgrade`), all three Phase 2A migrations in the chain | pass |
+| Typecheck, ESLint (0 errors), build, secret scan (0 blocking), production scope, signing key | green |
 
 What the SQL suite proves: admission identity and conflict, tenant and company
 scoping, the tenant-scoped nature of the identity, malformed input as typed
@@ -345,6 +369,8 @@ per message, by design, so that it can be.
 
 ## 15. Focused pre-push review (2026-09-18)
 
+*Its first P1 fix (a failure to open the review can no longer undo the settlement) was incomplete. §16 supersedes it: the subtransaction it describes is gone.*
+
 A narrow review of the Phase 2A diff only (`d2843913..35ea6c03`), by two
 independent read-only reviewers — database surface; transaction semantics — and
 live measurement. Every fix below is in ONE fix commit on top of the untouched
@@ -424,7 +450,94 @@ payload, every raised message and every listing — asserted by a test.
 
 **Recorded, not changed:** §13 items 2a, 2b and 8.
 
+## 16. Final review fix (2026-09-18): the review is opened after the settlement
+
+**The finding (P1).** §15 opened the review inside the statement that settles
+the run, behind an exception block of its own. PL/pgSQL's `when others`
+catches every error except QUERY_CANCELED and ASSERT_FAILURE, and
+QUERY_CANCELED (SQLSTATE 57014) is exactly what the worker's
+`statement_timeout` and `pg_cancel_backend` raise. So if opening the review
+waited on a lock longer than the worker's statement timeout, or was cancelled,
+the settlement still aborted. The run stayed `running`, its next lease settled
+it `indeterminate`, and a valid, paid answer was lost. At-most-once held; the
+durability of a paid result did not.
+
+**Measured before the fix.** `engine/domain/leadTriageSettlement.dbtest.ts`,
+run against `d944d860`, fails both cases with
+`expected 'running' to be 'succeeded'`:
+
+- an insert into the review queue cancelled with SQLSTATE 57014;
+- a real `share` lock on `ops.review_items`, held from a second connection
+  while the worker ran with a 2-second statement timeout.
+
+**The fix: the review leaves the settlement.**
+
+| Transaction | What it does | If it fails |
+| --- | --- | --- |
+| TX2b (unchanged) | settles the run, stores its result, completes the job, **commits** | TX3, exactly as before |
+| after (new) | `ops.open_review_for_settled_job(worker, job)`, in a transaction of its own, only once TX2b has committed | a `job.after_settlement_failed` log line (the step name and SQLSTATE, never a message); never TX3, never a retry; `triage recover` opens the review |
+
+- **The runtime.** `engine/worker/afterSettlement.ts` holds a fixed list of
+  post-settlement steps, each of them runtime SQL rather than a capability. An
+  external-call handler may declare steps, and the agent run handler declares
+  one, `openRunReview`. `CAPABILITY_NAMES` is unchanged, and there is no new job
+  kind and no new dependency.
+- **The database.** `20260918120000_lead_triage_review_after_settlement.sql`
+  adds `ops.open_review_for_settled_job`. It is SECURITY DEFINER, because the
+  lease, and with it the tenant context, ended with TX2b. It takes no tenant,
+  run, result or consent argument: it reads the tenant and the run from the
+  completed `agent_run.execute` job, refuses (`OS403`) any worker but the one
+  the job's `succeeded` event names, and derives the review only through
+  `ops.open_review_for_run`, once. It is executable by `ops_worker` alone and
+  pinned in `company_domain_core.sql` A4/A5. SI-21 and SI-45 are restated to
+  match, and PERMISSIONS.md §13 records the grant.
+- **The trigger is inert, not dropped.** Its function now only returns. The
+  static migration guard treats every dropped `ops` trigger as a removed
+  invariant (`trigger-dropped`), and this trigger carried none. Dropping it is
+  an exception that only the owner can approve, through an Accepted ADR. Until
+  then it fires and touches nothing. The migration and section I of the SQL
+  suite assert that no trigger on `ops.agent_runs` names the review queue.
+- **A crash between the two transactions** leaves exactly the state a failed
+  step leaves: a settled run, a completed job, and no review. `triage recover`
+  opens the review once.
+
+**Proven after the fix.** Both cases pass, and each one checks every point
+below:
+
+- the provider was called once;
+- the run is `succeeded` with its result, and its job is `succeeded`;
+- no review exists;
+- a second worker pass is idle, with still one call;
+- recovery opens 1 review, then 0;
+- one `lead_triage.review_pending` fact is recorded;
+- the worker logged `openRunReview sqlstate=57014`.
+
+A third case proves the step's binding. Another worker is refused with
+`OS403` and opens nothing. The completing worker opens the review once, and
+then nothing.
+
+**What it costs, recorded.**
+
+1. **The review is no longer atomic with the settlement.** Between the two
+   transactions a succeeded run has no review, normally for milliseconds, and
+   for as long as it takes someone to run `triage recover` if the step failed
+   or the worker died. Nothing but the worker's log line says a review is
+   missing.
+2. **The worker holds one more SECURITY DEFINER function, and it runs outside
+   a lease.** It can reach only the run of a job that worker completed, and it
+   can only open that run's review from stored data.
+3. **A locked review queue can hold the worker in the step for up to its
+   statement timeout** (30 s by default) before it gives up.
+4. **An inert trigger remains** until the owner approves dropping it.
+
+**Also corrected.** §8 and the demo's comment said the worker's capabilities
+touch nothing in `public.*`. That was false: the pre-existing
+`purgeInboundEmailLedger` deletes resolved rows from `public.inbound_emails`.
+That table is not CRM contact data, so the Phase 2A boundary holds as now
+worded: **Phase 2A introduces no CRM mutation path.**
+
 ---
 
-**Classification: PHASE 2A IMPLEMENTATION COMPLETE — READY FOR REVIEW.** No
-production deploy, no push, `main` untouched, and no new dependency.
+**Classification: PHASE 2A IMPLEMENTATION COMPLETE, with the final review's P1
+closed (§16). READY FOR REVIEW.** No production deploy, `main` untouched, and no
+new dependency. The §16 fix commit is not pushed.

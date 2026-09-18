@@ -8,8 +8,9 @@
 //
 //   * that the ingress reaches a provider ONLY through the runtime, and how
 //     many times it is called;
-//   * that the review item is DERIVED from a run that succeeded, in the same
-//     statement that settled it, and never exists for one that failed;
+//   * that the review item is DERIVED from a run that succeeded, after its
+//     settlement committed, and never exists for one that failed (why that is a
+//     transaction of its own: leadTriageSettlement.dbtest.ts);
 //   * that the kill switch and the spend limits refuse the pilot exactly as
 //     they refuse any other run, before any call;
 //   * that a redelivery of the same message calls nothing a second time.

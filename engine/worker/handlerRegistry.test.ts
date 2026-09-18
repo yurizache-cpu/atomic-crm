@@ -132,6 +132,16 @@ describe("a handler's shape is declared by its definition, never by the job", ()
     }
   });
 
+  it("refuses post-settlement steps that are not a list", () => {
+    const broken = {
+      ...externalHandler("work.external"),
+      afterSettlement: "openRunReview",
+    } as unknown as AnyHandlerDefinition;
+    expect(() => createRegistry([broken])).toThrow(
+      /afterSettlement that is not a list of steps/,
+    );
+  });
+
   it("refuses a shape it does not know", () => {
     const misspelt = {
       ...handler("work.misspelt"),

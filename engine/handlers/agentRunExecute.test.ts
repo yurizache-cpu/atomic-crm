@@ -267,6 +267,15 @@ describe("the handler declares its shape and is registered", () => {
     expect(Object.isFrozen(handler)).toBe(true);
   });
 
+  it("opens the review only after its settlement, never inside it", () => {
+    // The review is a step of its own that follows the committed settlement
+    // (engine/worker/afterSettlement.ts), so failing to open it cannot undo a
+    // paid answer. No settle capability opens one.
+    const { handler } = setup({ type: "respond", content: VALID });
+    expect([...(handler.afterSettlement ?? [])]).toEqual(["openRunReview"]);
+    expect(Object.isFrozen(handler.afterSettlement)).toBe(true);
+  });
+
   it("is in the worker registry, and the exported kind list is exactly the registry's", () => {
     const { modelRouter } = setup({ type: "respond", content: VALID });
     const registry = createHandlerRegistry({ modelRouter });

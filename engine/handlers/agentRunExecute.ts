@@ -15,6 +15,12 @@
 //   settle   (TX2b) record the result or the failure for THIS attempt. A run the
 //            database says is no longer this attempt's is a refusal that rolls
 //            TX2b back; the sweep owns it from there.
+//   after    (its own transaction, only once TX2b committed) open the human
+//            review of a lead triage answer, through the database, which opens
+//            nothing for any other capability. It can fail, wait or be
+//            cancelled without reaching the settlement: the paid answer is
+//            already durable, and `npm run ops -- triage recover` opens a
+//            review this step could not.
 //
 // WHAT IS NOT TRUSTED, and where each is checked:
 //
@@ -62,6 +68,7 @@ import {
   SecurityError,
   TransientError,
 } from "../worker/failures.ts";
+import type { AfterSettlementStep } from "../worker/afterSettlement.ts";
 import type {
   CallOutcome,
   ExternalCallContext,
@@ -322,6 +329,9 @@ export function createAgentRunExecuteHandler(
       "completeAgentRun",
       "failAgentRun",
     ]),
+    // Never inside the settlement: a review that cannot be opened must not be
+    // able to take a paid answer down with it (docs/PHASE_2A_REPORT.md §16).
+    afterSettlement: Object.freeze<AfterSettlementStep[]>(["openRunReview"]),
 
     async prepare(job, capabilities, budget) {
       const parsed = claimSchema.safeParse(await capabilities.claimAgentRun());

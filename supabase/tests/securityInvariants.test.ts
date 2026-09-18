@@ -674,7 +674,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are the pinned lease-bound worker capabilities.",
+      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are a pinned set: its lease-bound capabilities and the worker runtime's own functions.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -2089,7 +2089,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and a failure to open it never undoes the run's settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action, because Phase 2A has no outbound transport and no CRM write path.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action, because Phase 2A has no outbound transport and no CRM write path.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2118,12 +2118,30 @@ const INVARIANTS: Invariant[] = [
         marker: /the draft can never be accepted/,
       },
       {
+        file: "supabase/migrations/20260918120000_lead_triage_review_after_settlement.sql",
+        marker:
+          /a trigger on ops\.agent_runs opens a review inside the settlement/,
+      },
+      {
+        file: "supabase/tests/lead_triage_pilot.sql",
+        marker: /I1: a review is still opened inside the settlement/,
+      },
+      {
+        file: "engine/domain/leadTriageSettlement.dbtest.ts",
+        marker: /a paid answer whose review is cancelled while it opens/,
+      },
+      {
+        file: "engine/domain/leadTriageSettlement.dbtest.ts",
+        marker:
+          /a paid answer whose review waits on a lock until the statement times out/,
+      },
+      {
         file: "engine/communication/syntheticIngress.test.ts",
         marker: /offers no way to send anything/,
       },
     ],
     caveat:
-      "The review item is opened by an AFTER UPDATE trigger on ops.agent_runs, in its own subtransaction; if it fails, the run stays settled and ops.open_missing_reviews (npm run ops -- triage recover) opens it later. The database owner, who can disable triggers, is outside it as it is outside every other guard. Consent is SNAPSHOTTED at admission: a later opt-out is not propagated to an admitted message, which is harmless only because accepting performs no action. The moment an outbound transport or a CRM write exists, consent must be read again on the acting side, and what an accepted decision authorises must be decided again, explicitly.",
+      "The review item is opened by the worker runtime's post-settlement step (ops.open_review_for_settled_job), in its own transaction after the settlement committed; if it fails, or the worker dies before it runs, the run stays settled and ops.open_missing_reviews (npm run ops -- triage recover) opens it later, and until then the answer waits unreviewed with only the worker's log line to say so. The database owner is outside it as it is outside every other guard. Consent is SNAPSHOTTED at admission: a later opt-out is not propagated to an admitted message, which is harmless only because accepting performs no action. The moment an outbound transport or a CRM write exists, consent must be read again on the acting side, and what an accepted decision authorises must be decided again, explicitly.",
   },
 ];
 

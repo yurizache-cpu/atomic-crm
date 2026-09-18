@@ -230,6 +230,12 @@ begin
   --     argument-free worker capabilities: the pre-call stop check, the deferral it
   --     permits, and the ceiling sweep. The price and limit services it adds are
   --     executable by no application role (supabase/tests/runtime_governance.sql).
+  --     Phase 2A's final review (2026-09-18,
+  --     20260918120000_lead_triage_review_after_settlement.sql) adds exactly one
+  --     worker function: the post-settlement step that opens a lead triage
+  --     review AFTER the settlement committed. It takes no tenant, run or content
+  --     argument, names a job and the worker that completed it, and refuses any
+  --     other worker (supabase/tests/lead_triage_pilot.sql, section I).
   with expected (rolname, fn) as (values
     ('service_role', 'ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)'::regprocedure),
     ('ops_worker',   'ops.lease_job(text, integer)'::regprocedure),
@@ -251,7 +257,8 @@ begin
     ('ops_worker',   'ops.settle_stale_agent_runs()'::regprocedure),
     ('ops_worker',   'ops.job_execution_stop()'::regprocedure),
     ('ops_worker',   'ops.defer_job()'::regprocedure),
-    ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure)
+    ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure),
+    ('ops_worker',   'ops.open_review_for_settled_job(text, uuid)'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -278,7 +285,10 @@ begin
   --     tenant and reach only the run bound to the live lease's job. Phase 1D.1
   --     (2026-09-17) adds three more on the same terms: job_execution_stop and
   --     defer_job reach only the leased job, and enforce_spend_ceiling takes no
-  --     argument and can only trip a global stop.
+  --     argument and can only trip a global stop. Phase 2A's final review
+  --     (2026-09-18) adds open_review_for_settled_job, which runs after the
+  --     lease has ended: it reaches only the run of a job the calling worker
+  --     completed, and only to open that run's review from the stored result.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -287,7 +297,8 @@ begin
                            'settle_job_failure', 'worker_heartbeat', 'worker_stopped',
                            'claim_agent_run', 'refuse_agent_run', 'start_agent_run',
                            'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
-                           'job_execution_stop', 'defer_job', 'enforce_spend_ceiling');
+                           'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
+                           'open_review_for_settled_job');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

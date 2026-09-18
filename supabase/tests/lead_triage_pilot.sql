@@ -613,4 +613,83 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- I. The review is opened AFTER the settlement commits (20260918120000). The
+--    statement that settles a run no longer touches the review queue, and the
+--    worker's one way in is a step bound to a job it completed. The durability
+--    itself (a real runtime, a real lock wait, a real statement timeout) is
+--    proven by engine/domain/leadTriageSettlement.dbtest.ts.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_bad    text;
+  v_job    uuid;
+  v_opened uuid;
+begin
+  -- I1. No trigger on ops.agent_runs opens a review, so the settlement can
+  --     neither wait on the review queue nor be cancelled by it. The old
+  --     derivation trigger is kept only because dropping an ops trigger needs
+  --     an owner-approved exception, and its function does nothing but return.
+  select string_agg(t.tgname || ' -> ' || p.proname, ', ') into v_bad
+    from pg_trigger t
+    join pg_proc p on p.oid = t.tgfoid
+   where t.tgrelid = 'ops.agent_runs'::regclass
+     and not t.tgisinternal
+     and p.prosrc ~* '(review_items|open_review_for_run|open_missing_reviews|open_review_for_settled_job)';
+  if v_bad is not null then
+    raise exception 'I1: a review is still opened inside the settlement: %', v_bad;
+  end if;
+  if regexp_replace(
+       (select p.prosrc from pg_proc p where p.oid = 'ops.open_review_item()'::regprocedure),
+       '\s+', ' ', 'g') <> ' begin return null; end ' then
+    raise exception 'I1: the old derivation trigger does more than return';
+  end if;
+
+  -- I2. The post-settlement step is a DEFINER with an empty search path, and
+  --     the worker's alone: no other application role, and not PUBLIC.
+  if not exists (
+    select 1 from pg_proc p
+     where p.oid = 'ops.open_review_for_settled_job(text, uuid)'::regprocedure
+       and p.prosecdef
+       and coalesce(p.proconfig @> array['search_path=""'], false)) then
+    raise exception 'I2: the post-settlement step is not a DEFINER with an empty search path';
+  end if;
+  select string_agg(r.rolname, ', ') into v_bad
+    from unnest(array['anon', 'authenticated', 'service_role']) as r (rolname)
+   where has_function_privilege(r.rolname, 'ops.open_review_for_settled_job(text, uuid)', 'execute');
+  if v_bad is not null
+     or not has_function_privilege('ops_worker', 'ops.open_review_for_settled_job(text, uuid)', 'execute')
+     or exists (select 1 from pg_proc p, aclexplode(p.proacl) a
+                 where p.oid = 'ops.open_review_for_settled_job(text, uuid)'::regprocedure
+                   and a.grantee = 0 and a.privilege_type = 'EXECUTE') then
+    raise exception 'I2: the post-settlement step is not the worker''s alone (%)',
+      coalesce(v_bad, 'ops_worker lacks it, or PUBLIC holds it');
+  end if;
+
+  -- I3. As the worker: a job that is not a COMPLETED agent run job has nothing
+  --     to open. The admitted run's job is still queued, and an unknown job
+  --     does not exist. A blank worker id is refused.
+  select r.job_id into v_job from ops.agent_runs r where r.id = pg_temp.id('run_one');
+  if v_job is null then
+    raise exception 'I3: the admitted run has no job; the case would prove nothing';
+  end if;
+  execute 'set local role ops_worker';
+  v_opened := ops.open_review_for_settled_job('i3-worker', v_job);
+  if v_opened is not null then
+    raise exception 'I3: a queued job opened a review';
+  end if;
+  v_opened := ops.open_review_for_settled_job('i3-worker', gen_random_uuid());
+  if v_opened is not null then
+    raise exception 'I3: an unknown job opened a review';
+  end if;
+  begin
+    perform ops.open_review_for_settled_job(' ', v_job);
+    raise exception 'I3: a blank worker id was accepted';
+  exception when sqlstate 'OS400' then null;
+  end;
+  reset role;
+end
+$$;
+
 rollback;

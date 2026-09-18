@@ -292,10 +292,11 @@ async function main() {
     "record_review_decision",
     "open_review_for_run",
     "open_missing_reviews",
+    "open_review_for_settled_job",
   ]) {
     check(
       functions.includes(fn),
-      `ops.${fn} is missing from the catalogue; are the Phase 2A migrations (20260917190000, 20260918090000) applied?`,
+      `ops.${fn} is missing from the catalogue; are the Phase 2A migrations (20260917190000, 20260918090000, 20260918120000) applied?`,
     );
   }
 

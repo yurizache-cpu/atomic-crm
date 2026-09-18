@@ -454,8 +454,11 @@ export async function runLeadTriageDemo(
         step: "boundary",
         outboundMessagesSent: 0,
         crmRowsWritten: 0,
-        // There is no outbound transport and no CRM capability to write with:
-        // the worker holds six capabilities, none of which touches public.*.
+        // Phase 2A introduces no outbound transport and no CRM mutation path.
+        // The worker's existing capabilities touch no CRM record, though one
+        // touches non-CRM public-schema infrastructure (retention of
+        // public.inbound_emails). The driver-backed suite verifies that
+        // public.contacts is unchanged.
         transportsAvailable: [port.sourceKind],
         note: "accepting a draft records approval and performs no action",
       }),
