@@ -32,12 +32,27 @@ export interface InboundMessage {
   /** What the person wrote. Bounded by the transport's own parser. */
   readonly body: string;
   readonly receivedAt: Date;
+  // NO consent field, deliberately. A message cannot vouch for its own
+  // sender's consent: whether a contact may be contacted comes from a
+  // ContactPolicy the caller trusts, never from the delivery.
+}
+
+/**
+ * A TRUSTED answer to "may this contact be contacted?", resolved by the
+ * caller and never read from a delivery.
+ *
+ * Phase 2A: a synthetic fixture built from trusted configuration
+ * (syntheticContactPolicy.ts). Phase 2B replaces it with a read-only lookup of
+ * the CRM's lead_profiles.do_not_contact, behind a port — never a foreign key
+ * from the engine into public.*.
+ */
+export interface ContactPolicy {
   /**
-   * The consent state resolved BEFORE admission. A transport that cannot
-   * resolve it says `true`: refusing to contact someone we know nothing about
-   * is the fail-closed answer, and Phase 2A sends nothing either way.
+   * True when the contact must not be contacted, and ALSO when that is
+   * unknown: refusing to contact someone we know nothing about is the
+   * fail-closed answer. Only an explicit `false` makes a contact eligible.
    */
-  readonly doNotContact: boolean;
+  doNotContact(contactRef: string): boolean;
 }
 
 /**

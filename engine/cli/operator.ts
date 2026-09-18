@@ -23,6 +23,7 @@
 //   npm run ops -- triage accept --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage reject --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
+//   npm run ops -- triage recover [--tenant <uuid>] [--limit <n>]
 //
 // TRIAGE (Phase 2A) is the human review queue: `list` shows what is waiting,
 // `show` prints one item with the advisory result a person is being asked to
@@ -73,6 +74,7 @@ import {
 import {
   isReviewStatus,
   listReviewItems,
+  openMissingReviews,
   readReviewItem,
   recordReviewDecision,
   REVIEW_STATUSES,
@@ -156,6 +158,11 @@ type ActCommand =
       readonly kind: "triage accept" | "triage reject" | "triage needs-edit";
       readonly tenantId: string;
       readonly input: RecordDecisionInput;
+    }
+  | {
+      readonly kind: "triage recover";
+      readonly tenantId?: string;
+      readonly limit?: number;
     };
 
 export type OperatorCommand =
@@ -166,7 +173,7 @@ export type OperatorCommand =
 type CommandName = (ReadCommand | ActCommand)["kind"];
 
 export const OPERATOR_SYNOPSIS =
-  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]";
+  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>]";
 
 /** The first statement of every read command's transaction. */
 export const READ_ONLY_TRANSACTION = "set transaction read only";
@@ -277,13 +284,14 @@ const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
   ["triage accept", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage reject", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage needs-edit", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
+  ["triage recover", grammar(false, ["tenant", "limit"])],
 ]);
 
 /** The commands that take a subcommand, and the subcommands each takes. */
 const GROUPS: ReadonlyMap<string, readonly string[]> = new Map([
   ["price", ["record"]],
   ["limit", ["set", "retire"]],
-  ["triage", ["list", "show", "accept", "reject", "needs-edit"]],
+  ["triage", ["list", "show", "accept", "reject", "needs-edit", "recover"]],
 ]);
 
 const LIMIT_TEXT = /^[0-9]{1,6}$/;
@@ -496,6 +504,17 @@ export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
     case "triage reject":
     case "triage needs-edit":
       return buildTriageDecision(name, values);
+    case "triage recover": {
+      const limitText = values.get("limit");
+      if (limitText !== undefined && !LIMIT_TEXT.test(limitText)) {
+        return usageError("--limit must be a whole number");
+      }
+      return {
+        kind: "triage recover",
+        tenantId: values.get("tenant"),
+        limit: limitText === undefined ? undefined : Number(limitText),
+      };
+    }
   }
 }
 
@@ -588,6 +607,15 @@ async function runAct(
           status: decided.status,
         },
       ];
+    }
+    case "triage recover": {
+      // Opens the reviews a settlement could not: the run's answer was kept,
+      // so this derives them from it. Opens nothing twice.
+      const opened = await openMissingReviews(tx, {
+        tenantId: command.tenantId,
+        limit: command.limit,
+      });
+      return [{ result: "recovered", opened }];
     }
   }
 }

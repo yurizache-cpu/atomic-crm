@@ -54,7 +54,8 @@ const deliverySchema = z.strictObject({
   contact_ref: z.string().min(1).max(MAX_CONTACT_REF_LENGTH).regex(PRINTABLE),
   body: z.string().min(1),
   received_at: z.iso.datetime({ offset: true }).optional(),
-  do_not_contact: z.boolean().optional(),
+  // No consent field. strictObject refuses one as an unknown key: a delivery
+  // cannot declare its own sender contactable (ContactPolicy in types.ts).
 });
 
 export interface SyntheticIngressEnv {
@@ -92,7 +93,7 @@ export function createSyntheticCommunicationPort(
         // refusal names the shape instead.
         throw new CommunicationError(
           "malformed_delivery",
-          "a synthetic delivery is {external_message_id, contact_ref, body, received_at?, do_not_contact?}",
+          "a synthetic delivery is {external_message_id, contact_ref, body, received_at?}",
         );
       }
       // Length is checked after the shape so the message says which rule the
@@ -120,8 +121,6 @@ export function createSyntheticCommunicationPort(
           parsed.data.received_at === undefined
             ? new Date()
             : new Date(parsed.data.received_at),
-        // Absent means unknown, and unknown fails closed.
-        doNotContact: parsed.data.do_not_contact ?? true,
       });
     },
   });

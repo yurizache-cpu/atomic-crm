@@ -31,6 +31,7 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
+import { createSyntheticContactPolicy } from "../communication/syntheticContactPolicy.ts";
 import { createSyntheticCommunicationPort } from "../communication/syntheticIngress.ts";
 import { CompanyOsError } from "../domain/errors.ts";
 import { admitInboundMessage } from "../domain/leadIntake.ts";
@@ -63,6 +64,12 @@ const WORKER_DATABASE_URL = "OPS_WORKER_DATABASE_URL";
 const SOURCE = "lead-triage-demo";
 const MODEL = "fake-model-1";
 const MAX_STEPS = 5;
+
+/** The fictitious sender, and the trusted consent source that knows it. */
+const DEMO_CONTACT = "synthetic:lead-demo";
+const DEMO_CONTACT_POLICY = createSyntheticContactPolicy({
+  eligible: [DEMO_CONTACT],
+});
 
 /** A fictitious enquiry, written for this demonstration. */
 const SYNTHETIC_BODY =
@@ -319,16 +326,16 @@ export async function runLeadTriageDemo(
       configureFakeGovernance(tx, placement.tenantId, new Date()),
     );
 
-    // 2. Ingress. One message in, one unit of work out, nothing called.
+    // 2. Ingress. One message in, one unit of work out, nothing called. The
+    //    delivery says nothing about consent; the trusted policy does.
     const message = port.receive({
       external_message_id: `demo-${randomUUID()}`,
-      contact_ref: "synthetic:lead-demo",
+      contact_ref: DEMO_CONTACT,
       body: SYNTHETIC_BODY,
       received_at: new Date().toISOString(),
-      do_not_contact: false,
     });
     const admitted = await owner.withTransaction((tx) =>
-      admitInboundMessage(tx, placement, message, SOURCE),
+      admitInboundMessage(tx, placement, message, DEMO_CONTACT_POLICY, SOURCE),
     );
     stdout(
       jsonLine({

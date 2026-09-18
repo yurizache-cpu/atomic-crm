@@ -20,7 +20,6 @@ const delivery = (overrides: Record<string, unknown> = {}) => ({
   contact_ref: "synthetic:+5500000000000",
   body: "Oi, queria entender como funciona a primeira consulta.",
   received_at: "2026-09-17T12:00:00Z",
-  do_not_contact: false,
   ...overrides,
 });
 
@@ -102,7 +101,6 @@ describe("receiving a synthetic delivery", () => {
       contactRef: "synthetic:+5500000000000",
       body: "Oi, queria entender como funciona a primeira consulta.",
       receivedAt: new Date("2026-09-17T12:00:00Z"),
-      doNotContact: false,
     });
     expect(Object.isFrozen(message)).toBe(true);
   });
@@ -122,11 +120,31 @@ describe("receiving a synthetic delivery", () => {
     },
   );
 
-  it("treats unknown consent as do-not-contact", () => {
-    const message = port.receive(
-      delivery({ do_not_contact: undefined as unknown as boolean }),
+  // Consent is not the envelope's to state: a delivery that tries to declare
+  // its own sender contactable — or not — is refused outright, and the
+  // envelope it would have produced carries no consent at all. The consent an
+  // admission records comes from a ContactPolicy the caller trusts.
+  it.each<[string, Record<string, unknown>]>([
+    ["do_not_contact false", { do_not_contact: false }],
+    ["do_not_contact true", { do_not_contact: true }],
+    ["doNotContact false", { doNotContact: false }],
+    ["a consent claim", { consent: "granted" }],
+    ["an eligibility claim", { eligible: true }],
+  ])("refuses a delivery carrying %s", (_name, overrides) => {
+    expect(refusalCode(() => port.receive(delivery(overrides)))).toBe(
+      "malformed_delivery",
     );
-    expect(message.doNotContact).toBe(true);
+  });
+
+  it("produces an envelope with no consent in it", () => {
+    const message = port.receive(delivery());
+    expect(Object.keys(message).sort()).toEqual([
+      "body",
+      "contactRef",
+      "externalMessageId",
+      "receivedAt",
+      "sourceKind",
+    ]);
   });
 
   it.each<[string, Record<string, unknown>]>([

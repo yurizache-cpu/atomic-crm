@@ -97,10 +97,16 @@ export const TRIAGE_NEEDS_EDIT = argv("triage needs-edit", {
   reviewer: "owner",
 });
 
+export const TRIAGE_RECOVER = argv("triage recover", {
+  tenant: TENANT,
+  limit: "50",
+});
+
 /**
- * Every mutation the tool offers: the three governance acts, and Phase 2A's
- * three review decisions. A decision changes ops.review_items and nothing else
- * — it sends nothing and writes nothing to the CRM.
+ * Every mutation the tool offers: the three governance acts, Phase 2A's three
+ * review decisions, and the review recovery. A decision changes
+ * ops.review_items and nothing else — it sends nothing and writes nothing to
+ * the CRM; the recovery opens reviews a settlement could not.
  */
 export const ACTS: readonly (readonly string[])[] = [
   PRICE_RECORD,
@@ -109,6 +115,7 @@ export const ACTS: readonly (readonly string[])[] = [
   TRIAGE_ACCEPT,
   TRIAGE_REJECT,
   TRIAGE_NEEDS_EDIT,
+  TRIAGE_RECOVER,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

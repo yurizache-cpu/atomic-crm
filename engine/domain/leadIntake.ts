@@ -16,10 +16,17 @@
 // TENANCY. `target` is the scope the CALLER is already authorised for, built
 // from trusted configuration. Nothing in `message` is a tenant, a company or an
 // agent, so no delivery can select one.
+//
+// CONSENT. Whether the contact may be contacted comes from `contactPolicy`,
+// which the caller trusts, and NEVER from the message: the envelope has no
+// consent field, and a value smuggled onto it is not read. Only an explicit
+// `false` from the policy makes a contact eligible; anything else is recorded
+// as do-not-contact.
 
 import type { TxClient } from "../db/types.ts";
 import type {
   CommunicationTarget,
+  ContactPolicy,
   InboundMessage,
 } from "../communication/types.ts";
 import { CompanyOsError, toDomainError } from "./errors.ts";
@@ -64,6 +71,7 @@ export async function admitInboundMessage(
   tx: TxClient,
   target: CommunicationTarget,
   message: InboundMessage,
+  contactPolicy: ContactPolicy,
   source: string,
 ): Promise<AdmitInboundMessageResult> {
   if (typeof source !== "string" || !SOURCE.test(source)) {
@@ -87,12 +95,11 @@ export async function admitInboundMessage(
   ) {
     throw new CompanyOsError("invalid_argument", "receivedAt is not a date");
   }
-  if (typeof message.doNotContact !== "boolean") {
-    throw new CompanyOsError(
-      "invalid_argument",
-      "doNotContact must be stated, because a message whose consent is unknown is not admitted on a guess",
-    );
-  }
+  const contactRef = requirePrintable(message.contactRef, "contactRef");
+  // Asked of the trusted policy, about the contact the message names. Only an
+  // explicit `false` is eligible: a policy that throws refuses the admission,
+  // and one that answers anything but a boolean records do-not-contact.
+  const doNotContact = contactPolicy.doNotContact(contactRef) !== false;
 
   // Exactly ten positions, each read from a named field: nothing else on
   // `target` or `message` can become an argument.
@@ -102,10 +109,10 @@ export async function admitInboundMessage(
     requireUuid(target.agentId, "agentId"),
     message.sourceKind,
     requirePrintable(message.externalMessageId, "externalMessageId"),
-    requirePrintable(message.contactRef, "contactRef"),
+    contactRef,
     message.body,
     source,
-    message.doNotContact,
+    doNotContact,
     message.receivedAt,
   ] as const;
 

@@ -43,6 +43,11 @@ describe("parsing operator arguments", () => {
       ["triage", "show", "--id", REVIEW],
       { kind: "triage show", reviewId: REVIEW },
     ],
+    [["triage", "recover"], { kind: "triage recover" }],
+    [
+      ["triage", "recover", "--tenant", TENANT, "--limit", "50"],
+      { kind: "triage recover", tenantId: TENANT, limit: 50 },
+    ],
   ])("parses %j", (argv, expected) => {
     expect(parseOperatorArgs(argv)).toEqual(expected);
   });
@@ -143,7 +148,7 @@ describe("parsing operator arguments", () => {
     [
       "triage with no subcommand",
       ["triage"],
-      "triage needs a subcommand: list or show or accept or reject or needs-edit",
+      "triage needs a subcommand: list or show or accept or reject or needs-edit or recover",
     ],
     [
       "an unknown triage subcommand",

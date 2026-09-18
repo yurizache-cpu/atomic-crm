@@ -11,11 +11,13 @@
 // decision recorded again is a no-op rather than a second fact, and accepting
 // is refused when the admission recorded do_not_contact.
 //
-// WHAT AN OPERATOR IS SHOWN. The advisory result, the identifiers, and the
-// consent state. Not the lead's own message: the operator surface of Phase 2A
-// is a CLI whose output is a log line, and a person's words do not belong in
-// one. The task holds the message for whoever needs to read it in the UI a
-// later phase builds.
+// WHAT AN OPERATOR IS SHOWN. A listing: identifiers, status and the consent
+// state — never the advice. `readReviewItem` (`triage show`): the advisory
+// result as well, because that is what a person is asked to decide about.
+// Neither returns the inbound message itself, which stays in the task's
+// description. The advice is the model's summary of that message and can
+// paraphrase it, so `show` output is as sensitive as the message; with
+// synthetic data only (Q8) that is acceptable, and it is why a listing omits it.
 
 import type { TxClient } from "../db/types.ts";
 import { CompanyOsError, toDomainError } from "./errors.ts";
@@ -223,6 +225,41 @@ export async function readReviewItem(
   const record = rows[0];
   if (record === undefined) return undefined;
   return Object.freeze({ ...toReviewRow(record), proposed: record.proposed });
+}
+
+export const MAX_RECOVERED_REVIEWS = 1000;
+
+/**
+ * Recovery: opens the review of every succeeded lead_triage run that has none —
+ * which happens only when opening it failed as the run settled (the settlement
+ * is kept, and the review is derived here from the stored, validated result).
+ * Resolves to how many it opened; running it again opens nothing twice.
+ */
+export async function openMissingReviews(
+  tx: TxClient,
+  options: { readonly tenantId?: string; readonly limit?: number } = {},
+): Promise<number> {
+  const limit = options.limit ?? DEFAULT_LISTED_REVIEWS;
+  if (!Number.isInteger(limit) || limit < 1 || limit > MAX_RECOVERED_REVIEWS) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      `limit must be an integer between 1 and ${MAX_RECOVERED_REVIEWS}`,
+    );
+  }
+  let opened: unknown;
+  try {
+    const { rows } = await tx.query<{ result: unknown }>(
+      "select ops.open_missing_reviews($1, $2) as result",
+      [optionalUuid(options.tenantId, "tenantId"), limit],
+    );
+    opened = rows[0]?.result;
+  } catch (error) {
+    throw toDomainError(error);
+  }
+  if (typeof opened !== "number" || !Number.isInteger(opened) || opened < 0) {
+    throw new Error("ops.open_missing_reviews returned no count");
+  }
+  return opened;
 }
 
 /**

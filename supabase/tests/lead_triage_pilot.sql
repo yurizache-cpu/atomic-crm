@@ -473,12 +473,15 @@ do $$
 declare
   v_bad text;
 begin
-  select string_agg(format('%s on %s to %s', p.privilege_type, p.table_name, p.grantee), ', ')
-    into v_bad
-    from information_schema.table_privileges p
-   where p.table_schema = 'ops'
-     and p.table_name in ('inbound_messages', 'review_items')
-     and p.grantee in ('public', 'anon', 'authenticated', 'service_role', 'ops_worker');
+  -- G1. has_table_privilege, not information_schema: the latter reports the
+  --     PUBLIC pseudo-role as 'PUBLIC', and an earlier form of this check
+  --     compared it with 'public', so a grant to PUBLIC could not trip it.
+  select string_agg(format('%s on %s to %s', v.p, v.t, v.r), ', ') into v_bad
+    from (select t, r, p
+            from unnest(array['ops.inbound_messages', 'ops.review_items']) t,
+                 unnest(array['public', 'anon', 'authenticated', 'service_role', 'ops_worker']) r,
+                 unnest(array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger']) p) v
+   where has_table_privilege(v.r, v.t, v.p);
   if v_bad is not null then
     raise exception 'G1: the pilot tables are reachable: %', v_bad;
   end if;
@@ -486,9 +489,10 @@ begin
   select string_agg(format('%s to %s', p.proname, r.rolname), ', ') into v_bad
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
-    cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r(rolname)
+    cross join (values ('public'), ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r(rolname)
    where n.nspname = 'ops'
-     and p.proname in ('admit_inbound_message', 'record_review_decision')
+     and p.proname in ('admit_inbound_message', 'record_review_decision',
+                       'open_review_for_run', 'open_missing_reviews')
      and has_function_privilege(r.rolname, p.oid, 'execute');
   if v_bad is not null then
     raise exception 'G2: a pilot service is executable by an application role: %', v_bad;
@@ -504,6 +508,108 @@ begin
      or ops.internal_job_kinds() is distinct from array['postmark.ledger_retention']::text[] then
     raise exception 'G4: the job kinds changed';
   end if;
+end
+$$;
+
+-- G5. Not only the catalogue: each application role, ACTUALLY switched to, is
+--     refused every pilot service and table. A privilege check can be wrong
+--     about what a role can do; an attempt cannot.
+-- The owner is already a member of anon, authenticated and service_role
+-- (rls_tenant_isolation.sql switches to them as it is); ops_worker needs the
+-- grant, interpolated because `grant <role> to current_user` segfaults this
+-- server build (ops_execution_core.sql).
+do $$ begin execute format('grant ops_worker to %I', current_user); end $$;
+
+do $$
+declare
+  v_role    text;
+  v_attempt text;
+  v_reached text[] := array[]::text[];
+begin
+  foreach v_role in array array['anon', 'authenticated', 'service_role', 'ops_worker'] loop
+    foreach v_attempt in array array[
+      format($q$select ops.admit_inbound_message(%L, %L, %L, 'synthetic', 'g5-probe', 'synthetic:g5', 'probe', 'g5-probe')$q$,
+             pg_temp.id('tenant_a'), pg_temp.id('company_a'), pg_temp.id('agent_a')),
+      format($q$select ops.record_review_decision(%L, gen_random_uuid(), 'accepted', 'g5 probe', 'g5-probe')$q$,
+             pg_temp.id('tenant_a')),
+      format($q$select ops.open_missing_reviews(%L)$q$, pg_temp.id('tenant_a')),
+      format($q$select ops.open_review_for_run(%L, gen_random_uuid())$q$, pg_temp.id('tenant_a')),
+      'select count(*) from ops.inbound_messages',
+      'select count(*) from ops.review_items',
+      $q$update ops.review_items set status = 'accepted', reviewer = 'g5', reviewed_at = now()$q$
+    ] loop
+      begin
+        execute format('set local role %I', v_role);
+        execute v_attempt;
+        v_reached := v_reached || format('%s: %s', v_role, v_attempt);
+      exception when insufficient_privilege then
+        -- Refused AT THE DOOR, as it must be: the schema, the pilot function
+        -- or the pilot table itself. A denial from further in — a table the
+        -- function reads — means the role got into the service, and a
+        -- SECURITY INVOKER service it can enter is one grant away from working.
+        if sqlerrm !~ '^permission denied for (schema ops|function (admit_inbound_message|record_review_decision|open_missing_reviews|open_review_for_run)|table (inbound_messages|review_items))$' then
+          v_reached := v_reached || format('%s: %s (%s)', v_role, v_attempt, sqlerrm);
+        end if;
+      end;
+      reset role;
+    end loop;
+  end loop;
+
+  if cardinality(v_reached) > 0 then
+    raise exception 'G5: an application role reached the pilot: %', array_to_string(v_reached, ' | ');
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- H. The review-queue recovery (20260918090000). A run that never succeeded,
+--    or of another capability, has nothing to open; the recovery is bounded.
+-- ---------------------------------------------------------------------------
+
+do $$
+begin
+  -- H1. The admitted run is still pending: there is nothing to review yet.
+  if ops.open_review_for_run(pg_temp.id('tenant_a'), pg_temp.id('run_one')) is not null then
+    raise exception 'H1: a review was opened for a run that has not succeeded';
+  end if;
+
+  -- H2. Nothing is opened across tenants: the run is not found in tenant B.
+  begin
+    perform ops.open_review_for_run(pg_temp.id('tenant_b'), pg_temp.id('run_one'));
+    raise exception 'H2: another tenant opened this run''s review';
+  exception when sqlstate 'OS404' then null;
+  end;
+
+  -- H3. Recovery finds nothing to open where no lead triage run succeeded,
+  --     and refuses an unbounded scan.
+  if ops.open_missing_reviews(pg_temp.id('tenant_a')) <> 0 then
+    raise exception 'H3: recovery opened a review with no succeeded run to derive it from';
+  end if;
+  begin
+    perform ops.open_missing_reviews(null, 100000);
+    raise exception 'H3: recovery accepted an unbounded limit';
+  exception when sqlstate 'OS400' then null;
+  end;
+
+  -- H4. The admission leaves no sender in the task: the title is a constant.
+  if (select title from ops.tasks where id = pg_temp.id('task_one')) <> 'Lead triage' then
+    raise exception 'H4: the admitted task title carries more than a constant';
+  end if;
+
+  -- H5. An omitted consent is do-not-contact, never eligible.
+  perform ops.admit_inbound_message(
+    pg_temp.id('tenant_a'), pg_temp.id('company_a'), pg_temp.id('agent_a'),
+    'synthetic', 'msg-0100', 'synthetic:lead-three', 'Hello there', 'phase2a-suite');
+  if not (select do_not_contact from ops.inbound_messages
+           where tenant_id = pg_temp.id('tenant_a') and external_message_id = 'msg-0100') then
+    raise exception 'H5: an admission with no stated consent was recorded eligible';
+  end if;
+
+  -- H6. An external id of the full 200 characters admits: the idempotency
+  --     keys carry its hash, so they fit their own limit.
+  perform ops.admit_inbound_message(
+    pg_temp.id('tenant_a'), pg_temp.id('company_a'), pg_temp.id('agent_a'),
+    'synthetic', repeat('x', 200), 'synthetic:lead-three', 'Hello again', 'phase2a-suite', false, now());
 end
 $$;
 

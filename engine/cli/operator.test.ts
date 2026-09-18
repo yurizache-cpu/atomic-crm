@@ -51,6 +51,7 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   if (sql.includes("ops.record_model_price")) return [{ result: PRICE }];
   if (sql.includes("ops.set_spend_limit")) return [{ result: LIMIT }];
   if (sql.includes("ops.retire_spend_limit")) return [{ result: true }];
+  if (sql.includes("ops.open_missing_reviews")) return [{ result: 2 }];
   if (sql.includes("ops.record_review_decision")) {
     // The decision is params[2]: the subcommand chose it, and it reaches the
     // database as a bound value rather than as SQL.
@@ -191,6 +192,7 @@ describe("running the operator tool", () => {
       { result: "recorded", reviewItemId: REVIEW, status: "accepted" },
       { result: "recorded", reviewItemId: REVIEW, status: "rejected" },
       { result: "recorded", reviewItemId: REVIEW, status: "needs_edit" },
+      { result: "recovered", opened: 2 },
     ]);
   });
 
