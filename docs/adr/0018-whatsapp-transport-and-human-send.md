@@ -1,6 +1,6 @@
 # ADR 0018 — The WhatsApp transport: a signed gateway with its own role, a Q8 gate on the channel, and a send that only a person starts
 
-**Status:** Proposed (2026-09-18, Phase 2B; amended by the focused pre-push review the same day, before any push; see the end of this record) · **Date:** 2026-09-18
+**Status:** Accepted (2026-09-21, owner decision, as written). Proposed 2026-09-18 (Phase 2B) and amended by the focused pre-push review the same day, before any push; see the end of this record · **Date:** 2026-09-18
 **Implemented by:** `supabase/migrations/20260918150000_whatsapp_transport.sql`, `supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql`, `engine/communication/whatsapp/`, `engine/cli/whatsappGateway.ts`, `engine/cli/messaging.ts`, `engine/domain/whatsappGatewayStore.ts`, `engine/domain/outboundMessages.ts`, `engine/domain/outboundSend.ts`, `scripts/provision-gateway-role.mjs`
 
 ## Context
@@ -99,4 +99,6 @@ A focused review of the unpushed implementation (docs/PHASE_2B_REPORT.md §17) f
 - the eligibility rule as preconditions rather than a basis;
 - Meta's generic error codes treated as ambiguous.
 
-Nothing in this ADR is Accepted; the owner decides.
+## Owner acceptance (2026-09-21)
+
+The owner ACCEPTED this ADR as written, amendment above included. The review's recommended addendum (PHASE_2B_REPORT §17.5 (a)–(c)) was not part of the acceptance and remains a recommendation. Acceptance settles the architecture; it does not resolve BASELINE Q8, the lawful basis for replying, how consent is represented, retention and erasure, or gateway hosting, which stay owner decisions, and it does not open the real-data gate.

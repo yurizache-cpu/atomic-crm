@@ -5,7 +5,7 @@
 | **Base** | `feature/clinical-phase-1` at `1e582d43f7357838554b45a54c25710835a445df` |
 | **Branch** | `feature/phase-2b-whatsapp-transport` |
 | **Date** | Built 2026-09-18 |
-| **Status** | **BUILT, committed locally in two commits (the implementation `04a6b87c` and the focused pre-push review fix, §17), NOT pushed.** Awaiting owner review. No CI run exists for it yet. `main` is untouched, and no deploy took place. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md) is Proposed, amended by the review. |
+| **Status** | **BUILT, committed locally in two commits (the implementation `04a6b87c` and the focused pre-push review fix, §17), NOT pushed.** Awaiting owner review. No CI run exists for it yet. `main` is untouched, and no deploy took place. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), amended by the review, was **Accepted by the owner on 2026-09-21**, as written. |
 | **What it is** | The official Meta WhatsApp Cloud API in both directions. A signed delivery to a configured test number becomes one Phase 2A triage (one task, one run, one review). An accepted review can then be sent back, by a second and explicit operator act, at most once, with consent read afresh. |
 | **Data** | **Test and synthetic only. BASELINE Q8 is OPEN and unchanged.** Only an active channel the owner configured `test` can create work or send. The real-data gate is closed: a production channel can exist only inactive, and a message to one is not acknowledged and leaves nothing (SI-47, SI-53). No real patient data was used, and no live Meta call was made (§13). |
 | **New dependency** | **None.** `node:http`, `node:crypto`, `fetch` and the existing `zod`. No new OSS, SaaS or SDK. |
@@ -343,7 +343,7 @@ No Meta test credentials exist in this environment: no app secret, verify token,
 3. **Retention and erasure** of message bodies (`ops.tasks.description`), phone numbers (`contact_ref`) and drafts.
 4. **Whether an unknown number may ever be answered**, or whether a contact must first be created by a person in the CRM (today: never answered).
 5. **Hosting of the gateway:** TLS termination, public name, network filtering, secret storage, and the WhatsApp Business Account layout (test numbers on an account with no real number).
-6. **ADR 0018:** accept, amend or reject.
+6. ~~**ADR 0018:** accept, amend or reject.~~ *(2026-09-21: the owner accepted it as written.)*
 
 ## 16. Next
 
@@ -452,7 +452,9 @@ No P0: tenant isolation, secret handling and at-most-once held under every attac
 4. a send only by a second, explicit operator act, with its preconditions (test channel, no stop, one CRM contact with a false opt-out flag, Meta's 24-hour window) checked afresh at request and before the one call. The send is at most once: ambiguity, Meta's generic codes included, is `indeterminate`, and nothing resends. Status callbacks are channel-bound;
 5. conversations group; every message stays its own task.
 
-**Recommended disposition: ACCEPT WITH AMENDMENT.** The architecture is sound and the text matches the code. The owner addendum should record three things:
+**Owner decision (2026-09-21): ACCEPTED, as written.** The review's recommended addendum (PHASE_2B_REPORT §17.5 (a)–(c)) was not part of the acceptance and remains a recommendation.
+
+**Recommended disposition (before the decision): ACCEPT WITH AMENDMENT.** The architecture is sound and the text matches the code. The owner addendum should record three things:
 
 - (a) opening the real-data gate requires an Accepted ADR, not only a migration, as dropping an `ops` trigger does;
 - (b) the live test-number probe, run on a WhatsApp Business Account holding no real number, must settle the correlation's placement before any send beyond the probe itself;
