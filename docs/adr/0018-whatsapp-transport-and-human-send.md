@@ -1,6 +1,6 @@
 # ADR 0018 — The WhatsApp transport: a signed gateway with its own role, a Q8 gate on the channel, and a send that only a person starts
 
-**Status:** Accepted (2026-09-21, owner decision, as written). Proposed 2026-09-18 (Phase 2B) and amended by the focused pre-push review the same day, before any push; see the end of this record · **Date:** 2026-09-18
+**Status:** Accepted with amendment (owner decision 2026-09-21; the three owner amendments are at the end of this record). Proposed 2026-09-18 (Phase 2B) and amended by the focused pre-push review the same day, before any push · **Date:** 2026-09-18
 **Implemented by:** `supabase/migrations/20260918150000_whatsapp_transport.sql`, `supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql`, `engine/communication/whatsapp/`, `engine/cli/whatsappGateway.ts`, `engine/cli/messaging.ts`, `engine/domain/whatsappGatewayStore.ts`, `engine/domain/outboundMessages.ts`, `engine/domain/outboundSend.ts`, `scripts/provision-gateway-role.mjs`
 
 ## Context
@@ -37,7 +37,7 @@ Every channel is `test` or `production`, and only the owner sets it (`npm run me
 - **The real-data gate is closed, and has no enabled value.** A production channel can exist only INACTIVE: `communication_channels_q8_real_data_gate` (`CHECK (mode = 'test' or not active)`) holds for every role, the owner's own statements included. The configure service refuses the combination first (OS403), and so does the messaging CLI. No flag, setting, table or environment variable opens the gate. So no real number can be a live target, and a message to a production target is unrouted: not acknowledged, and nothing stored.
 - **Belt and braces behind the gate.** A transport admission row, a send, or the start of a send on a non-test channel is refused by `ENABLE ALWAYS` triggers.
 - **A payload field never decides it.** A payload field such as `synthetic: true`, `mode` or `active` never classifies anything, and neither gateway function writes a channel.
-- **Opening the gate is a reviewed migration after the owner decides Q8**, the lawful basis for replying and how consent is represented. Dropping the constraint is a static-guard finding (`constraint-dropped`) that only an owner-approved override can silence (SI-47).
+- **Opening the gate is a reviewed migration after the owner decides Q8**, the lawful basis for replying and how consent is represented. *(Owner amendment 1, 2026-09-21: a migration alone cannot open it; only a new, explicitly owner-approved, Accepted ADR can. See the end of this record.)* Dropping the constraint is a static-guard finding (`constraint-dropped`) that only an owner-approved override can silence (SI-47).
 
 ### 4. A send is a second, explicit human act, checked afresh, at most once
 
@@ -88,7 +88,7 @@ Ambiguity follows ADR 0016's owner amendment: a 5xx, a timeout, a lost connectio
 - **Tenant from a payload field or a URL segment** — anyone who can reach the URL controls both.
 - **A generic outbound job kind** — a queue and retry policy for an act that must never retry; see Decision 4.
 - **Acknowledge an unroutable message and record it as held** (the first version of this ADR) — rejected by the pre-push review: a message acknowledged and stored nowhere is lost for good, since Meta never delivers it again. Not acknowledging it keeps it with Meta, where re-activating a channel or unit recovers it.
-- **An environment flag or owner setting that enables production** — rejected: anything that can be switched on casually is not a gate. The gate opens only by a reviewed migration.
+- **An environment flag or owner setting that enables production** — rejected: anything that can be switched on casually is not a gate. The gate opens only by a reviewed migration, and only after a new, owner-approved, Accepted ADR (owner amendment 1).
 
 ## Pre-push review amendment (2026-09-18)
 
@@ -99,6 +99,26 @@ A focused review of the unpushed implementation (docs/PHASE_2B_REPORT.md §17) f
 - the eligibility rule as preconditions rather than a basis;
 - Meta's generic error codes treated as ambiguous.
 
-## Owner acceptance (2026-09-21)
+## Owner decision (2026-09-21): ACCEPTED WITH AMENDMENT
 
-The owner ACCEPTED this ADR as written, amendment above included. The review's recommended addendum (PHASE_2B_REPORT §17.5 (a)–(c)) was not part of the acceptance and remains a recommendation. Acceptance settles the architecture; it does not resolve BASELINE Q8, the lawful basis for replying, how consent is represented, retention and erasure, or gateway hosting, which stay owner decisions, and it does not open the real-data gate.
+The owner accepted this ADR with the three amendments below. They are part of the Accepted decision, not recommendations, and where they are stricter than the text above, they prevail.
+
+1. **The real-data gate opens only through a new ADR.** Opening the production real-data gate requires a NEW, explicitly owner-approved, Accepted ADR. A migration alone cannot enable it. That future ADR must settle:
+   - BASELINE Q8;
+   - the lawful basis for replying;
+   - how real WhatsApp consent and opt-in are represented;
+   - the retention and erasure of message bodies and phone identifiers.
+
+   Until then, production WhatsApp channels remain structurally incapable of becoming active: `communication_channels_q8_real_data_gate` keeps them inactive for every role, and dropping it is a static-guard finding (`constraint-dropped`) that only an owner-approved override can silence.
+2. **A live Meta probe comes first.** Before any production WhatsApp enablement, a live probe in Meta's official test/development environment is mandatory. It uses no real patient traffic, a Meta test/development number, a controlled test recipient and synthetic content only. It must verify:
+   - that the send request is compatible;
+   - the selected Graph API version;
+   - the provider message id;
+   - the status callback format;
+   - webhook signature behaviour;
+   - the actual supported placement and behaviour of `biz_opaque_callback_data`.
+
+   Until then, `biz_opaque_callback_data` remains UNVERIFIED.
+3. **The CRM's PUBLIC helpers are not approved.** This ADR does NOT approve the pre-existing PUBLIC EXECUTE surface of the CRM row-level-security helper functions. That remains separate security debt. No additional PUBLIC helper may appear (`supabase/tests/whatsapp_transport.sql` K3 fails by name on a new one). Before real production patient traffic, the existing PUBLIC grants must receive their own explicit review and decision.
+
+Acceptance settles the architecture above, as amended. BASELINE Q8 stays open, and the production real-data gate stays closed.

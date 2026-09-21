@@ -5,7 +5,7 @@
 | **Base** | `feature/clinical-phase-1` at `1e582d43f7357838554b45a54c25710835a445df` |
 | **Branch** | `feature/phase-2b-whatsapp-transport` |
 | **Date** | Built 2026-09-18 |
-| **Status** | **BUILT, committed locally in two commits (the implementation `04a6b87c` and the focused pre-push review fix, §17), NOT pushed.** Awaiting owner review. No CI run exists for it yet. `main` is untouched, and no deploy took place. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), amended by the review, was **Accepted by the owner on 2026-09-21**, as written. |
+| **Status** | **BUILT, committed locally in two commits (the implementation `04a6b87c` and the focused pre-push review fix, §17), NOT pushed.** Awaiting owner review. No CI run exists for it yet. `main` is untouched, and no deploy took place. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), amended by the review, was **ACCEPTED WITH AMENDMENT by the owner on 2026-09-21** (three owner amendments, §17.5). |
 | **What it is** | The official Meta WhatsApp Cloud API in both directions. A signed delivery to a configured test number becomes one Phase 2A triage (one task, one run, one review). An accepted review can then be sent back, by a second and explicit operator act, at most once, with consent read afresh. |
 | **Data** | **Test and synthetic only. BASELINE Q8 is OPEN and unchanged.** Only an active channel the owner configured `test` can create work or send. The real-data gate is closed: a production channel can exist only inactive, and a message to one is not acknowledged and leaves nothing (SI-47, SI-53). No real patient data was used, and no live Meta call was made (§13). |
 | **New dependency** | **None.** `node:http`, `node:crypto`, `fetch` and the existing `zod`. No new OSS, SaaS or SDK. |
@@ -308,7 +308,9 @@ Each driver mutation's case was then re-run unmutated and passed.
 
 CI runs both green. The accepted CI baseline reds are unchanged: e2e 9 failed / 1 skipped, and Prettier on `sampleCsv.test.ts` and `canAccess.test.ts`.
 
-## 13. Live Meta test probe — NOT PERFORMED
+## 13. Live Meta test probe — NOT PERFORMED, and mandatory before any production enablement
+
+**ADR 0018 owner amendment 2 (2026-09-21) makes this probe mandatory before any production WhatsApp enablement.** It runs in Meta's official test/development environment with a Meta test/development number, a controlled test recipient, synthetic content only and no real patient traffic. It must verify the send request's compatibility, the selected Graph API version, the provider message id, the status callback format, webhook signature behaviour, and the actual supported placement and behaviour of `biz_opaque_callback_data`, which remains UNVERIFIED until then.
 
 No Meta test credentials exist in this environment: no app secret, verify token, access token or test phone number id. So no live call was made, and nothing in this phase needs one to pass. The probe, when the owner provides a Meta **test** number and test recipients:
 
@@ -343,7 +345,7 @@ No Meta test credentials exist in this environment: no app secret, verify token,
 3. **Retention and erasure** of message bodies (`ops.tasks.description`), phone numbers (`contact_ref`) and drafts.
 4. **Whether an unknown number may ever be answered**, or whether a contact must first be created by a person in the CRM (today: never answered).
 5. **Hosting of the gateway:** TLS termination, public name, network filtering, secret storage, and the WhatsApp Business Account layout (test numbers on an account with no real number).
-6. ~~**ADR 0018:** accept, amend or reject.~~ *(2026-09-21: the owner accepted it as written.)*
+6. ~~**ADR 0018:** accept, amend or reject.~~ *(2026-09-21: the owner ACCEPTED it WITH AMENDMENT; §17.5.)*
 
 ## 16. Next
 
@@ -351,7 +353,9 @@ Phase 2C (the operator surface) is **not started**. Before any real patient mess
 
 - Q8 decided;
 - the owner decisions in §15 made;
-- the live test-number probe run and §3's unverified items settled.
+- the live test-number probe run and §3's unverified items settled (ADR 0018 amendment 2);
+- a new, owner-approved, Accepted ADR to open the production real-data gate (amendment 1);
+- an explicit decision on the CRM's PUBLIC row-level-security helper grants (amendment 3).
 
 ## 17. Focused pre-push review (2026-09-18)
 
@@ -383,7 +387,7 @@ Each finding was then reproduced by the main thread before anything was fixed. T
 | R-13 | P2 | SI-52 said the draft "stays in its review"; it is also in `ops.agent_runs.result`. The body fingerprint's erasure property was undocumented. | **Fixed:** SI-52 and §11 restated. |
 | R-14 | P2 | Version wording implied v25.0 was the newest version. Two version facts, the Message API selector and the OpenAPI download, could not be re-read (they are rendered by JavaScript). | **Fixed:** §3, `metaApi.ts` (17.4). |
 | R-15 | P2 | `metaSender.ts` claimed Meta places `biz_opaque_callback_data` at the top level. No current page says so. | **Fixed:** marked UNVERIFIED (17.4). |
-| R-16 | P3 | Like every role since the CRM's first migration, `ops_gateway` (and its login) can execute through PUBLIC the CRM's row-level-security helpers. These are read-only booleans or ids that answer for `auth.uid()`, a claim a session can forge through `request.jwt.claims`. It can also call trigger functions, which cannot run by direct call. Pre-existing; the same holds for `ops_worker`. | **Pinned, not fixed** (scope): `whatsapp_transport.sql` K3 fails by name on any new one. |
+| R-16 | P3 | Like every role since the CRM's first migration, `ops_gateway` (and its login) can execute through PUBLIC the CRM's row-level-security helpers. These are read-only booleans or ids that answer for `auth.uid()`, a claim a session can forge through `request.jwt.claims`. It can also call trigger functions, which cannot run by direct call. Pre-existing; the same holds for `ops_worker`. | **Pinned, not fixed** (scope): `whatsapp_transport.sql` K3 fails by name on any new one. **Not approved by ADR 0018 (owner amendment 3):** separate security debt; no additional PUBLIC helper may appear, and the existing grants need their own explicit review and decision before real production patient traffic. |
 | R-17 | P3 | The live suites did not attempt a gateway grant on `ops.jobs` / `ops.tenants`, or CREATE on `ops`. The static guard and the migration's own assertion did. | **Fixed** in the suite: K1 iterates every `ops` relation. |
 | R-18 | P3 | An authenticated body that is not a WhatsApp notification is answered 400, so Meta retries it for 7 days. | Documented (§14). |
 | R-19 | P3 | `readBody` never settles if a client aborts mid-body without an `error` event. | Not changed; the server's request timeout bounds it. |
@@ -452,13 +456,11 @@ No P0: tenant isolation, secret handling and at-most-once held under every attac
 4. a send only by a second, explicit operator act, with its preconditions (test channel, no stop, one CRM contact with a false opt-out flag, Meta's 24-hour window) checked afresh at request and before the one call. The send is at most once: ambiguity, Meta's generic codes included, is `indeterminate`, and nothing resends. Status callbacks are channel-bound;
 5. conversations group; every message stays its own task.
 
-**Owner decision (2026-09-21): ACCEPTED, as written.** The review's recommended addendum (PHASE_2B_REPORT §17.5 (a)–(c)) was not part of the acceptance and remains a recommendation.
+**Owner decision (2026-09-21): ACCEPTED WITH AMENDMENT.** The review had recommended accepting with an amendment; the owner's three amendments are part of the Accepted decision, recorded in full in the ADR's closing section:
 
-**Recommended disposition (before the decision): ACCEPT WITH AMENDMENT.** The architecture is sound and the text matches the code. The owner addendum should record three things:
-
-- (a) opening the real-data gate requires an Accepted ADR, not only a migration, as dropping an `ops` trigger does;
-- (b) the live test-number probe, run on a WhatsApp Business Account holding no real number, must settle the correlation's placement before any send beyond the probe itself;
-- (c) R-16, the CRM's PUBLIC row-level-security helpers, is scheduled for its own decision, since it reaches every role.
+1. **Real-data gate.** Opening the production real-data gate requires a NEW, explicitly owner-approved, Accepted ADR; a migration alone cannot enable it. That ADR must settle Q8, the lawful basis, the representation of real WhatsApp consent and opt-in, and the retention and erasure of message bodies and phone identifiers. Until then, production WhatsApp channels remain structurally incapable of becoming active.
+2. **Live Meta probe.** Before any production WhatsApp enablement, a live probe in Meta's official test/development environment is mandatory: no real patient traffic, a Meta test/development number, a controlled test recipient, synthetic content only (§13). It must verify send request compatibility, the selected Graph API version, the provider message id, the status callback format, webhook signature behaviour and the actual supported placement and behaviour of `biz_opaque_callback_data`, which remains UNVERIFIED until then.
+3. **Pre-existing PUBLIC CRM helpers.** ADR 0018 does NOT approve the pre-existing PUBLIC EXECUTE surface of the CRM row-level-security helper functions (R-16). It remains separate security debt, no additional PUBLIC helper may appear, and the existing grants must receive their own explicit review and decision before real production patient traffic.
 
 ### 17.6 Evidence (local, after the fix; not CI)
 
