@@ -63,6 +63,7 @@ export function provisionSql(
   password,
   loginRole = LOGIN_ROLE,
   workerRole = WORKER_ROLE,
+  createdBy = "20260912120000_ops_execution_core.sql",
 ) {
   if (typeof password !== "string" || password.length === 0) {
     throw new Error("provisionSql requires a password");
@@ -77,7 +78,7 @@ declare
 begin
   if not exists (select 1 from pg_roles where rolname = v_worker) then
     raise exception
-      'role % does not exist. Apply the migrations first: it is created by 20260912120000_ops_execution_core.sql.', v_worker;
+      'role % does not exist. Apply the migrations first: it is created by ${createdBy}.', v_worker;
   end if;
 
   select rolsuper, rolbypassrls, rolcreaterole, rolcreatedb

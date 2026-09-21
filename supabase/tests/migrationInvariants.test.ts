@@ -405,6 +405,40 @@ const REJECTED: Array<[string, string, RegExp]> = [
     "grant select on all tables in schema ops to ops_worker;",
     /^grant:ops_worker:all tables in schema ops$/,
   ],
+  // --- Phase 2B: the webhook gateway faces the internet. --------------------
+  // It executes named functions and reaches the schema, and holds no table
+  // privilege at all, not even SELECT.
+  [
+    "SELECT granted to the webhook gateway",
+    "grant select on ops.inbound_messages to ops_gateway;",
+    /^grant:ops_gateway:ops\.inbound_messages:select$/,
+  ],
+  [
+    "INSERT granted to the webhook gateway",
+    "grant insert on ops.outbound_messages to ops_gateway;",
+    /^grant:ops_gateway:ops\.outbound_messages:insert$/,
+  ],
+  [
+    "a schema-wide function grant to the webhook gateway",
+    "grant execute on all functions in schema ops to ops_gateway;",
+    /^grant:ops_gateway:all functions in schema ops$/,
+  ],
+  [
+    "a default privilege for the webhook gateway",
+    "alter default privileges in schema ops grant execute on functions to ops_gateway;",
+    /^default-privileges:ops:ops_gateway$/,
+  ],
+  // The BASELINE Q8 real-data gate opens only by an owner-approved override.
+  [
+    "the BASELINE Q8 real-data gate dropped",
+    "alter table ops.communication_channels drop constraint communication_channels_q8_real_data_gate;",
+    /^constraint-dropped:ops\.communication_channels:communication_channels_q8_real_data_gate$/,
+  ],
+  [
+    "the BASELINE Q8 real-data gate dropped if it exists",
+    "alter table if exists ops.communication_channels drop constraint if exists communication_channels_q8_real_data_gate;",
+    /^constraint-dropped:ops\.communication_channels:communication_channels_q8_real_data_gate$/,
+  ],
   // --- Phase 1C: ops is backend-only for EVERY Data API role. ---------------
   // Bypass roles used to be exempt from the grant rules everywhere. In ops that
   // exemption was a hole: service_role holds no table privilege there, so a
@@ -808,6 +842,16 @@ const ACCEPTED: Array<[string, string]> = [
   [
     "EXECUTE granted to the engine worker",
     "grant execute on function ops.current_tenant_id() to ops_worker;",
+  ],
+  // --- Phase 2B ---
+  [
+    "EXECUTE on a named function granted to the webhook gateway",
+    "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz) to ops_gateway;",
+  ],
+  [
+    // Only the pinned constraint is a finding; an ordinary one is not.
+    "an unpinned ops constraint dropped",
+    "alter table ops.conversations drop constraint if exists conversations_contact_ref_format;",
   ],
   [
     // The word `execute` also appears INSIDE string literals, where it is not a

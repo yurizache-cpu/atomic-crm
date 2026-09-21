@@ -169,10 +169,14 @@ export async function deleteCompanyOsRows(
   tenantIds: readonly string[],
 ): Promise<void> {
   for (const statement of [
-    // Phase 2A's two tables reference companies and tasks with ON DELETE
+    // Phase 2B's sends reference reviews, conversations and channels, and
+    // Phase 2A's two tables reference companies and tasks, all with ON DELETE
     // RESTRICT, so they go before the runs whose settlement derived them.
+    "delete from ops.outbound_messages where tenant_id = any($1::uuid[])",
     "delete from ops.review_items where tenant_id = any($1::uuid[])",
     "delete from ops.inbound_messages where tenant_id = any($1::uuid[])",
+    "delete from ops.conversations where tenant_id = any($1::uuid[])",
+    "delete from ops.communication_channels where tenant_id = any($1::uuid[])",
     "delete from ops.agent_runs where tenant_id = any($1::uuid[])",
     "delete from ops.task_jobs where tenant_id = any($1::uuid[])",
     "delete from ops.events where tenant_id = any($1::uuid[])",

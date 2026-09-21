@@ -1,26 +1,28 @@
-// The communication boundary: the smallest thing that can carry an inbound
-// message into the Company OS, and nothing more.
+// The communication boundary: the smallest thing that can carry a message
+// between a transport and the Company OS, and nothing more.
 //
-// WHY IT IS THIS SMALL. Phase 2A has exactly one transport, and it is
-// synthetic. The point of naming a port now is that Phase 2B can add the
-// official WhatsApp Cloud API behind the SAME shape without touching the engine:
-// a transport parses its own delivery format into `InboundMessage`, and
-// everything after that — admission, idempotency, the task, the run, the review
-// — is transport-agnostic and already written.
+// TWO DIRECTIONS, TWO PORTS, deliberately separate:
 //
-// WHAT IS DELIBERATELY ABSENT. No outbound `send`. Phase 2A cannot send a
-// message because no code exists that could: the port has no such method, and
-// adding one is a reviewed change with its own phase, its own consent gate and
-// its own owner decision. No threads, no conversation, no participants, no
-// attachments, no delivery receipts, no webhook framework.
+//   * INBOUND (`CommunicationPort`, and the WhatsApp webhook parser): a
+//     transport parses its own delivery format into an envelope. Admission,
+//     idempotency, the task, the run and the review are transport-agnostic.
+//   * OUTBOUND (`OutboundTransport`, Phase 2B): a transport EXECUTES one send
+//     that the Company OS already authorized. It decides nothing. Whether a
+//     message may be sent (a person's explicit request, an accepted review,
+//     consent read fresh at that moment, BASELINE Q8) is decided in the
+//     database before a transport is ever asked (ops.begin_outbound_send).
 //
-// TENANCY. `InboundMessage` carries NO tenant, company or agent. Those come
-// from `CommunicationTarget`, which the caller builds from trusted
-// configuration. A payload cannot select a tenant, because there is nowhere in
-// the envelope to put one.
+// WHAT IS STILL ABSENT: automatic sending of any kind, attachments, templates,
+// an inbox, and any transport-side notion of tenant or consent.
+//
+// TENANCY. No envelope carries a tenant, company or agent. For the synthetic
+// transport they come from `CommunicationTarget`, built from trusted
+// configuration; for WhatsApp, from the owner-configured provider target
+// (ops.communication_channels). A payload cannot select a tenant, because
+// there is nowhere in an envelope to put one.
 
-/** The transports that may exist. Phase 2A ships one; Phase 2B adds its own. */
-export type SourceKind = "synthetic";
+/** The transports that may exist. */
+export type SourceKind = "synthetic" | "whatsapp";
 
 /** One inbound message, as any transport must present it. */
 export interface InboundMessage {
@@ -78,6 +80,64 @@ export interface CommunicationPort {
    * anything it will not admit; it never returns a partial message.
    */
   receive(delivery: unknown): InboundMessage;
+}
+
+/**
+ * What the read-only CRM adapter (ops.crm_contact_by_phone) can answer. Only
+ * `found` names a contact, and even then only its opt-out flag decides
+ * anything: the CRM records no affirmative consent.
+ */
+export type ContactResolution =
+  | "found"
+  | "not_found"
+  | "ambiguous"
+  | "unavailable";
+
+/**
+ * One send the Company OS ALREADY authorized, as a transport is asked to make
+ * it. Built only by ops.begin_outbound_send, in the transaction that committed
+ * the send as in flight.
+ */
+export interface OutboundRequest {
+  /** The channel's provider target (for Meta, the sending phone number id). */
+  readonly providerTarget: string;
+  /** The recipient as the transport names them (for WhatsApp, a WhatsApp id). */
+  readonly to: string;
+  readonly body: string;
+  /**
+   * This system's id for the send, carried to the provider so that a status
+   * callback can name the send even when the call's response was lost.
+   */
+  readonly correlation: string;
+}
+
+/**
+ * What ONE provider call produced, as data.
+ *
+ *   * accepted: the provider took the message and named it.
+ *   * rejected: the provider definitively refused it; nothing was sent.
+ *   * ambiguous: the provider may or may not have sent it (a timeout, a lost
+ *     response, a 5xx, a malformed success). Never retried by the system.
+ *
+ * Codes and classes only, never provider text: a provider message can echo
+ * the request, and the request carries a person's words.
+ */
+export type OutboundOutcome =
+  | { readonly kind: "accepted"; readonly providerMessageId: string }
+  | {
+      readonly kind: "rejected";
+      readonly errorCode: string | null;
+      readonly errorClass: string;
+    }
+  | { readonly kind: "ambiguous"; readonly errorClass: string };
+
+/**
+ * An outbound transport. It executes; it never authorizes, and it never
+ * retries: `send` makes AT MOST ONE provider call and never throws.
+ */
+export interface OutboundTransport {
+  readonly provider: "meta_whatsapp";
+  send(request: OutboundRequest): Promise<OutboundOutcome>;
 }
 
 export type CommunicationErrorCode =

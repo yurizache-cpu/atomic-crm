@@ -421,11 +421,35 @@ Phase 2A's position is unchanged: it waits for this phase's CI result and its ow
 - **Focused pre-push review (2026-09-18, report §15):** three P1s fixed in one fix commit — a review-queue failure could discard a paid answer (the settlement now never waits on the queue, and `triage recover` restores a missing review); consent could come from the untrusted envelope (it now comes only from a trusted `ContactPolicy`); and consent failed open for a retried run (it is now found by task and fails closed). Each fix was red before and green after.
 - **Final review (2026-09-18, report §16):** the §15 subtransaction did not isolate the settlement, because a statement timeout or a cancellation still rolled a paid settlement back (reproduced red). Settlement and review are now separate transactions. TX A settles the AgentRun, persists the result, completes the job and commits. TX B then derives the review on its own. If TX B fails, the run stays succeeded, the result stays durable, the provider is not called again, and `triage recover` derives the review idempotently.
 
-**NEXT: Phase 2B — not started.** The expected direction:
+### Phase 2B — official WhatsApp transport and human-approved outbound (2026-09-18) — BUILT, NOT PUSHED
 
-- the official WhatsApp Cloud API behind `CommunicationPort` (owner decision J);
-- a read-only CRM `ContactPolicy`;
-- an outbound action boundary that checks consent afresh at the moment it acts;
-- a decision on conversations and threading, where required.
+**Built on `feature/phase-2b-whatsapp-transport`, from `feature/clinical-phase-1` at `1e582d43`: the implementation `04a6b87c` and one focused pre-push review fix commit (report §17).** Committed locally and awaiting owner review; not pushed, so no CI run exists yet. `main` is untouched, and no deploy took place. Read [PHASE_2B_REPORT.md](PHASE_2B_REPORT.md) and [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), **Accepted with amendment by the owner on 2026-09-21**.
+
+- **Inbound:** the official Meta Cloud API, pinned to Graph API v25.0, verified against Meta's documentation on 2026-09-18. `npm run whatsapp:gateway` checks `X-Hub-Signature-256` over the raw bytes before parsing, then calls `ops.receive_whatsapp_message` as the new `ops_gateway` role. That role holds no table and executes exactly two functions. The owner-configured provider target alone selects the tenant; a signed test-channel message becomes one Phase 2A triage, exactly once.
+- **Q8 on the channel:** each channel is `test` or `production`, set by the owner. The real-data gate is closed and has no enabled value: a production channel can exist only inactive (a CHECK the owner's own statements meet; dropping it is a static-guard finding), so no real number is a live target, and the database refuses a transport admission or a send on any non-test channel (SI-47).
+- **Nothing is acknowledged in silence (SI-53, pre-push review):** a message is admitted, refused on the record as a content-free fact, or unrouted and answered 503 so Meta keeps it.
+- **Read-only CRM `ContactPolicy`:** `ops.crm_contact_by_phone` answers found, not_found, ambiguous or unavailable, and never writes the CRM (SI-48).
+- **Outbound:** accepting a review still sends nothing. `npm run messaging -- send` is a second, explicit act. The database checks the 24-hour window, exactly one CRM contact, a recorded false opt-out, a test channel and no stop, at the request and again immediately before the one provider call (SI-49). The send is at most once: ambiguity is `indeterminate`, and nothing resends (SI-50). Status callbacks reconcile idempotently inside the channel's tenant (SI-51).
+- **Conversations** group messages per (tenant, channel, contact); every message stays its own task and run.
+- **No new dependency, no new job kind, no worker capability, no CRM write path.**
+- **Local evidence after the pre-push review (not CI):**
+  - `test:db` 15/15;
+  - `test:db:engine` 240/240 in 32 files;
+  - `functions` 1638/1638;
+  - security invariants 60/60 (SI-46 to SI-53 added);
+  - migration guard 139/139;
+  - upgrade replay PASS;
+  - typecheck, ESLint, build, secret scan, production scope and signing key green;
+  - 18 deliberate guard breaks, each caught by name.
+- **Not performed:** a live Meta call; no test credentials exist. Where `biz_opaque_callback_data` goes in a send is unverified, and a live test-number probe must settle it first.
+- **Owner decisions recorded, not made:**
+  - Q8;
+  - the lawful basis for a service reply;
+  - retention and erasure of bodies and phone numbers;
+  - whether an unknown number may be answered;
+  - gateway hosting and TLS.
+- **ADR 0018 ACCEPTED WITH AMENDMENT (owner decision 2026-09-21):** (1) opening the production real-data gate requires a NEW, explicitly owner-approved, Accepted ADR, never a migration alone, and that ADR must settle Q8, the lawful basis, the representation of real WhatsApp consent and opt-in, and the retention and erasure of message bodies and phone identifiers; (2) before any production WhatsApp enablement, a live probe in Meta's official test/development environment is mandatory (a Meta test/development number, a controlled test recipient, synthetic content only, no real patient traffic), verifying send request compatibility, the selected Graph API version, the provider message id, the status callback format, webhook signature behaviour and the actual placement and behaviour of `biz_opaque_callback_data`, which stays UNVERIFIED until then; (3) ADR 0018 does NOT approve the pre-existing PUBLIC EXECUTE surface of the CRM row-level-security helpers: it remains separate security debt, no additional PUBLIC helper may appear, and the existing grants need their own explicit review and decision before real production patient traffic.
+
+**NEXT: Phase 2C — the operator surface — NOT STARTED.** Before any real patient message: Q8 decided, the Phase 2B owner decisions made, and the live test-number probe run.
 
 Q8 must be resolved before real patient message content is sent to a real LLM.

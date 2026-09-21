@@ -46,6 +46,16 @@ export const BYPASS_ROLES = new Set([
 export const OPS_WORKER_PRIVILEGES = new Set(["select", "execute", "usage"]);
 
 /**
+ * The WhatsApp webhook gateway (Phase 2B). Scrutinised like the worker, and
+ * narrower: it is the one engine identity an internet-facing process holds, so
+ * it may reach the schema and execute functions, and nothing else. Every write
+ * it makes goes through the two SECURITY DEFINER functions that resolve the
+ * tenant from a provider target the owner configured. Not even SELECT: the
+ * gateway reads nothing.
+ */
+export const OPS_GATEWAY_PRIVILEGES = new Set(["execute", "usage"]);
+
+/**
  * `ops` is backend-only (SI-15, SI-21). Two grants in it reach a bypass role,
  * both from Phase 1A and both deliberate: `service_role` may reach the schema
  * and may create work through `ops.enqueue_job`, and nothing else.
@@ -315,6 +325,18 @@ export function parseAlterRelation(masked) {
       }
     }
     return { kind: "ignored", rel, isTable };
+  }
+  // A dropped constraint is reported by name, so a rule can pin the few that
+  // carry an invariant (Phase 2B: the BASELINE Q8 real-data gate).
+  const dropConstraint =
+    /^drop\s+constraint\s+(?:if\s+exists\s+)?([a-z_][a-z0-9_$]*)/.exec(rest);
+  if (dropConstraint) {
+    return {
+      kind: "drop-constraint",
+      rel,
+      constraint: dropConstraint[1],
+      isTable,
+    };
   }
   // `rename column`, `owner to`, `add column`, constraints. OWNERSHIP is not
   // modelled: a view that is security_invoker but whose owner changes, or a

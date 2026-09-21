@@ -674,7 +674,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker can execute are a pinned set: its lease-bound capabilities and the worker runtime's own functions.",
+      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker, ops_gateway) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker or ops_gateway can execute are a pinned set: the worker's lease-bound capabilities and runtime functions, and the gateway's two functions bound to a configured provider target.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -682,6 +682,11 @@ const INVARIANTS: Invariant[] = [
       "unit test",
     ],
     enforcedBy: [
+      // Phase 2B (2026-09-18): the gateway role and its two DEFINER functions.
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /A5: a Phase 2B function has the wrong security or search path/,
+      },
       // Phase 1D (2026-09-14): the agent run and execution stop tables, and the
       // six lease-bound capabilities, the only DEFINER functions it adds.
       {
@@ -2049,15 +2054,17 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-44",
     statement:
-      "Only synthetic messages can be admitted while Q8 is open, and only in a process that was explicitly told to admit them: the database accepts no other source kind, and the transport does not exist unless COMPANY_OS_SYNTHETIC_INGRESS is exactly 'enabled'. No HTTP route, edge function or webhook reaches the ingress at all.",
+      "The synthetic ingress admits only synthetic messages, and only in a process that was explicitly told to admit them: ops.admit_inbound_message refuses every other source kind, and the transport does not exist unless COMPANY_OS_SYNTHETIC_INGRESS is exactly 'enabled'. No HTTP route, edge function or webhook reaches the synthetic ingress at all. A real message reaches the database only through the WhatsApp gateway, on the terms of SI-46 and SI-47.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
-        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
-        marker: /only synthetic messages are admitted in this phase/,
+        // Phase 2B redefines the synthetic service; it still refuses every
+        // other source kind, which now has its own path (SI-46, SI-47).
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /only synthetic messages are admitted through this service/,
       },
       {
-        file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
         marker: /constraint inbound_messages_source_kind_check/,
       },
       {
@@ -2084,12 +2091,12 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "Whoever holds the database credential can insert a row directly, and whoever runs the process can set the variable; this keeps a real transport from being reached by accident or by configuration drift, not from a deliberate act. Adding a real transport is a Phase 2B migration, and Q8 must be answered before it exists.",
+      "Whoever holds the database credential can insert a row directly, and whoever runs the process can set the variable; this keeps the synthetic ingress from being reached by accident or by configuration drift, not from a deliberate act. The WhatsApp transport Phase 2B adds is a separate path with its own gate (SI-47): while Q8 is open it admits work only on a channel configured test.",
   },
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action, because Phase 2A has no outbound transport and no CRM write path.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action: it creates no send and calls no provider, a reply leaves only by a separate, explicit operator send that reads consent again (SI-49), and no CRM write path exists.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2139,9 +2146,477 @@ const INVARIANTS: Invariant[] = [
         file: "engine/communication/syntheticIngress.test.ts",
         marker: /offers no way to send anything/,
       },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /accepting a review sends nothing: only the explicit send calls the provider/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /G1: a trigger creates or begins a send/,
+      },
     ],
     caveat:
-      "The review item is opened by the worker runtime's post-settlement step (ops.open_review_for_settled_job), in its own transaction after the settlement committed; if it fails, or the worker dies before it runs, the run stays settled and ops.open_missing_reviews (npm run ops -- triage recover) opens it later, and until then the answer waits unreviewed with only the worker's log line to say so. The database owner is outside it as it is outside every other guard. Consent is SNAPSHOTTED at admission: a later opt-out is not propagated to an admitted message, which is harmless only because accepting performs no action. The moment an outbound transport or a CRM write exists, consent must be read again on the acting side, and what an accepted decision authorises must be decided again, explicitly.",
+      "The review item is opened by the worker runtime's post-settlement step (ops.open_review_for_settled_job), in its own transaction after the settlement committed; if it fails, or the worker dies before it runs, the run stays settled and ops.open_missing_reviews (npm run ops -- triage recover) opens it later, and until then the answer waits unreviewed with only the worker's log line to say so. The database owner is outside it as it is outside every other guard. Consent is SNAPSHOTTED at admission for the decision: a later opt-out does not reach an admitted message's review. Phase 2B reads it again on the acting side (SI-49), so an accepted review whose lead opted out afterwards is refused at the send.",
+  },
+  {
+    id: "SI-46",
+    statement:
+      "A WhatsApp delivery is acted on only when its X-Hub-Signature-256 is the HMAC-SHA256 of the exact raw bytes under the app secret, compared in constant time before the body is parsed, and the subscription handshake answers only the configured verify token. The tenant, company and agent come only from the ONE owner-configured channel for the provider target the delivery names, never from any other payload field; an unknown or inactive target admits nothing, and no tenant can configure a target another tenant holds. The gateway connects as a member of ops_gateway, which holds no table and executes exactly two functions.",
+    provenBy: [
+      "unit test",
+      "live database",
+      "driver-backed test",
+      "static guard",
+    ],
+    enforcedBy: [
+      {
+        file: "engine/communication/whatsapp/metaWebhook.ts",
+        marker: /timingSafeEqual\(provided, expected\)/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaWebhook.test.ts",
+        marker:
+          /refuses another secret, a changed body, and any malformed header/,
+      },
+      {
+        file: "engine/communication/whatsapp/webhookGateway.test.ts",
+        marker:
+          /is refused with 401 and never parsed or stored without a valid signature/,
+      },
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker:
+          /return jsonb_build_object\('state', 'unrouted', 'reason', 'unknown_target'\)/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /routes each target to its own tenant, and a payload field cannot pick another/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /does not acknowledge a message for an unknown or paused target/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /B1: another tenant took over a configured provider target/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /A3: ops_gateway executes more than its two functions/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /K1: ops_gateway reaches an ops relation/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /K3: ops_gateway executes a SECURITY DEFINER function outside ops/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /\('ops_gateway',\s+'ops\.receive_whatsapp_message/,
+      },
+      {
+        file: "supabase/invariants/rules.mjs",
+        marker: /The internet-facing gateway holds no table privilege/,
+      },
+      {
+        file: "engine/cli/whatsappGateway.ts",
+        marker: /never the owner or service_role/,
+      },
+    ],
+    caveat:
+      "The app secret is the whole of authenticity: whoever holds it can sign any delivery, including one that names another configured target, and a compromised gateway process can call its two functions for any configured target (nothing resends, and one send per review holds). The provider target is Meta's phone number id, which is not a secret; what binds it to a tenant is the owner's configuration. The gateway binds to loopback by default; TLS and the public name belong to a reverse proxy or tunnel in front of it, which this phase does not provide. It reads at most WEBHOOK_MAX_BODY_BYTES and answers 413 beyond that; there is no rate limit beyond the server's request timeouts. Like every role, it can execute the CRM's PUBLIC row-level-security helpers (read-only booleans for auth.uid()) and nothing else outside ops.",
+  },
+  {
+    id: "SI-47",
+    statement:
+      "While BASELINE Q8 is open, WhatsApp content becomes work, and a message is sent, only on an active channel the owner configured test. The real-data gate is closed and has no enabled value: a production channel can exist only inactive, a CHECK the owner's own statements meet and the configure service refuses first, and dropping it is a static-guard finding only an owner-approved override can silence. Whether a channel is test or production is owner configuration, never a payload field; a message for a production, inactive or unknown target is not acknowledged and leaves nothing, and the database refuses a transport admission row, a send, or the start of a send on any channel not configured test. Opening the gate is a reviewed migration after the owner decides Q8, never configuration.",
+    provenBy: [
+      "live database",
+      "driver-backed test",
+      "static guard",
+      "migration assertion",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker:
+          /add constraint communication_channels_q8_real_data_gate check \(mode = 'test' or not active\)/,
+      },
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker:
+          /the BASELINE Q8 real-data gate is closed; a production channel can only be configured inactive/,
+      },
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker:
+          /an active production channel exists while the BASELINE Q8 real-data gate is closed/,
+      },
+      {
+        file: "supabase/invariants/rules.mjs",
+        marker:
+          /communication_channels:communication_channels_q8_real_data_gate/,
+      },
+      {
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker: /the BASELINE Q8 real-data gate dropped/,
+      },
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker:
+          /BASELINE Q8 is open; only a channel configured test may admit a message as work/,
+      },
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /BASELINE Q8 is open; only a channel configured test may send/,
+      },
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker:
+          /BASELINE Q8 is open; only an active channel configured test may send/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /H1: the configure service made a production channel live/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /H2: an owner insert made a production channel live/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /H3: a gate reads a setting/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /H4: a gateway function writes a channel/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /C1: a production channel''s message was not unrouted/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /C2: a production channel''s message was admitted by a direct insert/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker: /never makes a production channel live through the service/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /does not acknowledge a message to a production target, and stores nothing about it/,
+      },
+    ],
+    caveat:
+      "A test channel is still a real WhatsApp number: 'test' is the owner's declaration that only synthetic or consenting test data flows through it, which the system cannot verify, and a test channel's message reaches an agent run, and so a model provider, exactly as a synthetic one does. Meta sends a subscribed app the webhooks of EVERY number on the WhatsApp Business Account unless a number has its own callback override, so a real clinic number on the test account would reach the gateway: never admitted, never acknowledged, retried by Meta for up to 7 days and then dropped. Keep test numbers on an account that holds no real number. The owner can DISABLE TRIGGER or drop the constraint by hand, as for SI-22; the static guard sees a migration, not a session.",
+  },
+  {
+    id: "SI-48",
+    statement:
+      "The transport reads the CRM and never writes it. ops.crm_contact_by_phone answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; an unknown number creates no contact, and no country code is guessed. It returns an opaque reference and the opt-out flag, never a name.",
+    provenBy: ["live database", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /D6: the adapter changed the CRM/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /D7: the CRM adapter or the eligibility rule contains a write/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /D4: a tenant that does not own the CRM read it/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /D3: a number without its country code was matched/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /resolves found, not found and ambiguous without creating or changing a contact/,
+      },
+    ],
+    caveat:
+      "The match is exact on digits, so a contact whose number was stored without its country code is not found and cannot be replied to: the fail-closed direction, visible as contact_not_found. public.contacts is not tenant-scoped; one deployment's CRM belongs to the one tenant marked owns_local_crm, and every other tenant reads unavailable. A phone number is not proof of identity: two people sharing a number are ambiguous only when both are in the CRM.",
+  },
+  {
+    id: "SI-49",
+    statement:
+      "A reply leaves only by an explicit operator send of one ACCEPTED review (npm run messaging -- send), a separate act after the decision; nothing sends on acceptance, on a model's answer or on a timer. Its preconditions are checked afresh from the CRM when the send is requested and again immediately before the provider call, under the kill-switch lock: a test channel (never production, whatever the consent), active; no execution stop covering it; exactly one CRM contact for the number, whose opt-out flag is false; and a message from that contact within Meta's 24-hour customer-service window. These are preconditions, not a lawful basis or affirmative consent: the CRM records no consent, do_not_contact = false is only its default, and production replies stay impossible until the owner decides the lawful basis and how consent is represented. Anything else refuses the request or blocks the send.",
+    provenBy: ["live database", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /only an accepted review can be sent/,
+      },
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /ops\.request_outbound_send: refused: %s/,
+      },
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker: /These are preconditions, not a lawful basis/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /accepting a review sends nothing: only the explicit send calls the provider/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /refuses a lead who opted out after admission, although the review was accepted/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /blocks a send whose consent changes between the request and the call/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker: /refuses a reply outside the 24-hour window the contact opened/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker: /refuses while an execution stop covers the tenant/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /G1: a trigger creates or begins a send/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /E5: a production conversation was not refused by the Q8 gate first/,
+      },
+    ],
+    caveat:
+      "Whether a service reply to a contact who wrote first is lawful under LGPD, and how consent must be represented, are owner decisions this phase records and does not make; Meta's own policy also says the user must have opted in, which nothing here records. The opt-out flag is the CRM's default for every contact, so any single matching contact is eligible on a test channel. The check and the call are not atomic with the CRM: an opt-out recorded after the pre-call check and before the provider answers is not seen by that send, and a channel deactivated in that instant does not stop the call already begun, the kill switch's own semantics. The 24-hour window is measured from the contact's last message as this database recorded it (Meta's timestamp, never later than the database's clock); a send near the edge that Meta refuses (131047) is recorded failed.",
+  },
+  {
+    id: "SI-50",
+    statement:
+      "A send calls the provider at most once. The database moves it to sending, and commits that, before the one call; a send in flight, sent, failed or indeterminate can never be made sendable again, and a repeated or concurrent send answers with the same send. Only a provider answer that settles the outcome records failed; a 5xx, a timeout, a lost connection, an unreadable or oversize answer, one of Meta's generic error codes and a transport exception record indeterminate, and a send a crash or a failed settlement left sending stays sending until an operator marks it indeterminate. No command, service or timer resends a message.",
+    provenBy: ["live database", "driver-backed test", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /a send cannot move from %s to %s/,
+      },
+      {
+        file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
+        marker: /may still be in flight/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /E2: an indeterminate send was sent again/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /E2: a send in flight was made sendable again/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /E4: a second send of one review was stored/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker: /makes one call when several operators send at once/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /records an ambiguous outcome as indeterminate and never calls again/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker: /never calls again after a crash once the send was in flight/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaSender.test.ts",
+        marker: /a 5xx is ambiguous: Meta may have taken the message/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaSender.test.ts",
+        marker:
+          /a 4xx carrying Meta's generic 'something went wrong' code is ambiguous, never failed/,
+      },
+      {
+        file: "engine/domain/outboundSend.ts",
+        marker: /errorClass: "transport_threw"/,
+      },
+      {
+        file: "engine/cli/messaging.test.ts",
+        marker: /offers no way to resend or retry a message/,
+      },
+      {
+        file: "engine/cli/messaging.test.ts",
+        marker:
+          /exits 1 and keeps the provider's evidence when the one call cannot be settled/,
+      },
+    ],
+    caveat:
+      "At most once, not exactly once. Meta documents no idempotency key for the messages endpoint, so nothing below the database could deduplicate a second call; the durable sending state is the whole mechanism. A failed or indeterminate send is not retried at all in this phase: a person who wants to reply again needs a new review. A network error before any byte left (DNS, a refused connection) is recorded indeterminate too, because fetch does not distinguish it. An indeterminate send is NOT always recoverable: a status callback resolves it only through its provider message id, which exists only when a response was read, or through the correlation, whose placement in the send is unverified until the live test-number probe. When a settlement fails, the operator is told the provider's outcome and message id, and the CLI exits 1.",
+  },
+  {
+    id: "SI-51",
+    statement:
+      "A provider status moves only a send of the channel whose target reported it, and so only inside that channel's tenant: it matches the provider message id or, for a send whose outcome is unknown, the correlation this system sent AND the recipient of its conversation. A duplicate, an older status and an undocumented one change nothing, each step is recorded once, and delivery evidence wins over an earlier asynchronous failure; a send the provider refused synchronously is final. A status never sends and never makes a send sendable again.",
+    provenBy: ["live database", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /F2: another tenant''s target reached a send/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /F3: an undocumented delivery state moved a send/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /J1: another channel of the same tenant reached a send/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /J2: a correlation reached a send without its own channel and recipient/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /J3: a synchronously refused send was moved by a callback/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /moves a send forward, ignores duplicates and older news, and records one fact per step/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /resolves an indeterminate send only when the correlation AND the recipient match/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker: /cannot reach another tenant's send through its own target/,
+      },
+    ],
+    caveat:
+      "A status for a send this system does not know is acknowledged as unmatched and stored nowhere; played (voice) is acknowledged as unsupported. Status order comes from the provider's own ranking, not arrival time, so a late sent after delivered is ignored. Delivery evidence superseding a failure follows Meta's documented case of one message reported both delivered and failed (several devices); it can apply only to a send that has a provider message id, never to one refused synchronously.",
+  },
+  {
+    id: "SI-52",
+    statement:
+      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason.",
+    provenBy: ["driver-backed test", "unit test", "live database"],
+    enforcedBy: [
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker: /records no body or sender in any event, and logs neither/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /acknowledges a message it cannot admit only with a content-free refusal on the record/,
+      },
+      {
+        file: "engine/communication/whatsapp/webhookGateway.test.ts",
+        marker:
+          /is counts and outcomes: never a body, a sender, a secret or a signature/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /links the send to the inbound conversation and holds no text or recipient/,
+      },
+      {
+        file: "engine/cli/messaging.test.ts",
+        marker:
+          /prints neither the access token nor the database password when the database refuses/,
+      },
+      {
+        file: "engine/cli/messaging.test.ts",
+        marker:
+          /reports a failure before any transaction opened by its code alone/,
+      },
+      {
+        file: "engine/cli/whatsappGateway.test.ts",
+        marker:
+          /names the missing variable and never prints a value it was given/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /I1: a refusal carries more than its channel, conversation and reason/,
+      },
+    ],
+    caveat:
+      "The sender's WhatsApp id, a phone number, is stored as contact_ref in the admission ledger and the conversation, because a reply needs it. The body is in ops.tasks.description, readable by the owner and sent to the model provider by an agent run. The draft is in ops.agent_runs.result and ops.review_items.proposed. ops.inbound_messages.body_fingerprint is an unsalted SHA-256 over the kind, the number and the body, so it can confirm a guessed short message and outlives an erasure of the description. None of these has a retention or erasure rule yet: all are owner decisions to make before Q8. Meta sends the verify token in the handshake's query string, so an access log in front of the gateway records it.",
+  },
+  {
+    id: "SI-53",
+    statement:
+      "The gateway acknowledges an inbound WhatsApp message (HTTP 200) only once it became work or a durable, content-free fact in its channel's tenant. A message for an unknown, inactive or production target, or for a paused company, department or agent, is not acknowledged and leaves nothing, so Meta delivers it again and a re-activated channel or unit admits it; a transient failure is never acknowledged; a routed message that cannot become work is acknowledged only with a communication.inbound_refused fact; and only a typed refusal before any channel is involved is acknowledged without one.",
+    provenBy: ["unit test", "driver-backed test", "live database"],
+    enforcedBy: [
+      {
+        file: "engine/communication/whatsapp/webhookGateway.ts",
+        marker: /if \(messages\.unrouted > 0\) return text\(503, "unrouted"\);/,
+      },
+      {
+        file: "engine/domain/whatsappGatewayStore.ts",
+        marker: /const PERMANENT = \/\^OS40\[0-9\]\$\/;/,
+      },
+      {
+        file: "supabase/migrations/20260918170000_whatsapp_q8_gate_and_acknowledgement.sql",
+        marker: /'communication\.inbound_refused'/,
+      },
+      {
+        file: "engine/communication/whatsapp/webhookGateway.test.ts",
+        marker:
+          /does not acknowledge an unrouted message: 503, after handing every other item on/,
+      },
+      {
+        file: "engine/communication/whatsapp/webhookGateway.test.ts",
+        marker:
+          /answers 500, not 503, when a transient failure meets an unrouted message/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaWebhook.test.ts",
+        marker:
+          /hands on every message Meta names, marking what is not text or has no sender number/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /does not acknowledge a message for a paused triage agent, and admits it once the agent is active/,
+      },
+      {
+        file: "engine/domain/whatsappInbound.dbtest.ts",
+        marker:
+          /admits a message whose timestamp is ahead of the database's clock/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /I1: an unadmittable message was not refused on the record/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /I4: a message for a paused agent was not unrouted/,
+      },
+    ],
+    caveat:
+      "Not acknowledging is not the same as keeping: Meta retries a delivery for up to 7 days (its documented policy, with no stated schedule), to every app subscribed to the account, and then drops it. An unrouted message is visible only in the gateway's log (gateway.unrouted, with the business's own number id), because with no tenant there is nowhere durable to record it. A message whose target is malformed, or with no usable message id, is acknowledged without a record; Meta does not send either. An authenticated body that is not a WhatsApp notification is answered 400 and so retried.",
   },
 ];
 

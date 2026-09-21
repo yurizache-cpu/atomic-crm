@@ -36,7 +36,10 @@
     "execution-stop": "node engine/cli/executionStop.ts",
     "ops": "node engine/cli/operator.ts",
     "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts",
-    "lead-triage:demo": "node engine/cli/leadTriageDemo.ts"
+    "lead-triage:demo": "node engine/cli/leadTriageDemo.ts",
+    "gateway:provision": "node scripts/provision-gateway-role.mjs",
+    "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
+    "messaging": "node engine/cli/messaging.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

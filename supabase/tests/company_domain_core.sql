@@ -189,11 +189,15 @@ begin
   -- A1. Tables. Phase 1D (2026-09-14) adds agent_runs and execution_stops, which
   --     are backend-only on exactly the same terms. Phase 1D.1 (2026-09-17) adds
   --     model_prices and spend_limits: owner data no application role may touch
-  --     (supabase/tests/runtime_governance.sql, section G).
+  --     (supabase/tests/runtime_governance.sql, section G). Phase 2B (2026-09-18)
+  --     adds communication_channels, conversations and outbound_messages, and a
+  --     fifth application role, ops_gateway, which holds no table at all
+  --     (supabase/tests/whatsapp_transport.sql, section A).
   select string_agg(format('%s:%s:%s', r.rolname, t.relname, p.priv), ', ') into v_bad
     from unnest(array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
-                      'agent_runs', 'execution_stops', 'model_prices', 'spend_limits']) as t (relname)
-   cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r (rolname)
+                      'agent_runs', 'execution_stops', 'model_prices', 'spend_limits',
+                      'communication_channels', 'conversations', 'outbound_messages']) as t (relname)
+   cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway')) as r (rolname)
    cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as p (priv)
    where has_table_privilege(r.rolname, format('ops.%I', t.relname), p.priv);
   if v_bad is not null then
@@ -236,6 +240,13 @@ begin
   --     review AFTER the settlement committed. It takes no tenant, run or content
   --     argument, names a job and the worker that completed it, and refuses any
   --     other worker (supabase/tests/lead_triage_pilot.sql, section I).
+  --     Phase 2B (2026-09-18, 20260918150000_whatsapp_transport.sql) adds a
+  --     fifth role, ops_gateway, the webhook gateway's group role, with exactly
+  --     two functions: admit one Meta message and record one Meta status. The
+  --     provider target alone selects the tenant; neither takes a tenant, a
+  --     task or a send. The owner services Phase 2B adds (channel
+  --     configuration, the explicit send and its settlement) are executable by
+  --     no application role (supabase/tests/whatsapp_transport.sql, section A).
   with expected (rolname, fn) as (values
     ('service_role', 'ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)'::regprocedure),
     ('ops_worker',   'ops.lease_job(text, integer)'::regprocedure),
@@ -258,13 +269,15 @@ begin
     ('ops_worker',   'ops.job_execution_stop()'::regprocedure),
     ('ops_worker',   'ops.defer_job()'::regprocedure),
     ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure),
-    ('ops_worker',   'ops.open_review_for_settled_job(text, uuid)'::regprocedure)
+    ('ops_worker',   'ops.open_review_for_settled_job(text, uuid)'::regprocedure),
+    ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
+    ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
-     cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r (rolname)
+     cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway')) as r (rolname)
      where n.nspname = 'ops' and has_function_privilege(r.rolname, p.oid, 'EXECUTE')
   ),
   drift as (
@@ -289,6 +302,11 @@ begin
   --     (2026-09-18) adds open_review_for_settled_job, which runs after the
   --     lease has ended: it reaches only the run of a job the calling worker
   --     completed, and only to open that run's review from the stored result.
+  --     Phase 2B (2026-09-18) adds the gateway's two: receive_whatsapp_message
+  --     and receive_whatsapp_status. Each maps the provider target to its ONE
+  --     configured channel and acts only inside that channel's tenant: a
+  --     message is admitted (test channel) or held with no content (production
+  --     channel, BASELINE Q8), and a status moves only a send of that channel.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -298,7 +316,8 @@ begin
                            'claim_agent_run', 'refuse_agent_run', 'start_agent_run',
                            'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
                            'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
-                           'open_review_for_settled_job');
+                           'open_review_for_settled_job',
+                           'receive_whatsapp_message', 'receive_whatsapp_status');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

@@ -8,6 +8,7 @@
 import {
   AUTHENTICATED_PRIVILEGES,
   OPS_BYPASS_ROLE_GRANTS,
+  OPS_GATEWAY_PRIVILEGES,
   OPS_WORKER_PRIVILEGES,
   BYPASS_ROLES,
   MATVIEW,
@@ -119,6 +120,18 @@ function handleCreateView(ctx) {
   return true;
 }
 
+/**
+ * Constraints that carry an invariant, pinned by name. Dropping one is a
+ * finding only an owner-approved override can silence: the BASELINE Q8
+ * real-data gate (20260918170000) opens only by a reviewed decision.
+ */
+const PINNED_CONSTRAINTS = new Map([
+  [
+    "ops.communication_channels:communication_channels_q8_real_data_gate",
+    "the BASELINE Q8 real-data gate: while it holds, a production WhatsApp channel can exist only inactive. Dropping it lets a real number become a live target, which only an owner decision on Q8, the lawful basis and consent may allow.",
+  ],
+]);
+
 function handleAlterRelation(ctx) {
   const alter = parseAlterRelation(ctx.masked);
   if (!alter) return false;
@@ -175,6 +188,17 @@ function handleAlterRelation(ctx) {
       ctx.state.views.set(
         key,
         ctx.fromDo && alter.invoker === true ? UNKNOWN : alter.invoker,
+      );
+    }
+    return true;
+  }
+  if (alter.kind === "drop-constraint") {
+    const pinned = PINNED_CONSTRAINTS.get(`${key}:${alter.constraint}`);
+    if (pinned) {
+      ctx.at(
+        `constraint-dropped:${key}:${alter.constraint}`,
+        "constraint-dropped",
+        `${key} loses ${alter.constraint}, ${pinned}`,
       );
     }
     return true;
@@ -385,6 +409,32 @@ function grantFindingsForRole(ctx, grant, role) {
     }
     return;
   }
+  // The webhook gateway (Phase 2B) is scrutinised too, and more narrowly: it
+  // faces the internet, so it reaches the schema and executes functions, and
+  // reads or writes no table at all.
+  if (role === "ops_gateway") {
+    if (
+      /^all\s+(tables|sequences|functions|routines|procedures)\s+in\s+schema\b/.test(
+        grant.object,
+      )
+    ) {
+      ctx.at(
+        `grant:ops_gateway:${grant.object}`,
+        "role-grant",
+        `GRANT … ON ${grant.object} TO ops_gateway covers every current object at once; the internet-facing gateway executes exactly the functions granted to it by name.`,
+      );
+      return;
+    }
+    for (const privilege of grant.privileges) {
+      if (OPS_GATEWAY_PRIVILEGES.has(privilege)) continue;
+      ctx.at(
+        `grant:ops_gateway:${grant.object}:${privilege}`,
+        "role-grant",
+        `GRANT ${privilege.toUpperCase()} ON ${grant.object} TO ops_gateway. The internet-facing gateway holds no table privilege: everything it writes goes through a SECURITY DEFINER function that resolves the tenant from an owner-configured provider target.`,
+      );
+    }
+    return;
+  }
 
   if (role !== "authenticated") {
     ctx.at(
@@ -482,6 +532,14 @@ function handleDefaultPrivileges(ctx) {
           `ALTER DEFAULT PRIVILEGES … GRANT ${privilege.toUpperCase()} … TO ops_worker gives the worker a write verb on every FUTURE ops table (SI-13).`,
         );
       }
+    }
+    if (role === "ops_gateway") {
+      // No default privilege at all: the gateway executes named functions only.
+      ctx.at(
+        `default-privileges:ops:ops_gateway`,
+        "default-privileges",
+        `ALTER DEFAULT PRIVILEGES … GRANT … TO ops_gateway makes every FUTURE ops object reachable by the internet-facing gateway with no statement naming it.`,
+      );
     }
   }
 
