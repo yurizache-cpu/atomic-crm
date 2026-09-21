@@ -4,9 +4,9 @@
 | --- | --- |
 | **Base** | `feature/clinical-phase-1` at `1e582d43f7357838554b45a54c25710835a445df` |
 | **Branch** | `feature/phase-2b-whatsapp-transport` |
-| **Date** | Built 2026-09-18 |
-| **Status** | **BUILT, committed locally in two commits (the implementation `04a6b87c` and the focused pre-push review fix, §17), NOT pushed.** Awaiting owner review. No CI run exists for it yet. `main` is untouched, and no deploy took place. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), amended by the review, was **ACCEPTED WITH AMENDMENT by the owner on 2026-09-21** (three owner amendments, §17.5). |
-| **What it is** | The official Meta WhatsApp Cloud API in both directions. A signed delivery to a configured test number becomes one Phase 2A triage (one task, one run, one review). An accepted review can then be sent back, by a second and explicit operator act, at most once, with consent read afresh. |
+| **Date** | Built 2026-09-18; integrated 2026-09-21 |
+| **Status** | **PHASE 2B INTEGRATED — CLOSED (§18).** Merged into `feature/clinical-phase-1` by [PR #5](https://github.com/yurizache-cpu/atomic-crm/pull/5) on 2026-09-21 with a normal merge commit, `8d6d47d53d6859f140952bd5e0502a0d52608e8d`. The final reviewed head is `1afed8652887d9cb40001077968f55f649a2e764`. The final PR CI (run 35621760834) and the post-merge CI (run 35634882090) show only the accepted baseline reds. `main` is untouched, and there was no production deploy. [ADR 0018](adr/0018-whatsapp-transport-and-human-send.md), amended by the review, was **ACCEPTED WITH AMENDMENT by the owner on 2026-09-21** (three owner amendments, §17.5). NEXT: PHASE 2C — NOT STARTED. |
+| **What it is** | The official Meta WhatsApp Cloud API in both directions. A signed delivery to a configured test number becomes one Phase 2A triage (one task, one run, one review). An accepted review can then be sent back, by a second and explicit operator act, at most once, with its send preconditions checked afresh: Meta's 24-hour window, exactly one CRM contact with an opt-out flag that is false, an active test channel and no stop. These are preconditions, not a lawful basis or consent (§8). |
 | **Data** | **Test and synthetic only. BASELINE Q8 is OPEN and unchanged.** Only an active channel the owner configured `test` can create work or send. The real-data gate is closed: a production channel can exist only inactive, and a message to one is not acknowledged and leaves nothing (SI-47, SI-53). No real patient data was used, and no live Meta call was made (§13). |
 | **New dependency** | **None.** `node:http`, `node:crypto`, `fetch` and the existing `zod`. No new OSS, SaaS or SDK. |
 
@@ -61,7 +61,7 @@ Meta ──POST statuses──▶ gateway ──▶ ops.receive_whatsapp_status 
 | Minimal conversation grouping | `ops.conversations` | Done (§6) |
 | Content minimisation; no secrets or bodies in logs | throughout | Done (SI-52) |
 | Operator CLI | `npm run messaging` | Done (§10) |
-| Optional live Meta probe | — | **Not performed: no test credentials in this environment** (§13) |
+| Live Meta probe (optional in the Phase 2B brief; mandatory before any production WhatsApp enablement, ADR 0018 amendment 2) | — | **Not performed: no test credentials in this environment** (§13) |
 
 ## 3. Official documentation and the pinned version
 
@@ -264,7 +264,7 @@ No secret is printed. Errors carrying a connection string are reported by SQLSTA
 
 ## 12. Tests
 
-All local, on the e2e stack (`atomic-crm-e2e`, ports 5434x). **No CI run exists yet: the branch is not pushed.**
+All local, on the e2e stack (`atomic-crm-e2e`, ports 5434x), before the push. *(Historical: when this section was written on 2026-09-18, no CI run existed because the branch was not pushed. The CI evidence is in §18: final PR CI run 35621760834 and post-merge CI run 35634882090.)*
 
 | Gate | Result |
 | --- | --- |
@@ -341,7 +341,7 @@ No Meta test credentials exist in this environment: no app secret, verify token,
 ## 15. Owner decisions this phase records and does not make
 
 1. **BASELINE Q8** — unchanged and open. A test channel's messages still reach the configured model provider exactly as synthetic ones do. Only test numbers carrying test data may be connected.
-2. **The lawful basis for a reply, and how consent is represented.** Is a service reply to a contact who wrote first, and has not opted out, lawful under LGPD for this clinic? Meta's 24-hour window is a messaging constraint, not an answer, and Meta's policy also says the user "must have opted in". The CRM records no affirmative opt-in, and its opt-out flag is false by default. Production replies stay impossible until this is decided and the real-data gate is opened by a reviewed migration.
+2. **The lawful basis for a reply, and how consent is represented.** Is a service reply to a contact who wrote first, and has not opted out, lawful under LGPD for this clinic? Meta's 24-hour window is a messaging constraint, not an answer, and Meta's policy also says the user "must have opted in". The CRM records no affirmative opt-in, and its opt-out flag is false by default. Production replies stay impossible until this is decided and the real-data gate is opened, which requires a new, owner-approved, Accepted ADR, never a migration alone (ADR 0018 amendment 1).
 3. **Retention and erasure** of message bodies (`ops.tasks.description`), phone numbers (`contact_ref`) and drafts.
 4. **Whether an unknown number may ever be answered**, or whether a contact must first be created by a person in the CRM (today: never answered).
 5. **Hosting of the gateway:** TLS termination, public name, network filtering, secret storage, and the WhatsApp Business Account layout (test numbers on an account with no real number).
@@ -349,7 +349,7 @@ No Meta test credentials exist in this environment: no app secret, verify token,
 
 ## 16. Next
 
-Phase 2C (the operator surface) is **not started**. Before any real patient message:
+**NEXT: PHASE 2C — NOT STARTED** (§18). Before any real patient message:
 
 - Q8 decided;
 - the owner decisions in §15 made;
@@ -448,11 +448,11 @@ No P0: tenant isolation, secret handling and at-most-once held under every attac
 
 ### 17.5 ADR 0018
 
-**Exact proposed decision** (Proposed, amended to the final implementation, not Accepted):
+**Exact proposed decision** (as proposed and amended to the final implementation, before the owner's decision below):
 
 1. a dedicated gateway role (`ops_gateway`: no table, exactly two target-bound DEFINER functions) and process, not the worker and not an edge function;
 2. authenticity over the raw bytes first; the tenant only from an owner-configured provider target; a message acknowledged only once admitted or refused on the record, and an unrouted one answered non-2xx and stored nowhere;
-3. Q8 on the channel: a closed real-data gate with no enabled value (a production channel only inactive), with `ENABLE ALWAYS` triggers behind it, opened only by a reviewed migration after the owner decides Q8, the lawful basis and consent;
+3. Q8 on the channel: a closed real-data gate with no enabled value (a production channel only inactive), with `ENABLE ALWAYS` triggers behind it, opened only by a reviewed migration after the owner decides Q8, the lawful basis and consent *(superseded by owner amendment 1: a migration alone cannot open it)*;
 4. a send only by a second, explicit operator act, with its preconditions (test channel, no stop, one CRM contact with a false opt-out flag, Meta's 24-hour window) checked afresh at request and before the one call. The send is at most once: ambiguity, Meta's generic codes included, is `indeterminate`, and nothing resends. Status callbacks are channel-bound;
 5. conversations group; every message stays its own task.
 
@@ -472,3 +472,51 @@ No P0: tenant isolation, secret handling and at-most-once held under every attac
 - upgrade replay PASS;
 - typecheck, ESLint (0 errors, none in this change), build, `scan:build`, production scope and signing key green;
 - mutations, each caught by its named assertion (§12): seven of the fix, ten of the implementation, and a CLI mutation restoring the old phase-blind failure path.
+
+## 18. Integration and closure — 2026-09-21
+
+| | |
+| --- | --- |
+| PR | [PR #5](https://github.com/yurizache-cpu/atomic-crm/pull/5), "Phase 2B — official WhatsApp transport with human-approved outbound", **merged** into `feature/clinical-phase-1` on 2026-09-21 with a normal merge commit (not squashed, not rebased) |
+| Merge commit | `8d6d47d53d6859f140952bd5e0502a0d52608e8d`, with parents `1e582d43f7357838554b45a54c25710835a445df` (the base) and `1afed8652887d9cb40001077968f55f649a2e764` (the reviewed head); its tree is identical to `1afed865` |
+| Final reviewed head | `1afed8652887d9cb40001077968f55f649a2e764` |
+| Integrated commits | `04a6b87cc8c159861b23fafc4cb57379304829fa` (implementation), `25952e91afa97bf0c946f927c490f62e3e19d2f1` (focused pre-push review fix, §17), `a3ca00e52f23d43287ec3fb8e52d9ca226238054` (initial ADR 0018 acceptance record) and `1afed8652887d9cb40001077968f55f649a2e764` (the corrected owner decision: accepted with amendment) |
+| Final PR CI | run 35621760834 (pull request, on `1afed865`) |
+| Post-merge CI | run 35634882090 (push to `feature/clinical-phase-1`, on `8d6d47d5`) |
+| `main` | Unchanged, at `a863e2a084fae8c7adf7a2efc547ad7ce38e699b`. No production deploy took place: `deploy.yml` runs only on a push to `main`, and the merge started only `check.yml`. |
+| Feature branch | `feature/phase-2b-whatsapp-transport` is kept, at `1afed865`. |
+
+**CI evidence.** Both runs are `✅ Check`. Its overall conclusion reads "failure" only because of the accepted baseline reds below.
+
+| Check | Final PR CI (35621760834) | Post-merge CI (35634882090) |
+| --- | --- | --- |
+| 🔨 Build (`npm run build`, then `scan:build`) | success | success |
+| 🔎 Test (the `app`, `functions` and `claude` unit projects; `functions` holds the security invariants and the migration guard) | success | success |
+| 🔬 ESLint | success | success |
+| 🏷️ Typecheck | success | success |
+| 🗄️ Database security & reproducibility | success | success: `test:db` 15/15 before and after the clean reconstruction, `test:db:engine` 240/240 in 32 files, upgrade replay PASS |
+| e2e | accepted baseline: 9 failed / 1 skipped | the same 9 failed / 1 skipped |
+| Prettier | accepted baseline: 2 files | the same 2 files |
+
+Only the accepted historical baseline reds remain, identical case by case in both runs and in the Phase 2A runs:
+
+- **e2e:** 9 failed / 1 skipped. The failures are `adminAccountManagerFilter.spec.ts:42` and `:79`, `onboarding.spec.ts:3` and `userAddingATask.spec.ts:42` (each in chromium and Mobile Chrome), and `bulkContactTags.spec.ts:3` (chromium only).
+- **Prettier:** `src/components/atomic-crm/dataImport/sampleCsv.test.ts` and `src/components/atomic-crm/providers/commons/canAccess.test.ts`. Phase 2B touches neither file.
+
+**Phase 2B caused no new regression.** The owner's merge instruction accepted these reds as the historical baseline, not as Phase 2B regressions. The local evidence in §12 and §17.6 remains the pre-push record. The post-merge Database job reproduces its `test:db` and `test:db:engine` counts in CI.
+
+**The governance state at integration, unchanged by the merge:**
+
+- **ADR 0018 is ACCEPTED WITH AMENDMENT** (owner decision 2026-09-21; the three amendments are in §17.5 and in the ADR's closing section).
+- **BASELINE Q8 is OPEN.** No real patient message body, clinical text, psychotherapy information or health data may reach a real LLM provider.
+- **The production real-data gate is CLOSED.** `communication_channels_q8_real_data_gate` has no enabled value, so no production WhatsApp channel can become active. Opening it requires a new, explicitly owner-approved, Accepted ADR, never a migration alone (amendment 1).
+- **The live Meta test/development probe (§13) is still outstanding.** It is mandatory before any production WhatsApp enablement (amendment 2), and `biz_opaque_callback_data` stays UNVERIFIED until it runs.
+- **The CRM's pre-existing PUBLIC EXECUTE row-level-security helper grants remain separate security debt** (R-16), not approved by ADR 0018 (amendment 3). No additional PUBLIC helper may appear (`whatsapp_transport.sql` K3).
+- The owner decisions in §15 items 1–5 remain open. Item 6, ADR 0018, is decided: accepted with amendment.
+- No real patient data was used, no live Meta call was made, and no production WhatsApp channel exists.
+
+**NEXT: PHASE 2C — NOT STARTED.** Integrating Phase 2B satisfies none of the prerequisites for real patient traffic. The prerequisites in §16 hold independently of any phase.
+
+---
+
+**Classification: PHASE 2B INTEGRATED — CLOSED.** It was merged by PR #5 (`8d6d47d5`). `main` is untouched, there was no production deploy, and there is no new dependency. Q8 is OPEN and the production real-data gate is CLOSED. NEXT: PHASE 2C — NOT STARTED.
