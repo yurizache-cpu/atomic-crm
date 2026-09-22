@@ -255,6 +255,8 @@ Phases 0.5 → 1D.2 are complete and untouched.
 | **Phase 4** — browser tools | `BrowserPort` over Playwright inside a governed job kind, permissioned and stopped by the kill switch | Playwright (already present) |
 | **Later** | Isometric UX; dashboards (Grafana, flagged AGPL); dedicated vector DB (Qdrant) if pgvector is outgrown; inbox (Chatwoot) only if multi-agent human support is real | as decided then |
 
+*(2026-09-22, dated note; the table above is left as the historical record. Its sequencing is superseded by decision P (see §14, decision N, and [DECISIONS.md](DECISIONS.md)), and the Phase 2C row's "Approval queue" and "minimal notifications (email first)" wording predates ADR 0019: the screen is the Reviews / Decision Queue, never a send-approval queue, and notifications are deferred (OD-13). See [PHASE_2C_BRIEF.md](PHASE_2C_BRIEF.md).)*
+
 Sequencing rule added by this review: **a dependency enters only in the phase that needs it**, never "while we are in there".
 
 ---
@@ -337,6 +339,8 @@ The seven decisions this review asked for were accepted by the owner on 2026-09-
 | **M** | Chatwoot / patient conversation store | Deferred. An omnichannel inbox is **not** a Phase 2 goal, and conversation state stays authoritative in our database. |
 | **N** | Observability timing | Phase 2D, after the first real flow exists. |
 | **O** | Q8 | Remains **OPEN**. This review assumed so and changes nothing about it: no real patient message body, clinical text, psychotherapy information or health data reaches a real LLM provider until the owner decides it. |
+
+*(2026-09-22, dated note: decision N above remains the historical record. Decision P supersedes its sequencing only: observability moves from Phase 2D to Phase 2E, observability and intelligence; the observability requirement and the OpenTelemetry and Prometheus direction (the integrate-soon adoption table, §4, and the shortlist, §5) are unchanged; Phase 2D is now the decision engine and Jev, shadow mode first. See [DECISIONS.md](DECISIONS.md), decision P.)*
 
 Two consequences are worth restating, because they are the ones that turn into work: **J makes the WhatsApp adapter ours to build** — one HTTPS call out, one webhook in, the ledger in our database — and **M keeps conversation state out of any adopted product**, which is the same boundary §15.5 draws for source reuse.
 
