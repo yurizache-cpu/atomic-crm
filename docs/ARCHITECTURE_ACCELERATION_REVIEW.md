@@ -340,7 +340,7 @@ The seven decisions this review asked for were accepted by the owner on 2026-09-
 | **N** | Observability timing | Phase 2D, after the first real flow exists. |
 | **O** | Q8 | Remains **OPEN**. This review assumed so and changes nothing about it: no real patient message body, clinical text, psychotherapy information or health data reaches a real LLM provider until the owner decides it. |
 
-*(2026-09-22, dated note: decision N above remains the historical record. Decision P supersedes its sequencing only: observability moves from Phase 2D to Phase 2E, observability and intelligence; the observability requirement and the OpenTelemetry and Prometheus direction (the integrate-soon adoption table, §8) are unchanged; Phase 2D is now the decision engine and Jev, shadow mode first. See [DECISIONS.md](DECISIONS.md), decision P.)*
+*(2026-09-22, dated note: decision N above remains the historical record. Decision P supersedes its sequencing only: observability moves from Phase 2D to Phase 2E, observability and intelligence; the observability requirement and the OpenTelemetry and Prometheus direction (the integrate-soon adoption table, §4, and the shortlist, §5) are unchanged; Phase 2D is now the decision engine and Jev, shadow mode first. See [DECISIONS.md](DECISIONS.md), decision P.)*
 
 Two consequences are worth restating, because they are the ones that turn into work: **J makes the WhatsApp adapter ours to build** — one HTTPS call out, one webhook in, the ledger in our database — and **M keeps conversation state out of any adopted product**, which is the same boundary §15.5 draws for source reuse.
 
