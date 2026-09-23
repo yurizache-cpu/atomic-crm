@@ -36,6 +36,7 @@ import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { ReviewSummaryFields } from "../reviews/ReviewSummaryFields";
 import { isLiveRun } from "../runs/liveness";
 import { RunTable } from "../runs/RunTable";
+import { agentDisplayName } from "../../format/displayNames";
 import { OutboundRecord } from "./OutboundRecord";
 import { Pipeline } from "./Pipeline";
 
@@ -72,7 +73,7 @@ const TaskFields = ({ task }: { task: TaskDetailData }) => (
         <None />
       ) : (
         <RecordLink kind="agent" id={task.assignedAgent.id}>
-          {task.assignedAgent.name}
+          {agentDisplayName(task.assignedAgent.name)}
         </RecordLink>
       )}
     </Field>

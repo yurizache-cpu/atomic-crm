@@ -29,6 +29,7 @@ import { taskStatusLabel, taskTypeLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { isLiveRun } from "../runs/liveness";
+import { agentDisplayName } from "../../format/displayNames";
 import { Pipeline } from "./Pipeline";
 import { TaskDetail } from "./TaskDetail";
 
@@ -69,7 +70,7 @@ const TaskCard = ({
           <span className="text-xs text-muted-foreground">
             {task.assignedAgent === null
               ? "Sem agente responsável"
-              : `Responsável: ${task.assignedAgent.name}`}
+              : `Responsável: ${agentDisplayName(task.assignedAgent.name)}`}
             {task.department === null ? "" : ` · ${task.department.name}`}
           </span>
         </div>

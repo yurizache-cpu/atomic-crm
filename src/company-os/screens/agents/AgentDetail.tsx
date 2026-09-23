@@ -18,6 +18,7 @@ import { LIST_PATHS } from "../../components/recordPaths";
 import { STATE_UNKNOWN_NOTE } from "../../copy";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
+import { agentDisplayName } from "../../format/displayNames";
 import { RunTable } from "../runs/RunTable";
 import { AgentEvidenceFields, AgentStateBadges } from "./AgentState";
 
@@ -43,7 +44,7 @@ const AgentDetailBody = ({
   const { agent } = data;
   return (
     <>
-      <Section title={agent.name}>
+      <Section title={agentDisplayName(agent.name)}>
         <Fields label="Configuração do agente">
           <Field term="Identificador">
             <IdText id={agent.id} />

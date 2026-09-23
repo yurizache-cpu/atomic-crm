@@ -27,6 +27,7 @@ import {
   COMMUNICATIONS_SCOPE_NOTE,
 } from "../../copy";
 import { humanize } from "../../format/labels";
+import { agentDisplayName } from "../../format/displayNames";
 import { outboundStatusText } from "../../format/outbound";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 
@@ -95,9 +96,9 @@ const Channels = ({
               <RecordLink
                 kind="agent"
                 id={channel.agent.id}
-                label={`Agente ${channel.agent.name}`}
+                label={`Agente ${agentDisplayName(channel.agent.name)}`}
               >
-                {channel.agent.name}
+                {agentDisplayName(channel.agent.name)}
               </RecordLink>
               {" · atualizado "}
               <RelativeTime value={channel.updatedAt} />

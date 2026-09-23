@@ -15,7 +15,7 @@ import {
   renderCompanyOs,
 } from "../../testing/renderCompanyOs";
 import { ADVICE_SUMMARY, openAdvice } from "../../testing/routes";
-import { WITHHELD_TEXT } from "./reviewLabels";
+import { NO_REPLY_SENT_TEXT, WITHHELD_TEXT } from "./reviewLabels";
 import { ReviewsScreen } from "./ReviewsScreen";
 
 // Screen 6 (docs/PHASE_2C_BRIEF.md §7.5, §9, §12, §13 item 3), fed with the
@@ -78,6 +78,11 @@ describe("the Reviews screen", () => {
       )
       .toBeVisible();
     expect(session.callsOf("list_reviews")[0].args.p_status).toBe("pending");
+    // No outbound record: a fact, never a reply approved, expected or queued.
+    await expect.element(list).toHaveTextContent(NO_REPLY_SENT_TEXT);
+    expect(list.element().textContent).not.toMatch(
+      /aprovad|aguardando envio|pronta para envio|autoriz/i,
+    );
 
     await screen
       .getByRole("link", { name: "Pede ajuste", exact: true })

@@ -175,6 +175,46 @@ describe("the Agents screen", () => {
     await expect.element(recentRuns).toHaveTextContent("Concluída");
   });
 
+  it("names the local seed's agents for the owner, keeps their ids, and shows any other name exactly as the server does", async () => {
+    // Hand-built on purpose: the recorded agents are not named like the local
+    // seed's. Two recorded agents take the seed's names; nothing else changes.
+    const session = createRecordedSession();
+    const list = recorded("list_agents");
+    const renamed = new Map([
+      ["Lead Triage", "Reception Agent"],
+      ["Follow Up", "Marketing Analyst"],
+    ]);
+    session.answer("list_agents", () =>
+      ok({
+        ...list,
+        items: list.items.map((agent) => ({
+          ...agent,
+          name: renamed.get(agent.name) ?? agent.name,
+        })),
+      }),
+    );
+
+    const screen = await renderCompanyOs(session, "#/company-os/agents");
+
+    await expect
+      .element(screen.getByRole("link", { name: "Abrir Recepcionista IA" }))
+      .toHaveAttribute(
+        "href",
+        `#/company-os/agents/${rid("agent:lead-triage")}`,
+      );
+    await expect
+      .element(
+        screen.getByRole("link", { name: "Abrir Analista de Marketing" }),
+      )
+      .toHaveAttribute("href", `#/company-os/agents/${rid("agent:follow-up")}`);
+    await expect
+      .element(screen.getByRole("link", { name: "Abrir Queue Desk" }))
+      .toBeVisible();
+    expect(document.body.textContent).not.toMatch(
+      /Reception Agent|Marketing Analyst/,
+    );
+  });
+
   it("renders an error, not the agent, when a working agent comes without a working run", async () => {
     // Hand-built on purpose: the projection never answers "working" without a
     // working run id, so only a tampered answer can reach the contract's

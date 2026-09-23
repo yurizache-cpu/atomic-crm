@@ -15,6 +15,7 @@ import {
   stopScopeLabel,
   toneOfState,
 } from "../../format/ptBR";
+import { agentDisplayName } from "../../format/displayNames";
 import { shownActivity } from "./activityRule";
 
 // One agent as the owner reads it (docs/PHASE_2C_BRIEF.md §10): availability
@@ -37,15 +38,16 @@ export const AgentCard = ({
   const availability = current ? agent.availability : "unknown";
   const activity = current ? shownActivity(agent) : "unknown";
   const { evidence } = agent;
+  const name = agentDisplayName(agent.name);
   return (
-    <OwnerCard label={`Agente ${agent.name}`} className="flex flex-col gap-3">
+    <OwnerCard label={`Agente ${name}`} className="flex flex-col gap-3">
       <div className="flex items-start gap-3">
         <span className="rounded-xl bg-primary/10 p-2.5 text-primary">
           <Bot aria-hidden className="size-5" />
         </span>
         <div className="flex min-w-0 flex-col">
-          <RecordLink kind="agent" id={agent.id} label={`Abrir ${agent.name}`}>
-            {agent.name}
+          <RecordLink kind="agent" id={agent.id} label={`Abrir ${name}`}>
+            {name}
           </RecordLink>
           <span className="text-xs text-muted-foreground">
             {`${agent.department.name} · ${agent.company.name}`}

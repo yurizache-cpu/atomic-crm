@@ -23,7 +23,7 @@ import { oneOf } from "../../format/labels";
 import { capabilityLabel, reviewStatusLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { ReviewDetail } from "./ReviewDetail";
-import { outboundRecordText } from "./reviewLabels";
+import { NO_REPLY_SENT_TEXT, outboundRecordText } from "./reviewLabels";
 import { ReviewStatusBadge } from "./ReviewSummaryFields";
 
 // Screen 6, Reviews / Decision Queue (docs/PHASE_2C_BRIEF.md §12). Pending
@@ -88,7 +88,13 @@ const ReviewCard = ({ review }: { review: ReviewSummary }) => (
           Não contatar
         </span>
       ) : null}
-      <Meta label="Envio">{outboundRecordText(review.outboundStatus)}</Meta>
+      {review.outboundStatus === null ? (
+        <span className="text-xs text-muted-foreground">
+          {NO_REPLY_SENT_TEXT}
+        </span>
+      ) : (
+        <Meta label="Envio">{outboundRecordText(review.outboundStatus)}</Meta>
+      )}
       <Meta label="Nota">{review.hasNote ? "Sim" : "Não"}</Meta>
     </div>
     <div className="flex flex-wrap gap-4">

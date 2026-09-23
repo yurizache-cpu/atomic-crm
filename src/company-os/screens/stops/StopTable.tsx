@@ -9,6 +9,7 @@ import {
   StatusChip,
   TechnicalDetails,
 } from "../../components/owner";
+import { agentDisplayName, tenantDisplayName } from "../../format/displayNames";
 import { stopScopeLabel } from "../../format/ptBR";
 import { useOperatorScope } from "../../session/runtime";
 
@@ -36,7 +37,8 @@ const meaningOf = (stop: ExecutionStopSummary): string => {
 
 const TargetName = ({ stop }: { stop: ExecutionStopSummary }) => {
   const { context } = useOperatorScope();
-  if (stop.target === null) return <span>{context.tenant.name}</span>;
+  if (stop.target === null)
+    return <span>{tenantDisplayName(context.tenant.name)}</span>;
   const { target } = stop;
   return target.agentId === null ? (
     <span>{target.name}</span>
@@ -44,9 +46,9 @@ const TargetName = ({ stop }: { stop: ExecutionStopSummary }) => {
     <RecordLink
       kind="agent"
       id={target.agentId}
-      label={`Agente ${target.name}`}
+      label={`Agente ${agentDisplayName(target.name)}`}
     >
-      {target.name}
+      {agentDisplayName(target.name)}
     </RecordLink>
   );
 };

@@ -127,6 +127,22 @@ describe("the Company OS session lifecycle", () => {
     expect(session.calls[0].operation).toBe("operator_context");
   });
 
+  it("names the local development seed's tenant for the owner, and any other tenant exactly as the server does", async () => {
+    // Hand-built on purpose: "Development tenant" is the name the local seed
+    // gives its tenant, and the recorded tenant is named otherwise.
+    const session = createFakeSession(USER_A);
+    session.answer("operator_context", () =>
+      ok(operatorContext(TENANT_A, "Development tenant")),
+    );
+    session.answer("list_stops", () => ok(stopList("Synthetic stop")));
+
+    const { screen } = await renderShell(session);
+
+    const header = screen.getByRole("group", { name: "Contexto" });
+    await expect.element(header).toHaveTextContent("Clínica de Psicologia");
+    expect(header.element().textContent).not.toContain("Development tenant");
+  });
+
   it("clears the cache and signs out when a later read answers OS401", async () => {
     const session = signedInAsA();
     session.answer(

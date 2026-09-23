@@ -27,6 +27,7 @@ import {
   moneyLabel,
   yesNoLabel,
 } from "../../format/ptBR";
+import { agentDisplayName } from "../../format/displayNames";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 
 // Screen 8, Custos (docs/PHASE_2C_BRIEF.md §12): the tenant's and its
@@ -122,9 +123,9 @@ const ByAgent = ({ rows }: { rows: SpendSummary["today"]["byAgent"] }) => (
         <RecordLink
           kind="agent"
           id={row.agent.id}
-          label={`Agente ${row.agent.name}`}
+          label={`Agente ${agentDisplayName(row.agent.name)}`}
         >
-          {row.agent.name}
+          {agentDisplayName(row.agent.name)}
         </RecordLink>
         <span className="text-sm">
           <span className="text-muted-foreground">{`${row.runs} ${row.runs === 1 ? "execução" : "execuções"} · `}</span>

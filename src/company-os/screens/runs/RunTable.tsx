@@ -17,6 +17,7 @@ import {
   runStatusLabel,
   toneOfState,
 } from "../../format/ptBR";
+import { agentDisplayName } from "../../format/displayNames";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { shownRunStatus } from "./liveness";
 
@@ -62,7 +63,7 @@ const RunCard = ({
               id={run.id}
               label={`Abrir execução ${run.id}`}
             >
-              {agentName ?? "Agente"}
+              {agentName === null ? "Agente" : agentDisplayName(agentName)}
             </RecordLink>
             <span className="text-sm text-muted-foreground">
               {capabilityLabel(run.capability)}

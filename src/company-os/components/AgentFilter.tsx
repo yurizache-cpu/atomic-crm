@@ -1,6 +1,7 @@
 import { useSearchParams } from "react-router";
 
 import { uuidOrNull } from "../format/labels";
+import { agentDisplayName } from "../format/displayNames";
 import { useCompanyOsQuery } from "../query/useCompanyOsQuery";
 import { SearchParamSelect } from "./SearchParamSelect";
 
@@ -18,7 +19,7 @@ export const AgentFilter = () => {
   const options =
     agents.data?.items.map((agent) => ({
       value: agent.id,
-      label: agent.name,
+      label: agentDisplayName(agent.name),
     })) ?? [];
   const active = uuidOrNull(params.get("agent"));
   const shown =

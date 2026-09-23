@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 
 import type { OperatorContext } from "../../../contracts/company-os-api/index.ts";
 import { EventsInViewProvider } from "../components/Causation";
+import { tenantDisplayName } from "../format/displayNames";
 import { SCREEN_GROUPS, SCREENS, screenPath } from "../screens/screens";
 
 // The Company OS frame once operator_context has answered: the grouped left
@@ -83,7 +84,9 @@ const ContextBar = ({
       aria-label="Contexto"
       className="flex flex-wrap items-center gap-3"
     >
-      <span className="text-base font-semibold">{context.tenant.name}</span>
+      <span className="text-base font-semibold">
+        {tenantDisplayName(context.tenant.name)}
+      </span>
       <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300">
         Ambiente de teste
       </span>
