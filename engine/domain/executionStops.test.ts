@@ -318,6 +318,13 @@ describe("tripping an execution stop", () => {
       "an actor claiming the system: prefix",
       { reason: "incident", actor: "system:spend_ceiling" },
     ],
+    [
+      "an actor claiming the principal: prefix",
+      {
+        reason: "incident",
+        actor: "principal:a1000000-0000-4000-8000-0000000000a1",
+      },
+    ],
   ])("refuses %s before reaching the database", async (_case, act) => {
     expect(
       await outcomeOf(tripExecutionStop(unreachable, { scope: "global" }, act)),
@@ -567,6 +574,14 @@ describe("clearing an execution stop", () => {
         clearExecutionStop(unreachable, STOP, {
           reason: "resolved",
           actor: "system:spend_ceiling",
+        }),
+      ),
+    ).toBe("invalid_argument");
+    expect(
+      await outcomeOf(
+        clearExecutionStop(unreachable, STOP, {
+          reason: "resolved",
+          actor: "principal:a1000000-0000-4000-8000-0000000000a1",
         }),
       ),
     ).toBe("invalid_argument");

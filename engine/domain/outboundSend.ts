@@ -1,5 +1,5 @@
-// Sending an approved reply: at most one provider call, between two committed
-// transactions (Phase 2B).
+// A send of an accepted review: at most one provider call, between two
+// committed transactions (Phase 2B).
 //
 // The shape is the external-call shape the agent runtime proved (Phase 1D,
 // engine/worker/externalCall.ts), for the same reason: a provider call that

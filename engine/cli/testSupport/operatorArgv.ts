@@ -5,6 +5,9 @@ export const TENANT = "a0000000-0000-4000-8000-00000000000a";
 export const COMPANY = "b0000000-0000-4000-8000-00000000000b";
 export const LIMIT = "c0000000-0000-4000-8000-00000000000c";
 export const REVIEW = "e0000000-0000-4000-8000-00000000000e";
+export const AUTH_USER = "f0000000-0000-4000-8000-00000000000f";
+export const PRINCIPAL = "a1000000-0000-4000-8000-0000000000a1";
+export const MEMBERSHIP = "b1000000-0000-4000-8000-0000000000b1";
 
 /** The command words, then each flag as `--name value`, in the order given. */
 const argv = (
@@ -46,6 +49,8 @@ export const READS: readonly (readonly string[])[] = [
   ],
   ["triage", "show", "--id", REVIEW],
   ["triage", "show", "--id", REVIEW, "--tenant", TENANT],
+  ["membership", "list"],
+  ["membership", "list", "--tenant", TENANT, "--limit", "20"],
 ];
 
 /** READS[RUNS_WITH_OPTIONS] is `runs` with a tenant, a status and a limit. */
@@ -102,9 +107,24 @@ export const TRIAGE_RECOVER = argv("triage recover", {
   limit: "50",
 });
 
+export const MEMBERSHIP_GRANT = argv("membership grant", {
+  tenant: TENANT,
+  "auth-user-id": AUTH_USER,
+  "display-name": "Synthetic Operator",
+  actor: "owner",
+  reason: "synthetic pilot operator",
+});
+
+export const MEMBERSHIP_REVOKE = argv("membership revoke", {
+  id: MEMBERSHIP,
+  actor: "owner",
+  reason: "pilot ended",
+});
+
 /**
- * Every mutation the tool offers: the three governance acts, Phase 2A's three
- * review decisions, and the review recovery. A decision changes
+ * Every mutation the tool offers, SI-39's act allowlist in its order: the price
+ * and spend-limit acts, Phase 2A's three review decisions and the review
+ * recovery, and Phase 2C's membership grant and revoke. A decision changes
  * ops.review_items and nothing else — it sends nothing and writes nothing to
  * the CRM; the recovery opens reviews a settlement could not.
  */
@@ -116,6 +136,8 @@ export const ACTS: readonly (readonly string[])[] = [
   TRIAGE_REJECT,
   TRIAGE_NEEDS_EDIT,
   TRIAGE_RECOVER,
+  MEMBERSHIP_GRANT,
+  MEMBERSHIP_REVOKE,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

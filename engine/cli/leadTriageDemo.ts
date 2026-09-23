@@ -460,7 +460,7 @@ export async function runLeadTriageDemo(
         // public.inbound_emails). The driver-backed suite verifies that
         // public.contacts is unchanged.
         transportsAvailable: [port.sourceKind],
-        note: "accepting a draft records approval and performs no action",
+        note: "accepting records a structured review decision only; it approves no reply draft and sends nothing, and a send of an accepted review is a separate operator act",
       }),
     );
     return EXIT_OK;

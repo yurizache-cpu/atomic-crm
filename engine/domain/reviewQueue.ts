@@ -9,7 +9,9 @@
 // THE DECISION is one call to ops.record_review_decision. Everything that makes
 // it safe is there: pending leaves once, a terminal item is final, the same
 // decision recorded again is a no-op rather than a second fact, and accepting
-// is refused when the admission recorded do_not_contact.
+// is refused when the admission recorded do_not_contact. A reviewer label
+// starting `principal:` is refused here: that prefix names a Company OS member
+// the operator surface identified (Phase 2C), never a person at the owner CLI.
 //
 // WHAT AN OPERATOR IS SHOWN. A listing: identifiers, status and the consent
 // state — never the advice. `readReviewItem` (`triage show`): the advisory
@@ -99,6 +101,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 /** The reviewer_format CHECK, character for character. */
 const REVIEWER = /^[\x21-\x7e][\x20-\x7e]{0,199}$/;
+/** Reserved for a gate-resolved Company OS member; refused in any case. */
+const PRINCIPAL_LABEL = /^principal:/i;
 
 const UTC = (column: string): string =>
   `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
@@ -293,6 +297,12 @@ export async function recordReviewDecision(
     throw new CompanyOsError(
       "invalid_argument",
       "reviewer must name the person deciding, in 1 to 200 printable characters",
+    );
+  }
+  if (PRINCIPAL_LABEL.test(input.reviewer)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the reviewer prefix principal: is reserved for a Company OS member the operator surface identified; a person at the owner CLI names themselves",
     );
   }
   if (

@@ -47,6 +47,16 @@ const recorder = (rows: unknown[] = [record()]) => {
   return { queries, tx };
 };
 
+const refusalFrom = async (promise: Promise<unknown>) => {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(CompanyOsError);
+    return (error as CompanyOsError).code;
+  }
+  throw new Error("expected a CompanyOsError");
+};
+
 const refusal = async (run: (tx: TxClient) => Promise<unknown>) => {
   const { tx } = recorder();
   try {
@@ -205,6 +215,27 @@ describe("recording a decision", () => {
     );
     expect(["invalid_argument", "malformed_identifier"]).toContain(code);
   });
+
+  it.each([
+    "principal:a1000000-0000-4000-8000-0000000000a1",
+    "Principal:a1000000-0000-4000-8000-0000000000a1",
+  ])(
+    "refuses a reviewer label claiming the principal: prefix (%s) before reaching the database",
+    async (reviewer) => {
+      const { queries, tx } = recorder();
+
+      const code = await refusalFrom(
+        recordReviewDecision(
+          tx,
+          { tenantId: TENANT, source: "operator-cli" },
+          { reviewId: REVIEW, decision: "accepted", reviewer },
+        ),
+      );
+
+      expect(code).toBe("invalid_argument");
+      expect(queries).toEqual([]);
+    },
+  );
 
   it("refuses a decision with no tenant scope", async () => {
     expect(

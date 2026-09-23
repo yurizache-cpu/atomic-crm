@@ -1,5 +1,12 @@
-// The owner's operator CLI (ADR 0017 §9) against a real Postgres: its three acts
-// and its reads after real runs.
+// The owner's operator CLI (ADR 0017 §9) against a real Postgres: its price and
+// spend-limit acts and its reads after real runs. The rest of SI-39's act
+// allowlist is proven elsewhere: the services behind triage accept, reject,
+// needs-edit and recover in leadTriagePilot.dbtest.ts and
+// leadTriageSettlement.dbtest.ts, and membership grant and revoke, through this
+// CLI, in memberships.dbtest.ts. Its print rule has one exception,
+// `triage show`, which prints the stored proposal, reply draft included, of the
+// one review item it names; the membership commands never print an email, an
+// email hash, an auth token or privileged connection information.
 //
 // engine/cli/operator.test.ts sees only the SQL the tool sends to a fake
 // database, and supabase/tests/runtime_governance.sql never runs the tool. What

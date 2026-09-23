@@ -1,5 +1,5 @@
-// Phase 2B outbound, against a real Postgres: a human-approved reply leaves
-// only by an explicit operator send, after consent is read FRESH, and the
+// Phase 2B outbound, against a real Postgres: a send of an accepted review
+// leaves only by an explicit operator send, after consent is read FRESH, and the
 // provider is called at most once whatever happens. Provider status callbacks,
 // through the gateway's own login, move a send forward and never backward, and
 // never across tenants.

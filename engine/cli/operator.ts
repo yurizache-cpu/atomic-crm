@@ -1,5 +1,5 @@
-// The owner's operator tool (ADR 0017 §9): what the runtime is doing, and the
-// three narrow governance acts.
+// The owner's operator tool (ADR 0017 §9; SI-39): what the runtime is doing,
+// and an explicit allowlist of narrow acts.
 //
 //   npm run ops -- status
 //   npm run ops -- stops [--all]
@@ -24,19 +24,33 @@
 //   npm run ops -- triage reject --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage recover [--tenant <uuid>] [--limit <n>]
+//   npm run ops -- membership grant --tenant <uuid> --auth-user-id <uuid>
+//                  --display-name <label> --actor <label> --reason <text>
+//   npm run ops -- membership revoke --id <uuid> --actor <label> --reason <text>
+//   npm run ops -- membership list [--tenant <uuid>] [--limit <n>]
 //
 // TRIAGE (Phase 2A) is the human review queue: `list` shows what is waiting,
 // `show` prints one item with the advisory result a person is being asked to
 // decide about, and the three decisions record that person's answer. Recording
 // a decision performs NO downstream action — nothing is sent and nothing in the
-// CRM is written. Accepting an item whose lead must not be contacted is refused
-// by the database.
+// CRM is written; a later send of an accepted review is a separate operator act
+// (`npm run messaging -- send`). Accepting an item whose lead must not be
+// contacted is refused by the database. `recover` opens the reviews that
+// succeeded runs are missing, from their stored results.
+//
+// MEMBERSHIP (Phase 2C) is who may use the Company OS operator surface. A person
+// is named ONLY by auth user id: no option takes an email, and anything else is a
+// usage error before any connection opens. `revoke` is the Company OS off-switch
+// for one person; `list` flags emailChangedSinceGrant, computed in SQL.
 //
 // READ-ONLY BY DEFAULT. Every read command runs `set transaction read only` as
 // the first statement of its transaction, so it cannot change anything, even
-// through a function with a side effect. The only mutations are the three acts
-// above: explicit, narrow, each naming who and why, none with a force flag.
-// Tripping and clearing stops stay in `npm run execution-stop`.
+// through a function with a side effect. The tool changes state only through an
+// explicit allowlist of acts (OPERATOR_ACTS): price record, limit set and retire,
+// triage accept, reject, needs-edit and recover, and membership grant and revoke.
+// None has a force flag, every other command is a read, and no further act
+// exists without a reviewed extension of SI-39. Tripping and clearing stops stay
+// in `npm run execution-stop`.
 //
 // ENVIRONMENT. The one variable read is ADMIN_DATABASE_URL, the owner connection.
 // The tool never reads a provider key or a model routing variable: `routes` shows
@@ -47,9 +61,14 @@
 // OUTPUT. One JSON object per line on stdout, printed only after the transaction
 // committed: one per row for a list (nothing for an empty one), always one object
 // for `status`, and one for each act. Amounts are exact decimal text. Never a
-// run's result, a prompt, task or agent text, a connection string or a key. Exit
-// codes and the failure line are cliOutput.ts's: 0, 2 on a usage error, 1 when
-// the database or the domain refused.
+// run's result, a prompt, task or agent text, an idempotency key, a connection
+// string or a key, with one exception: `triage show` prints the stored proposal,
+// reply draft included, of the one review item it names, so its output is as
+// sensitive as the message (synthetic or test data only while Q8 is open). The
+// membership commands never print an email, an email hash, an auth token or
+// privileged connection information, on success or on any refusal. Exit codes
+// and the failure line are cliOutput.ts's: 0, 2 on a usage error, 1 when the
+// database or the domain refused.
 
 import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
@@ -59,6 +78,14 @@ import {
   type AgentRunStatus,
 } from "../domain/agentRunStateMachine.ts";
 import { listExecutionStops } from "../domain/executionStops.ts";
+import {
+  grantMembership,
+  isUuid,
+  listMemberships,
+  revokeMembership,
+  type GrantMembershipInput,
+  type MembershipAct,
+} from "../domain/memberships.ts";
 import {
   listModelPrices,
   recordModelPrice,
@@ -135,6 +162,11 @@ type ReadCommand =
       readonly kind: "triage show";
       readonly reviewId: string;
       readonly tenantId?: string;
+    }
+  | {
+      readonly kind: "membership list";
+      readonly tenantId?: string;
+      readonly limit?: number;
     };
 
 type ActCommand =
@@ -163,6 +195,16 @@ type ActCommand =
       readonly kind: "triage recover";
       readonly tenantId?: string;
       readonly limit?: number;
+    }
+  | {
+      readonly kind: "membership grant";
+      readonly input: GrantMembershipInput;
+      readonly act: MembershipAct;
+    }
+  | {
+      readonly kind: "membership revoke";
+      readonly membershipId: string;
+      readonly act: MembershipAct;
     };
 
 export type OperatorCommand =
@@ -173,7 +215,7 @@ export type OperatorCommand =
 type CommandName = (ReadCommand | ActCommand)["kind"];
 
 export const OPERATOR_SYNOPSIS =
-  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>]";
+  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>] | membership grant --tenant <uuid> --auth-user-id <uuid> --display-name <label> --actor <label> --reason <text> | membership revoke --id <uuid> --actor <label> --reason <text> | membership list [--tenant <uuid>] [--limit <n>]";
 
 /** The first statement of every read command's transaction. */
 export const READ_ONLY_TRANSACTION = "set transaction read only";
@@ -198,6 +240,15 @@ const DECISION_REQUIRED: readonly string[] = Object.freeze([
   "id",
   "tenant",
   "reviewer",
+]);
+
+/** A grant takes every one of these, and nothing else. */
+const MEMBERSHIP_GRANT_FLAGS: readonly string[] = Object.freeze([
+  "tenant",
+  "auth-user-id",
+  "display-name",
+  "actor",
+  "reason",
 ]);
 
 const grammar = (
@@ -285,13 +336,29 @@ const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
   ["triage reject", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage needs-edit", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage recover", grammar(false, ["tenant", "limit"])],
+  // No option takes an email; a person is named only by --auth-user-id.
+  [
+    "membership grant",
+    grammar(false, MEMBERSHIP_GRANT_FLAGS, [], MEMBERSHIP_GRANT_FLAGS),
+  ],
+  [
+    "membership revoke",
+    grammar(false, ["id", "actor", "reason"], [], ["id", "actor", "reason"]),
+  ],
+  ["membership list", grammar(true, ["tenant", "limit"])],
 ]);
+
+/** The acts, in SI-39's order: the only commands that change state. */
+export const OPERATOR_ACTS: readonly string[] = Object.freeze(
+  [...COMMANDS].filter(([, entry]) => !entry.readOnly).map(([name]) => name),
+);
 
 /** The commands that take a subcommand, and the subcommands each takes. */
 const GROUPS: ReadonlyMap<string, readonly string[]> = new Map([
   ["price", ["record"]],
   ["limit", ["set", "retire"]],
   ["triage", ["list", "show", "accept", "reject", "needs-edit", "recover"]],
+  ["membership", ["grant", "revoke", "list"]],
 ]);
 
 const LIMIT_TEXT = /^[0-9]{1,6}$/;
@@ -443,15 +510,56 @@ function buildLimitSet(values: Values): OperatorCommand {
   };
 }
 
-const actFrom = (values: Values): SpendLimitAct => ({
+const actFrom = (values: Values): SpendLimitAct & MembershipAct => ({
   reason: values.get("reason") as string,
   actor: values.get("actor") as string,
 });
 
 /**
+ * The one value this parser checks beyond syntax, before the environment is
+ * read or a connection opens: a person is named only by auth user id, so
+ * anything typed in its place (an email, say) never reaches a database and is
+ * never repeated.
+ */
+function buildMembershipGrant(values: Values): OperatorCommand {
+  const authUserId = values.get("auth-user-id");
+  if (!isUuid(authUserId)) {
+    return usageError(
+      "--auth-user-id must be the person's auth user id, a uuid; a person is never named by email",
+    );
+  }
+  return {
+    kind: "membership grant",
+    input: {
+      tenantId: values.get("tenant") as string,
+      authUserId,
+      displayName: values.get("display-name") as string,
+    },
+    act: actFrom(values),
+  };
+}
+
+/** `triage recover` and `membership list`: an optional tenant and an optional limit. */
+function buildTenantLimit(
+  kind: "triage recover" | "membership list",
+  values: Values,
+): OperatorCommand {
+  const limitText = values.get("limit");
+  if (limitText !== undefined && !LIMIT_TEXT.test(limitText)) {
+    return usageError("--limit must be a whole number");
+  }
+  return {
+    kind,
+    tenantId: values.get("tenant"),
+    limit: limitText === undefined ? undefined : Number(limitText),
+  };
+}
+
+/**
  * Parses the arguments after the script name. Pure: it reads nothing but `argv`,
- * never modifies it, and decides only syntax. Whether a value is valid is the
- * domain's answer, and whether it exists is the database's.
+ * never modifies it, and decides only syntax, apart from the auth user id of a
+ * membership grant. Whether any other value is valid is the domain's answer,
+ * and whether it exists is the database's.
  */
 export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
   const split = splitCommand(argv);
@@ -465,7 +573,15 @@ export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
     takenElsewhere: (flag) =>
       [...COMMANDS.values()].some((other) => other.flags.has(flag)),
   });
-  if (!parsed.ok) return usageError(parsed.message);
+  if (!parsed.ok) {
+    // parseFlags quotes a stray token back; a membership command never repeats
+    // one that could be an email.
+    return usageError(
+      name.startsWith("membership ") && parsed.message.includes("@")
+        ? `${name} takes only its own flags; the unexpected token is not repeated`
+        : parsed.message,
+    );
+  }
   const { values, switches } = parsed.flags;
 
   switch (name) {
@@ -504,17 +620,17 @@ export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
     case "triage reject":
     case "triage needs-edit":
       return buildTriageDecision(name, values);
-    case "triage recover": {
-      const limitText = values.get("limit");
-      if (limitText !== undefined && !LIMIT_TEXT.test(limitText)) {
-        return usageError("--limit must be a whole number");
-      }
+    case "triage recover":
+    case "membership list":
+      return buildTenantLimit(name, values);
+    case "membership grant":
+      return buildMembershipGrant(values);
+    case "membership revoke":
       return {
-        kind: "triage recover",
-        tenantId: values.get("tenant"),
-        limit: limitText === undefined ? undefined : Number(limitText),
+        kind: "membership revoke",
+        membershipId: values.get("id") as string,
+        act: actFrom(values),
       };
-    }
   }
 }
 
@@ -562,6 +678,11 @@ async function runRead(
       // prints nothing: an operator learns no other tenant's identifiers here.
       return item === undefined ? [] : [item];
     }
+    case "membership list":
+      return listMemberships(tx, {
+        tenantId: command.tenantId,
+        limit: command.limit,
+      });
   }
 }
 
@@ -617,6 +738,10 @@ async function runAct(
       });
       return [{ result: "recovered", opened }];
     }
+    case "membership grant":
+      return [await grantMembership(tx, command.input, command.act)];
+    case "membership revoke":
+      return [await revokeMembership(tx, command.membershipId, command.act)];
   }
 }
 

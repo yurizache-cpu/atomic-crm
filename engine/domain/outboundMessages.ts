@@ -1,4 +1,5 @@
-// Outbound messages: the database half of a human-approved send (Phase 2B).
+// Outbound messages: the database half of a send of an accepted review
+// (Phase 2B).
 //
 // A send is never a side effect of anything. It exists only because a person
 // explicitly asked to send an ACCEPTED review (`requestOutboundSend`), and it
@@ -17,6 +18,10 @@
 //
 // READS never return the text that was sent: it is the review's own draft and
 // stays there.
+//
+// WHO. The operator label a person types is recorded verbatim. One starting
+// `principal:` is refused: that prefix names a Company OS member the operator
+// surface identified (Phase 2C), never a person at the owner CLI.
 
 import type { TxClient } from "../db/types.ts";
 import type {
@@ -100,6 +105,25 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 /** The requested_by CHECK, character for character. */
 const OPERATOR = /^[\x21-\x7e][\x20-\x7e]{0,199}$/;
+/** Reserved for a gate-resolved Company OS member; refused in any case. */
+const PRINCIPAL_LABEL = /^principal:/i;
+
+/** The operator label, or a refusal that never repeats what was typed. */
+const requireOperator = (value: unknown): string => {
+  if (typeof value !== "string" || !OPERATOR.test(value)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the operator label is missing or malformed",
+    );
+  }
+  if (PRINCIPAL_LABEL.test(value)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the operator prefix principal: is reserved for a Company OS member the operator surface identified; a person at the owner CLI names themselves",
+    );
+  }
+  return value;
+};
 
 const requireUuid = (value: unknown, field: string): string => {
   if (typeof value !== "string" || !UUID.test(value)) {
@@ -138,15 +162,7 @@ export async function requestOutboundSend(
   tx: TxClient,
   input: RequestSendInput,
 ): Promise<RequestedSend> {
-  if (
-    typeof input.requestedBy !== "string" ||
-    !OPERATOR.test(input.requestedBy)
-  ) {
-    throw new CompanyOsError(
-      "invalid_argument",
-      "the operator label is missing or malformed",
-    );
-  }
+  const requestedBy = requireOperator(input.requestedBy);
   if (typeof input.source !== "string" || !SOURCE.test(input.source)) {
     throw new CompanyOsError(
       "invalid_argument",
@@ -159,7 +175,7 @@ export async function requestOutboundSend(
     [
       requireUuid(input.tenantId, "tenantId"),
       requireUuid(input.reviewId, "reviewId"),
-      input.requestedBy,
+      requestedBy,
       input.source,
     ],
     "ops.request_outbound_send",
@@ -261,19 +277,14 @@ export async function markOutboundIndeterminate(
   outboundMessageId: string,
   actor: string,
 ): Promise<void> {
-  if (typeof actor !== "string" || !OPERATOR.test(actor)) {
-    throw new CompanyOsError(
-      "invalid_argument",
-      "the operator label is missing or malformed",
-    );
-  }
+  const markedBy = requireOperator(actor);
   await callJson(
     tx,
     "select ops.mark_outbound_indeterminate($1, $2, $3) as result",
     [
       requireUuid(tenantId, "tenantId"),
       requireUuid(outboundMessageId, "outboundMessageId"),
-      actor,
+      markedBy,
     ],
     "ops.mark_outbound_indeterminate",
   );

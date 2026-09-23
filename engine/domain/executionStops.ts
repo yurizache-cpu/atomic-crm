@@ -19,7 +19,9 @@
 //
 // WHO. Every act through this module is a human one. The actor prefix `system:`
 // is reserved for the database's automatic trips (the spend ceiling sweep), and a
-// stop's origin is derived from it, so a human act naming it is refused here.
+// stop's origin is derived from it, so a human act naming it is refused here. The
+// prefix `principal:` is reserved for a Company OS member the operator surface
+// identified (Phase 2C), so an owner-CLI label can never be mistaken for one.
 // Owner and system stops on the same target are separate rows: clearing one never
 // clears the other.
 //
@@ -158,6 +160,7 @@ const TENANTLESS_SCOPES: readonly ExecutionStopScope[] = Object.freeze([
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ACTOR = /^[a-z0-9][a-z0-9_.:@-]{0,127}$/;
 const SYSTEM_ACTOR_PREFIX = "system:";
+const PRINCIPAL_ACTOR_PREFIX = "principal:";
 // The execution_stops_job_kind_format CHECK. ASCII only, so a JS length and
 // char_length agree.
 const JOB_KIND = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/;
@@ -297,7 +300,9 @@ function targetParams(target: ExecutionStopTarget): TargetParams {
  * Never looser than the database. It is stricter in two places: a reason with no
  * visible character is refused here, although btrim(), which trims only spaces,
  * would let a tab-only reason through; and the `system:` actor prefix, which the
- * database reads as an automatic trip, is refused for every act made here.
+ * database reads as an automatic trip, and the `principal:` prefix, which names a
+ * Company OS member the operator surface identified, are refused for every act
+ * made here.
  */
 function actParams(act: ExecutionStopAct): [string, string] {
   const { reason, actor } = act;
@@ -321,6 +326,12 @@ function actParams(act: ExecutionStopAct): [string, string] {
     throw new CompanyOsError(
       "invalid_argument",
       "the actor prefix system: is reserved for automatic trips; a person names themselves",
+    );
+  }
+  if (actor.startsWith(PRINCIPAL_ACTOR_PREFIX)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the actor prefix principal: is reserved for a Company OS member the operator surface identified; a person at the owner CLI names themselves",
     );
   }
   return [reason, actor];
