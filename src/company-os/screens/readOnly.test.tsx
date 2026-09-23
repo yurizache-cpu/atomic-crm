@@ -1,0 +1,293 @@
+import type { RenderResult } from "vitest-browser-react";
+
+import { COMPANY_OS_OPERATION_NAMES } from "../../../contracts/company-os-api/index.ts";
+import { NOT_FOUND_TEXT } from "../components/queryErrors";
+import * as COPY from "../copy";
+import { STATE_UNKNOWN_AFTER_MS } from "../query/freshness";
+import { DATA_BANNER_TEXT } from "../shell/DataBanner";
+import { refused, type FakeSession } from "../testing/fakeSession";
+import { createRecordedSession } from "../testing/recorded";
+import { renderCompanyOs } from "../testing/renderCompanyOs";
+import {
+  ADVICE_REVIEW,
+  EVERY_ROUTE,
+  openAdvice,
+  visit,
+} from "../testing/routes";
+import { WITHHELD_TEXT } from "./reviews/reviewLabels";
+
+// docs/PHASE_2C_BRIEF.md §12 (OD-11: every screen read-only first), §7.5 and
+// §16 (B: no decision, trip, clear, send, resend, draft, channel or limit
+// control; acceptance never presented as approval to send). Every page of the
+// module is visited over the recorded tenant (its tabs included), then again
+// with every answer too old to be current, then with every read failing, and
+// the pages no screen owns; the pending review with its advice open too.
+// Everything a person could press, follow or type into is collected from the
+// live DOM on each.
+
+/** The only buttons the module may render: session handling and reads. */
+const READ_CONTROLS = [
+  "Sign out",
+  "Try again",
+  "Load more",
+  "Show advice",
+  "Hide advice",
+];
+/** Causation links move the focus to an entry on the page; they read nothing. */
+const FOCUS_LINK = /^Go to event [0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+
+/** The list filters: each narrows a read. */
+const FILTER_LABELS = [
+  "Lifecycle status",
+  "Agent",
+  "Status",
+  "Attention",
+  "Activity",
+  "Availability",
+];
+
+/** The one plain anchor that leaves the module: the constant CRM root. */
+const CRM_LINKS = ["#/"];
+const INSIDE_THE_MODULE = /^#\/company-os(\/|\?|$)/;
+
+/** Wording that would present a review decision as approval to send. */
+const SEND_APPROVAL_WORDING =
+  /approved for sending|approved to send|message approved|reply approved|draft approved|send approved|awaiting (a )?send|waiting to be sent|ready to send|(acceptance|review|decision) authori[sz]|authori[sz]ed by (the |a )?(acceptance|review|decision)/i;
+
+/**
+ * "authorized" appears on a page only inside the explicit wording of the
+ * outbound state, or inside an event type the page prints as data
+ * (communication.outbound_authorized): never on its own, where it could read
+ * as "the acceptance authorized a send".
+ */
+const bareAuthorized = (text: string): boolean =>
+  /authori[sz]/i.test(
+    text
+      .replaceAll(COPY.OUTBOUND_AUTHORIZED_TEXT, "")
+      .replace(/\b[a-z_]+(\.[a-z_]+)+\b/g, ""),
+  );
+
+/** Each text node of the page on its own: a cell's text, never its neighbours'. */
+const textNodes = (): string[] => {
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const texts: string[] = [];
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    texts.push(node.textContent ?? "");
+  }
+  return texts;
+};
+
+const nameOf = (control: HTMLElement): string =>
+  control.getAttribute("aria-label") ?? control.textContent?.trim() ?? "";
+
+const controlsOnPage = () => {
+  const body = document.body;
+  return {
+    buttons: [
+      ...body.querySelectorAll<HTMLElement>(
+        "button, [role='button'], input[type='button'], input[type='submit']",
+      ),
+    ].map(nameOf),
+    links: [...body.querySelectorAll("a")].map((link) =>
+      link.getAttribute("href"),
+    ),
+    editable: body.querySelectorAll(
+      "input, textarea, [contenteditable='true'], [contenteditable='']",
+    ).length,
+    forms: body.querySelectorAll("form").length,
+    selects: [...body.querySelectorAll("select")].map(
+      (select) => select.labels?.[0]?.textContent ?? "",
+    ),
+  };
+};
+
+const expectReadOnly = (where: string) => {
+  const controls = controlsOnPage();
+  expect(
+    controls.buttons.filter(
+      (name) => !READ_CONTROLS.includes(name) && !FOCUS_LINK.test(name),
+    ),
+    `buttons on ${where}`,
+  ).toEqual([]);
+  expect(
+    controls.links.filter(
+      (href) =>
+        href === null ||
+        !(INSIDE_THE_MODULE.test(href) || CRM_LINKS.includes(href)),
+    ),
+    `links on ${where}`,
+  ).toEqual([]);
+  expect(controls.editable, `text fields on ${where}`).toBe(0);
+  expect(controls.forms, `forms on ${where}`).toBe(0);
+  expect(
+    controls.selects.filter((label) => !FILTER_LABELS.includes(label)),
+    `selects on ${where}`,
+  ).toEqual([]);
+  const text = document.body.textContent ?? "";
+  expect(text, `text on ${where}`).not.toMatch(SEND_APPROVAL_WORDING);
+  expect(
+    textNodes().filter(bareAuthorized),
+    `a bare "authorized" on ${where}`,
+  ).toEqual([]);
+};
+
+/** Every page, then the pending review with its advice open. */
+const sweep = async (
+  screen: RenderResult,
+  onEachPage: (where: string) => void,
+) => {
+  for (const route of EVERY_ROUTE) {
+    await visit(screen, route);
+    onEachPage(route.hash);
+  }
+  const pending = EVERY_ROUTE.find((route) =>
+    route.hash.endsWith(ADVICE_REVIEW),
+  );
+  await visit(screen, pending!);
+  await openAdvice(screen);
+  onEachPage("the opened advice");
+};
+
+/** A sweep visits every page, some twice: far longer than one read. */
+const SWEEP_TIMEOUT_MS = 90_000;
+
+const operationsCalled = (session: FakeSession) =>
+  [...new Set(session.calls.map((call) => call.operation))].sort();
+
+/** Navigates to `hash` and waits for the page's h1. */
+const reach = async (screen: RenderResult, hash: string, heading: string) => {
+  if (window.location.hash !== hash) window.location.hash = hash;
+  await expect
+    .element(screen.getByRole("heading", { name: heading, level: 1 }))
+    .toBeVisible();
+};
+
+describe("the Company OS screens are read-only", () => {
+  afterEach(() => {
+    history.replaceState(null, "", "#/");
+  });
+
+  it(
+    "no page, tab or opened advice renders a decision, stop, clear, send, draft or configuration control, and no link leaves the module except to the CRM",
+    async () => {
+      const session = createRecordedSession();
+      const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
+
+      await sweep(screen, expectReadOnly);
+
+      await expect.element(screen.getByText(DATA_BANNER_TEXT)).toBeVisible();
+      expect(session.unmatched).toEqual([]);
+    },
+    SWEEP_TIMEOUT_MS,
+  );
+
+  it(
+    "no page offers a control once its answer is too old to be current",
+    async () => {
+      let skew = 0;
+      const screen = await renderCompanyOs(
+        createRecordedSession(),
+        EVERY_ROUTE[0].hash,
+        { clock: () => Date.now() + skew },
+      );
+
+      const unknown: string[] = [];
+      for (const route of EVERY_ROUTE) {
+        skew = 0;
+        await visit(screen, route);
+        skew = STATE_UNKNOWN_AFTER_MS + 1_000;
+        await new Promise((resolve) => setTimeout(resolve, 1_100));
+        expectReadOnly(`${route.hash} once stale`);
+        if (document.body.textContent?.includes(COPY.STATE_UNKNOWN_NOTE)) {
+          unknown.push(route.hash);
+        }
+      }
+      // The pages that show live state did turn "unknown".
+      expect(unknown).toEqual(
+        expect.arrayContaining([
+          "#/company-os",
+          "#/company-os/agents",
+          "#/company-os/runs",
+          "#/company-os/tasks",
+        ]),
+      );
+    },
+    SWEEP_TIMEOUT_MS,
+  );
+
+  it(
+    "no page offers more than a retry when every read fails",
+    async () => {
+      const session = createRecordedSession();
+      for (const operation of COMPANY_OS_OPERATION_NAMES) {
+        if (operation !== "operator_context") {
+          session.answer(operation, () => refused("OS500"));
+        }
+      }
+      const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
+
+      for (const route of EVERY_ROUTE) {
+        await reach(screen, route.hash, route.heading);
+        await expect
+          .element(screen.getByRole("button", { name: "Try again" }).first())
+          .toBeVisible();
+        expectReadOnly(`${route.hash} failing`);
+      }
+    },
+    SWEEP_TIMEOUT_MS,
+  );
+
+  it("the pages no screen owns and a malformed record id offer nothing but links back", async () => {
+    const screen = await renderCompanyOs(
+      createRecordedSession(),
+      "#/company-os/no-such-screen",
+    );
+    await expect
+      .element(screen.getByRole("heading", { name: "Page not found" }))
+      .toBeVisible();
+    expectReadOnly("an unknown page");
+
+    await reach(screen, "#/company-os/tasks/not-a-uuid", "Task");
+    await expect.element(screen.getByText(NOT_FOUND_TEXT)).toBeVisible();
+    expectReadOnly("a malformed record id");
+  });
+
+  it(
+    "calls only the 15 catalogued read operations, each of them somewhere, and never an act",
+    async () => {
+      const session = createRecordedSession();
+      const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
+
+      await sweep(screen, () => {});
+
+      expect(COMPANY_OS_OPERATION_NAMES).toHaveLength(15);
+      expect(operationsCalled(session)).toEqual(
+        [...COMPANY_OS_OPERATION_NAMES].sort(),
+      );
+      expect(operationsCalled(session)).not.toContain("decide_review");
+      expect(operationsCalled(session)).not.toContain("trip_stop");
+    },
+    SWEEP_TIMEOUT_MS,
+  );
+
+  it("no fixed text of the module presents a review decision as approval to send, or says authorized on its own", () => {
+    const texts = [
+      ...(Object.values(COPY) as unknown[]).filter(
+        (value): value is string => typeof value === "string",
+      ),
+      ...Object.values(WITHHELD_TEXT),
+      DATA_BANNER_TEXT,
+    ];
+
+    for (const text of texts) {
+      expect(text).not.toMatch(SEND_APPROVAL_WORDING);
+      expect(bareAuthorized(text), text).toBe(false);
+    }
+    expect(COPY.REVIEW_NOT_A_SEND_NOTE).toBe(
+      "Recording a decision never approves or sends a reply.",
+    );
+    expect(COPY.OUTBOUND_AUTHORIZED_TEXT).toBe(
+      "send authorized by an operator send request",
+    );
+  });
+});

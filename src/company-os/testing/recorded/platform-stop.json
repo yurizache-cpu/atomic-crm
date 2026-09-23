@@ -1,0 +1,375 @@
+{
+  "generatedBy": "engine/domain/companyOsRecordedResponses.dbtest.ts; re-record with COMPANY_OS_RECORD=1, never edit by hand",
+  "calls": [
+    {
+      "operation": "list_agents",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-001200000001",
+            "name": "Annex Triage",
+            "slug": "annex-triage",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000002",
+              "name": "Clinic Annex"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000002",
+                "scope": "company",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000001",
+              "name": "Annex Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000002",
+            "name": "Archive",
+            "slug": "archive",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": null,
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "agent",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000003",
+            "name": "Closed Desk",
+            "slug": "closed-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000003",
+              "name": "Clinic Closed"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": null,
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "company",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000002",
+              "name": "Closed Intake"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000004",
+            "name": "Follow Up",
+            "slug": "follow-up",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "held",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000001",
+                "scope": "agent",
+                "origin": "owner"
+              },
+              "heldRunIds": ["00000000-0000-4000-8000-002100000009"],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000005",
+            "name": "Lead Triage",
+            "slug": "lead-triage",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "working",
+            "evidence": {
+              "stop": null,
+              "heldRunIds": [
+                "00000000-0000-4000-8000-00210000000e",
+                "00000000-0000-4000-8000-00210000000d",
+                "00000000-0000-4000-8000-00210000000c",
+                "00000000-0000-4000-8000-002100000007"
+              ],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": ["00000000-0000-4000-8000-002100000002"],
+              "attentionRunIds": ["00000000-0000-4000-8000-002100000005"]
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "available",
+            "attentionCount": 1
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000006",
+            "name": "Night Desk Agent",
+            "slug": "night-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "stale",
+            "evidence": {
+              "stop": null,
+              "heldRunIds": [],
+              "staleRunIds": ["00000000-0000-4000-8000-002100000003"],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": ["00000000-0000-4000-8000-002100000003"]
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000004",
+              "name": "Night Desk"
+            },
+            "availability": "available",
+            "attentionCount": 1
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000007",
+            "name": "Paused Desk Agent",
+            "slug": "paused-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000003",
+                "scope": "department",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "department",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000005",
+              "name": "Paused Desk"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000008",
+            "name": "Queue Desk",
+            "slug": "queue-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "held",
+            "evidence": {
+              "stop": null,
+              "heldRunIds": ["00000000-0000-4000-8000-002100000008"],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "available",
+            "attentionCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "operation": "overview",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "runs": {
+          "workingNow": 1,
+          "todayByStatus": {
+            "failed": 1,
+            "pending": 6,
+            "running": 2,
+            "cancelled": 2,
+            "succeeded": 1,
+            "indeterminate": 2
+          },
+          "needingAttention": 2
+        },
+        "stops": { "tenantScopedActive": 3 },
+        "agents": {
+          "held": 2,
+          "stale": 1,
+          "total": 8,
+          "queued": 0,
+          "stopped": 2,
+          "working": 1,
+          "inactive": 3
+        },
+        "reviews": {
+          "pending": 2,
+          "oldestPendingAt": "2026-09-22T10:00:00.000000Z"
+        },
+        "outbound": {
+          "todayByStatus": { "failed": 1, "blocked": 1, "indeterminate": 1 },
+          "indeterminateOpen": 1,
+          "acceptedWithoutSend": 0
+        },
+        "platform": { "globalAdmissionBlocked": true },
+        "admission": { "tenantAdmission": "conditional" }
+      }
+    },
+    {
+      "operation": "spend_summary",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "today": {
+          "byAgent": [
+            {
+              "runs": 1,
+              "agent": {
+                "id": "00000000-0000-4000-8000-001200000001",
+                "name": "Annex Triage"
+              },
+              "charged": { "usd": "0.000000", "micros": "0" }
+            },
+            {
+              "runs": 2,
+              "agent": {
+                "id": "00000000-0000-4000-8000-001200000004",
+                "name": "Follow Up"
+              },
+              "charged": { "usd": "0.000000", "micros": "0" }
+            },
+            {
+              "runs": 9,
+              "agent": {
+                "id": "00000000-0000-4000-8000-001200000005",
+                "name": "Lead Triage"
+              },
+              "charged": { "usd": "0.092082", "micros": "92082" }
+            },
+            {
+              "runs": 1,
+              "agent": {
+                "id": "00000000-0000-4000-8000-001200000006",
+                "name": "Night Desk Agent"
+              },
+              "charged": { "usd": "0.030602", "micros": "30602" }
+            },
+            {
+              "runs": 1,
+              "agent": {
+                "id": "00000000-0000-4000-8000-001200000008",
+                "name": "Queue Desk"
+              },
+              "charged": { "usd": "0.000000", "micros": "0" }
+            }
+          ],
+          "byModel": [
+            {
+              "runs": 6,
+              "model": "dbtest-cos-contract-model",
+              "charged": { "usd": "0.122684", "micros": "122684" },
+              "provider": "fake"
+            }
+          ]
+        },
+        "platform": { "globalAdmissionBlocked": true },
+        "tenantRows": [
+          {
+            "scope": "tenant",
+            "charged": { "usd": "0.122684", "micros": "122684" },
+            "settled": { "usd": "0.061493", "micros": "61493" },
+            "timezone": "UTC",
+            "companyId": null,
+            "estimated": { "usd": "0.000345", "micros": "345" },
+            "remaining": { "usd": "99999.877316", "micros": "99999877316" },
+            "dailyLimit": { "usd": "100000.000000", "micros": "100000000000" },
+            "refusedRuns": 0,
+            "runningRuns": 2,
+            "newRunAdmission": "conditional",
+            "unknownCostRuns": 0,
+            "settledExhausted": false
+          },
+          {
+            "scope": "company",
+            "charged": { "usd": "0.000000", "micros": "0" },
+            "settled": { "usd": "0.000000", "micros": "0" },
+            "timezone": "UTC",
+            "companyId": "00000000-0000-4000-8000-001000000002",
+            "estimated": { "usd": "0.000000", "micros": "0" },
+            "remaining": { "usd": "0.000000", "micros": "0" },
+            "dailyLimit": { "usd": "0.000000", "micros": "0" },
+            "refusedRuns": 1,
+            "runningRuns": 0,
+            "newRunAdmission": "blocked",
+            "unknownCostRuns": 0,
+            "settledExhausted": true
+          }
+        ],
+        "windowStart": "2026-09-22T09:58:00.000000Z"
+      }
+    }
+  ]
+}
