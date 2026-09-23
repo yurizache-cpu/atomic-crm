@@ -328,9 +328,22 @@ export const HEADS = [
   },
   { head: "alter view", re: /^alter\s+view\b/, security: true },
   { head: "alter table", re: /^alter\s+table\b/, security: true },
-  { head: "alter function", re: /^alter\s+function\b/, security: false },
-  { head: "alter sequence", re: /^alter\s+sequence\b/, security: false },
-  { head: "alter type", re: /^alter\s+type\b/, security: false },
+  // Security-relevant since Phase 2C: OWNER TO, SECURITY INVOKER, SET, SET
+  // SCHEMA and RENAME on a routine, and ownership of any object kind, are how
+  // the Company OS capability graph changes (companyOsApi.mjs, brief §7.6 D).
+  { head: "alter function", re: /^alter\s+function\b/, security: true },
+  { head: "alter routine", re: /^alter\s+routine\b/, security: true },
+  { head: "alter procedure", re: /^alter\s+procedure\b/, security: true },
+  { head: "alter sequence", re: /^alter\s+sequence\b/, security: true },
+  { head: "alter type", re: /^alter\s+type\b/, security: true },
+  { head: "alter domain", re: /^alter\s+domain\b/, security: true },
+  { head: "alter schema", re: /^alter\s+schema\b/, security: true },
+  // Role attributes and role membership: only the pinned OD-8a lifecycle may
+  // touch ops_operator_api, and every ALTER ROLE is refused.
+  { head: "alter role", re: /^alter\s+role\b/, security: true },
+  { head: "create role", re: /^create\s+role\b/, security: true },
+  { head: "drop role", re: /^drop\s+role\b/, security: true },
+  { head: "reassign owned", re: /^reassign\s+owned\b/, security: true },
   { head: "alter index", re: /^alter\s+index\b/, security: false },
   { head: "comment on", re: /^comment\s+on\b/, security: false },
   { head: "create extension", re: /^create\s+extension\b/, security: true },
@@ -344,19 +357,27 @@ export const HEADS = [
     re: /^create\s+(or\s+replace\s+)?(recursive\s+)?view\b/,
     security: true,
   },
+  // Security-relevant since Phase 2C: a function in company_os_api or a gate is
+  // part of the pinned capability graph, and its body and SET clauses are read.
   {
     head: "create function",
     re: /^create\s+(or\s+replace\s+)?function\b/,
-    security: false,
+    security: true,
   },
+  {
+    head: "create procedure",
+    re: /^create\s+(or\s+replace\s+)?procedure\b/,
+    security: true,
+  },
+  { head: "create domain", re: /^create\s+domain\b/, security: true },
   {
     head: "create index",
     re: /^create\s+(unique\s+)?index\b/,
     security: false,
   },
   { head: "create policy", re: /^create\s+policy\b/, security: false },
-  { head: "create schema", re: /^create\s+schema\b/, security: false },
-  { head: "create sequence", re: /^create\s+sequence\b/, security: false },
+  { head: "create schema", re: /^create\s+schema\b/, security: true },
+  { head: "create sequence", re: /^create\s+sequence\b/, security: true },
   // Security-relevant: a new table with no RLS is a relation an application
   // role can read with no policy applied.
   { head: "create table", re: /^create\s+table\b/, security: true },
@@ -368,7 +389,7 @@ export const HEADS = [
     re: /^create\s+(or\s+replace\s+)?trigger\b/,
     security: true,
   },
-  { head: "create type", re: /^create\s+type\b/, security: false },
+  { head: "create type", re: /^create\s+type\b/, security: true },
   { head: "do", re: /^do\b/, security: true },
   { head: "drop extension", re: /^drop\s+extension\b/, security: true },
   {
@@ -378,6 +399,9 @@ export const HEADS = [
   },
   { head: "drop view", re: /^drop\s+view\b/, security: true },
   { head: "drop function", re: /^drop\s+function\b/, security: true },
+  { head: "drop routine", re: /^drop\s+routine\b/, security: true },
+  { head: "drop procedure", re: /^drop\s+procedure\b/, security: true },
+  { head: "drop domain", re: /^drop\s+domain\b/, security: true },
   { head: "drop index", re: /^drop\s+index\b/, security: false },
   { head: "drop policy", re: /^drop\s+policy\b/, security: false },
   { head: "drop schema", re: /^drop\s+schema\b/, security: true },
@@ -396,6 +420,8 @@ export const HEADS = [
   // the session, and `set search_path to ops` makes unqualified names in later
   // statements resolve into ops while this guard reads them as public.*.
   { head: "set", re: /^set\b/, security: true },
+  // RESET ROLE / RESET SESSION AUTHORIZATION switch identity back mid-file.
+  { head: "reset", re: /^reset\b/, security: true },
   { head: "analyze", re: /^analyze\b/, security: false },
 ];
 

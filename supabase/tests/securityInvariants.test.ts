@@ -483,7 +483,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-15",
     statement:
-      "The ops schema is unreachable by anon and authenticated, is absent from the PostgREST allowlist, and no PostgREST request reaches it with any credential, service_role included.",
+      "The ops schema is unreachable by anon and authenticated, is absent from the PostgREST allowlist, and no PostgREST request reaches it with any credential, service_role included, with one exception: an authenticated request to a pinned company_os_api function, which runs as the NOLOGIN role ops_operator_api and enters ops only through that function's identity-and-membership gate (SI-21). The exception grants anon, authenticated and service_role no privilege on ops; anon and authenticated still hold none, and service_role keeps only its pinned USAGE on ops and EXECUTE on ops.enqueue_job.",
     provenBy: ["live database", "migration assertion", "static guard"],
     enforcedBy: [
       {
@@ -493,8 +493,21 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/config.toml",
         // The allowlist must NOT name ops. Asserted as the exact current value
-        // so adding a schema is a deliberate, reviewable diff.
-        marker: /schemas = \["public", "storage", "graphql_public"\]/,
+        // so adding a schema is a deliberate, reviewable diff. Phase 2C
+        // (amended SI-15) appends company_os_api, and only it.
+        marker:
+          /schemas = \["public", "storage", "graphql_public", "company_os_api"\]/,
+      },
+      {
+        file: "supabase/config.e2e.toml",
+        marker:
+          /schemas = \["public", "storage", "graphql_public", "company_os_api"\]/,
+      },
+      {
+        // Phase 2C: the exception grants the application roles nothing on ops.
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /a schema privilege on ops or company_os_api is wider than the catalogue/,
       },
       {
         // Phase 1C: a REQUEST, not a config file. Every ops relation and
@@ -513,6 +526,11 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/migrationInvariants.test.ts",
         marker: /a read on an ops table granted to service_role \(BYPASSRLS\)/,
+      },
+      // Phase 2C: a signed-in member's request, not a config file, still cannot reach ops.
+      {
+        file: "supabase/tests/companyOsProbe/surfaceChecks.mjs",
+        marker: /expectAnswer\(answer, 406, "PGRST106"/,
       },
     ],
     caveat:
@@ -674,7 +692,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only: no application role (anon, authenticated, service_role, ops_worker, ops_gateway) holds any privilege on a Company OS table or can execute a Company OS service, no ops function is executable by PUBLIC, every Company OS service is SECURITY INVOKER, and the only SECURITY DEFINER functions ops_worker or ops_gateway can execute are a pinned set: the worker's lease-bound capabilities and runtime functions, and the gateway's two functions bound to a configured provider target.",
+      "Company OS data is backend-only except for the gated browser outputs below, and direct Company OS authority stays with the database owner: no application role (anon, authenticated, service_role, ops_worker, ops_gateway, and so no browser, PostgREST or runtime login acting as one of them) and no capability role (ops_operator_api) holds any privilege on a Company OS table, any grant on all tables, sequences or functions in ops or default-privilege grant there, or EXECUTE on a Company OS service, and every Company OS service is SECURITY INVOKER. Company OS tables and services are otherwise reached only through pinned SECURITY DEFINER capabilities, never a generic one: no ops function is executable by PUBLIC, the only SECURITY DEFINER functions in ops that ops_worker, ops_gateway or ops_operator_api can execute are, respectively, the worker's lease-bound capabilities and runtime functions, the gateway's two functions bound to a configured provider target, and exactly one identity-and-membership gate per catalogued company_os_api operation, and service_role's only one is ops.enqueue_job. ops_operator_api is a NOLOGIN capability role, not a human or application principal: it owns only the catalogued company_os_api functions, and at rest it has no members and is in no login role's membership closure. authenticated holds nothing in ops, executes in company_os_api only those catalogued functions, each of which runs with ops_operator_api's privileges and calls only its own gate, and never becomes ops_operator_api: it is not a member of it and cannot switch to it. Company OS data reaches the browser only through those gates and only as their pinned minimised outputs, and through them an authenticated Company OS member can at most read its own tenant's pinned projections, record a decision on one of its own tenant's reviews through ops.record_review_decision, and trip a stop at tenant, company, department or agent scope within its own tenant through the authoritative ops.trip_execution_stop; clearing a stop remains a recorded owner act through the owner CLI (SI-31), and no global, system or job_kind stop can be tripped from the browser.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -734,6 +752,36 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/invariants/rules.mjs",
         marker: /default-privileges:ops:/,
       },
+      // Phase 2C (amended SI-21): the capability role reaches ops only through
+      // its gates, owns only the catalogue, and has no member at rest.
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops_operator_api can execute a non-gate ops function/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops_operator_api holds a relation privilege/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops_operator_api has a member or a membership at rest/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops_operator_api owns an uncatalogued function/,
+      },
+      {
+        file: "supabase/invariants/companyOsAcl.mjs",
+        marker: /may execute gates only/,
+      },
+      {
+        file: "supabase/invariants/companyOsAcl.mjs",
+        marker: /"default-privileges-surface"/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker: /a non-gate ops function to the role/,
+      },
       {
         file: "engine/domain/companyOs.dbtest.ts",
         marker: /refuses a leased worker at the privilege layer/,
@@ -743,6 +791,22 @@ const INVARIANTS: Invariant[] = [
         // dressed up as a domain refusal the caller would handle and move past.
         file: "engine/domain/errors.test.ts",
         marker: /leaves a native permission failure alone/,
+      },
+      // Phase 2C: the capability role's EXECUTE surface in ops is exactly its gates (A4).
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker:
+          /\('ops_operator_api', 'ops\.gate_operator_context\(\)'::regprocedure\)/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P6: ops_operator_api holds a relation, column or sequence privilege/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P6: ops_operator_api is in the membership closure of login role/,
       },
     ],
     caveat:
@@ -986,6 +1050,12 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/company_domain_core.sql",
         marker: /A1: Company OS table reachable by an application role/,
+      },
+      // Phase 2C: no global sequence value leaves through the operator surface (SI-56).
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /N3: a foreign, platform, excluded or global-sequence value reached tenant A/,
       },
     ],
     caveat:
@@ -1386,8 +1456,14 @@ const INVARIANTS: Invariant[] = [
     provenBy: ["static guard", "unit test"],
     enforcedBy: [
       {
-        file: "scripts/scan-build-artifacts.mjs",
+        file: "scripts/scan-build-rules-names.mjs",
         marker: /browser-model-provider-variable/,
+      },
+      {
+        // The rule module must still be wired into the scan: a rule that
+        // exists but is not in RULES scans nothing.
+        file: "scripts/scan-build-artifacts.mjs",
+        marker: /^\s*\.\.\.NAME_RULES,\r?$/m,
       },
       {
         file: "scripts/test/scan-build-artifacts.test.mjs",
@@ -1816,7 +1892,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-39",
     statement:
-      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, it withholds any key-shaped value a worker published, and its only acts are recording a price version and setting or retiring a spend limit.",
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover) and, from Phase 2C, granting or revoking a Company OS membership; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -1846,6 +1922,22 @@ const INVARIANTS: Invariant[] = [
         file: "engine/domain/operatorRuntime.dbtest.ts",
         marker:
           /prints no task or agent text, result, idempotency key or connection string/,
+      },
+      // Phase 2C (amended SI-39): the act allowlist and the membership print rule.
+      {
+        file: "engine/cli/operator.test.ts",
+        marker:
+          /changes state only through SI-39's act allowlist, and every other command is a read/,
+      },
+      {
+        file: "engine/domain/memberships.dbtest.ts",
+        marker:
+          /refuses an email as the auth user id before any connection opens/,
+      },
+      {
+        file: "engine/domain/memberships.test.ts",
+        marker:
+          /reads an email in exactly one expression, which compares hashes and yields only a boolean/,
       },
     ],
     caveat:
@@ -2517,7 +2609,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-52",
     statement:
-      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason.",
+      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason. Phase 2C adds one read: on an explicit open of a single review of its own tenant, a Company OS member may read that review's capability-pinned structured advice (for lead_triage, its classification enums, summary and recommended next action), only for a synthetic or test origin, into browser memory under no-store and nowhere else; the projection never includes the stored inbound body or any task description, the sender's stored number, the reply draft, a secret, an access token or a raw provider error, and because its summary and recommended next action are written by the model from the inbound message and may echo its words, the read is limited to synthetic or test origins.",
     provenBy: ["driver-backed test", "unit test", "live database"],
     enforcedBy: [
       {
@@ -2558,6 +2650,21 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/tests/whatsapp_transport.sql",
         marker:
           /I1: a refusal carries more than its channel, conversation and reason/,
+      },
+      // Phase 2C (amended SI-52): the one new read, the advice on explicit
+      // open, withheld unless the origin is synthetic or test.
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /'withheld', 'origin_not_synthetic_or_test'/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /N6: the lead_triage advice is not exactly its pinned structured fields/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /N6: advice for a line now in production was not withheld/,
       },
     ],
     caveat:
@@ -2617,6 +2724,368 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "Not acknowledging is not the same as keeping: Meta retries a delivery for up to 7 days (its documented policy, with no stated schedule), to every app subscribed to the account, and then drops it. An unrouted message is visible only in the gateway's log (gateway.unrouted, with the business's own number id), because with no tenant there is nowhere durable to record it. A message whose target is malformed, or with no usable message id, is acknowledged without a record; Meta does not send either. An authenticated body that is not a WhatsApp notification is answered 400 and so retried.",
+  },
+  // --- Phase 2C (ADR 0019; brief §15): the Company OS operator surface. -----
+  // Statements are the owner-approved texts, verbatim. Each stream adds the
+  // enforcement points it lands (S2 the database, S3 the owner CLI, S4 the
+  // contracts, S5 the frontend and the bundle scanner).
+  {
+    id: "SI-54",
+    statement:
+      "company_os_api holds exactly the catalogued functions and no relation, sequence or type. Each L3 function is SECURITY DEFINER with search_path = '', owned by ops_operator_api, executable only by authenticated (and, implicitly, by its owner), and its body is exactly one call to its G function. ops_operator_api is NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS and NOINHERIT, has no members at rest and is in no login role's membership closure, holds USAGE on ops and EXECUTE on exactly the G set (and, outside ops, pg_catalog and information_schema, in a schema where it holds USAGE, only a pinned measured list), and holds no table, column or sequence privilege outside the catalogue reads PUBLIC gives every role and no CREATE on any schema or on the database. ops stays off the Data API.",
+    provenBy: ["migration assertion", "static guard", "live database"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /company_os_api function with a wrong owner, mode, config or ACL/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /company_os_api does not hold exactly the catalogue/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /company_os_api holds a relation, sequence or type/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /ops_operator_api is missing or carries a login or a blanket attribute/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops_operator_api can create objects/,
+      },
+      {
+        // The OD-8a exception, pinned to exact migration file names and the
+        // exact catalogue (owner decisions S0-E, S0-F).
+        file: "supabase/invariants/companyOsApi.mjs",
+        marker: /export const COMPANY_OS_RULE = "company-os-surface";/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker:
+          /accepts the complete, correctly ordered seven-step lifecycle in an allowlisted file/,
+      },
+      {
+        file: "supabase/tests/migrationInvariants.test.ts",
+        marker:
+          /expect\(declaration\.companyOsApi\)\.toEqual\(FROZEN\.companyOsApi\)/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P1: the company_os_api catalogue drifted from the pinned signatures/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P2: an exposed function is not a DEFINER one-call wrapper owned by ops_operator_api/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P7 \(K4\): the SECURITY DEFINER functions authenticated can execute drifted/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P8 \(K5\): the functions ops_operator_api owns or can execute outside ops drifted/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P9: a default privilege reaches ops or company_os_api/,
+      },
+      // Owner decision S0-G: the role closure, pinned as measured.
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P10: a role can become or administer ops_operator_api/,
+      },
+    ],
+    caveat:
+      "The migration identity (postgres) owns company_os_api and can drop and recreate a function it no longer owns without any membership (measured, S0.4): the static guard's exact allowlist and the live owner and ACL pins stop that, not PostgreSQL (owner decision S0-E). A superuser or a CREATEROLE role, the database-owner trust root, can grant itself membership in ops_operator_api; on the local stacks that includes supabase_functions_admin (S0-G). The K4 and K5 lists include the PUBLIC CRM helpers every role already executes: existing debt, pinned as observed, not approved.",
+  },
+  {
+    id: "SI-55",
+    statement:
+      "A browser caller's tenant and actor come only from ops.operator_scope(): verified PostgREST claims, a live session, an existing unbanned auth user, an enabled human principal keyed to that auth user id, and exactly one active membership of a tenant that satisfies the Phase 2C eligibility policy. An email never selects, identifies or authorises a principal or a membership. No L3 or G function takes a tenant, company, actor, reviewer, source or causation context parameter, and every uuid argument it does take is a pinned selector resolved inside the membership-derived tenant. Memberships are written only through the owner credential, only for human principals, and are never re-pointed to another auth user or tenant; no CRM role or administrator state derives Company OS authority.",
+    provenBy: ["migration assertion", "static guard", "live database"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /errcode = 'OS401', message = 'not signed in'/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /ops\.grant_membership: in Phase 2C only the tenant that owns the local CRM is eligible/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops\.tenant_memberships: a grant is immutable/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /ops\.principals: a principal''s identity is immutable/,
+      },
+      {
+        // An exposed function is exactly one call to its gate, passing its own
+        // selectors: nothing else can reach a tenant or an actor.
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker: /an exposed function that calls something other than its gate/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /I1: an identity shape was not refused by the resolver, first, with its fixed refusal/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /I2: two active memberships were not refused as a conflict first/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /I3: the eligibility policy was not applied at resolve time/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /M1: an email change moved the principal or the tenant/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /M3: a graph body reads an email/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /M5: a principal or membership guard trigger is missing or not ENABLE ALWAYS/,
+      },
+      // Real GoTrue sessions (owner decision S0-C): a signed-out token is refused.
+      {
+        file: "supabase/tests/companyOsProbe/sessionChecks.mjs",
+        marker: /POST \/auth\/v1\/logout returned/,
+      },
+      {
+        file: "engine/domain/memberships.dbtest.ts",
+        marker: /grants a membership to an auth user id, prints only its ids/,
+      },
+    ],
+    caveat:
+      "A session that can SET ROLE authenticated can also set request.jwt.claims (postgres, authenticator and its members, including supabase_storage_admin, and the superuser supabase_admin; measured in S0.4): such a credential already dominates the database, and the resolver still requires a live (auth user id, session id) pair. Membership limits what a valid principal may access, not whether a token was stolen. Until the S7 user-management prerequisite is fixed, a CRM administrator who can change another person's login email can take over that person's session and so their principal (docs/PHASE_2C_REPORT.md §4): accepted only for local, synthetic and test use.",
+  },
+  {
+    id: "SI-56",
+    statement:
+      "No browser-facing output carries another tenant's data, a stored message or task body, a stored phone number, a reply draft, a raw job error, a provider secret or internal id, a global sequence value, a platform-wide identifier, an Auth or CRM email, an email hash, or a raw free-form actor or reviewer label (a stored reviewer, requested_by, tripped_by, cleared_by, marked_by, configured_by, set_by, ended_by or recorded_by value, or a principal's display name); an event's source is returned only when it is in a pinned provenance allowlist, and as the fixed value other otherwise. Free-text content a projection returns (a decision note, a stop reason and clear reason, the advice summary and recommended next action, and the tenant's own owner-typed configuration labels: tenant, company, department and agent names and a channel label) is content, not identity, and is not claimed free of email-like text. Platform state is limited to the pinned platform-derived set. The lead_triage classification enums, summary and recommended next action appear only through the capability-pinned advice projection, on explicit open, for synthetic or test origins; the summary is model-written and may echo the message it describes (SI-52).",
+    provenBy: ["migration assertion", "live database"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /then p_source else 'other' end/,
+      },
+      {
+        // A reference to another tenant's row is an internal error, never data.
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /errcode = 'OS500', message = 'foreign reference'/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /The payload keys that may leave, per type \(deny by default/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /T3: a foreign, platform, wrong-kind, erased or malformed value answered unlike a random uuid/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /N2: an excluded value reached an output/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /N5: a marked_by key left the database/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /N9: a reference to a platform row did not leave as null/,
+      },
+      {
+        file: "supabase/tests/companyOsEventAllowlist.test.ts",
+        marker: /every written label is in ops\.cos_event_source/,
+      },
+      {
+        file: "engine/domain/companyOsContracts.dbtest.ts",
+        marker:
+          /carries no content, message or call identity, label or person identity the brief keeps out/,
+      },
+      {
+        file: "engine/domain/companyOsRecordedResponses.dbtest.ts",
+        marker:
+          /holds synthetic values only: no identity, contact, message or call value the fixture planted/,
+      },
+    ],
+    caveat:
+      "Free text a projection returns is content, not identity: a decision note, a stop or clear reason, the advice summary and the owner-typed configuration labels are not claimed free of email-like text, and a legacy reviewer or actor label is never returned. The advice summary is model-written from the inbound message and may echo it; it is readable only for synthetic or test origins while BASELINE Q8 is open.",
+  },
+  {
+    id: "SI-57",
+    statement:
+      "An agent is reported working only while a running AgentRun holds a live job lease, and the report carries that run's id.",
+    provenBy: ["migration assertion", "live database"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /\(r\.status = 'running' and j\.status = 'leased' and j\.lease_expires_at > v_as_of and j\.attempts = r\.job_attempt\) as working/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /'workingRunIds', pg_catalog\.to_jsonb/,
+      },
+      {
+        file: "engine/domain/companyOsWorkingState.dbtest.ts",
+        marker:
+          /reports an agent working only while its running run holds a live lease, and names that run/,
+      },
+      {
+        file: "engine/domain/companyOsWorkingState.dbtest.ts",
+        marker:
+          /reports a running run whose lease ran out as stale attention, never as working/,
+      },
+      {
+        file: "src/company-os/screens/agents/activityRule.test.tsx",
+        marker:
+          /prints unknown, never working, for a working agent with no working run id/,
+      },
+    ],
+    caveat:
+      "Working is computed at one instant from the lease the database holds; a worker that died keeps its lease until it expires, and is reported stale only after that. A reader sees the state as of the response's asOf, not live.",
+  },
+  {
+    id: "SI-58",
+    statement:
+      "The browser can cause exactly two mutations, and only once their functions exist after the user-management prerequisite: a review decision through ops.record_review_decision (which decides the structured review only, approves no reply draft, authorises no send, and writes no outbound row and no job), and a trip at tenant, company, department or agent scope through ops.trip_execution_stop under its lock, with a bounded wait whose contention answer is generic, retryable and creates nothing. It cannot clear a stop, trip a global, system or job_kind stop, send, resend, retry or mark a send, configure or activate a channel, or change money, organisational-unit, CRM or governance state.",
+    provenBy: ["migration assertion", "static guard", "live database"],
+    enforcedBy: [
+      {
+        // Today the browser can cause none: the read migration creates only
+        // the catalogued reads, and the static guard refuses anything else.
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /company_os_api does not hold exactly the catalogue/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker: /No browser act exists before the S7 prerequisite \(SI-58\)/,
+      },
+      {
+        file: "supabase/invariants/companyOsFunctions.mjs",
+        marker: /"uncatalogued"/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P1: an act function exists before S8/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P5: a graph body reads public or an email, writes, runs dynamic SQL or names a forbidden serv/,
+      },
+      {
+        file: "supabase/tests/companyOsApiExposure.mjs",
+        marker: /\(decide_review, trip_stop: 404 PGRST202\) before S8/,
+      },
+      // Owner decision S0-B: the 2 s bound, measured on the authoritative path the future trip gate calls.
+      {
+        file: "engine/domain/companyOsStopLock.dbtest.ts",
+        marker:
+          /fails with 55P03 within about the bound, identically whatever holds the lock, creates nothing/,
+      },
+      // A tripwire, not the boundary: an operator context claiming an act fails to parse.
+      {
+        file: "contracts/company-os-api/context.ts",
+        marker:
+          /decideReview: z\.literal\(false\),\s*tripStop: z\.literal\(false\),/,
+      },
+      {
+        file: "engine/domain/companyOsContracts.dbtest.ts",
+        marker: /no act, act gate or trip service exists before S8/,
+      },
+      {
+        file: "src/company-os/screens/readOnly.test.tsx",
+        marker: /the Company OS screens are read-only/,
+      },
+      {
+        file: "src/company-os/screens/readOnly.test.tsx",
+        marker:
+          /no fixed text of the module presents a review decision as approval to send/,
+      },
+    ],
+    caveat:
+      "Phase 2C read-only: neither act exists in any migration or database. They arrive only in a second allowlisted migration (S8), after the S7 user-management prerequisite is fixed, tested and approved; a frontend flag is never the boundary.",
+  },
+  {
+    id: "SI-59",
+    statement:
+      "No Company OS data reaches durable browser storage, and no provider, database or transport secret reaches a bundle.",
+    provenBy: ["unit test", "static guard"],
+    enforcedBy: [
+      {
+        file: "eslint.config.js",
+        marker: /group: \["@tanstack\/\*persist\*"\]/,
+      },
+      {
+        file: "src/components/atomic-crm/root/CRM.security.test.tsx",
+        marker:
+          /keeps contacts, notes, emails and consent state out of storage/,
+      },
+      {
+        file: "scripts/scan-build-rules-names.mjs",
+        marker: /id: "assigned-server-secret"/,
+      },
+      // Owner decision S0-H: the six Phase 2C names plus class rules, each
+      // rule module wired into the scan.
+      {
+        file: "scripts/scan-build-rules-names.mjs",
+        marker: /id: "privileged-vite-variable"/,
+      },
+      {
+        file: "scripts/scan-build-artifacts.mjs",
+        marker:
+          /const RULES = \[\s*\.\.\.SUPABASE_KEY_RULES,\s*\.\.\.CONNECTION_STRING_RULES,\s*\.\.\.KEY_MATERIAL_RULES,\s*\.\.\.TOKEN_RULES,\s*\.\.\.NAME_RULES,/,
+      },
+      {
+        file: "scripts/scan-build-rules-tokens.mjs",
+        marker: /id: "meta-access-token"/,
+      },
+      {
+        file: "scripts/scan-build-rules-connections.mjs",
+        marker: /id: "libpq-connection-string"/,
+      },
+      {
+        file: "scripts/test/scan-build-artifacts.test.mjs",
+        marker:
+          /holds every build input to the rule at the source, source maps or not/,
+      },
+      // Phase 2C: the Company OS tree, including an opened advice view, its close and unmount.
+      {
+        file: "src/company-os/CompanyOsApp.storage.test.tsx",
+        marker:
+          /leaves every storage area, the history entries and the title exactly as it found them/,
+      },
+      {
+        file: "src/company-os/CompanyOsApp.storage.test.tsx",
+        marker:
+          /empties the query cache on SIGNED_OUT, and storage still holds nothing of it/,
+      },
+      {
+        file: "supabase/tests/companyOsFrontendLint.test.ts",
+        marker: /the Company OS module reaches nothing but its ports/,
+      },
+    ],
+    caveat:
+      "The scanner looks for credential classes and exact server-only names in the built artifacts; it is not entropy detection, and a secret that has neither a known shape nor a known name next to it is not found. A privileged VITE_ name survives into a build only through the published source maps or an import.meta.env read as a whole object (measured: 2 findings with sourcemap: true, 0 without), so a source-level test holds every build input to the same rule; turning source maps off would leave that test as the only check of the name class. Browser memory is not storage: the in-memory query cache holds Company OS projections until logout or reload.",
   },
 ];
 

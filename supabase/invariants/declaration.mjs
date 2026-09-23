@@ -74,7 +74,21 @@ const DECLARATION_SHAPE = {
   views: "object",
   extensions: "object",
   storage: "object",
+  companyOsApi: "object",
   overrides: "array",
+};
+// The Company OS operator surface (Phase 2C, brief §7.6 and §15). Every value
+// is ALSO pinned as a literal in migrationInvariants.test.ts: growing the
+// catalogue or the OD-8a allowlist is a reviewed guard update, never an
+// override (owner decision S0-E).
+const COMPANY_OS_API_SHAPE = {
+  schema: "string",
+  role: "string",
+  migrationIdentity: "string",
+  catalogue: "array",
+  gates: "array",
+  allowlistedMigrations: "array",
+  transfers: "object",
 };
 const VIEWS_SHAPE = {
   schema: "string",
@@ -136,8 +150,69 @@ export function validateDeclaration(declaration) {
     "declaration.json#extensions",
   );
   checkShape(declaration.storage, STORAGE_SHAPE, "declaration.json#storage");
+  checkCompanyOsApi(declaration);
   for (const entry of declaration.overrides) {
     checkShape(entry, OVERRIDE_SHAPE, "declaration.json#overrides[]");
   }
   return declaration;
+}
+
+function checkCompanyOsApi(declaration) {
+  const where = "declaration.json#companyOsApi";
+  const cfg = declaration.companyOsApi;
+  checkShape(cfg, COMPANY_OS_API_SHAPE, where);
+  const refuse = (message) => {
+    throw new InvariantError(`${where}: ${message}`);
+  };
+  const identifier = /^[a-z_][a-z0-9_]*$/;
+  for (const key of ["schema", "role", "migrationIdentity"]) {
+    if (!identifier.test(cfg[key]))
+      refuse(`"${key}" is not a plain identifier`);
+  }
+  // The canonical form companyOsApi.mjs compares against: no argument names,
+  // no pg_catalog prefix, aliases folded, no spaces.
+  const canonical = /^[a-z0-9_]+\.[a-z0-9_]+\((([a-z ]+)(,[a-z ]+)*)?\)$/;
+  for (const ref of cfg.catalogue) {
+    if (
+      typeof ref !== "string" ||
+      !canonical.test(ref) ||
+      !ref.startsWith(`${cfg.schema}.`)
+    ) {
+      refuse(
+        `catalogue entry ${JSON.stringify(ref)} is not a canonical ${cfg.schema} signature`,
+      );
+    }
+  }
+  for (const ref of cfg.gates) {
+    if (
+      typeof ref !== "string" ||
+      !canonical.test(ref) ||
+      !ref.startsWith("ops.gate_")
+    ) {
+      refuse(
+        `gate entry ${JSON.stringify(ref)} is not a canonical ops.gate_ signature`,
+      );
+    }
+  }
+  for (const file of cfg.allowlistedMigrations) {
+    const m = typeof file === "string" ? MIGRATION_FILENAME.exec(file) : null;
+    if (!m || m[1] <= declaration.sealedThrough) {
+      refuse(
+        `allowlisted migration ${JSON.stringify(file)} is not an unsealed migration file name`,
+      );
+    }
+  }
+  for (const [file, refs] of Object.entries(cfg.transfers)) {
+    if (!cfg.allowlistedMigrations.includes(file)) {
+      refuse(
+        `transfers name ${JSON.stringify(file)}, which is not allowlisted`,
+      );
+    }
+    if (
+      !Array.isArray(refs) ||
+      refs.some((ref) => !cfg.catalogue.includes(ref))
+    ) {
+      refuse(`transfers of ${file} must be a list of catalogued signatures`);
+    }
+  }
 }

@@ -1,4 +1,4 @@
--- Phase 2B — attacks on the WhatsApp transport and human-approved outbound.
+-- Phase 2B — attacks on the WhatsApp transport and on the send of an accepted review.
 --
 -- The question: can a payload choose a tenant, can a production channel's
 -- content become work while BASELINE Q8 is open (even by the owner's own

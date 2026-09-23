@@ -46,6 +46,27 @@ const seal = JSON.parse(readFileSync(join(INVARIANTS_DIR, "seal.json"), "utf8"))
   .migrations as Record<string, string>;
 const corpus = loadMigrationCorpus(join(ROOT, "supabase", "migrations"));
 
+/** The 15 read RPCs of Phase 2C (brief §9), canonical signatures, sorted. No
+ *  decide_review and no trip_stop: the browser acts do not exist before the
+ *  S7 prerequisite (SI-58). */
+const COMPANY_OS_READ_CATALOGUE = [
+  "communication_status()",
+  "get_agent(uuid)",
+  "get_review(uuid)",
+  "get_review_advice(uuid)",
+  "get_run(uuid)",
+  "get_task(uuid)",
+  "list_agents()",
+  "list_events(text,text,uuid,integer)",
+  "list_reviews(text,text,integer)",
+  "list_runs(text,text,uuid,boolean,integer)",
+  "list_stops(boolean,text,integer)",
+  "list_tasks(text,text,uuid,integer)",
+  "operator_context()",
+  "overview()",
+  "spend_summary()",
+];
+
 /**
  * FROZEN CONSTANTS — the trust root, pinned HERE rather than in the data file.
  * declaration.json is what the guard believes; these literals are what a
@@ -88,6 +109,24 @@ const FROZEN = {
     "service_role usage ops",
     "service_role execute ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)",
   ],
+  /** The Company OS operator surface and its OD-8a exception (Phase 2C,
+   *  brief §7.6 A). Growing the RPC catalogue, the gate set or the allowlist
+   *  of exact migration files is a diff HERE, reviewed; never an override
+   *  (owner decision S0-E). The surface's own cases live in
+   *  companyOsMigrationGuard.test.ts and
+   *  companyOsMigrationGuardOutside.test.ts. */
+  companyOsApi: {
+    schema: "company_os_api",
+    role: "ops_operator_api",
+    migrationIdentity: "postgres",
+    catalogue: COMPANY_OS_READ_CATALOGUE.map((f) => `company_os_api.${f}`),
+    gates: COMPANY_OS_READ_CATALOGUE.map((f) => `ops.gate_${f}`),
+    allowlistedMigrations: ["20260922120000_company_os_read_surface.sql"],
+    transfers: {
+      "20260922120000_company_os_read_surface.sql":
+        COMPANY_OS_READ_CATALOGUE.map((f) => `company_os_api.${f}`),
+    },
+  },
 };
 
 const run = (
@@ -158,6 +197,7 @@ describe("the guard actually ran", () => {
     expect([...OPS_BYPASS_ROLE_GRANTS].sort()).toEqual(
       [...FROZEN.opsBypassRoleGrants].sort(),
     );
+    expect(declaration.companyOsApi).toEqual(FROZEN.companyOsApi);
   });
 
   it("asserts apply order rather than assuming it", () => {

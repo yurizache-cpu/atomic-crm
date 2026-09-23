@@ -29,6 +29,7 @@ import {
   splitAtDepth,
 } from "./parse.mjs";
 import { stripSqlComments } from "./sqlStatements.mjs";
+import { createCompanyOsState, handleCompanyOs } from "./companyOsApi.mjs";
 
 /**
  * @typedef {object} Finding
@@ -63,6 +64,8 @@ export function createState() {
     /** object key -> line / file of the statement that last touched it */
     lines: new Map(),
     files: new Map(),
+    /** the Company OS surface and its OD-8a lifecycle (companyOsApi.mjs) */
+    companyOs: createCompanyOsState(),
   };
 }
 
@@ -624,7 +627,11 @@ function handleSet(ctx) {
   return true;
 }
 
+// handleCompanyOs runs first: it claims only statements that touch the Company
+// OS surface (companyOsApi.mjs), before any rule below could read one as inert
+// or as an ordinary grant. Everything else falls through unchanged.
 const HANDLERS = [
+  handleCompanyOs,
   handleSet,
   handleDropCascade,
   handleCreateTable,
@@ -645,7 +652,7 @@ const HANDLERS = [
  *
  * @param {object} state from createState()
  * @param {{file: string, line: number, masked: string, fromDoBlock?: boolean}} statement
- * @param {{isKnownView: (key: string) => boolean, provesRemoval: (file: string, catalogues: string[], name: string) => boolean}} context
+ * @param {{isKnownView: (key: string) => boolean, provesRemoval: (file: string, catalogues: string[], name: string) => boolean, companyOsApi?: object, isOperatorOwned?: (ref: string) => boolean}} context
  * @returns {Finding[]}
  */
 export function applyStatement(state, statement, context) {

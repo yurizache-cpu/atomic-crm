@@ -1,5 +1,5 @@
 {
-  "purpose": "What the migration set is allowed to describe. The shape is validated by supabase/invariants/declaration.mjs, so an unknown or mis-typed key throws rather than silently disabling a domain. Read supabase/tests/migrationInvariants.test.ts before changing anything here: sealedThrough, views.declared, views.ignoredSchemas and extensions.forbidden are ALSO pinned as literals in that test file, so widening the trust root is a diff in a .test.ts, never a quiet edit to a data file.",
+  "purpose": "What the migration set is allowed to describe. The shape is validated by supabase/invariants/declaration.mjs, so an unknown or mis-typed key throws rather than silently disabling a domain. Read supabase/tests/migrationInvariants.test.ts before changing anything here: sealedThrough, views.declared, views.ignoredSchemas, extensions.forbidden and companyOsApi (the Phase 2C operator surface: its catalogue, gates, the literal migration identity and the exact OD-8a migration allowlist and transfers) are ALSO pinned as literals in that test file, so widening the trust root is a diff in a .test.ts, never a quiet edit to a data file.",
   "sealedThrough": "20260912090000",
   "views": {
     "schema": "public",
@@ -38,6 +38,65 @@
   },
   "storage": {
     "buckets": ["attachments"]
+  },
+  "companyOsApi": {
+    "schema": "company_os_api",
+    "role": "ops_operator_api",
+    "migrationIdentity": "postgres",
+    "catalogue": [
+      "company_os_api.communication_status()",
+      "company_os_api.get_agent(uuid)",
+      "company_os_api.get_review(uuid)",
+      "company_os_api.get_review_advice(uuid)",
+      "company_os_api.get_run(uuid)",
+      "company_os_api.get_task(uuid)",
+      "company_os_api.list_agents()",
+      "company_os_api.list_events(text,text,uuid,integer)",
+      "company_os_api.list_reviews(text,text,integer)",
+      "company_os_api.list_runs(text,text,uuid,boolean,integer)",
+      "company_os_api.list_stops(boolean,text,integer)",
+      "company_os_api.list_tasks(text,text,uuid,integer)",
+      "company_os_api.operator_context()",
+      "company_os_api.overview()",
+      "company_os_api.spend_summary()"
+    ],
+    "gates": [
+      "ops.gate_communication_status()",
+      "ops.gate_get_agent(uuid)",
+      "ops.gate_get_review(uuid)",
+      "ops.gate_get_review_advice(uuid)",
+      "ops.gate_get_run(uuid)",
+      "ops.gate_get_task(uuid)",
+      "ops.gate_list_agents()",
+      "ops.gate_list_events(text,text,uuid,integer)",
+      "ops.gate_list_reviews(text,text,integer)",
+      "ops.gate_list_runs(text,text,uuid,boolean,integer)",
+      "ops.gate_list_stops(boolean,text,integer)",
+      "ops.gate_list_tasks(text,text,uuid,integer)",
+      "ops.gate_operator_context()",
+      "ops.gate_overview()",
+      "ops.gate_spend_summary()"
+    ],
+    "allowlistedMigrations": ["20260922120000_company_os_read_surface.sql"],
+    "transfers": {
+      "20260922120000_company_os_read_surface.sql": [
+        "company_os_api.communication_status()",
+        "company_os_api.get_agent(uuid)",
+        "company_os_api.get_review(uuid)",
+        "company_os_api.get_review_advice(uuid)",
+        "company_os_api.get_run(uuid)",
+        "company_os_api.get_task(uuid)",
+        "company_os_api.list_agents()",
+        "company_os_api.list_events(text,text,uuid,integer)",
+        "company_os_api.list_reviews(text,text,integer)",
+        "company_os_api.list_runs(text,text,uuid,boolean,integer)",
+        "company_os_api.list_stops(boolean,text,integer)",
+        "company_os_api.list_tasks(text,text,uuid,integer)",
+        "company_os_api.operator_context()",
+        "company_os_api.overview()",
+        "company_os_api.spend_summary()"
+      ]
+    }
   },
   "overrides": []
 }
