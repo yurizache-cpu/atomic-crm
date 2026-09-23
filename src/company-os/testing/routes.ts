@@ -19,6 +19,9 @@ export interface RouteVisit {
 /** The pending review whose structured advice the sweeps open. */
 export const ADVICE_REVIEW = rid("review:opened");
 
+/** The pending review a member can decide from the browser (S7.1). */
+export const OPEN_REVIEW = rid("review:open");
+
 const adviceSummary = (): string => {
   const advice = recorded("get_review_advice", {
     p_review_id: ADVICE_REVIEW,
@@ -95,7 +98,7 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
       {
         accepted: "Aceita",
         rejected: "Rejeitada",
-        needs_edit: "Pede ajuste",
+        needs_edit: "Precisa de ajuste",
       }[status],
     ],
   })),
@@ -105,9 +108,18 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     markers: ["Call back tomorrow"],
   },
   {
+    // Pending and do-not-contact: no acceptance is offered.
     hash: `#/company-os/reviews/${ADVICE_REVIEW}`,
     heading: "Decisão",
-    markers: ["Rejeitada, Pede ajuste"],
+    markers: [
+      "Aceitar não está disponível: este contato pediu para não ser contatado.",
+    ],
+  },
+  {
+    // Pending, synthetic, decidable: the three decisions (S7.1).
+    hash: `#/company-os/reviews/${OPEN_REVIEW}`,
+    heading: "Decisão",
+    markers: ["Aceitar"],
   },
   {
     hash: "#/company-os/stops",

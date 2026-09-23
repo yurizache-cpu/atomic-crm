@@ -69,6 +69,8 @@ import {
 } from "./testSupport/companyOsContractFixture.ts";
 
 const {
+  COMPANY_OS_ACTS,
+  COMPANY_OS_ACT_NAMES,
   COMPANY_OS_API_SCHEMA,
   COMPANY_OS_OPERATIONS,
   COMPANY_OS_OPERATION_NAMES,
@@ -140,7 +142,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe("the operation catalogue equals pg_proc", () => {
-  it("company_os_api holds exactly the 15 catalogued functions, with their argument names, types and defaults", async () => {
+  it("company_os_api holds exactly the 15 catalogued reads and the one act, with their argument names, types and defaults", async () => {
     const { rows } = await admin.query<{
       name: string;
       args: string;
@@ -159,14 +161,20 @@ describe("the operation catalogue equals pg_proc", () => {
     // No overload: one row per name.
     expect(new Set(rows.map((row) => row.name)).size).toBe(rows.length);
     expect(Object.fromEntries(rows.map((row) => [row.name, row.args]))).toEqual(
-      Object.fromEntries(
-        COMPANY_OS_OPERATION_NAMES.map((name) => [
+      Object.fromEntries([
+        ...COMPANY_OS_OPERATION_NAMES.map((name) => [
           name,
           COMPANY_OS_OPERATIONS[name].args.map(sqlArgument).join(", "),
         ]),
-      ),
+        ...COMPANY_OS_ACT_NAMES.map((name) => [
+          name,
+          COMPANY_OS_ACTS[name].args.map(sqlArgument).join(", "),
+        ]),
+      ]),
     );
+    const acts = new Set<string>(COMPANY_OS_ACT_NAMES);
     for (const row of rows) {
+      // Every read is STABLE; the one act is VOLATILE.
       expect(
         {
           result: row.result,
@@ -174,20 +182,28 @@ describe("the operation catalogue equals pg_proc", () => {
           definer: row.definer,
         },
         row.name,
-      ).toEqual({ result: "jsonb", volatility: "s", definer: true });
+      ).toEqual({
+        result: "jsonb",
+        volatility: acts.has(row.name) ? "v" : "s",
+        definer: true,
+      });
     }
   });
 
-  it("no act, act gate or trip service exists before S8", async () => {
+  it("the one act and its gate exist, and no trip service exists before S8", async () => {
     const { rows } = await admin.query<{ fn: string }>(
       `select p.oid::regprocedure::text as fn
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in ('ops', $1)
           and p.proname in ('decide_review', 'trip_stop', 'gate_decide_review',
-                            'gate_trip_stop', 'trip_stop_in_tenant')`,
+                            'gate_trip_stop', 'trip_stop_in_tenant')
+        order by 1`,
       [COMPANY_OS_API_SCHEMA],
     );
-    expect(rows).toEqual([]);
+    expect(rows.map((row) => row.fn)).toEqual([
+      "company_os_api.decide_review(uuid,text)",
+      "ops.gate_decide_review(uuid,text)",
+    ]);
   });
 });
 

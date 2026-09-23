@@ -665,6 +665,18 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
     false,
   );
   name("review:no-origin", noOrigin);
+  // The review a member can decide from the browser (S7.1): pending, on a
+  // synthetic admission, not do-not-contact.
+  const open = await insertReview(
+    tx,
+    tenantId,
+    refusedByBudget.taskId,
+    randomUUID(),
+    "lead_triage",
+    VALID_ADVICE,
+    false,
+  );
+  name("review:open", open);
 
   // Sends: failed after sending, blocked by eligibility, marked indeterminate.
   await tx.query(
@@ -753,7 +765,7 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
     runs: await ids(
       "select id from ops.agent_runs where tenant_id = $1 order by created_at, id",
     ),
-    reviews: [opened, ...accepted, notPinned, invalid, noOrigin],
+    reviews: [opened, ...accepted, notPinned, invalid, noOrigin, open],
     tripped: {
       retry,
       held: held.runId,

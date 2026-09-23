@@ -16,26 +16,22 @@ import { QueryView } from "../../components/queryStates";
 import { RecordNotFound } from "../../components/RecordNotFound";
 import { useRouteRecordId } from "../../components/routeRecord";
 import { LIST_PATHS } from "../../components/recordPaths";
-import {
-  ALLOWED_DECISIONS_NOTE,
-  REVIEW_DECISIONS_CLI_NOTE,
-  REVIEW_NOT_A_SEND_NOTE,
-} from "../../copy";
-import { reviewStatusLabel } from "../../format/ptBR";
+import { REVIEW_NOT_A_SEND_NOTE } from "../../copy";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useOperatorScope } from "../../session/runtime";
 import { AdviceView } from "./AdviceView";
+import { DecisionPanel } from "./DecisionPanel";
 import { ReviewSummaryFields } from "./ReviewSummaryFields";
 
-// One review (get_review): its summary, the decision note and the decisions
-// the server would accept, shown as information only: there is no decision
-// control in this phase. The structured advice is a separate read, made only
-// when the operator opens it and dropped from memory when they close it
+// One review (get_review): its summary, the decision note and, while it is
+// open, the one browser act (S7.1): the member's decision, confirmed, which
+// sends nothing. The structured advice is a separate read, made only when the
+// operator opens it and dropped from memory when they close it
 // (docs/PHASE_2C_BRIEF.md §13 item 3). The reply draft is never shown.
 
 const Decision = ({ review }: { review: ReviewDetailData }) => (
   <Section title="Decisão">
-    <Note>{`${REVIEW_DECISIONS_CLI_NOTE} ${REVIEW_NOT_A_SEND_NOTE}`}</Note>
+    <Note>{REVIEW_NOT_A_SEND_NOTE}</Note>
     <Fields label="Decisão">
       <Field term="Nota da decisão">
         {review.decisionNote === null ? (
@@ -44,19 +40,9 @@ const Decision = ({ review }: { review: ReviewDetailData }) => (
           <span className="whitespace-pre-wrap">{review.decisionNote}</span>
         )}
       </Field>
-      <Field term="Decisões que o servidor aceitaria">
-        {review.allowedDecisions.length === 0 ? (
-          <None>nenhuma: esta revisão não está pendente</None>
-        ) : (
-          <span>
-            {review.allowedDecisions.map(reviewStatusLabel).join(", ")}
-          </span>
-        )}
-      </Field>
     </Fields>
-    {review.allowedDecisions.length === 0 ? null : (
-      <Note>{ALLOWED_DECISIONS_NOTE}</Note>
-    )}
+    {/* Keyed by review: a decision's outcome belongs to that review alone. */}
+    <DecisionPanel key={review.id} review={review} />
   </Section>
 );
 

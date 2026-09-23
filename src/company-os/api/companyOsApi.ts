@@ -3,9 +3,9 @@ import {
   parseOperationInput,
   parseOperationResult,
   toCompanyOsApiError,
-  type CompanyOsOperation,
-  type OperationInput,
-  type OperationResult,
+  type CompanyOsFunction,
+  type FunctionInput,
+  type FunctionResult,
 } from "../../../contracts/company-os-api/index.ts";
 import type {
   CallOptions,
@@ -21,7 +21,7 @@ import type {
 // the call as `anon`, whose 42501 the contracts map to OS403, and a signed-out
 // browser would be told it has no access. No session is OS401: signed out.
 
-const signedOut = (operation: CompanyOsOperation) =>
+const signedOut = (operation: CompanyOsFunction) =>
   new CompanyOsApiError(operation, "OS401");
 
 const sessionMatches = async (
@@ -40,11 +40,11 @@ const sessionMatches = async (
 };
 
 export const createCompanyOsApi = (session: SessionPort): CompanyOsApi => {
-  const call = async <O extends CompanyOsOperation>(
-    operation: O,
-    input: OperationInput<O>,
+  const invoke = async <F extends CompanyOsFunction>(
+    operation: F,
+    input: FunctionInput<F>,
     options: CallOptions = {},
-  ): Promise<OperationResult<O>> => {
+  ): Promise<FunctionResult<F>> => {
     // A key the function does not take never leaves the browser.
     const args = parseOperationInput(operation, input) as Readonly<
       Record<string, unknown>
@@ -64,5 +64,7 @@ export const createCompanyOsApi = (session: SessionPort): CompanyOsApi => {
     }
     return parseOperationResult(operation, response.data);
   };
-  return { call };
+  // The reads and the one act share every check; they differ only in what
+  // they may name (ports.ts).
+  return { call: invoke, act: invoke };
 };

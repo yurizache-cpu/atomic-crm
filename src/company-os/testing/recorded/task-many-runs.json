@@ -1507,7 +1507,18 @@
           ],
           "nextCursor": null
         },
-        "review": null,
+        "review": {
+          "id": "00000000-0000-4000-8000-002200000008",
+          "status": "pending",
+          "taskId": "00000000-0000-4000-8000-00200000000a",
+          "hasNote": false,
+          "createdAt": "2026-09-22T10:00:00.000000Z",
+          "agentRunId": null,
+          "capability": "lead_triage",
+          "reviewedAt": null,
+          "doNotContact": false,
+          "outboundStatus": null
+        },
         "company": {
           "id": "00000000-0000-4000-8000-001000000002",
           "name": "Clinic Annex"
@@ -1521,7 +1532,10 @@
         },
         "outbound": null,
         "pipeline": {
-          "review": null,
+          "review": {
+            "id": "00000000-0000-4000-8000-002200000008",
+            "status": "pending"
+          },
           "outbound": null,
           "latestRun": {
             "id": "00000000-0000-4000-8000-002100000021",

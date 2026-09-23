@@ -208,6 +208,13 @@ const LEGACY_A = `
    where v.id is null or v.agent_run_id <> :'run_decided' or v.status <> 'pending' or v.do_not_contact;
   select ops.record_review_decision(:'tenant_a', :'review_decided', 'accepted', '${SENTINELS.reviewer}',
                                     'operator-cli', '${CONTENT.decisionNote}');
+  -- (D) a second, still pending review on the admitted (synthetic) task: the
+  --     one the member decides through the browser act (actChecks.mjs). It is
+  --     dated an hour earlier, so the task still shows the decided review.
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, created_at)
+  values (:'tenant_a', :'company_a', :'task_admitted', gen_random_uuid(), 'lead_triage',
+          jsonb_build_object('response_draft', '${SENTINELS.draft}'), now() - interval '1 hour')
+  returning id as review_open \\gset
   select ops.trip_execution_stop('agent', '${CONTENT.stopReason}', '${SENTINELS.tripper}',
                                  :'tenant_a', :'company_a', null, :'agent_a') as stop_a \\gset
   select ops.trip_execution_stop('tenant', '${CONTENT.drillReason}', '${SENTINELS.tripper}',
@@ -261,6 +268,7 @@ const OFFICE_KEYS = Object.freeze([
   "run_decided",
   "job_decided",
   "review_decided",
+  "review_open",
   "stop_a",
   "stop_cleared",
   "channel_a",

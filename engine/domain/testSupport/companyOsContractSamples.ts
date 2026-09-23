@@ -165,7 +165,7 @@ export const CONTRACT_SAMPLES: {
       role: "tenant_operator",
       dataPolicy: "synthetic_or_test_only",
       allowedActions: {
-        decideReview: false,
+        decideReview: true,
         tripStop: false,
         viewAdvice: true,
       },

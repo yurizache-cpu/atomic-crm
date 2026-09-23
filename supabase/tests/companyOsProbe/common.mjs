@@ -39,9 +39,16 @@ export const CATALOGUE = Object.freeze([
   "communication_status",
 ]);
 
-/** The two browser acts. Neither may exist in any database before S8. */
+/** The one browser act (S7.1) and its arguments. */
+export const ACTS = Object.freeze({
+  decide_review: ["p_review_id", "p_decision"],
+});
+
+/** Every exposed function: the reads and the one act. */
+export const EXPOSED = Object.freeze([...CATALOGUE, ...Object.keys(ACTS)]);
+
+/** The trip: it may exist in no database before S8. */
 export const ABSENT_ACTS = Object.freeze({
-  decide_review: ["p_review_id", "p_decision", "p_note"],
   trip_stop: ["p_scope", "p_target_id", "p_reason"],
 });
 

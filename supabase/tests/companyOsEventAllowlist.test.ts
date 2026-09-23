@@ -36,10 +36,9 @@ const EVENT_SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 // the label leaves this list. (A label with no writer and no reason here fails;
 // "synthetic-ingress" was removed from the allowlist for that reason: only a
 // unit-test default in engine/domain/leadIntake.test.ts ever carried it.)
-const UNWRITTEN_SOURCES: Readonly<Record<string, string>> = Object.freeze({
-  "company-os-ui":
-    "brief §7.4 and §9 name it as the provenance of the two browser acts (the review decision and the trip); only their S8 gates will write it, after the S7 prerequisite, so it has no emitter today and is allowlisted now so the pinned vocabulary does not change when they land",
-});
+// company-os-ui left this list in S7.1: the review decision writes it
+// (ops.decide_review_as_member, supabase/migrations/20260923120000_*).
+const UNWRITTEN_SOURCES: Readonly<Record<string, string>> = Object.freeze({});
 
 const read = (path: string): string =>
   readFileSync(path, "utf8").replace(/\r\n/g, "\n");

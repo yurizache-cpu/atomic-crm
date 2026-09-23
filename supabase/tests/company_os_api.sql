@@ -1059,8 +1059,10 @@ language sql volatile as $$
     'job_events_seq', pg_sequence_last_value('ops.job_events_id_seq'));
 $$;
 
--- One entry per exposed function: its id and cursor parameters, each with the
--- kind of row it names. A function without an entry fails T3.
+-- One entry per exposed READ: its id and cursor parameters, each with the
+-- kind of row it names. A read without an entry fails T3. The one act,
+-- decide_review (VOLATILE), writes on success, so its isolation is proven in
+-- section V instead: a foreign or erased review answers like a random uuid.
 create temporary table cos_matrix (fn text not null, kind text not null, template text not null,
                                    right_kind text, prefix text) on commit drop;
 insert into cos_matrix values
@@ -1107,7 +1109,7 @@ begin
   -- Every function has an entry, and every uuid or cursor parameter a template.
   select string_agg(p.proname, ', ') into v_value
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'company_os_api'
+   where n.nspname = 'company_os_api' and p.provolatile = 's'
      and (not exists (select 1 from cos_matrix cm where cm.fn = p.proname)
           or ('uuid'::regtype = any (p.proargtypes::oid[]::regtype[])
               and not exists (select 1 from cos_matrix cm where cm.fn = p.proname and cm.kind = 'id'))
@@ -2536,7 +2538,10 @@ begin
     ('list_events', format('company_os_api.list_events(p_subject_type => ''task'', p_subject_id => %L)', pg_temp.id('b.task_ok')), 'OS404'),
     ('list_stops', 'company_os_api.list_stops()', 'ok'),
     ('list_stops', format('company_os_api.list_stops(p_include_cleared => true, p_cursor => %L)', 'st1:' || pg_temp.id('b.stop_agent')), 'OS400'),
-    ('list_stops', 'company_os_api.list_stops(p_limit => 0)', 'OS400');
+    ('list_stops', 'company_os_api.list_stops(p_limit => 0)', 'OS400'),
+    ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('b.review_ok'), 'rejected'), 'OS404'),
+    ('decide_review', format('company_os_api.decide_review(%L, %L)', v_random, 'rejected'), 'OS404'),
+    ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('a.review_ok'), 'bogus'), 'OS400');
 
   -- Every exposed function has variants, and for the member each variant
   -- answers as intended: the bad ones are really bad.
@@ -2932,7 +2937,8 @@ $$;
 -- The exposed catalogue: each operation, its full argument list as the
 -- catalogue prints it, and the one callee its gate may reach, with the
 -- arguments the gate passes.
-create temporary table cos_catalogue (op text primary key, args text not null, callee text not null, callee_args text not null)
+create temporary table cos_catalogue (op text primary key, args text not null, callee text not null, callee_args text not null,
+                                       act boolean not null default false)
   on commit drop;
 insert into cos_catalogue values
   ('operator_context', '', 'read_operator_context', 'v.tenant_id, v.principal_id, v.role'),
@@ -2955,6 +2961,9 @@ insert into cos_catalogue values
    'read_stops_in_tenant', 'v.tenant_id, p_include_cleared, p_cursor, p_limit'),
   ('spend_summary', '', 'read_spend_summary', 'v.tenant_id'),
   ('communication_status', '', 'read_communication_status', 'v.tenant_id');
+insert into cos_catalogue (op, args, callee, callee_args, act) values
+  ('decide_review', 'p_review_id uuid, p_decision text', 'decide_review_as_member',
+   'v.tenant_id, v.actor, p_review_id, p_decision', true);
 
 -- The internal catalogue the read-surface migration adds to ops besides the
 -- gates, with each function's volatility and configuration: search_path = ''
@@ -2980,7 +2989,9 @@ insert into cos_internal values
   ('ops.read_agent_run_detail(uuid, uuid)', 's'), ('ops.read_reviews(uuid, text, text, integer)', 's'),
   ('ops.read_review_detail(uuid, uuid)', 's'), ('ops.read_review_advice(uuid, uuid)', 's'),
   ('ops.read_stops_in_tenant(uuid, boolean, text, integer)', 's'), ('ops.read_spend_summary(uuid)', 's'),
-  ('ops.read_communication_status(uuid)', 's');
+  ('ops.read_communication_status(uuid)', 's'),
+  ('ops.decide_review_as_member(uuid, text, uuid, text)', 'v'),
+  ('ops.cos_review_decidable(uuid, ops.review_items)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -2992,9 +3003,10 @@ language sql stable as $$
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace where f.oid = p;
 $$;
 
--- P1. The catalogue: exactly the 15 exposed functions with their full
---     signatures, one gate each with the same arguments, the internal set, no
---     overload, no relation or type in the exposed schema, and no act.
+-- P1. The catalogue: exactly the 16 exposed functions (15 reads and the one
+--     act, decide_review) with their full signatures, one gate each with the
+--     same arguments, the internal set, no overload, no relation or type in
+--     the exposed schema, and no trip.
 create function pg_temp.pin_catalogue() returns void
 language plpgsql as $f$
 declare
@@ -3036,24 +3048,33 @@ begin
            where n.nspname = 'ops' and (f.proname ~ '^(cos_|read_)'
               or f.proname in ('guard_principal_change', 'guard_membership_change', 'refuse_identity_truncate',
                                'membership_tenant_eligible', 'grant_membership', 'revoke_membership',
-                               'operator_scope', 'agent_operational_state'))) f
+                               'operator_scope', 'agent_operational_state', 'decide_review_as_member'))) f
     full join cos_internal i on i.signature = pg_temp.sig(f.oid)
    where f.oid is null or i.signature is null;
   if v_bad is not null then
     raise exception 'P1: the internal catalogue drifted: %', v_bad;
   end if;
-  -- No browser act exists before S8 (after the S7 prerequisite), anywhere.
+  -- The review decision is the one act (S7.1); no trip and no clear exists
+  -- before S8, anywhere.
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad from pg_proc f
-   where f.proname in ('decide_review', 'trip_stop', 'gate_decide_review', 'gate_trip_stop', 'trip_stop_in_tenant')
+   where f.proname in ('trip_stop', 'gate_trip_stop', 'trip_stop_in_tenant')
       or (f.pronamespace = 'company_os_api'::regnamespace and f.proname ~ 'clear')
       or (f.pronamespace = 'ops'::regnamespace and f.proname ~ '^gate_.*clear');
   if v_bad is not null then
-    raise exception 'P1: an act function exists before S8: %', v_bad;
+    raise exception 'P1: a trip or clear function exists before S8: %', v_bad;
   end if;
 end
 $f$;
 
--- P2. Each exposed function: SECURITY DEFINER, search_path = '', STABLE,
+-- An exposed function's pinned volatility: VOLATILE for the one act, STABLE
+-- for every read.
+create function pg_temp.volatility_of(p_op text) returns "char"
+language sql stable as $$
+  select case when exists (select 1 from cos_catalogue c where c.op = p_op and c.act) then 'v' else 's' end::"char";
+$$;
+
+-- P2. Each exposed function: SECURITY DEFINER, search_path = '', STABLE (the
+--     one act VOLATILE),
 --     owned by ops_operator_api, executable by authenticated (and implicitly
 --     its owner) only, its body exactly one call to its own gate.
 create function pg_temp.pin_exposed() returns void
@@ -3064,7 +3085,7 @@ begin
   select string_agg(format('%s (%s)', f.proname, concat_ws(' ',
            case when not f.prosecdef then 'not DEFINER' end,
            case when f.proconfig is distinct from '{"search_path=\"\""}'::text[] then 'config ' || f.proconfig::text end,
-           case when f.provolatile <> 's' then 'volatility ' || f.provolatile::text end,
+           case when f.provolatile <> pg_temp.volatility_of(f.proname) then 'volatility ' || f.provolatile::text end,
            case when f.proowner <> 'ops_operator_api'::regrole then 'owner ' || f.proowner::regrole::text end,
            case when f.proacl is distinct from '{ops_operator_api=X/ops_operator_api,authenticated=X/ops_operator_api}'::aclitem[]
                 then 'acl ' || coalesce(f.proacl::text, 'default (PUBLIC)') end,
@@ -3073,7 +3094,8 @@ begin
                 then 'body ' || btrim(f.prosrc) end)), '; ') into v_bad
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace
    where n.nspname = 'company_os_api'
-     and (not f.prosecdef or f.proconfig is distinct from '{"search_path=\"\""}'::text[] or f.provolatile <> 's'
+     and (not f.prosecdef or f.proconfig is distinct from '{"search_path=\"\""}'::text[]
+          or f.provolatile <> pg_temp.volatility_of(f.proname)
           or f.proowner <> 'ops_operator_api'::regrole
           or f.proacl is distinct from '{ops_operator_api=X/ops_operator_api,authenticated=X/ops_operator_api}'::aclitem[]
           or btrim(regexp_replace(f.prosrc, '\s+', ' ', 'g'))
@@ -3120,7 +3142,7 @@ begin
            case when f.proacl is distinct from '{postgres=X/postgres,ops_operator_api=X/postgres}'::aclitem[]
                 then 'acl ' || coalesce(f.proacl::text, 'default (PUBLIC)') end,
            case when f.proconfig is distinct from '{"search_path=\"\""}'::text[] then 'config ' || coalesce(f.proconfig::text, 'none') end,
-           case when f.provolatile <> 's' then 'volatility ' || f.provolatile::text end,
+           case when f.provolatile <> pg_temp.volatility_of(c.op) then 'volatility ' || f.provolatile::text end,
            case when b.actual <> b.expected then 'body ' || b.actual end,
            case when b.callees is distinct from b.pinned then 'callees ' || b.callees::text end)), '; ') into v_bad
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace and n.nspname = 'ops'
@@ -3144,7 +3166,7 @@ begin
                as pinned) b
    where not f.prosecdef or f.proowner <> 'postgres'::regrole
       or f.proacl is distinct from '{postgres=X/postgres,ops_operator_api=X/postgres}'::aclitem[]
-      or f.proconfig is distinct from '{"search_path=\"\""}'::text[] or f.provolatile <> 's'
+      or f.proconfig is distinct from '{"search_path=\"\""}'::text[] or f.provolatile <> pg_temp.volatility_of(c.op)
       or b.actual <> b.expected or b.callees is distinct from b.pinned;
   if v_bad is not null then
     raise exception 'P3: a gate is not exactly the resolver, its one pinned callee and no-store, with its pinned owner and ACL: %', v_bad;
@@ -3189,12 +3211,15 @@ $f$;
 --     resolver only, auth.sessions and auth.users). Each named service a
 --     browser must never reach is VOLATILE, so the volatility rule alone would
 --     catch it.
+-- The READ graph: the one act's path (decide_review and its gate) writes by
+-- design and is pinned on its own by P5b.
 create function pg_temp.graph_bodies() returns table (fid oid)
 language sql stable as $$
   select f.oid from pg_proc f join pg_namespace n on n.oid = f.pronamespace
-   where n.nspname = 'company_os_api'
-      or (n.nspname = 'ops' and (f.proname ~ '^(gate_|read_|cos_)'
-          or f.proname in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state')));
+   where f.proname not in ('decide_review', 'gate_decide_review')
+     and (n.nspname = 'company_os_api'
+          or (n.nspname = 'ops' and (f.proname ~ '^(gate_|read_|cos_)'
+              or f.proname in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state'))));
 $$;
 
 -- A body as code only, lower-cased: every comment removed and every string
@@ -3600,6 +3625,42 @@ begin
 end
 $f$;
 
+-- P5b. The act's path (S7.1). Its gate reaches the resolver and its one callee
+--      (P3). The callee calls only the authoritative ops.record_review_decision,
+--      ops.cos_ts and the decidable rule ops.cos_review_decidable (a STABLE
+--      read helper, pinned with the reads) and writes nothing itself; the exposed act, its gate, its
+--      callee and the authoritative operation name no send, no outbound row,
+--      no job, no run, no WhatsApp or CRM service, no schema public, no email
+--      and no dynamic SQL: accepting a review is not sending (SI-45).
+create function pg_temp.pin_act_graph() returns void
+language plpgsql as $f$
+declare
+  c_path constant regprocedure[] := array[
+    'company_os_api.decide_review(uuid, text)'::regprocedure, 'ops.gate_decide_review(uuid, text)'::regprocedure,
+    'ops.decide_review_as_member(uuid, text, uuid, text)'::regprocedure,
+    'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure];
+  v_bad text;
+begin
+  select string_agg(distinct m[1], ', ') into v_bad
+    from pg_proc f, regexp_matches(pg_temp.code_only(f.prosrc), 'ops\."?([a-z_0-9]+)"?\s*\(', 'g') m
+   where f.oid = 'ops.decide_review_as_member(uuid, text, uuid, text)'::regprocedure
+     and m[1] not in ('record_review_decision', 'cos_ts', 'cos_review_decidable');
+  if v_bad is not null then
+    raise exception 'P5b: the act''s callee reaches beyond record_review_decision, cos_ts and cos_review_decidable: %', v_bad;
+  end if;
+  select string_agg(pg_temp.sig(f.oid), ', ') into v_bad
+    from pg_proc f, lateral (select regexp_replace(pg_temp.code_only(f.prosrc), 'for\s+update', ' ', 'g') as code) b
+   where f.oid = any (c_path)
+     and (b.code ~ '(outbound|send|enqueue|_jobs?\M|\mjobs?\M|agent_runs?\M|whatsapp|crm_|public\.|email)'
+          or b.code ~ '(^|[\s;])execute\s'
+          or (f.oid <> 'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure
+              and b.code ~ '\m(insert|update|delete|truncate|merge|copy)\M'));
+  if v_bad is not null then
+    raise exception 'P5b: the act''s path names a send, an outbound row, a job, a run, a WhatsApp or CRM service, public, an email or dynamic SQL, or writes outside the authoritative operation: %', v_bad;
+  end if;
+end
+$f$;
+
 do $$
 begin
   perform pg_temp.pin_catalogue();
@@ -3607,6 +3668,7 @@ begin
   perform pg_temp.pin_gates();
   perform pg_temp.pin_internal();
   perform pg_temp.pin_graph();
+  perform pg_temp.pin_act_graph();
   perform pg_temp.pin_role();
   perform pg_temp.pin_k4();
   perform pg_temp.pin_k5();
@@ -3766,6 +3828,24 @@ begin
   perform pg_temp.expect_pin_failure('X21 a paged read left to the plan cache''s generic plan (section E)',
     'alter function ops.read_tasks(uuid, text, text, uuid, integer) reset plan_cache_mode',
     'pg_temp.pin_internal', 'P4: an internal function');
+  perform pg_temp.expect_pin_failure('X22 the act''s callee inserting an outbound row',
+    $m$create or replace function ops.decide_review_as_member(p_tenant_id pg_catalog.uuid, p_actor pg_catalog.text,
+                                                        p_review_id pg_catalog.uuid, p_decision pg_catalog.text)
+       returns pg_catalog.jsonb language plpgsql volatile security invoker set search_path = '' as $b$
+       begin
+         insert into ops.outbound_messages default values;
+         return ops.record_review_decision(p_tenant_id, p_review_id, p_decision, p_actor, 'company-os-ui', null);
+       end $b$$m$,
+    'pg_temp.pin_act_graph', 'P5b: the act''s path names');
+  perform pg_temp.expect_pin_failure('X23 the act''s callee asking for send eligibility',
+    $m$create or replace function ops.decide_review_as_member(p_tenant_id pg_catalog.uuid, p_actor pg_catalog.text,
+                                                        p_review_id pg_catalog.uuid, p_decision pg_catalog.text)
+       returns pg_catalog.jsonb language plpgsql volatile security invoker set search_path = '' as $b$
+       begin
+         perform ops.whatsapp_send_eligibility(p_tenant_id, p_review_id);
+         return ops.record_review_decision(p_tenant_id, p_review_id, p_decision, p_actor, 'company-os-ui', null);
+       end $b$$m$,
+    'pg_temp.pin_act_graph', 'P5b: the act''s callee reaches beyond');
 end
 $x$;
 
@@ -3848,6 +3928,232 @@ begin
   if pg_get_functiondef('ops.read_events(uuid, text, text, uuid, integer)'::regprocedure) <> v_def then
     raise exception 'X17: the widened subject check outlived its subtransaction';
   end if;
+end
+$$;
+
+-- ===========================================================================
+-- V. THE ONE ACT: decide_review (S7.1; brief §9 row 16, §7.5; SI-45).
+--    A member decides an open review of their own tenant, once. The decision
+--    goes through ops.record_review_decision, with the principal as the
+--    reviewer and company-os-ui as the source, and NOTHING IS SENT: no
+--    outbound row, no job, no run, no communication event. A foreign or
+--    missing review answers alike and writes nothing; a review outside the
+--    synthetic and test scope (BASELINE Q8), of another capability, or of a
+--    do-not-contact lead when accepting, is refused and unchanged; a decided
+--    review is final. The identity shapes are refused first (section I).
+-- ===========================================================================
+
+-- Fresh pending reviews on the synthetic task a.task_ok, so no other section's
+-- fixture changes state.
+create temporary table cos_act (name text primary key, id uuid not null) on commit drop;
+
+do $$
+declare
+  t  uuid := pg_temp.id('tenant_a');
+  co uuid := (select r.company_id from ops.review_items r where r.id = pg_temp.id('a.review_ok'));
+  n  text;
+begin
+  foreach n in array array['accept', 'reject', 'needs_edit', 'repeat', 'other_reviewer', 'dnc'] loop
+    with created as (
+      insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+      values (t, co, pg_temp.id('a.task_ok'), gen_random_uuid(), 'lead_triage', pg_temp.triage_result('a'), n = 'dnc')
+      returning id)
+    insert into cos_act select n, created.id from created;
+  end loop;
+end
+$$;
+
+-- The state of everything a decision must not touch, and its change since.
+create function pg_temp.act_untouched() returns jsonb
+language sql stable as $$
+  select jsonb_build_object(
+    'outbound', (select count(*) from ops.outbound_messages),
+    'jobs', (select count(*) from ops.jobs),
+    'runs', (select count(*) from ops.agent_runs),
+    'tasks', (select count(*) from ops.tasks),
+    'communication', (select count(*) from ops.events e where e.type like 'communication.%'));
+$$;
+
+-- V1. accepted, rejected and needs_edit, each once, as the principal, with
+--     one event from company-os-ui; the response is exactly the pinned shape.
+do $$
+declare
+  v_before   jsonb := pg_temp.act_untouched();
+  v_reviewer text := 'principal:' || pg_temp.id('principal.m_a');
+  c          record;
+  v          jsonb;
+  v_id       uuid;
+  v_item     ops.review_items;
+begin
+  for c in select * from (values ('accept', 'accepted'), ('reject', 'rejected'), ('needs_edit', 'needs_edit'))
+             as x (name, decision) loop
+    v_id := (select a.id from cos_act a where a.name = c.name);
+    v := pg_temp.member_body('V1', format('company_os_api.decide_review(%L, %L)', v_id, c.decision));
+    if (select array_agg(k order by k) from jsonb_object_keys(v) k) is distinct from
+         array['asOf', 'recorded', 'reviewItemId', 'status', 'v']
+       or v ->> 'status' <> c.decision or (v ->> 'recorded')::boolean is not true
+       or (v ->> 'reviewItemId')::uuid <> v_id or (v ->> 'v')::int <> 1 then
+      raise exception 'V1: % answered %', c.name, v;
+    end if;
+    select * into v_item from ops.review_items r where r.id = v_id;
+    if v_item.status <> c.decision or v_item.reviewer <> v_reviewer or v_item.decision_note is not null
+       or v_item.reviewed_at is null then
+      raise exception 'V1: % recorded status %, reviewer %, note %', c.name, v_item.status, v_item.reviewer,
+        v_item.decision_note;
+    end if;
+    if (select count(*) from ops.events e
+         where e.type = 'lead_triage.reviewed' and e.source = 'company-os-ui'
+           and e.payload ->> 'review_item_id' = v_id::text and e.payload ->> 'decision' = c.decision) <> 1 then
+      raise exception 'V1: % did not write exactly one lead_triage.reviewed event from company-os-ui', c.name;
+    end if;
+  end loop;
+  -- Accepting is not sending (SI-45): no outbound row, job, run, task or
+  -- communication event came from any of the three decisions.
+  if pg_temp.act_untouched() is distinct from v_before then
+    raise exception 'V1: a decision touched the send path or the runtime: before %, after %',
+      v_before, pg_temp.act_untouched();
+  end if;
+end
+$$;
+
+-- V2. Final once: the same principal repeating the same decision is answered
+--     as already recorded, with no second event; any other decision, and the
+--     same decision by another principal, is OS409, and nothing changes.
+do $$
+declare
+  v_id     uuid := (select a.id from cos_act a where a.name = 'repeat');
+  v_other  uuid := (select a.id from cos_act a where a.name = 'other_reviewer');
+  v        jsonb;
+  v_events bigint;
+begin
+  perform pg_temp.member_body('V2', format('company_os_api.decide_review(%L, %L)', v_id, 'rejected'));
+  v_events := (select count(*) from ops.events e where e.payload ->> 'review_item_id' = v_id::text);
+  v := pg_temp.member_body('V2', format('company_os_api.decide_review(%L, %L)', v_id, 'rejected'));
+  if v ->> 'status' <> 'rejected' or (v ->> 'recorded')::boolean is not false
+     or (select count(*) from ops.events e where e.payload ->> 'review_item_id' = v_id::text) <> v_events then
+    raise exception 'V2: repeating the same decision was not answered as already recorded: %', v;
+  end if;
+  v := pg_temp.api(pg_temp.claims('m_a'), format('company_os_api.decide_review(%L, %L)', v_id, 'accepted'));
+  if v is distinct from pg_temp.refusal('decide_review', 'OS409') then
+    raise exception 'V2: changing a decided review answered %', v;
+  end if;
+  perform pg_temp.member_body('V2', format('company_os_api.decide_review(%L, %L)', v_other, 'needs_edit'));
+  v := pg_temp.api(pg_temp.claims('banned_past'), format('company_os_api.decide_review(%L, %L)', v_other, 'needs_edit'));
+  if v is distinct from pg_temp.refusal('decide_review', 'OS409') then
+    raise exception 'V2: the same decision by another principal answered %', v;
+  end if;
+  if (select r.status || '/' || r.reviewer from ops.review_items r where r.id = v_other)
+     <> 'needs_edit/principal:' || pg_temp.id('principal.m_a') then
+    raise exception 'V2: another principal''s refused decision changed the review';
+  end if;
+end
+$$;
+
+-- The act's fixed refusal for a SQLSTATE: one data-free message, as every gate.
+create function pg_temp.act_refusal(p_code text) returns jsonb
+language sql immutable as $$
+  select jsonb_build_object('ok', false, 'code', p_code, 'message',
+           'company_os_api.decide_review: ' || case p_code when 'OS400' then 'bad request' when 'OS401' then 'not signed in'
+             when 'OS403' then 'no access' when 'OS404' then 'not found' when 'OS409' then 'conflict' end,
+           'detail', '', 'hint', '');
+$$;
+
+-- V3. Refusals that write nothing: a do-not-contact lead cannot be accepted
+--     (OS403; it can still be rejected); a review of another capability, of a
+--     task no admission created, or of a WhatsApp line no longer in test mode
+--     (BASELINE Q8) is OS403; a foreign review answers exactly like a random
+--     uuid (OS404); a decision outside the vocabulary is OS400.
+do $$
+declare
+  v_before jsonb := pg_temp.act_untouched();
+  v_dnc    uuid := (select a.id from cos_act a where a.name = 'dnc');
+  c        record;
+  v        jsonb;
+  v_rows   jsonb;
+begin
+  v_rows := (select jsonb_agg(to_jsonb(r) order by r.id) from ops.review_items r);
+  for c in select * from (values
+      ('a do-not-contact lead, accepted', v_dnc, 'accepted', 'OS403'),
+      ('another capability', pg_temp.id('a.review_capability'), 'rejected', 'OS403'),
+      ('a task no admission created', pg_temp.id('a.review_no_admission'), 'rejected', 'OS403'),
+      ('a WhatsApp line no longer in test mode', pg_temp.id('a.review_prod'), 'rejected', 'OS403'),
+      ('a review of tenant B', pg_temp.id('b.review_ok'), 'rejected', 'OS404'),
+      ('a decided review of tenant B', pg_temp.id('b.review_accepted'), 'accepted', 'OS404'),
+      ('a random uuid', gen_random_uuid(), 'rejected', 'OS404'),
+      ('a decision outside the vocabulary', pg_temp.id('a.review_ok'), 'approved', 'OS400'),
+      ('no decision', pg_temp.id('a.review_ok'), null, 'OS400')
+    ) as x (label, review_id, decision, code) loop
+    v := pg_temp.api(pg_temp.claims('m_a'), format('company_os_api.decide_review(%L, %L)', c.review_id, c.decision));
+    if v is distinct from pg_temp.act_refusal(c.code) then
+      raise exception 'V3: % answered %, not %', c.label, v, pg_temp.act_refusal(c.code);
+    end if;
+  end loop;
+  if (select jsonb_agg(to_jsonb(r) order by r.id) from ops.review_items r) is distinct from v_rows
+     or pg_temp.act_untouched() is distinct from v_before then
+    raise exception 'V3: a refused decision changed a review or the send path';
+  end if;
+  -- The do-not-contact lead can still be rejected.
+  perform pg_temp.member_body('V3', format('company_os_api.decide_review(%L, %L)', v_dnc, 'rejected'));
+end
+$$;
+
+-- V5. What the screen offers is what the act accepts: get_review lists no
+--     decision for a review outside the synthetic and test scope or of another
+--     capability, no acceptance for a do-not-contact lead, and all three for
+--     an open synthetic review (ops.cos_review_decidable, shared by both).
+do $$
+declare
+  c record;
+  v jsonb;
+begin
+  with created as (
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+    select r.tenant_id, r.company_id, r.task_id, gen_random_uuid(), 'lead_triage', pg_temp.triage_result('a'), dnc
+      from ops.review_items r, (values (false), (true)) as x (dnc)
+     where r.id = pg_temp.id('a.review_ok')
+    returning id, do_not_contact)
+  insert into cos_act
+  select case when created.do_not_contact then 'open_dnc' else 'open' end, created.id from created;
+  for c in select * from (values
+      ('another capability', pg_temp.id('a.review_capability'), '[]'),
+      ('a task no admission created', pg_temp.id('a.review_no_admission'), '[]'),
+      ('a WhatsApp line no longer in test mode', pg_temp.id('a.review_prod'), '[]'),
+      ('an open do-not-contact synthetic review', (select a.id from cos_act a where a.name = 'open_dnc'),
+       '["rejected", "needs_edit"]'),
+      ('an open synthetic review', (select a.id from cos_act a where a.name = 'open'),
+       '["accepted", "rejected", "needs_edit"]')
+    ) as x (label, review_id, expected) loop
+    v := pg_temp.member_body('V5', format('company_os_api.get_review(%L)', c.review_id));
+    if v -> 'allowedDecisions' is distinct from c.expected::jsonb then
+      raise exception 'V5: % lists %, not %', c.label, v -> 'allowedDecisions', c.expected;
+    end if;
+  end loop;
+end
+$$;
+
+-- V4. No other role reaches the act's path: anon and service_role cannot call
+--     it, and no application role executes the callee, the gate or the
+--     authoritative operation directly.
+do $$
+declare
+  v    jsonb;
+  r    text;
+  f    text;
+begin
+  foreach r in array array['anon', 'service_role'] loop
+    v := pg_temp.api(pg_temp.claims('m_a'), format('company_os_api.decide_review(%L, %L)', gen_random_uuid(), 'rejected'), r);
+    if (v ->> 'ok')::boolean or v ->> 'code' <> '42501' then
+      raise exception 'V4: % reached decide_review: %', r, v;
+    end if;
+  end loop;
+  foreach r in array array['anon', 'authenticated', 'service_role', 'ops_worker', 'ops_gateway'] loop
+    foreach f in array array['ops.decide_review_as_member(uuid, text, uuid, text)', 'ops.gate_decide_review(uuid, text)',
+                             'ops.record_review_decision(uuid, uuid, text, text, text, text)'] loop
+      if has_function_privilege(r, f::regprocedure, 'EXECUTE') then
+        raise exception 'V4: % can execute %', r, f;
+      end if;
+    end loop;
+  end loop;
 end
 $$;
 

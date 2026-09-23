@@ -921,6 +921,26 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
+        "allowedDecisions": []
+      }
+    },
+    {
+      "operation": "get_review",
+      "args": { "p_review_id": "00000000-0000-4000-8000-002200000008" },
+      "response": {
+        "v": 1,
+        "id": "00000000-0000-4000-8000-002200000008",
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "status": "pending",
+        "taskId": "00000000-0000-4000-8000-00200000000a",
+        "hasNote": false,
+        "createdAt": "2026-09-22T10:00:00.000000Z",
+        "agentRunId": null,
+        "capability": "lead_triage",
+        "reviewedAt": null,
+        "decisionNote": null,
+        "doNotContact": false,
+        "outboundStatus": null,
         "allowedDecisions": ["accepted", "rejected", "needs_edit"]
       }
     },
@@ -1020,6 +1040,23 @@
         "asOf": "2026-09-22T11:00:00.000000Z",
         "reviewId": "00000000-0000-4000-8000-002200000007",
         "withheld": "origin_not_synthetic_or_test"
+      }
+    },
+    {
+      "operation": "get_review_advice",
+      "args": { "p_review_id": "00000000-0000-4000-8000-002200000008" },
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "flags": ["unclear"],
+        "intent": "book_appointment",
+        "outcome": "triaged",
+        "summary": "A synthetic person asks about a first appointment.",
+        "priority": "normal",
+        "reviewId": "00000000-0000-4000-8000-002200000008",
+        "capability": "lead_triage",
+        "needsHumanReview": false,
+        "recommendedNextAction": "Offer two synthetic slots."
       }
     },
     {
@@ -3134,7 +3171,18 @@
           ],
           "nextCursor": null
         },
-        "review": null,
+        "review": {
+          "id": "00000000-0000-4000-8000-002200000008",
+          "status": "pending",
+          "taskId": "00000000-0000-4000-8000-00200000000a",
+          "hasNote": false,
+          "createdAt": "2026-09-22T10:00:00.000000Z",
+          "agentRunId": null,
+          "capability": "lead_triage",
+          "reviewedAt": null,
+          "doNotContact": false,
+          "outboundStatus": null
+        },
         "company": {
           "id": "00000000-0000-4000-8000-001000000002",
           "name": "Clinic Annex"
@@ -3148,7 +3196,10 @@
         },
         "outbound": null,
         "pipeline": {
-          "review": null,
+          "review": {
+            "id": "00000000-0000-4000-8000-002200000008",
+            "status": "pending"
+          },
           "outbound": null,
           "latestRun": {
             "id": "00000000-0000-4000-8000-002100000021",
@@ -7259,6 +7310,18 @@
             "reviewedAt": null,
             "doNotContact": false,
             "outboundStatus": null
+          },
+          {
+            "id": "00000000-0000-4000-8000-002200000008",
+            "status": "pending",
+            "taskId": "00000000-0000-4000-8000-00200000000a",
+            "hasNote": false,
+            "createdAt": "2026-09-22T10:00:00.000000Z",
+            "agentRunId": null,
+            "capability": "lead_triage",
+            "reviewedAt": null,
+            "doNotContact": false,
+            "outboundStatus": null
           }
         ],
         "nextCursor": null
@@ -9428,7 +9491,10 @@
               "name": "Clinic Annex"
             },
             "pipeline": {
-              "review": null,
+              "review": {
+                "id": "00000000-0000-4000-8000-002200000008",
+                "status": "pending"
+              },
               "outbound": null,
               "latestRun": {
                 "id": "00000000-0000-4000-8000-002100000021",
@@ -9816,7 +9882,10 @@
               "name": "Clinic Annex"
             },
             "pipeline": {
-              "review": null,
+              "review": {
+                "id": "00000000-0000-4000-8000-002200000008",
+                "status": "pending"
+              },
               "outbound": null,
               "latestRun": {
                 "id": "00000000-0000-4000-8000-002100000021",
@@ -10087,7 +10156,7 @@
         "allowedActions": {
           "tripStop": false,
           "viewAdvice": true,
-          "decideReview": false
+          "decideReview": true
         }
       }
     },
@@ -10120,7 +10189,7 @@
           "inactive": 3
         },
         "reviews": {
-          "pending": 2,
+          "pending": 3,
           "oldestPendingAt": "2026-09-22T10:00:00.000000Z"
         },
         "outbound": {

@@ -24,7 +24,7 @@
 //   * a foreign id answers exactly like a random one, for each selector with a
 //     tenant B id of the same kind (agent, task, run, review) and of other
 //     kinds, and for the list filters and a cursor naming a tenant B row;
-//   * the live catalogue equals this probe's CATALOGUE exactly, both in the
+//   * the live catalogue equals this probe's EXPOSED list exactly, both in the
 //     member's company_os_api OpenAPI document and in pg_proc: a new exposed
 //     function fails the probe until it has an entry, and so a matrix;
 //   * a signed-in non-member, a revoked member, a member of a tenant outside
@@ -37,8 +37,14 @@
 //   * `ops` answers 406 PGRST106 by profile for every credential, a signed-in
 //     member included, across the whole live ops catalogue for the member;
 //   * a tenant, company, actor or reviewer argument, or any other extra key,
-//     matches no function (404 PGRST202), and neither browser act exists
-//     (decide_review, trip_stop: 404 PGRST202) before S8;
+//     matches no function (404 PGRST202), and the trip does not exist
+//     (trip_stop: 404 PGRST202) before S8;
+//   * the one act, decide_review (S7.1): every other signed-in caller is
+//     refused OS403 first; a tenant, actor, reviewer or note argument matches
+//     no function; another tenant's review answers like a random uuid; a
+//     review outside the synthetic and test scope is refused; the member's
+//     decision is recorded once, no-store, as the principal, and nothing is
+//     sent;
 //   * GraphQL introspection with a member's JWT reflects nothing of
 //     company_os_api or ops, and the anonymous OpenAPI document lists no
 //     company_os_api function;
@@ -128,6 +134,7 @@ import { randomBytes } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import {
   CATALOGUE,
+  EXPOSED,
   EMAIL_DOMAIN,
   EMAIL_PREFIX,
   UUID,
@@ -166,6 +173,7 @@ import {
   othersAreRefused,
   signOutTakesEffect,
 } from "./companyOsProbe/sessionChecks.mjs";
+import { memberDecidesOnce } from "./companyOsProbe/actChecks.mjs";
 
 const CLIENT_OPTIONS = Object.freeze({
   auth: {
@@ -190,7 +198,7 @@ async function main() {
     process.exit(1);
   }
   process.stdout.write(
-    `  ${CATALOGUE.length} company_os_api functions, 5 keys and 7 real sessions: ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
+    `  ${EXPOSED.length} company_os_api functions (${CATALOGUE.length} reads, 1 act), 5 keys and 7 real sessions: ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
   );
 }
 
@@ -276,6 +284,10 @@ async function probe(origin, keys) {
         get_run: { p_run_id: t.ids.run_a },
         get_review: { p_review_id: t.ids.review_pending },
         get_review_advice: { p_review_id: t.ids.review_pending },
+        decide_review: {
+          p_review_id: t.ids.review_open,
+          p_decision: "rejected",
+        },
       })[fn] ?? {};
     /** A member read that must succeed, kept for the final sweep. */
     t.read = async (fn, args, credential = t.member.credential) => {
@@ -299,6 +311,7 @@ async function probe(origin, keys) {
     await graphqlAndOpenApi(t, origin, rest);
     await emailChangeKeepsThePrincipal(t, admin, signIn, emailOf);
     await othersAreRefused(t, rpc);
+    await memberDecidesOnce(t, rpc);
     await signOutTakesEffect(t, origin, keys, rpc);
     sweepMemberOutputs(t);
   } finally {

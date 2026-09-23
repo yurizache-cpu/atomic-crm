@@ -26,12 +26,12 @@ export const OperatorContextSchema = z.strictObject({
   tenant: z.strictObject({ id: UuidSchema, name: z.string() }),
   role: z.literal("tenant_operator"),
   dataPolicy: z.literal("synthetic_or_test_only"),
-  // Hints only: every refusal comes from SQL. Both acts are pinned false while
-  // their functions do not exist (S7, S8), so a context that claims either one
-  // fails to parse: a tripwire. S8 widens them to z.boolean() in the same
-  // reviewed change that adds decide_review and trip_stop to the catalogue.
+  // Hints only: every refusal comes from SQL. The review decision exists
+  // (S7.1), so decideReview is a boolean; the trip is pinned false while its
+  // function does not exist (S8), so a context that claims it fails to parse:
+  // a tripwire. S8 widens it in the change that adds trip_stop.
   allowedActions: z.strictObject({
-    decideReview: z.literal(false),
+    decideReview: z.boolean(),
     tripStop: z.literal(false),
     viewAdvice: z.boolean(),
   }),

@@ -3,7 +3,7 @@
 // (supabase/tests/companyOsApiExposure.mjs).
 
 import {
-  CATALOGUE,
+  EXPOSED,
   SCHEMA_REFUSAL,
   authOf,
   check,
@@ -21,7 +21,7 @@ const INTROSPECTION =
 export async function keysAreRefused(t, rpc) {
   for (const [who, credential] of Object.entries(t.keyCredentials)) {
     const status = who === "service_role" || who === "secret" ? 403 : 401;
-    for (const fn of CATALOGUE) {
+    for (const fn of EXPOSED) {
       const answer = await rpc(fn, t.argsFor(fn), credential);
       expectAnswer(answer, status, SCHEMA_REFUSAL, `${who}: ${fn}`);
     }
@@ -122,7 +122,7 @@ export async function graphqlAndOpenApi(t, origin, rest) {
   );
   const camel = (name) => name.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
   const reflected = [
-    ...CATALOGUE.flatMap((fn) => [fn, camel(fn)]),
+    ...EXPOSED.flatMap((fn) => [fn, camel(fn)]),
     ...t.opsFunctions.filter((fn) => !publicNames.has(fn)),
     // The field names pg_graphql derives from a relation.
     ...t.opsRelations
@@ -155,7 +155,7 @@ export async function graphqlAndOpenApi(t, origin, rest) {
     );
     check(
       !rpcPaths(standard).some((path) =>
-        CATALOGUE.includes(path.slice("/rpc/".length)),
+        EXPOSED.includes(path.slice("/rpc/".length)),
       ),
       `${who}: the default OpenAPI document lists a company_os_api function`,
     );
@@ -168,7 +168,7 @@ export async function graphqlAndOpenApi(t, origin, rest) {
 }
 
 /**
- * The live catalogue equals the probe's CATALOGUE exactly, both as PostgREST
+ * The live catalogue equals the probe's EXPOSED list (the reads and the one act) exactly, both as PostgREST
  * exposes it to a member and as the database defines it: a function added to
  * company_os_api fails the probe until it has an entry here, and so a matrix.
  * The member's document listing the catalogue is also the positive control of
@@ -183,14 +183,14 @@ async function catalogueIsExact(t, rest) {
   });
   const exposed = rpcPaths(memberDocument).map((p) => p.slice("/rpc/".length));
   check(
-    memberDocument.status === 200 && sameList(exposed, CATALOGUE),
+    memberDocument.status === 200 && sameList(exposed, EXPOSED),
     `member: the company_os_api OpenAPI document lists [${[...exposed].sort().join(", ")}], not exactly the probe's catalogue`,
   );
   const defined = psql(`
     select p.proname from pg_proc p
      where p.pronamespace = 'company_os_api'::regnamespace order by 1;`);
   check(
-    sameList(defined, CATALOGUE),
+    sameList(defined, EXPOSED),
     `company_os_api defines [${defined.join(", ")}], not exactly the probe's catalogue (an overload counts twice)`,
   );
 }

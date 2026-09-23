@@ -32,9 +32,9 @@ export async function memberResolves(t) {
     `member: supabase-js operator_context did not resolve to the granted principal and tenant (${sdk.error?.code ?? sdk.status})`,
   );
   check(
-    sdk.data?.allowedActions?.decideReview === false &&
+    sdk.data?.allowedActions?.decideReview === true &&
       sdk.data?.allowedActions?.tripStop === false,
-    "member: operator_context reports an act that does not exist",
+    "member: operator_context does not report exactly the review decision as allowed",
   );
 
   const answers = {};
@@ -274,7 +274,7 @@ export async function contextArgumentsMatchNothing(t, rpc) {
       `member: ${fn} with ${Object.keys(body).join(", ")}`,
     );
   }
-  // Neither browser act exists before S8, under any argument shape.
+  // The trip does not exist before S8, under any argument shape.
   for (const [act, names] of Object.entries(ABSENT_ACTS)) {
     const nulls = Object.fromEntries(names.map((name) => [name, null]));
     for (const body of [{}, nulls]) {

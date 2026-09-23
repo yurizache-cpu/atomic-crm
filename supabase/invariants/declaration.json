@@ -45,6 +45,7 @@
     "migrationIdentity": "postgres",
     "catalogue": [
       "company_os_api.communication_status()",
+      "company_os_api.decide_review(uuid,text)",
       "company_os_api.get_agent(uuid)",
       "company_os_api.get_review(uuid)",
       "company_os_api.get_review_advice(uuid)",
@@ -62,6 +63,7 @@
     ],
     "gates": [
       "ops.gate_communication_status()",
+      "ops.gate_decide_review(uuid,text)",
       "ops.gate_get_agent(uuid)",
       "ops.gate_get_review(uuid)",
       "ops.gate_get_review_advice(uuid)",
@@ -77,7 +79,10 @@
       "ops.gate_overview()",
       "ops.gate_spend_summary()"
     ],
-    "allowlistedMigrations": ["20260922120000_company_os_read_surface.sql"],
+    "allowlistedMigrations": [
+      "20260922120000_company_os_read_surface.sql",
+      "20260923120000_company_os_review_decision.sql"
+    ],
     "transfers": {
       "20260922120000_company_os_read_surface.sql": [
         "company_os_api.communication_status()",
@@ -95,6 +100,9 @@
         "company_os_api.operator_context()",
         "company_os_api.overview()",
         "company_os_api.spend_summary()"
+      ],
+      "20260923120000_company_os_review_decision.sql": [
+        "company_os_api.decide_review(uuid,text)"
       ]
     }
   },

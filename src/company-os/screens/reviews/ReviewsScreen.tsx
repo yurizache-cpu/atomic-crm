@@ -18,7 +18,7 @@ import {
 } from "../../components/owner";
 import { PageControls, PagesView } from "../../components/queryStates";
 import { LIST_PATHS } from "../../components/recordPaths";
-import { REVIEW_DECISIONS_CLI_NOTE, REVIEW_NOT_A_SEND_NOTE } from "../../copy";
+import { REVIEW_DECISIONS_NOTE, REVIEW_NOT_A_SEND_NOTE } from "../../copy";
 import { oneOf } from "../../format/labels";
 import { capabilityLabel, reviewStatusLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
@@ -150,7 +150,7 @@ const ReviewList = () => {
           : "Decisões registradas, das mais recentes para as mais antigas."
       }
     >
-      <Note>{`${REVIEW_DECISIONS_CLI_NOTE} ${REVIEW_NOT_A_SEND_NOTE}`}</Note>
+      <Note>{`${REVIEW_DECISIONS_NOTE} ${REVIEW_NOT_A_SEND_NOTE}`}</Note>
       <StatusTabs active={status} />
       <PagesView query={reviews} what="as decisões">
         <ReviewTable reviews={items} />

@@ -127,3 +127,18 @@ export type ReviewDetail = z.infer<typeof ReviewDetailSchema>;
 export type LeadTriageAdvice = z.infer<typeof LeadTriageAdviceSchema>;
 export type AdviceWithheld = z.infer<typeof AdviceWithheldSchema>;
 export type ReviewAdvice = z.infer<typeof ReviewAdviceSchema>;
+
+/**
+ * decide_review (S7.1): the review, the status it now holds, and whether THIS
+ * call recorded it (false: the same principal had already recorded the same
+ * decision). Strict: no reviewer, note, draft or outbound field, so a response
+ * that carried one would fail to parse. Recording a decision sends nothing.
+ */
+export const ReviewDecisionResultSchema = z.strictObject({
+  ...ENVELOPE_SHAPE,
+  reviewItemId: UuidSchema,
+  status: ReviewDecisionSchema,
+  recorded: z.boolean(),
+});
+
+export type ReviewDecisionResult = z.infer<typeof ReviewDecisionResultSchema>;
