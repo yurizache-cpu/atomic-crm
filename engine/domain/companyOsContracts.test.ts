@@ -521,7 +521,7 @@ describe("the contracts import zod and each other, nothing else", () => {
     extension = "ts",
   ): Promise<string[]> => {
     const [result] = await eslint.lintText(code, {
-      filePath: join(ROOT, `${FIXTURE}.${extension}`),
+      filePath: join(ROOT, FIXTURE + "." + extension),
     });
     expect(
       result.messages.filter((m) => m.fatal),
@@ -626,7 +626,7 @@ describe("the contracts import zod and each other, nothing else", () => {
       ]);
       const ioRulesHit = async (code: string, extension: string) => {
         const [result] = await eslint.lintText(code, {
-          filePath: join(ROOT, `${FIXTURE}.${extension}`),
+          filePath: join(ROOT, FIXTURE + "." + extension),
         });
         expect(
           result.messages.filter((m) => m.fatal),

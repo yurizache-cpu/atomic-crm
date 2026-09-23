@@ -128,6 +128,15 @@ describe("the Agent runs screen", () => {
       await expect.poll(() => reads(undefined)).toBe(2);
 
       goTo("#/company-os/runs?status=succeeded");
+      // The unfiltered list also shows the succeeded run, so its link proves
+      // nothing: wait for the filtered read, then for its answer to replace
+      // the list (the working run gone), before any interval can fire.
+      await expect.poll(() => reads("succeeded")).toBe(1);
+      await expect
+        .element(
+          screen.getByRole("link", { name: openRun(rid("run:working")) }),
+        )
+        .not.toBeInTheDocument();
       await expect
         .element(
           screen.getByRole("link", { name: openRun(rid("run:succeeded")) }),

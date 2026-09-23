@@ -251,7 +251,7 @@ describe("no response accepts a forbidden key, at any depth", () => {
         // Never a value other than a count, under any key.
         expect(
           parses(operation, withKeyAt(sample, path, key, SENTINEL)),
-          `${where}.${key}`,
+          where + "." + key,
         ).toBe(false);
         // A count is taken under a key only when the key is a reason code:
         // the SQL takes these keys from codes that its own filter or check
@@ -260,7 +260,7 @@ describe("no response accepts a forbidden key, at any depth", () => {
         // never repeats it.
         expect(
           parses(operation, withKeyAt(sample, path, key, 1)),
-          `${where}.${key} = 1`,
+          where + "." + key + " = 1",
         ).toBe(contracts.ReasonCodeSchema.safeParse(key).success);
       }
     }

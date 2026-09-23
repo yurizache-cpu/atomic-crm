@@ -1807,10 +1807,23 @@ begin
               where m.roleid = 'ops_operator_api'::pg_catalog.regrole or m.member = 'ops_operator_api'::pg_catalog.regrole) then
     raise exception 'ops_operator_api has a member or a membership at rest';
   end if;
+  -- No CREATE on any persistent namespace or on the database. The one
+  -- namespace left out is this session's own temporary one, by oid:
+  -- PostgreSQL grants every role holding TEMPORARY on the database (PUBLIC,
+  -- by default) all rights there, and it is dropped with the session, so it
+  -- is no CREATE authority. Every other namespace is scanned, other sessions'
+  -- temporary and toast-temporary ones included. The OD-8a CREATE on
+  -- company_os_api is named again, with ops and public.
   select pg_catalog.string_agg(n.nspname, ', ') into v_bad from pg_catalog.pg_namespace n
-   where pg_catalog.has_schema_privilege('ops_operator_api', n.oid, 'CREATE');
+   where pg_catalog.has_schema_privilege('ops_operator_api', n.oid, 'CREATE')
+     and n.oid <> pg_catalog.pg_my_temp_schema();
   if v_bad is not null or pg_catalog.has_database_privilege('ops_operator_api', pg_catalog.current_database(), 'CREATE') then
     raise exception 'ops_operator_api can create objects: %', coalesce(v_bad, 'the database');
+  end if;
+  if pg_catalog.has_schema_privilege('ops_operator_api', 'company_os_api', 'CREATE')
+     or pg_catalog.has_schema_privilege('ops_operator_api', 'ops', 'CREATE')
+     or pg_catalog.has_schema_privilege('ops_operator_api', 'public', 'CREATE') then
+    raise exception 'ops_operator_api can create objects in company_os_api, ops or public';
   end if;
   if not pg_catalog.has_schema_privilege('ops_operator_api', 'ops', 'USAGE') then
     raise exception 'ops_operator_api lacks USAGE on ops';

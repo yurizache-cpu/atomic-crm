@@ -398,7 +398,7 @@ const unreadableDynamicSql = (
       executes += 1;
       const start = m.index + m[0].length;
       const arg = sql.slice(start, statementEnd(sql, start)).trim();
-      const dollar = /^(\$[A-Za-z_]*\$)([\s\S]*?)\1/.exec(arg);
+      const dollar = /^(\$[A-Za-z_]*\$)(.*?)\1/s.exec(arg);
       const quoted = /^(?:format\s*\(\s*)?'((?:[^']|'')*)'/i.exec(arg);
       const text = dollar ? dollar[2] : quoted ? quoted[1] : null;
       const keyword = text === null ? null : /^\s*([a-z]+)/i.exec(text);

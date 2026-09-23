@@ -166,7 +166,7 @@ function flatten(value: unknown, path: string, out: Map<string, string>): void {
     for (const [key, inner] of Object.entries(value)) {
       if (key === "asOf" || key === "serverTime") continue;
       if (path === "operator_context.principal" && key === "id") continue;
-      flatten(inner, `${path}.${key}`, out);
+      flatten(inner, path + "." + key, out);
     }
   } else {
     out.set(path, JSON.stringify(value));

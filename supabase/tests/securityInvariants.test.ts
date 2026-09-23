@@ -2758,6 +2758,21 @@ const INVARIANTS: Invariant[] = [
         marker: /ops_operator_api can create objects/,
       },
       {
+        // Only this session's temporary schema is left out of the CREATE
+        // scan, by oid, never a name pattern (CI run 35901717419).
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker: /and n\.oid <> pg_catalog\.pg_my_temp_schema\(\);/,
+      },
+      {
+        file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
+        marker:
+          /ops_operator_api can create objects in company_os_api, ops or public/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P6b: without the exemption, ops_operator_api can create in/,
+      },
+      {
         // The OD-8a exception, pinned to exact migration file names and the
         // exact catalogue (owner decisions S0-E, S0-F).
         file: "supabase/invariants/companyOsApi.mjs",

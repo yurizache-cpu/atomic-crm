@@ -192,9 +192,10 @@ const createReader = (tx: TxClient): Reader => {
     );
     const names = Object.keys(input);
     const named = names.map((name, i) => `${name} => $${i + 1}`).join(", ");
+    const qualified = [COMPANY_OS_API_SCHEMA, operation].join(".");
     const [row] = await rows<{ body: string }>(
       tx,
-      `select ${COMPANY_OS_API_SCHEMA}.${operation}(${named})::text as body`,
+      `select ${qualified}(${named})::text as body`,
       names.map((name) => input[name]),
     );
     const response = JSON.parse(row.body) as Record<string, unknown>;

@@ -123,7 +123,7 @@ const mapTree = (
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [
         key,
-        mapTree(item, `${path}.${key}`, leaf),
+        mapTree(item, path + "." + key, leaf),
       ]),
     );
   }
@@ -497,7 +497,7 @@ export const firstDifference = (
     const found = firstDifference(
       leftObject[key],
       rightObject[key],
-      `${path}.${key}`,
+      path + "." + key,
     );
     if (found !== null) return found;
   }

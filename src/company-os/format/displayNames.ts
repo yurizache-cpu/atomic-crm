@@ -1,5 +1,5 @@
 // Owner-facing names for the English names the LOCAL development seed writes
-// (supabase/seed.sql: the "dev" tenant and its two agents). Presentation only:
+// (its "dev" tenant and that tenant's two agents). Presentation only:
 // the server's name stays the record's name, no id, slug or row changes, and a
 // name these maps do not know is shown exactly as the server returned it. The
 // seed never reaches a hosted project (SI-25), so only the local synthetic

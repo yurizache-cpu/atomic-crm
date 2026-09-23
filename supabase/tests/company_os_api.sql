@@ -3401,18 +3401,38 @@ begin
   if v_bad is not null then
     raise exception 'P6: ops_operator_api is in the membership closure of login role(s): %', v_bad;
   end if;
-  -- This session's own temporary schemas are exempt: PostgreSQL lets every
-  -- role use the temporary schema of the session it runs in, and nobody can
-  -- open a session as ops_operator_api.
+  -- This session's own temporary schema is exempt, by oid and nothing else:
+  -- PostgreSQL lets every role holding TEMPORARY on the database use the
+  -- temporary schema of the session it runs in, and nobody can open a session
+  -- as ops_operator_api. P6b pins the exemption to exactly that schema.
   select string_agg(n.nspname, ', ') into v_bad from pg_namespace n
-   where has_schema_privilege('ops_operator_api', n.oid, 'CREATE') and n.nspname !~ '^pg_(toast_)?temp_';
+   where has_schema_privilege('ops_operator_api', n.oid, 'CREATE') and n.oid <> pg_my_temp_schema();
   if v_bad is not null or has_database_privilege('ops_operator_api', current_database(), 'CREATE') then
     raise exception 'P6: ops_operator_api can create objects: %', coalesce(v_bad, 'the database');
   end if;
   select string_agg(n.nspname, ', ' order by n.nspname) into v_bad from pg_namespace n
-   where has_schema_privilege('ops_operator_api', n.oid, 'USAGE') and n.nspname !~ '^pg_(toast_)?temp_';
+   where has_schema_privilege('ops_operator_api', n.oid, 'USAGE') and n.oid <> pg_my_temp_schema();
   if v_bad is distinct from 'information_schema, ops, pg_catalog, public' then
     raise exception 'P6: ops_operator_api holds USAGE on % instead of exactly ops (and what PUBLIC gives)', v_bad;
+  end if;
+  -- P6b, the CI case (run 35901717419): a session that has a temporary
+  -- schema, as this one does (cos_ids lives in it), sees CREATE for
+  -- ops_operator_api there through TEMPORARY on the database. The exemption
+  -- must remove exactly that schema: no persistent one, and not the session's
+  -- toast-temporary schema, which is scanned like any other.
+  if pg_my_temp_schema() = 0 then
+    raise exception 'P6b: this session has no temporary schema, so the CI case is not reproduced';
+  end if;
+  select string_agg(n.nspname, ', ') into v_bad from pg_namespace n
+   where has_schema_privilege('ops_operator_api', n.oid, 'CREATE');
+  if v_bad is distinct from (select n.nspname::text from pg_namespace n where n.oid = pg_my_temp_schema()) then
+    raise exception 'P6b: without the exemption, ops_operator_api can create in % instead of only this session''s temporary schema',
+      coalesce(v_bad, 'nothing');
+  end if;
+  if has_schema_privilege('ops_operator_api', 'company_os_api', 'CREATE')
+     or has_schema_privilege('ops_operator_api', 'ops', 'CREATE')
+     or has_schema_privilege('ops_operator_api', 'public', 'CREATE') then
+    raise exception 'P6b: ops_operator_api can create objects in company_os_api, ops or public';
   end if;
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace
