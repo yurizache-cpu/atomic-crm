@@ -121,6 +121,7 @@ const READ_COMMANDS: readonly (readonly string[])[] = [
   ["spend", "--tenant", TENANT_A],
   ["runs", "--tenant", TENANT_A],
   ["indeterminate"],
+  ["membership", "list"],
 ];
 
 describe("the operator's read-only transaction", () => {

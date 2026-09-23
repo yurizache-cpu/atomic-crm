@@ -12,7 +12,7 @@
 //
 // WHAT IT IS NOT. It is not entropy detection. A generic high-entropy scan over
 // a 2 MB minified bundle produces constant false positives, gets muted, and then
-// protects nothing. Every rule below names a specific credential CLASS.
+// protects nothing. Every rule names a specific credential CLASS.
 //
 // NO REAL SECRET IS STORED HERE. The rules are patterns and variable names, and
 // the tests use synthetic fixtures. Matches are reported by type, location and a
@@ -22,13 +22,35 @@
 // ONE CHECK IS NOT A CLASS. The committed development signing key
 // (supabase/signing_keys.json, SEC-1BS-04) is also looked for by its own bytes:
 // a private component copied into a plain string constant has no `kty` and no
-// PEM header, so it would pass every class rule below. The bytes stay inside
+// PEM header, so it would pass every class rule. The bytes stay inside
 // `scripts/dev-signing-key.mjs`; this file only asks it yes-or-no questions.
+//
+// NAMES AND CLASSES (Phase 2C, owner decision S0-H, 2026-09-23). The S0.6
+// spike planted each Phase 2C server secret in a build. The admin database URL
+// was caught, but only by its connection-string class; WHATSAPP_ACCESS_TOKEN,
+// WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN and OPS_GATEWAY_PASSWORD were
+// missed. The name rule then knew none of them, it anchored on `\b` and an
+// unescaped quote, so it could not read the object Vite inlines
+// (`{"NAME":"…"}`) or a source map's escaped copy of it (`\"NAME\":\"…\"`), and
+// no name rule can see a bare token. So the exact names stay, now read in every
+// spelling a build produces, and a class rule stands behind each kind of server
+// secret: a privileged `VITE_` name, private or signing key material, a
+// database connection string, a service-role or any other non-anon JWT, a Meta
+// access token, and a bearer- or token-shaped literal. Each class was measured
+// against the real build and against node_modules on 2026-09-23 (the numbers
+// are next to each rule).
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join, relative } from "node:path";
 import { loadDevSigningKeys } from "./dev-signing-key.mjs";
+import { CONNECTION_STRING_RULES } from "./scan-build-rules-connections.mjs";
+import { KEY_MATERIAL_RULES } from "./scan-build-rules-key-material.mjs";
+import { NAME_RULES } from "./scan-build-rules-names.mjs";
+import { SUPABASE_KEY_RULES } from "./scan-build-rules-supabase-keys.mjs";
+import { TOKEN_RULES } from "./scan-build-rules-tokens.mjs";
+
+export { isPrivilegedViteName } from "./scan-build-vite-names.mjs";
 
 /**
  * Formats that cannot carry a usable literal. Everything else is read, whatever
@@ -38,66 +60,8 @@ import { loadDevSigningKeys } from "./dev-signing-key.mjs";
 const BINARY =
   /\.(png|jpe?g|gif|webp|avif|ico|bmp|woff2?|ttf|otf|eot|pdf|zip|gz|br|tgz|mp3|mp4|webm|mov|wasm)$/i;
 
-/** Roles that must never appear as a JWT `role` claim in a browser artifact. */
-const FORBIDDEN_JWT_ROLES = new Set([
-  "service_role",
-  "supabase_admin",
-  "postgres",
-]);
-
-/** How far either side of a JWK `d` member to look for its `kty`. */
-const JWK_WINDOW = 400;
-
 /** What a finding shows in place of private key material. */
 const WITHHELD = "<withheld: private key material>";
-
-/**
- * What names a model provider credential or its routing configuration. Matched
- * in either case: Vite exposes a lower-case `VITE_` name exactly as it exposes
- * the upper-case spelling. AZURE_OPENAI needs no entry of its own; OPENAI covers
- * it. OPEN_AI and CLAUDE are the other spellings people reach for.
- */
-const MODEL_PROVIDER_NAME_PARTS = [
-  "OPENAI",
-  "OPEN_AI",
-  "ANTHROPIC",
-  "CLAUDE",
-  "AGENT_MODEL",
-  "MODEL_PROVIDER",
-];
-
-const anyCase = (part) =>
-  part.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`);
-
-/**
- * Resolves `\uXXXX`, `\u{…}` and `\xXX` escapes, however many backslashes lead
- * them (a source map escapes the backslash of an escape once more). Only for a
- * rule that matches a NAME: a letter spelled as an escape is still that letter.
- * A literal name is never altered, because every escape starts with a backslash
- * and no name contains one.
- */
-const decodeCodeEscapes = (content) =>
-  content.replace(
-    /\\+(?:u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2}))/g,
-    (escape, braced, unicode, hex) => {
-      const codePoint = parseInt(braced ?? unicode ?? hex, 16);
-      return codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : escape;
-    },
-  );
-
-const decodeJwtRole = (token) => {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const json = Buffer.from(
-      payload.replace(/-/g, "+").replace(/_/g, "/"),
-      "base64",
-    ).toString("utf8");
-    return JSON.parse(json).role ?? null;
-  } catch {
-    return null;
-  }
-};
 
 /**
  * Each rule finds one credential class.
@@ -106,120 +70,16 @@ const decodeJwtRole = (token) => {
  * `anon` token (expected in the bundle, and NOT a finding) from a
  * `service_role` one (fatal). Without that distinction this gate would either
  * flag every build or miss the thing it exists to catch.
+ *
+ * The rules live in one module per credential class
+ * (scripts/scan-build-rules-*.mjs). A file's findings come in this order.
  */
 const RULES = [
-  {
-    id: "supabase-secret-key",
-    severity: "critical",
-    pattern: /sb_secret_[A-Za-z0-9_-]{8,}/g,
-    describe: () => "Supabase secret key (sb_secret_…)",
-  },
-  {
-    id: "privileged-jwt",
-    severity: "critical",
-    pattern: /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{8,}/g,
-    verify: (m) => FORBIDDEN_JWT_ROLES.has(decodeJwtRole(m) ?? ""),
-    describe: (m) => `JWT whose role claim is "${decodeJwtRole(m)}"`,
-  },
-  {
-    id: "postgres-connection-string",
-    severity: "critical",
-    // Only with credentials in it; a bare host:port is not a secret.
-    pattern: /postgres(?:ql)?:\/\/[^\s"'`:]+:[^\s"'`@]+@[^\s"'`/]+/g,
-    describe: () => "PostgreSQL connection string with credentials",
-  },
-  {
-    id: "private-key-block",
-    severity: "critical",
-    pattern: /-----BEGIN (?:RSA |EC |OPENSSH |PGP )?PRIVATE KEY-----/g,
-    describe: () => "PEM private key block",
-  },
-  {
-    id: "private-jwk",
-    severity: "critical",
-    // The private member of a JSON Web Key, as JSON or as the object literal a
-    // bundler turns an imported .json file into. `verify` insists on a `kty`
-    // nearby, so an unrelated `d:"…"` is not a finding.
-    pattern: /(?:"d"|\bd)\s*:\s*["'`][A-Za-z0-9_-]{32,}["'`]/g,
-    verify: (_match, content, index) =>
-      /["']?\bkty["']?\s*:/.test(
-        content.slice(Math.max(0, index - JWK_WINDOW), index + JWK_WINDOW),
-      ),
-    withholdValue: true,
-    describe: () => "JSON Web Key carrying its private component",
-  },
-  {
-    id: "github-token",
-    severity: "critical",
-    pattern:
-      /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}|\bgithub_pat_[A-Za-z0-9_]{20,}/g,
-    describe: () => "GitHub token",
-  },
-  {
-    id: "aws-access-key",
-    severity: "critical",
-    pattern: /\bAKIA[0-9A-Z]{16}\b/g,
-    describe: () => "AWS access key id",
-  },
-  {
-    id: "anthropic-api-key",
-    severity: "critical",
-    // A model provider key belongs to the worker's environment only (Phase 1D).
-    // No row-level policy narrows it: whoever reads it off a static host can
-    // bill the account and call every model it reaches.
-    //
-    // Every `sk-ant-` family, not only `api03`/`admin01`. The OpenAI rule below
-    // skips ALL of `sk-ant-`, so the two rules must cover complementary halves
-    // of `sk-`: a pattern naming only `api|admin` here left OAuth (`oat01`,
-    // `ort01`) and session (`sid01`) tokens refused by neither rule.
-    // Measured 2026-09-14: 0 matches in dist, node_modules, src, engine,
-    // supabase/functions, docs and scripts.
-    pattern: /\bsk-ant-[A-Za-z0-9_-]{20,}/g,
-    describe: () => "Anthropic credential (sk-ant-…)",
-  },
-  {
-    id: "openai-api-key",
-    severity: "critical",
-    // `\b` needs a non-word character before `sk`, so "risk-assessment-…" or
-    // "task-management-…" never match: their `s` follows a letter. The
-    // lookahead leaves `sk-ant-` to the rule above, so one key is one finding.
-    // Measured 2026-09-14: neither provider rule matches anything in the
-    // current build or in node_modules (47,009 text files).
-    pattern: /\bsk-(?!ant-)(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}/g,
-    describe: () => "OpenAI API key (sk-…)",
-  },
-  {
-    id: "browser-model-provider-variable",
-    severity: "critical",
-    // Provider credentials and routing configuration are backend-only (Phase
-    // 1D): the worker reads them from its own environment. Vite hands every
-    // `VITE_` variable to the bundle, so a provider name carrying that prefix
-    // proves its value was on its way to a static host, key-shaped or not.
-    //
-    // A bare NAME match, unlike assigned-server-secret below, because a build
-    // spells the name many ways: `import.meta.env.X`, a key of the object Vite
-    // inlines (`{"X":"…"}`), `X=` in an embedded .env, and all of those again
-    // escaped inside a source map's sourcesContent (`\"X\":`, `\nX=`). There is
-    // no leading `\b`: the `n` of an escaped newline is a word character. The
-    // match stops where the name does, so a finding never carries a value.
-    // Measured 2026-09-14: 0 matches in dist and in node_modules.
-    pattern: new RegExp(
-      `VITE_[A-Za-z0-9_]*?(?:${MODEL_PROVIDER_NAME_PARTS.map(anyCase).join("|")})[A-Za-z0-9_]*`,
-      "g",
-    ),
-    normalize: decodeCodeEscapes,
-    describe: (m) => `model provider variable exposed to the browser (${m})`,
-  },
-  {
-    id: "assigned-server-secret",
-    severity: "high",
-    // A server-only variable NAME with a non-trivial value next to it. Catches
-    // the `VITE_`-typo case, where the name survives into the bundle.
-    pattern:
-      /\b(SERVICE_ROLE_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_PASSWORD|POSTMARK_WEBHOOK_PASSWORD|SUPABASE_ACCESS_TOKEN|JWT_SECRET|DEPLOY_TOKEN|OPS_WORKER_PASSWORD|OPS_WORKER_DATABASE_URL|OPENAI_API_KEY|ANTHROPIC_API_KEY)\s*[:=]\s*["'`][^"'`\s]{8,}["'`]/g,
-    describe: (m) =>
-      `server-only variable assigned a value (${m.split(/[:=]/)[0].trim()})`,
-  },
+  ...SUPABASE_KEY_RULES,
+  ...CONNECTION_STRING_RULES,
+  ...KEY_MATERIAL_RULES,
+  ...TOKEN_RULES,
+  ...NAME_RULES,
 ];
 
 /**
@@ -263,6 +123,48 @@ function* walk(dir) {
 }
 
 /**
+ * Runs every rule over one file's text and returns its findings.
+ * Exported for measurement over trees that are not a build (node_modules).
+ *
+ * @param {string} rel  the file's path, as reported
+ * @param {string} content
+ */
+export function scanText(rel, content) {
+  const findings = [];
+  // Each normalisation runs once per file, however many rules share it.
+  const normalised = new Map();
+  const textFor = (rule) => {
+    if (!rule.normalize) return content;
+    if (!normalised.has(rule.normalize)) {
+      normalised.set(rule.normalize, rule.normalize(content));
+    }
+    return normalised.get(rule.normalize);
+  };
+
+  for (const rule of RULES) {
+    const text = textFor(rule);
+    rule.pattern.lastIndex = 0;
+    const seen = new Set();
+    for (const match of text.matchAll(rule.pattern)) {
+      const value = match[0];
+      if (seen.has(value)) continue;
+      seen.add(value);
+      if (rule.verify && !rule.verify(value, text, match.index)) continue;
+      findings.push({
+        rule: rule.id,
+        severity: rule.severity,
+        file: rel,
+        detail: rule.describe(value),
+        // Never the value itself.
+        redacted: rule.withholdValue ? WITHHELD : redact(value),
+        sha256: fingerprint(value),
+      });
+    }
+  }
+  return findings;
+}
+
+/**
  * @param {string} dir
  * @param {{devSigningKeys?: ReturnType<typeof loadDevSigningKeys>}} [options]
  *   `devSigningKeys` defaults to the repository's own development key. Tests
@@ -279,8 +181,12 @@ export function scanDirectory(dir, { devSigningKeys } = {}) {
     devSigningKeys === undefined ? loadDevSigningKeys() : devSigningKeys;
 
   let scanned = 0;
+  let scripts = 0;
+  let sourceMaps = 0;
   for (const file of walk(dir)) {
     const rel = relative(dir, file).split("\\").join("/");
+    if (/\.[cm]?js$/i.test(rel)) scripts += 1;
+    if (/\.map$/i.test(rel)) sourceMaps += 1;
 
     for (const artifact of UNWANTED_ARTIFACTS) {
       if (artifact.match(rel)) {
@@ -297,26 +203,7 @@ export function scanDirectory(dir, { devSigningKeys } = {}) {
     scanned += 1;
     const content = readFileSync(file, "utf8");
 
-    for (const rule of RULES) {
-      const text = rule.normalize ? rule.normalize(content) : content;
-      rule.pattern.lastIndex = 0;
-      const seen = new Set();
-      for (const match of text.matchAll(rule.pattern)) {
-        const value = match[0];
-        if (seen.has(value)) continue;
-        seen.add(value);
-        if (rule.verify && !rule.verify(value, text, match.index)) continue;
-        findings.push({
-          rule: rule.id,
-          severity: rule.severity,
-          file: rel,
-          detail: rule.describe(value),
-          // Never the value itself.
-          redacted: rule.withholdValue ? WITHHELD : redact(value),
-          sha256: fingerprint(value),
-        });
-      }
-    }
+    findings.push(...scanText(rel, content));
 
     if (devKeys?.containsPrivateMaterial(content)) {
       findings.push({
@@ -337,7 +224,7 @@ export function scanDirectory(dir, { devSigningKeys } = {}) {
     }
   }
 
-  return { scanned, findings };
+  return { scanned, scripts, sourceMaps, findings };
 }
 
 const isEntryPoint = async () => {
@@ -375,6 +262,17 @@ if (await isEntryPoint()) {
       `${blocking.length} blocking, ${result.findings.length - blocking.length} advisory.`,
   );
 
+  if (result.scripts > 0 && result.sourceMaps === 0) {
+    // Not a finding: a build without maps is not a leak. But the name rules
+    // read a `VITE_` name only where the build keeps it, which is mostly the
+    // maps, so say what this pass could not see.
+    console.error(
+      "\nnote: this build ships scripts and no source map, so a `VITE_` variable's NAME mostly does not survive into it " +
+        "and privileged-vite-variable / browser-model-provider-variable see little. The source-level checks " +
+        "(scripts/test/scan-build-artifacts.test.mjs, engine/models/providerSecretsBoundary.test.ts) still hold the build inputs.",
+    );
+  }
+
   if (blocking.length > 0) {
     console.error(
       "\nA server-side credential is present in a browser artifact. Do not deploy this build. " +
@@ -384,6 +282,12 @@ if (await isEntryPoint()) {
       console.error(
         "A model provider variable carries the `VITE_` prefix. Provider credentials and configuration are backend-only: " +
           "drop the prefix and let the worker read it from its own environment.",
+      );
+    }
+    if (blocking.some((f) => f.rule === "privileged-vite-variable")) {
+      console.error(
+        "A server secret carries the `VITE_` prefix, so Vite hands its value to every browser: " +
+          "drop the prefix, keep the value in the server's environment, and rotate it.",
       );
     }
     process.exit(1);

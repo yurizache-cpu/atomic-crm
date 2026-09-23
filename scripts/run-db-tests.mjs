@@ -116,6 +116,81 @@ const exposureWarning = (() => {
   return "WARNING: this Supabase stack is reachable from other devices, or that could not be verified (details above).";
 })();
 
+// The Phase 2C ownership mechanics -- a temporary role membership, a temporary
+// CREATE and a catalogue-bound ownership transfer inside one allowlisted
+// migration (docs/PHASE_2C_REPORT.md §3.2) -- were measured on exactly these
+// versions: the CLI decides how a migration is applied (as whom, one
+// transaction per file) and the server decides what those statements may do.
+// Any other version fails here instead of passing on mechanics nobody measured;
+// re-measure them before bumping either constant.
+const MEASURED_SUPABASE_CLI = "2.117.0";
+const MEASURED_POSTGRES_MAJOR = 15;
+
+const versionMismatches = (() => {
+  const found = [];
+  // On Windows npx is a .cmd shim, which needs a shell; the arguments are
+  // constants.
+  let cli;
+  try {
+    cli = execFileSync("npx", ["supabase", "--version"], {
+      encoding: "utf8",
+      stdio: "pipe",
+      shell: process.platform === "win32",
+    }).trim();
+  } catch (error) {
+    cli = `unreadable (${error.message.split("\n")[0]})`;
+  }
+  if (cli !== MEASURED_SUPABASE_CLI) {
+    found.push(`the Supabase CLI reports ${cli}, not ${MEASURED_SUPABASE_CLI}`);
+  }
+  const server = run("docker", [
+    "exec",
+    CONTAINER,
+    "psql",
+    "-U",
+    "postgres",
+    "-d",
+    "postgres",
+    "-At",
+    "-c",
+    "show server_version_num",
+  ]);
+  const major = Math.floor(Number(server.stdout.trim()) / 10000);
+  if (!server.ok || major !== MEASURED_POSTGRES_MAJOR) {
+    found.push(
+      `the database reports PostgreSQL major version ${server.ok ? major : "unreadable"}, not ${MEASURED_POSTGRES_MAJOR}`,
+    );
+  }
+  return found;
+})();
+
+if (versionMismatches.length > 0) {
+  console.error(
+    [
+      "FAILED: this stack is not the one the Phase 2C ownership mechanics were measured on:",
+      ...versionMismatches.map((m) => `  - ${m}`),
+      "",
+      `They were measured on Supabase CLI ${MEASURED_SUPABASE_CLI} and PostgreSQL ${MEASURED_POSTGRES_MAJOR}`,
+      "(spike S0.4, docs/PHASE_2C_REPORT.md §3.2). The remedy, in this order:",
+      "  1. Re-measure the S0.4 ownership mechanics on the new version: the identity",
+      "     every migration is applied as (current_user and session_user) and one",
+      "     transaction per migration file; that the ownership transfer to",
+      "     ops_operator_api needs both the temporary membership and the temporary",
+      "     CREATE on company_os_api; that the ACL set before the transfer survives it;",
+      "     that a failed migration rolls all of it back; and what the schema owner can",
+      "     still do to a transferred function once the window is closed.",
+      "  2. Only if they are unchanged, update the pinned constants",
+      "     MEASURED_SUPABASE_CLI and MEASURED_POSTGRES_MAJOR in scripts/run-db-tests.mjs",
+      "     (and docs/PHASE_2C_REPORT.md §3.2).",
+      "In CI, .github/workflows/database.yml runs an unpinned `npx supabase`, so the",
+      "first stable CLI release after the pinned one fails here with no repository",
+      "change; pinning the CLI there is an owner decision.",
+      "This is a failure, not a skip.",
+    ].join("\n"),
+  );
+  process.exit(1);
+}
+
 const suites = readdirSync(TESTS_DIR)
   .filter((f) => f.endsWith(".sql"))
   .sort();

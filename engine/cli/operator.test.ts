@@ -8,19 +8,29 @@ import {
   EXIT_OK,
   EXIT_REFUSED,
   EXIT_USAGE,
+  isReadOnlyCommand,
+  OPERATOR_ACTS,
+  OPERATOR_SYNOPSIS,
+  parseOperatorArgs,
   READ_ONLY_TRANSACTION,
   runOperatorCli,
 } from "./operator.ts";
 import {
   ACTS,
+  AUTH_USER,
   LIMIT,
   LIMIT_RETIRE,
   LIMIT_SET,
+  MEMBERSHIP,
+  MEMBERSHIP_GRANT,
+  MEMBERSHIP_REVOKE,
   PRICE_RECORD,
+  PRINCIPAL,
   READS,
   REVIEW,
   RUNS_WITH_OPTIONS,
   TENANT,
+  withoutFlag,
 } from "./testSupport/operatorArgv.ts";
 
 // The operator tool with no database: which transactions it opens, what it
@@ -37,6 +47,8 @@ const PASSWORD = ["sentinel", "pw", "5151"].join("-");
 const CONNECTION = `postgresql://owner:${PASSWORD}@db.invalid:5432/postgres`;
 const keyShaped = (suffix: string) =>
   ["sk", "proj", "not", "a", "real", "key", suffix].join("-");
+// A synthetic person's email, in mixed case so its lower-cased form differs.
+const EMAIL = ["Sentinel.Person", "Example.Test"].join("@");
 
 const serverError = (code: string, message: string) =>
   Object.assign(new Error(message), { code, severity: "ERROR" });
@@ -52,6 +64,20 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   if (sql.includes("ops.set_spend_limit")) return [{ result: LIMIT }];
   if (sql.includes("ops.retire_spend_limit")) return [{ result: true }];
   if (sql.includes("ops.open_missing_reviews")) return [{ result: 2 }];
+  if (sql.includes("ops.grant_membership")) {
+    return [
+      {
+        result: {
+          principalId: PRINCIPAL,
+          membershipId: MEMBERSHIP,
+          recorded: true,
+        },
+      },
+    ];
+  }
+  if (sql.includes("ops.revoke_membership")) {
+    return [{ result: { membershipId: MEMBERSHIP, revoked: true } }];
+  }
   if (sql.includes("ops.record_review_decision")) {
     // The decision is params[2]: the subcommand chose it, and it reaches the
     // database as a bound value rather than as SQL.
@@ -160,6 +186,8 @@ describe("running the operator tool", () => {
     ["price record", PRICE_RECORD, "ops.record_model_price"],
     ["limit set", LIMIT_SET, "ops.set_spend_limit"],
     ["limit retire", LIMIT_RETIRE, "ops.retire_spend_limit"],
+    ["membership grant", MEMBERSHIP_GRANT, "ops.grant_membership"],
+    ["membership revoke", MEMBERSHIP_REVOKE, "ops.revoke_membership"],
   ])(
     "runs %s as one parameterised function call in a writable transaction",
     async (_name, argv, fn) => {
@@ -193,7 +221,37 @@ describe("running the operator tool", () => {
       { result: "recorded", reviewItemId: REVIEW, status: "rejected" },
       { result: "recorded", reviewItemId: REVIEW, status: "needs_edit" },
       { result: "recovered", opened: 2 },
+      { principalId: PRINCIPAL, membershipId: MEMBERSHIP, recorded: true },
+      { membershipId: MEMBERSHIP, revoked: true },
     ]);
+  });
+
+  it("changes state only through SI-39's act allowlist, and every other command is a read", () => {
+    expect(OPERATOR_ACTS).toEqual([
+      "price record",
+      "limit set",
+      "limit retire",
+      "triage accept",
+      "triage reject",
+      "triage needs-edit",
+      "triage recover",
+      "membership grant",
+      "membership revoke",
+    ]);
+    const actKinds = ACTS.map((argv) => {
+      const command = parseOperatorArgs(argv);
+      if (command.kind === "usage_error") throw new Error(command.message);
+      expect(isReadOnlyCommand(command)).toBe(false);
+      return command.kind;
+    });
+    expect(actKinds).toEqual(OPERATOR_ACTS);
+    for (const argv of READS) {
+      const command = parseOperatorArgs(argv);
+      if (command.kind === "usage_error") throw new Error(command.message);
+      expect(isReadOnlyCommand(command)).toBe(true);
+      expect(OPERATOR_ACTS).not.toContain(command.kind);
+    }
+    expect(OPERATOR_SYNOPSIS).toContain("membership grant");
   });
 
   it("sends a limit's amount as exact micro-USD text, never a float", async () => {
@@ -225,7 +283,14 @@ describe("running the operator tool", () => {
   });
 
   it("reads only ADMIN_DATABASE_URL from its environment, never a provider key or a model routing variable", async () => {
-    for (const argv of [["status"], ["routes"], PRICE_RECORD, ["stats"]]) {
+    for (const argv of [
+      ["status"],
+      ["routes"],
+      PRICE_RECORD,
+      MEMBERSHIP_GRANT,
+      ["membership", "list"],
+      ["stats"],
+    ]) {
       const read: PropertyKey[] = [];
       const env = new Proxy<Record<string, string | undefined>>(
         {
@@ -464,6 +529,7 @@ describe("running the operator tool", () => {
       ["runs"],
       ["indeterminate"],
       ["routes"],
+      ["membership", "list"],
     ]) {
       const empty = harness({ answer: () => [] });
       expect(await empty.run(argv)).toBe(EXIT_OK);
@@ -536,5 +602,143 @@ describe("running the operator tool", () => {
       expect.objectContaining({ detail: "withheld", routes: null }),
     ]);
     expect(state.stdout.join("\n")).not.toMatch(/sk-/i);
+  });
+});
+
+describe("the membership commands", () => {
+  it("refuses an auth user id that is not a uuid, an email included, as a usage error before it reads its environment or opens a database, and never repeats it", async () => {
+    for (const value of [
+      EMAIL,
+      EMAIL.toLowerCase(),
+      "Sentinel Person",
+      `${AUTH_USER}0`,
+      `principal:${AUTH_USER}`,
+      "",
+    ]) {
+      const read: PropertyKey[] = [];
+      const env = new Proxy<Record<string, string | undefined>>(
+        { [ADMIN_DATABASE_URL]: CONNECTION },
+        {
+          get: (target, key) => {
+            read.push(key);
+            return Reflect.get(target, key);
+          },
+        },
+      );
+      const { state, run, printed, parsed } = harness({ env });
+      const argv = MEMBERSHIP_GRANT.map((token) =>
+        token === AUTH_USER ? value : token,
+      );
+
+      expect(await run(argv)).toBe(EXIT_USAGE);
+      expect(read).toEqual([]);
+      expect(state.opened).toEqual([]);
+      expect(state.stdout).toEqual([]);
+      expect(parsed(state.stderr)).toEqual([
+        expect.objectContaining({
+          error: "usage",
+          message: expect.stringContaining("--auth-user-id must be"),
+        }),
+      ]);
+      if (value !== "") expect(printed()).not.toContain(value);
+    }
+  });
+
+  it("offers no option that takes an email, and never repeats an email-shaped token given to a membership command", async () => {
+    for (const argv of [
+      [...MEMBERSHIP_GRANT, "--email", EMAIL],
+      [...withoutFlag(MEMBERSHIP_GRANT, "auth-user-id"), "--email", EMAIL],
+      [...MEMBERSHIP_GRANT, EMAIL],
+      ["membership", "grant", EMAIL, ...MEMBERSHIP_GRANT.slice(2)],
+      [...MEMBERSHIP_REVOKE, "--email", EMAIL],
+      [...MEMBERSHIP_REVOKE, EMAIL],
+      ["membership", "list", "--email", EMAIL],
+      ["membership", "list", EMAIL],
+      ["membership", "list", `--${EMAIL}`],
+      ["membership", EMAIL],
+    ]) {
+      const { state, run, printed, parsed } = harness();
+
+      expect(await run(argv)).toBe(EXIT_USAGE);
+      expect(state.opened).toEqual([]);
+      expect(parsed(state.stderr)).toEqual([
+        expect.objectContaining({ error: "usage" }),
+      ]);
+      expect(printed()).not.toContain(EMAIL);
+      expect(printed().toLowerCase()).not.toContain(EMAIL.toLowerCase());
+    }
+  });
+
+  it("refuses a display name with an @ and a reserved actor before any query, and repeats neither", async () => {
+    for (const [flag, value] of [
+      ["display-name", EMAIL],
+      ["actor", `principal:${AUTH_USER}`],
+      ["actor", "system:membership"],
+    ] as const) {
+      const { state, run, printed, parsed } = harness();
+      const argv = [...withoutFlag(MEMBERSHIP_GRANT, flag), `--${flag}`, value];
+
+      expect(await run(argv)).toBe(EXIT_REFUSED);
+      expect(state.queries).toEqual([]);
+      expect(state.stdout).toEqual([]);
+      expect(parsed(state.stderr)).toEqual([
+        expect.objectContaining({ error: "invalid_argument" }),
+      ]);
+      expect(printed()).not.toContain(value);
+    }
+  });
+
+  it("prints a membership listing field by field, never an email, an email hash, a reason, an actor label or a token, even when a row carries one", async () => {
+    const hash = "5".repeat(64);
+    const { state, run, printed, parsed } = harness({
+      answer: (sql) =>
+        sql.includes("from ops.tenant_memberships m")
+          ? [
+              {
+                id: MEMBERSHIP,
+                principal_id: PRINCIPAL,
+                auth_user_id: AUTH_USER,
+                tenant_id: TENANT,
+                role: "tenant_operator",
+                display_name: "Synthetic Operator",
+                granted_at: SINCE,
+                revoked_at: NOW,
+                email_changed_since_grant: true,
+                email: EMAIL,
+                email_at_grant_sha256: hash,
+                grant_reason: "grant reason sentinel",
+                revoke_reason: "revoke reason sentinel",
+                granted_by: "granter@example.test",
+                confirmation_token: "token-sentinel-5151",
+              },
+            ]
+          : [],
+    });
+
+    expect(await run(["membership", "list", "--tenant", TENANT])).toBe(EXIT_OK);
+
+    expect(parsed(state.stdout)).toEqual([
+      {
+        id: MEMBERSHIP,
+        principalId: PRINCIPAL,
+        authUserId: AUTH_USER,
+        tenantId: TENANT,
+        role: "tenant_operator",
+        state: "revoked",
+        displayName: "Synthetic Operator",
+        grantedAt: SINCE,
+        revokedAt: NOW,
+        emailChangedSinceGrant: true,
+      },
+    ]);
+    for (const text of [
+      EMAIL,
+      hash,
+      "sentinel",
+      "granter@example.test",
+      "token-sentinel-5151",
+    ]) {
+      expect(printed()).not.toContain(text);
+    }
   });
 });

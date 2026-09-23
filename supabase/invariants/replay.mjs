@@ -40,6 +40,11 @@ import {
 } from "./sqlStatements.mjs";
 import { loadMigrationCorpus, validateDeclaration } from "./declaration.mjs";
 import { scanDoBody } from "./doBlocks.mjs";
+import {
+  callsRoleSwitch,
+  checkCompanyOsFileEnd,
+  readIdentityAssertion,
+} from "./companyOsApi.mjs";
 import { MATVIEW, UNKNOWN } from "./parse.mjs";
 import { applyStatement, createState, finding } from "./rules.mjs";
 import { reconcileOverrides } from "./overrides.mjs";
@@ -135,10 +140,39 @@ function expandStatements(statements, file) {
   const findings = [];
   for (const statement of statements) {
     const { head, security } = classifyHead(statement); // throws on unknown head
+    // Phase 2C: a role switch through set_config is refused wherever it hides,
+    // including in a statement the grammar otherwise treats as inert.
+    if (callsRoleSwitch(statement)) {
+      findings.push(
+        finding(
+          `company-os:role-switch-call:${file}:${statement.line}`,
+          "company-os-surface",
+          file,
+          statement.line,
+          "set_config('role' | 'session_authorization', …) switches the role every later statement runs with (Company OS surface, brief §7.6 D).",
+          false,
+        ),
+      );
+    }
     if (!security) continue; // INERT for every declared domain
     if (head !== "do") {
       expanded.push(statement);
       continue;
+    }
+    // The OD-8a identity assertion lives in a DO block whose body yields no
+    // hazard statement, so it is surfaced as a marker the Company OS rules
+    // can order against the membership grant (companyOsApi.mjs).
+    const identity = readIdentityAssertion(statement);
+    if (identity !== null) {
+      expanded.push({
+        file,
+        line: statement.line,
+        masked: "",
+        raw: "",
+        bodies: [],
+        identityAssertion: true,
+        identity,
+      });
     }
     const { derived, unresolved } = scanDoBody(statement);
     for (const message of unresolved) {
@@ -279,6 +313,11 @@ function checkFileEndState({ fileState, file, declaration }) {
     }
   }
 
+  // The OD-8a lifecycle opens and closes inside the one allowlisted file.
+  findings.push(
+    ...checkCompanyOsFileEnd({ fileState, file, declaration, finding }),
+  );
+
   return findings;
 }
 
@@ -403,6 +442,10 @@ export function analyze({ corpus, declaration, seal, repoRoot }) {
   const context = {
     isKnownView: (key) => declaredViews.has(key) || globalState.views.has(key),
     isAlwaysTrigger: (key) => globalState.alwaysTriggers.has(key),
+    companyOsApi: declaration.companyOsApi,
+    // A surface function an EARLIER statement already handed to the capability
+    // role: no later CREATE (or replace) may name it again.
+    isOperatorOwned: (ref) => globalState.companyOs.transferred.has(ref),
     provesRemoval(file, catalogues, name) {
       const text = strippedByFile.get(file) ?? "";
       if (!/raise\s+exception/.test(text)) return false;

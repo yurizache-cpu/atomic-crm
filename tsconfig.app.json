@@ -32,8 +32,9 @@
       "@/*": ["./src/*"]
     }
   },
-  // `engine` is the server-side Company OS code. `npm run typecheck` is the
-  // only real type gate in this repository, so anything absent from this list
-  // is typechecked by nothing at all.
-  "include": ["src", "demo", "engine", "vitest-browser.d.ts"]
+  // `engine` is the server-side Company OS code, and `contracts` the operator
+  // API's response schemas shared by the SPA and the engine's tests. `npm run
+  // typecheck` is the only real type gate in this repository, so anything
+  // absent from this list is typechecked by nothing at all.
+  "include": ["src", "demo", "engine", "contracts", "vitest-browser.d.ts"]
 }

@@ -1,0 +1,415 @@
+{
+  "generatedBy": "engine/domain/companyOsRecordedResponses.dbtest.ts; re-record with COMPANY_OS_RECORD=1, never edit by hand",
+  "calls": [
+    {
+      "operation": "list_agents",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-001200000001",
+            "name": "Annex Triage",
+            "slug": "annex-triage",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000002",
+              "name": "Clinic Annex"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000001",
+              "name": "Annex Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000002",
+            "name": "Archive",
+            "slug": "archive",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "agent",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000003",
+            "name": "Closed Desk",
+            "slug": "closed-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000003",
+              "name": "Clinic Closed"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "company",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000002",
+              "name": "Closed Intake"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000004",
+            "name": "Follow Up",
+            "slug": "follow-up",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "held",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": ["00000000-0000-4000-8000-002100000009"],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000005",
+            "name": "Lead Triage",
+            "slug": "lead-triage",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "working",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [
+                "00000000-0000-4000-8000-00210000000e",
+                "00000000-0000-4000-8000-00210000000d",
+                "00000000-0000-4000-8000-00210000000c",
+                "00000000-0000-4000-8000-002100000007"
+              ],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": ["00000000-0000-4000-8000-002100000002"],
+              "attentionRunIds": ["00000000-0000-4000-8000-002100000005"]
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 1
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000006",
+            "name": "Night Desk Agent",
+            "slug": "night-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "stale",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": ["00000000-0000-4000-8000-002100000003"],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": ["00000000-0000-4000-8000-002100000003"]
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000004",
+              "name": "Night Desk"
+            },
+            "availability": "stopped",
+            "attentionCount": 1
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000007",
+            "name": "Paused Desk Agent",
+            "slug": "paused-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "idle",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": [],
+              "staleRunIds": [],
+              "inactiveUnit": "department",
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": null,
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000005",
+              "name": "Paused Desk"
+            },
+            "availability": "inactive",
+            "attentionCount": 0
+          },
+          {
+            "id": "00000000-0000-4000-8000-001200000008",
+            "name": "Queue Desk",
+            "slug": "queue-desk",
+            "company": {
+              "id": "00000000-0000-4000-8000-001000000001",
+              "name": "Clinic A"
+            },
+            "activity": "held",
+            "evidence": {
+              "stop": {
+                "id": "00000000-0000-4000-8000-002400000006",
+                "scope": "job_kind",
+                "origin": "owner"
+              },
+              "heldRunIds": ["00000000-0000-4000-8000-002100000008"],
+              "staleRunIds": [],
+              "inactiveUnit": null,
+              "queuedRunIds": [],
+              "workingRunIds": [],
+              "attentionRunIds": []
+            },
+            "lastRunAt": "2026-09-22T10:00:00.000000Z",
+            "department": {
+              "id": "00000000-0000-4000-8000-001100000003",
+              "name": "Intake"
+            },
+            "availability": "stopped",
+            "attentionCount": 0
+          }
+        ]
+      }
+    },
+    {
+      "operation": "list_stops",
+      "args": { "p_include_cleared": true },
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-002400000006",
+            "scope": "job_kind",
+            "origin": "owner",
+            "reason": "Synthetic hold of every agent run",
+            "target": null,
+            "jobKind": "agent_run.execute",
+            "clearedAt": null,
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": null
+          },
+          {
+            "id": "00000000-0000-4000-8000-002400000005",
+            "scope": "job_kind",
+            "origin": "owner",
+            "reason": "Synthetic kind drill",
+            "target": null,
+            "jobKind": "agent_run.execute",
+            "clearedAt": "2026-09-22T10:00:00.000000Z",
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": "Kind drill over"
+          },
+          {
+            "id": "00000000-0000-4000-8000-002400000004",
+            "scope": "tenant",
+            "origin": "owner",
+            "reason": "Synthetic tenant drill",
+            "target": null,
+            "jobKind": null,
+            "clearedAt": "2026-09-22T10:00:00.000000Z",
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": "Drill over"
+          },
+          {
+            "id": "00000000-0000-4000-8000-002400000003",
+            "scope": "department",
+            "origin": "owner",
+            "reason": "Synthetic desk pause",
+            "target": {
+              "name": "Paused Desk",
+              "agentId": null,
+              "companyId": "00000000-0000-4000-8000-001000000001",
+              "departmentId": "00000000-0000-4000-8000-001100000005"
+            },
+            "jobKind": null,
+            "clearedAt": "2026-09-22T10:00:00.000000Z",
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": "Synthetic desk pauses over"
+          },
+          {
+            "id": "00000000-0000-4000-8000-002400000002",
+            "scope": "company",
+            "origin": "owner",
+            "reason": "Synthetic annex pause",
+            "target": {
+              "name": "Clinic Annex",
+              "agentId": null,
+              "companyId": "00000000-0000-4000-8000-001000000002",
+              "departmentId": null
+            },
+            "jobKind": null,
+            "clearedAt": "2026-09-22T10:00:00.000000Z",
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": "Synthetic desk pauses over"
+          },
+          {
+            "id": "00000000-0000-4000-8000-002400000001",
+            "scope": "agent",
+            "origin": "owner",
+            "reason": "Synthetic pause of the follow-up desk",
+            "target": {
+              "name": "Follow Up",
+              "agentId": "00000000-0000-4000-8000-001200000004",
+              "companyId": "00000000-0000-4000-8000-001000000001",
+              "departmentId": null
+            },
+            "jobKind": null,
+            "clearedAt": "2026-09-22T10:00:00.000000Z",
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": "Synthetic desk pauses over"
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "operation": "list_stops",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "items": [
+          {
+            "id": "00000000-0000-4000-8000-002400000006",
+            "scope": "job_kind",
+            "origin": "owner",
+            "reason": "Synthetic hold of every agent run",
+            "target": null,
+            "jobKind": "agent_run.execute",
+            "clearedAt": null,
+            "trippedAt": "2026-09-22T10:00:00.000000Z",
+            "clearedReason": null
+          }
+        ],
+        "nextCursor": null
+      }
+    },
+    {
+      "operation": "overview",
+      "args": {},
+      "response": {
+        "v": 1,
+        "asOf": "2026-09-22T11:00:00.000000Z",
+        "runs": {
+          "workingNow": 1,
+          "todayByStatus": {
+            "failed": 1,
+            "pending": 6,
+            "running": 2,
+            "cancelled": 2,
+            "succeeded": 1,
+            "indeterminate": 2
+          },
+          "needingAttention": 2
+        },
+        "stops": { "tenantScopedActive": 1 },
+        "agents": {
+          "held": 2,
+          "stale": 1,
+          "total": 8,
+          "queued": 0,
+          "stopped": 5,
+          "working": 1,
+          "inactive": 3
+        },
+        "reviews": {
+          "pending": 2,
+          "oldestPendingAt": "2026-09-22T10:00:00.000000Z"
+        },
+        "outbound": {
+          "todayByStatus": { "failed": 1, "blocked": 1, "indeterminate": 1 },
+          "indeterminateOpen": 1,
+          "acceptedWithoutSend": 0
+        },
+        "platform": { "globalAdmissionBlocked": false },
+        "admission": { "tenantAdmission": "conditional" }
+      }
+    }
+  ]
+}

@@ -192,12 +192,18 @@ begin
   --     (supabase/tests/runtime_governance.sql, section G). Phase 2B (2026-09-18)
   --     adds communication_channels, conversations and outbound_messages, and a
   --     fifth application role, ops_gateway, which holds no table at all
-  --     (supabase/tests/whatsapp_transport.sql, section A).
+  --     (supabase/tests/whatsapp_transport.sql, section A). Phase 2C
+  --     (2026-09-22, 20260922120000_company_os_read_surface.sql) adds principals
+  --     and tenant_memberships, written only by the owner, and the capability
+  --     role ops_operator_api, which executes its gates and holds no table
+  --     (supabase/tests/company_os_api.sql).
   select string_agg(format('%s:%s:%s', r.rolname, t.relname, p.priv), ', ') into v_bad
     from unnest(array['companies', 'departments', 'agents', 'tasks', 'events', 'task_jobs',
                       'agent_runs', 'execution_stops', 'model_prices', 'spend_limits',
-                      'communication_channels', 'conversations', 'outbound_messages']) as t (relname)
-   cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway')) as r (rolname)
+                      'communication_channels', 'conversations', 'outbound_messages',
+                      'principals', 'tenant_memberships']) as t (relname)
+   cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway'),
+                      ('ops_operator_api')) as r (rolname)
    cross join unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER']) as p (priv)
    where has_table_privilege(r.rolname, format('ops.%I', t.relname), p.priv);
   if v_bad is not null then
@@ -247,6 +253,13 @@ begin
   --     task or a send. The owner services Phase 2B adds (channel
   --     configuration, the explicit send and its settlement) are executable by
   --     no application role (supabase/tests/whatsapp_transport.sql, section A).
+  --     Phase 2C (2026-09-22, 20260922120000_company_os_read_surface.sql) adds a
+  --     capability role, ops_operator_api, with exactly one identity gate per
+  --     read operation of company_os_api: each resolves the caller's tenant from
+  --     the verified claims and a membership, takes no tenant, company or actor
+  --     argument, and calls one pinned projection. The membership services, the
+  --     resolver and the projections are executable by no application role and
+  --     not by ops_operator_api (supabase/tests/company_os_api.sql).
   with expected (rolname, fn) as (values
     ('service_role', 'ops.enqueue_job(uuid, text, jsonb, integer, timestamptz, integer, text)'::regprocedure),
     ('ops_worker',   'ops.lease_job(text, integer)'::regprocedure),
@@ -271,13 +284,29 @@ begin
     ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure),
     ('ops_worker',   'ops.open_review_for_settled_job(text, uuid)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
-    ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure)
+    ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
+    ('ops_operator_api', 'ops.gate_overview()'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_agents()'::regprocedure),
+    ('ops_operator_api', 'ops.gate_get_agent(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_tasks(text, text, uuid, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_get_task(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_runs(text, text, uuid, boolean, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_get_run(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_reviews(text, text, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_get_review(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_get_review_advice(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_events(text, text, uuid, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_list_stops(boolean, text, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_spend_summary()'::regprocedure),
+    ('ops_operator_api', 'ops.gate_communication_status()'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
       from pg_proc p
       join pg_namespace n on n.oid = p.pronamespace
-     cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway')) as r (rolname)
+     cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker'), ('ops_gateway'),
+                        ('ops_operator_api')) as r (rolname)
      where n.nspname = 'ops' and has_function_privilege(r.rolname, p.oid, 'EXECUTE')
   ),
   drift as (
@@ -307,6 +336,10 @@ begin
   --     configured channel and acts only inside that channel's tenant: a
   --     message is admitted (test channel) or held with no content (production
   --     channel, BASELINE Q8), and a status moves only a send of that channel.
+  --     Phase 2C (2026-09-22) adds one identity gate per company_os_api read,
+  --     executable only by ops_operator_api: each runs the resolver first and
+  --     reaches one pinned projection inside the caller's own tenant
+  --     (supabase/tests/company_os_api.sql pins the graph).
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -317,7 +350,12 @@ begin
                            'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
                            'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
                            'open_review_for_settled_job',
-                           'receive_whatsapp_message', 'receive_whatsapp_status');
+                           'receive_whatsapp_message', 'receive_whatsapp_status',
+                           'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
+                           'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',
+                           'gate_list_reviews', 'gate_get_review', 'gate_get_review_advice',
+                           'gate_list_events', 'gate_list_stops', 'gate_spend_summary',
+                           'gate_communication_status');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

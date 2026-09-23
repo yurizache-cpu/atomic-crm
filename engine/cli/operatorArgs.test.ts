@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import { parseOperatorArgs } from "./operator.ts";
 import {
   ACTS,
+  AUTH_USER,
   COMPANY,
   LIMIT,
   LIMIT_RETIRE,
   LIMIT_SET,
+  MEMBERSHIP,
+  MEMBERSHIP_GRANT,
+  MEMBERSHIP_REVOKE,
   PRICE_RECORD,
   READS,
   REVIEW,
@@ -47,6 +51,11 @@ describe("parsing operator arguments", () => {
     [
       ["triage", "recover", "--tenant", TENANT, "--limit", "50"],
       { kind: "triage recover", tenantId: TENANT, limit: 50 },
+    ],
+    [["membership", "list"], { kind: "membership list" }],
+    [
+      ["membership", "list", "--tenant", TENANT, "--limit", "20"],
+      { kind: "membership list", tenantId: TENANT, limit: 20 },
     ],
   ])("parses %j", (argv, expected) => {
     expect(parseOperatorArgs(argv)).toEqual(expected);
@@ -143,8 +152,70 @@ describe("parsing operator arguments", () => {
     });
   });
 
+  it("parses a membership grant, naming the person by auth user id only, and a revoke", () => {
+    expect(parseOperatorArgs(MEMBERSHIP_GRANT)).toEqual({
+      kind: "membership grant",
+      input: {
+        tenantId: TENANT,
+        authUserId: AUTH_USER,
+        displayName: "Synthetic Operator",
+      },
+      act: { reason: "synthetic pilot operator", actor: "owner" },
+    });
+    expect(parseOperatorArgs(MEMBERSHIP_REVOKE)).toEqual({
+      kind: "membership revoke",
+      membershipId: MEMBERSHIP,
+      act: { reason: "pilot ended", actor: "owner" },
+    });
+  });
+
   it.each<[string, readonly string[], string]>([
     ["no arguments", [], "no command given"],
+    [
+      "membership with no subcommand",
+      ["membership"],
+      "membership needs a subcommand: grant or revoke or list",
+    ],
+    [
+      "a grant naming no person",
+      withoutFlag(MEMBERSHIP_GRANT, "auth-user-id"),
+      "membership grant needs --auth-user-id",
+    ],
+    [
+      "a grant with no display name",
+      withoutFlag(MEMBERSHIP_GRANT, "display-name"),
+      "membership grant needs --display-name",
+    ],
+    [
+      "a grant with no tenant",
+      withoutFlag(MEMBERSHIP_GRANT, "tenant"),
+      "membership grant needs --tenant",
+    ],
+    [
+      "a grant with no reason",
+      withoutFlag(MEMBERSHIP_GRANT, "reason"),
+      "membership grant needs --reason",
+    ],
+    [
+      "a revoke with no actor",
+      withoutFlag(MEMBERSHIP_REVOKE, "actor"),
+      "membership revoke needs --actor",
+    ],
+    [
+      "an auth user id that is not a uuid",
+      MEMBERSHIP_GRANT.map((t) => (t === AUTH_USER ? "user-1" : t)),
+      "--auth-user-id must be the person's auth user id, a uuid",
+    ],
+    [
+      "a list limit that is not a whole number",
+      ["membership", "list", "--limit", "ten"],
+      "--limit must be a whole number",
+    ],
+    [
+      "a tenant on a revoke",
+      [...MEMBERSHIP_REVOKE, "--tenant", TENANT],
+      "--tenant is not a flag of membership revoke",
+    ],
     [
       "triage with no subcommand",
       ["triage"],

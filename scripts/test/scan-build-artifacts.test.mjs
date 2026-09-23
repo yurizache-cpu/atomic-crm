@@ -1,46 +1,56 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadDevSigningKeys } from "../dev-signing-key.mjs";
-import { scanDirectory } from "../scan-build-artifacts.mjs";
+import {
+  isPrivilegedViteName,
+  scanDirectory,
+} from "../scan-build-artifacts.mjs";
+import {
+  ASSIGNED,
+  BASE64URL,
+  BROWSER_PROVIDER,
+  PRIVATE_KEY,
+  dir,
+  githubToken,
+  jwt,
+  pem,
+  postgresUrl,
+  repositoryViteNames,
+  revealed,
+  rulesByFile,
+  sbSecret,
+  scan,
+  scratchBuildPerTest,
+  sourceMap,
+  synthetic,
+  viteName,
+  write,
+} from "./scan-build-helpers.mjs";
 
 // Every fixture below is SYNTHETIC. No real credential is stored in this
 // repository, which is the whole point of a secret gate whose rules are
 // patterns rather than values.
+//
+// Every credential-shaped fixture is also ASSEMBLED AT RUNTIME (a split prefix
+// and a generated body), so this file holds no literal that this scanner, a
+// push-protection scanner or the repository's own guards would read as a
+// credential. And no assertion names a fixture value: a failing assertion
+// prints its arguments, so they compare rule ids, labels, counts and booleans.
 
-let dir;
-const write = (name, content) => {
-  const full = join(dir, name);
-  mkdirSync(join(full, ".."), { recursive: true });
-  writeFileSync(full, content, "utf8");
-};
+// The fixture builders are in ./scan-build-helpers.mjs, and the tests of each
+// credential class in the other scripts/test/scan-build-*.test.mjs files.
+// This file keeps the tests the security invariants name (SI-20, SI-33,
+// SI-59) and every fixture that names the development key file, which only
+// this file and the guards themselves may name (scripts/dev-signing-key.mjs).
 
-/** Builds a syntactically valid JWT with the given role. Unsigned — the gate
- *  reads the payload, it does not verify signatures. */
-const jwt = (role) => {
-  const b64 = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
-  return `${b64({ alg: "ES256", typ: "JWT" })}.${b64({ iss: "test", role })}.AAAAAAAAAAAAAAAAAAAAAAAA`;
-};
-
-/** A `VITE_` variable name, assembled at runtime: the source-level boundary
- *  test (engine/models/providerSecretsBoundary.test.ts) reads this file, and a
- *  literal provider name here would be a finding there. */
-const viteName = (suffix) => "VITE" + "_" + suffix;
-
-const BROWSER_PROVIDER = "browser-model-provider-variable";
-
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "scan-build-"));
-});
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
+scratchBuildPerTest();
 
 describe("the gate refuses a build carrying a server-side credential", () => {
   it("catches a Supabase secret key", () => {
-    write("assets/app.js", `const k="sb_secret_AAAAAAAAAAAAAAAAAAAA";`);
+    write("assets/app.js", `const k="${sbSecret("app")}";`);
     const { findings } = scanDirectory(dir);
     expect(findings.map((f) => f.rule)).toContain("supabase-secret-key");
     expect(findings[0].severity).toBe("critical");
@@ -65,26 +75,20 @@ describe("the gate refuses a build carrying a server-side credential", () => {
   it("catches a postgres connection string with a password", () => {
     write(
       "assets/app.js",
-      `const u="postgresql://worker:hunter2@db.example.com:5432/postgres";`,
+      `const u="${postgresUrl("worker", synthetic("pg", 12))}";`,
     );
     const { findings } = scanDirectory(dir);
     expect(findings.map((f) => f.rule)).toContain("postgres-connection-string");
   });
 
   it("catches a PEM private key", () => {
-    write(
-      "assets/app.js",
-      `const k=\`-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\`;`,
-    );
+    write("assets/app.js", `const k=\`${pem("EC " + PRIVATE_KEY)}\`;`);
     const { findings } = scanDirectory(dir);
     expect(findings.map((f) => f.rule)).toContain("private-key-block");
   });
 
   it("catches a GitHub token", () => {
-    write(
-      "assets/app.js",
-      `const t="ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";`,
-    );
+    write("assets/app.js", `const t="${githubToken("gh")}";`);
     const { findings } = scanDirectory(dir);
     expect(findings.map((f) => f.rule)).toContain("github-token");
   });
@@ -92,9 +96,9 @@ describe("the gate refuses a build carrying a server-side credential", () => {
   it("catches the VITE_-typo shape: a server-only NAME assigned a value", () => {
     // The realistic regression: someone renames the variable to make it
     // reachable from the frontend, and the name itself survives minification.
-    write("assets/app.js", `SERVICE_ROLE_KEY:"aaaaaaaaaaaaaaaaaaaa"`);
+    write("assets/app.js", `SERVICE_ROLE_KEY:"${synthetic("typo", 20)}"`);
     const { findings } = scanDirectory(dir);
-    expect(findings.map((f) => f.rule)).toContain("assigned-server-secret");
+    expect(findings.map((f) => f.rule)).toContain(ASSIGNED);
   });
 
   // Model provider key fixtures are assembled by concatenation, so no literal
@@ -105,10 +109,7 @@ describe("the gate refuses a build carrying a server-side credential", () => {
     write("assets/project.js", `const k="${"sk-" + "proj-" + body}";`);
     write("assets/service.js", `const k='${"sk-" + "svcacct-" + body}';`);
     write("assets/admin.js", `k=\`${"sk-" + "admin-" + body}\``);
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(
-      findings.map((f) => `${f.rule} ${f.severity} ${f.file}`).sort(),
-    ).toEqual([
+    expect(rulesByFile(scan())).toEqual([
       "openai-api-key critical assets/admin.js",
       "openai-api-key critical assets/legacy.js",
       "openai-api-key critical assets/project.js",
@@ -125,10 +126,7 @@ describe("the gate refuses a build carrying a server-side credential", () => {
       "assets/admin.js",
       `const k="${"sk-" + "ant-" + "admin01-" + body}";`,
     );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(
-      findings.map((f) => `${f.rule} ${f.severity} ${f.file}`).sort(),
-    ).toEqual([
+    expect(rulesByFile(scan())).toEqual([
       "anthropic-api-key critical assets/admin.js",
       "anthropic-api-key critical assets/api.js",
     ]);
@@ -145,10 +143,7 @@ describe("the gate refuses a build carrying a server-side credential", () => {
         `const k="${"sk-" + "ant-" + family + "-" + body}";`,
       );
     }
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(
-      findings.map((f) => `${f.rule} ${f.severity} ${f.file}`).sort(),
-    ).toEqual([
+    expect(rulesByFile(scan())).toEqual([
       "anthropic-api-key critical assets/oat01.js",
       "anthropic-api-key critical assets/ort01.js",
       "anthropic-api-key critical assets/sid01.js",
@@ -158,20 +153,14 @@ describe("the gate refuses a build carrying a server-side credential", () => {
   it("catches a model provider key NAME assigned a value that is not key-shaped", () => {
     // A placeholder-looking value is still a value: the name alone says it is
     // a server-side credential that has no business in a bundle.
+    const placeholder = "replace-me" + "-later";
     write(
       "assets/app.js",
-      `OPENAI_API_KEY="replace-me-later";const c={ANTHROPIC_API_KEY:"replace-me-later"};`,
+      `OPENAI_API_KEY="${placeholder}";const c={ANTHROPIC_API_KEY:"${placeholder}"};`,
     );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => [f.rule, f.detail])).toEqual([
-      [
-        "assigned-server-secret",
-        "server-only variable assigned a value (OPENAI_API_KEY)",
-      ],
-      [
-        "assigned-server-secret",
-        "server-only variable assigned a value (ANTHROPIC_API_KEY)",
-      ],
+    expect(scan().map((f) => [f.rule, f.detail])).toEqual([
+      [ASSIGNED, "server-only variable assigned a value (OPENAI_API_KEY)"],
+      [ASSIGNED, "server-only variable assigned a value (ANTHROPIC_API_KEY)"],
     ]);
   });
 
@@ -191,29 +180,18 @@ describe("the gate refuses a build carrying a server-side credential", () => {
     // The same object inside sourcesContent, where its quotes are escaped.
     write(
       "assets/quoted.js.map",
-      JSON.stringify({
-        sourcesContent: [`const e = {"${name}": "${value}"};`],
-      }),
+      sourceMap(`const e = {"${name}": "${value}"};`),
     );
     // An embedded .env line inside sourcesContent: `\n` puts a word character
     // right before the name.
-    write(
-      "assets/dotenv.js.map",
-      JSON.stringify({ sourcesContent: [`# env\n${name}=${value}`] }),
-    );
+    write("assets/dotenv.js.map", sourceMap(`# env\n${name}=${value}`));
     // The first letter spelled as an escape, in each JavaScript form, and once
     // more escaped by a source map.
     write("assets/unicode.js", `e["\\u0056${rest}"]`);
     write("assets/braced.js", `e["\\u{56}${rest}"]`);
     write("assets/hex.js", `e["\\x56${rest}"]`);
-    write(
-      "assets/escaped.js.map",
-      JSON.stringify({ sourcesContent: [`e["\\u0056${rest}"]`] }),
-    );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(
-      findings.map((f) => `${f.rule} ${f.severity} ${f.file}`).sort(),
-    ).toEqual(
+    write("assets/escaped.js.map", sourceMap(`e["\\u0056${rest}"]`));
+    expect(rulesByFile(scan())).toEqual(
       [
         "assets/bare.js",
         "assets/braced.js",
@@ -243,8 +221,11 @@ describe("the gate refuses a build carrying a server-side credential", () => {
     names.forEach((name, i) =>
       write(`assets/chunk-${i}.js`, `const v=import.meta.env.${name};`),
     );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => `${f.rule} ${f.detail}`).sort()).toEqual(
+    expect(
+      scan()
+        .map((f) => `${f.rule} ${f.detail}`)
+        .sort(),
+    ).toEqual(
       names
         .map(
           (name) =>
@@ -255,144 +236,19 @@ describe("the gate refuses a build carrying a server-side credential", () => {
   });
 });
 
-describe("the gate does not cry wolf", () => {
-  it("accepts the publishable key, which is meant to be in the bundle", () => {
-    write("assets/app.js", `const k="sb_publishable_AAAAAAAAAAAAAAAAAAAA";`);
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts an anon JWT", () => {
-    write("assets/app.js", `const t="${jwt("anon")}";`);
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts an authenticated JWT", () => {
-    write("assets/app.js", `const t="${jwt("authenticated")}";`);
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts a bare host:port with no credentials", () => {
-    write(
-      "assets/app.js",
-      `const u="postgresql://db.example.com:5432/postgres";`,
-    );
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts the library JSDoc that merely MENTIONS service_role", () => {
-    // @supabase/auth-js ships exactly this text, and it is in every source map.
-    // A gate that flags it is a gate that gets switched off.
-    write(
-      "assets/app.js.map",
-      `{"sourcesContent":["/** Never expose your \`service_role\` key in the browser. */","process.env.SUPABASE_SERVICE_ROLE_KEY"]}`,
-    );
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("ignores binary assets", () => {
-    write("appIcon/192.png", "sb_secret_AAAAAAAAAAAAAAAAAAAA");
-    const { findings } = scanDirectory(dir);
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts ordinary text and CSS that merely contain sk-", () => {
-    // The long identifiers carry 20+ key-body characters after their `sk-`;
-    // only the `\b` before `sk` keeps them out, because their `s` follows a
-    // letter.
-    write(
-      "assets/app.js",
-      [
-        `const a="risk-assessment";`,
-        `const b="task-management-long-identifier-xyz";`,
-        `const c="risk-assessment-summary-for-every-reviewer";`,
-        `const d=["ask-for-confirmation-before-deleting-records"];`,
-      ].join("\n"),
-    );
-    write(
-      "assets/index.css",
-      `.desk-top{display:flex}.desk-top-navigation-container-wide{gap:4px}`,
-    );
-    // The Slovak locale tag and a hashed chunk named after it DO follow a
-    // non-word character, and are far too short to be a key.
-    write("assets/i18n.js", `const l="sk-SK";import("./sk-B3xYz9Q1.js");`);
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts server code that reads a model provider key without a value", () => {
-    // What the worker's own routing config looks like if it ever reaches a
-    // source map: names, a schema and an error message, but no value.
-    write(
-      "assets/app.js.map",
-      `{"sourcesContent":["const key = env.OPENAI_API_KEY;","const schema = {ANTHROPIC_API_KEY: z.string()};","throw new Error('OPENAI_API_KEY is required')"]}`,
-    );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings).toEqual([]);
-  });
-
-  it("accepts the VITE_ variables the SPA legitimately reads", () => {
-    // Every VITE_ name in the repository on 2026-09-14 (src, demo, the vite
-    // configs, the .env files and deploy.yml), with values shaped like real ones.
-    const env = {
-      BASE_URL: "/",
-      MODE: "production",
-      VITE_SUPABASE_URL: "https://project-ref.supabase.co",
-      VITE_SB_PUBLISHABLE_KEY: "sb_publishable_AAAAAAAAAAAAAAAAAAAA",
-      VITE_SUPABASE_ANON_KEY: jwt("anon"),
-      VITE_IS_DEMO: "false",
-      VITE_INBOUND_EMAIL: "inbound@example.org",
-      VITE_ATTACHMENTS_BUCKET: "attachments",
-      VITE_GOOGLE_WORKPLACE_DOMAIN: "example.org",
-      VITE_DISABLE_EMAIL_PASSWORD_AUTHENTICATION: "false",
-    };
-    write("assets/app.js", `const e=${JSON.stringify(env)};`);
-    write(
-      "assets/app.js.map",
-      JSON.stringify({
-        sourcesContent: [
-          `const e = ${JSON.stringify(env)};`,
-          "const url = import.meta.env.VITE_SUPABASE_URL;",
-        ],
-      }),
-    );
-    // Names that border the rule without naming a provider.
-    write(
-      "assets/near.js",
-      `const a=import.meta.env.VITE_DATA_MODEL_VERSION;const b=import.meta.env.VITE_OPENING_HOURS;const c=import.meta.env.VITE_AGENT_NAME;`,
-    );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings).toEqual([]);
-  });
-});
-
-describe("the gate reads what a host would serve", () => {
-  it("reads a file whatever its extension, or none", () => {
-    // A list of extensions worth reading once let key material through as
-    // `.well-known/jwks`, `dev.jwk` and `keys.pem`.
-    write(".well-known/jwks", '{"k":"sb_secret_AAAAAAAAAAAAAAAAAAAA"}');
-    write(
-      "keys.pem",
-      "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----",
-    );
-    const { findings } = scanDirectory(dir);
-    expect(findings.map((f) => `${f.rule} ${f.file}`).sort()).toEqual([
-      "private-key-block keys.pem",
-      "supabase-secret-key .well-known/jwks",
-    ]);
-  });
-});
-
-describe("advisory findings", () => {
-  it("flags a published bundle-visualizer report without blocking", () => {
-    write("stats.html", "<html>module graph</html>");
-    const { findings } = scanDirectory(dir);
-    expect(findings.map((f) => f.rule)).toEqual(["bundle-visualizer"]);
-    expect(findings[0].severity).toBe("low");
+describe("privileged VITE_ variables", () => {
+  // The build-level tests of this group are in scan-build-names.test.mjs.
+  it("holds every build input to the rule at the source, source maps or not", () => {
+    // The build-level rule sees a NAME only where the build keeps it: Vite
+    // replaces `import.meta.env.X` with its value, so without source maps a
+    // privileged name reaches the bundle as a bare value no class knows. This
+    // check reads the inputs themselves, with the scanner's own predicate.
+    // The predicate is not vacuous: a privileged name and a bordering one.
+    expect(isPrivilegedViteName(viteName("DB_PASSWORD_PROD"))).toBe(true);
+    expect(isPrivilegedViteName(viteName("PASSWORD_RESET_URL"))).toBe(false);
+    const repository = repositoryViteNames();
+    expect(repository).toContain("VITE_SUPABASE_URL");
+    expect(repository.filter(isPrivilegedViteName)).toEqual([]);
   });
 });
 
@@ -432,8 +288,85 @@ describe("signing key material never reaches a published build", () => {
       "assets/app.js",
       `const k={kty:"EC",crv:"${crv}",x:"${x}",y:"${y}",d:"${d}"};`,
     );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => f.rule)).toEqual(["private-jwk"]);
+    expect(scan().map((f) => f.rule)).toEqual(["private-jwk"]);
+  });
+
+  it("catches a signing key file's shape escaped in a source map, and an RSA-4096 key", () => {
+    // A source map carries an imported key file as an escaped string. An RSA
+    // key puts its 683-character modulus between `kty` and `d`.
+    const ec = syntheticDevKey();
+    const file = [
+      { kty: "EC", kid: "k", crv: ec.crv, x: ec.x, y: ec.y, d: ec.d },
+    ];
+    write("assets/app.js.map", sourceMap(JSON.stringify(file, null, 2)));
+    const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 4096 });
+    write(
+      "assets/rsa.json",
+      JSON.stringify(privateKey.export({ format: "jwk" })),
+    );
+    const found = scan();
+    expect(rulesByFile(found)).toEqual([
+      "private-jwk critical assets/app.js.map",
+      "private-jwk critical assets/rsa.json",
+    ]);
+    expect(found.every((f) => f.redacted.startsWith("<withheld"))).toBe(true);
+  });
+
+  it("catches every PEM private key label, and withholds even its header", () => {
+    const labels = [
+      PRIVATE_KEY,
+      "ENCRYPTED " + PRIVATE_KEY,
+      "RSA " + PRIVATE_KEY,
+      "DSA " + PRIVATE_KEY,
+      "EC " + PRIVATE_KEY,
+      "OPENSSH " + PRIVATE_KEY,
+      "PGP " + PRIVATE_KEY + " BLOCK",
+    ];
+    labels.forEach((label, i) => write(`key-${i}.txt`, pem(label)));
+    write("public.txt", pem("PUBLIC KEY") + pem("CERTIFICATE"));
+    const found = scan();
+    expect(rulesByFile(found)).toEqual(
+      labels.map((_, i) => `private-key-block critical key-${i}.txt`).sort(),
+    );
+    expect(found.every((f) => f.redacted.startsWith("<withheld"))).toBe(true);
+  });
+
+  it("catches a symmetric JWK's secret, as JSON, as an object literal and in a source map", () => {
+    // `kty: "oct"` keeps an HS256 JWT secret in `k`, which can mint a
+    // service_role token.
+    const k = synthetic("oct", 43, BASE64URL);
+    write(
+      "keys.json",
+      JSON.stringify({ keys: [{ kty: "oct", k, alg: "HS256" }] }),
+    );
+    write("assets/app.js", `const s={kty:"oct",alg:"HS256",k:"${k}"};`);
+    write(
+      "assets/app.js.map",
+      sourceMap(
+        `export default ${JSON.stringify({ kty: "oct", k }, null, 2)};`,
+      ),
+    );
+    const found = scan();
+    expect(rulesByFile(found)).toEqual(
+      ["assets/app.js", "assets/app.js.map", "keys.json"].map(
+        (file) => `symmetric-jwk critical ${file}`,
+      ),
+    );
+    expect(found.every((f) => f.redacted.startsWith("<withheld"))).toBe(true);
+    expect(revealed(JSON.stringify(found), { k })).toEqual([]);
+  });
+
+  it("accepts a k member that is not a symmetric key's secret", () => {
+    // Another key type, no key type at all, and a secret too short: one file
+    // each, since `verify` looks for the key type around the member.
+    const k = synthetic("not-oct", 43, BASE64URL);
+    write("assets/ec.js", `const a={kty:"EC",k:"${k}"};`);
+    write("assets/bare.js", `const b={k:"${k}"};`);
+    write(
+      "assets/short.js",
+      `const c={kty:"oct",k:"${synthetic("short-oct", 31, BASE64URL)}"};`,
+    );
+    expect(scan()).toEqual([]);
   });
 
   it("accepts a public JWK set, which is meant to be published", () => {
@@ -442,8 +375,7 @@ describe("signing key material never reaches a published build", () => {
       "assets/app.js",
       JSON.stringify({ keys: [{ kty: "EC", crv, x, y }] }),
     );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings).toEqual([]);
+    expect(scan()).toEqual([]);
   });
 
   it("catches the development key's private component even outside a JWK", () => {
@@ -474,8 +406,7 @@ describe("signing key material never reaches a published build", () => {
 
   it("refuses to publish a signing key file, whatever it contains", () => {
     write("signing_keys.json", "[]");
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => [f.rule, f.severity])).toEqual([
+    expect(scan().map((f) => [f.rule, f.severity])).toEqual([
       ["signing-keys-file", "critical"],
     ]);
   });
@@ -492,64 +423,5 @@ describe("signing key material never reaches a published build", () => {
     // Booleans, not the strings: a failing assertion prints its arguments.
     expect(serialised.includes(key.d.slice(0, 6))).toBe(false);
     expect(serialised.includes(key.d.slice(-4))).toBe(false);
-  });
-});
-
-describe("the gate fails closed", () => {
-  it("throws when there is no build to scan", () => {
-    // A missing dist must not read as "clean".
-    expect(() => scanDirectory(join(dir, "does-not-exist"))).toThrow(
-      /no build to scan/,
-    );
-  });
-
-  it("never returns the matched value", () => {
-    write("assets/app.js", `const k="sb_secret_SUPERSECRETVALUE123";`);
-    const { findings } = scanDirectory(dir);
-    const serialised = JSON.stringify(findings);
-    expect(serialised).not.toContain("SUPERSECRETVALUE123");
-    expect(findings[0].sha256).toMatch(/^[0-9a-f]{12}$/);
-  });
-
-  it("never returns a model provider key, only a fingerprint", () => {
-    const secretMiddle = "MIDDLEOFTHEPROVIDERKEY";
-    const openAi =
-      "sk-" + "proj-" + "Q".repeat(12) + secretMiddle + "Z".repeat(12);
-    const anthropic =
-      "sk-" +
-      "ant-" +
-      "api03-" +
-      "R".repeat(12) +
-      secretMiddle +
-      "Y".repeat(12);
-    write("assets/app.js", `const o="${openAi}";const a="${anthropic}";`);
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => f.rule).sort()).toEqual([
-      "anthropic-api-key",
-      "openai-api-key",
-    ]);
-    const serialised = JSON.stringify(findings);
-    // Booleans, not the strings: a failing assertion prints its arguments.
-    expect(serialised.includes(openAi)).toBe(false);
-    expect(serialised.includes(anthropic)).toBe(false);
-    expect(serialised.includes(secretMiddle)).toBe(false);
-    expect(findings.every((f) => /^[0-9a-f]{12}$/.test(f.sha256))).toBe(true);
-  });
-
-  it("never returns the value beside a VITE_ model provider variable", () => {
-    const name = viteName("ANTHROPIC_API_KEY");
-    const value = "placeholder" + "-MUST-NOT-LEAK-0123456789";
-    write("assets/app.js", `const e={"${name}":"${value}"};`);
-    write(
-      "assets/env.js.map",
-      JSON.stringify({ sourcesContent: [`${name}=${value}`] }),
-    );
-    const { findings } = scanDirectory(dir, { devSigningKeys: null });
-    expect(findings.map((f) => f.rule)).toEqual([
-      BROWSER_PROVIDER,
-      BROWSER_PROVIDER,
-    ]);
-    // Booleans, not the strings: a failing assertion prints its arguments.
-    expect(JSON.stringify(findings).includes("MUST-NOT-LEAK")).toBe(false);
   });
 });

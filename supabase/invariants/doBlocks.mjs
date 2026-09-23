@@ -40,6 +40,24 @@ const BODY_HAZARD_VERBS = [
   /\binsert\s+into\s+storage\.buckets\b/,
 ];
 
+/** Phase 2C (companyOsApi.mjs): every rule of the Company OS surface and its
+ *  OD-8a exception applies inside a DO body as it does at top level. Emitted
+ *  only when it is the chunk's EARLIEST hazard, so these verbs never change
+ *  how an existing body is read (`revoke grant option for …` stays one
+ *  REVOKE, never also a `grant …`). */
+const SURFACE_HAZARD_VERBS = [
+  /\brevoke\b/,
+  /\b(create|alter|drop)\s+(role|user|group)\b/,
+  /\balter\s+(function|routine|procedure|sequence|type|domain|schema)\b/,
+  /\bcreate\s+schema\b/,
+  /\bcreate\s+(or\s+replace\s+)?(function|procedure)\b/,
+  /\bdrop\s+(function|routine|procedure|schema)\b/,
+  /\breassign\s+owned\b/,
+  // Anchored at a statement start (the chunk's own, or after a plpgsql block
+  // keyword the split glued to it): `update … set role = …` is a column.
+  /(?<=^|\b(?:begin|loop|then|else)\s+)(set|reset)\s+((session|local)\s+)?(role|session\s+authorization)\b/,
+];
+
 /** Strip the `$tag$` delimiters from a dollar-quoted body. */
 export function unwrapDollar(body) {
   const m = /^\$([A-Za-z_][A-Za-z0-9_]*)?\$/.exec(body);
@@ -66,29 +84,48 @@ function findLiteralEnd(text, pos) {
   return -1;
 }
 
+// `%I` / `%L` / `%s`, positional `%1$I` and a `-` width flag included, stand
+// for an identifier or value that cannot be known statically; an opaque
+// substitute keeps the statement classifiable without pretending to know which
+// object it names.
+const FORMAT_PLACEHOLDER = /%(\d+\$)?-?[ils]/g;
+
+/** True when nothing but the end of the argument follows position `end`:
+ *  `;`, the end of the text, or USING / INTO. A literal followed by `||` (or
+ *  anything else) is not the whole argument, and reading only its first
+ *  literal would silently drop the tail (Phase 2C). */
+const argumentEndsAt = (text, end) =>
+  /^\s*($|;|using\b|into\b)/.test(text.slice(end));
+
 /** Resolve one EXECUTE argument to SQL text, or null if it cannot be read. */
 function resolveExecuteArgument(text, pos, bodies) {
   const rest = text.slice(pos);
   const bodyRef = /^\$body(\d+)\$/.exec(rest);
-  if (bodyRef) return unwrapDollar(bodies[Number(bodyRef[1])] ?? "");
+  if (bodyRef) {
+    if (!argumentEndsAt(text, pos + bodyRef[0].length)) return null;
+    return unwrapDollar(bodies[Number(bodyRef[1])] ?? "");
+  }
   if (text[pos] === "'") {
     const end = findLiteralEnd(text, pos);
-    return end === -1 ? null : unwrapSingle(text.slice(pos, end));
+    if (end === -1 || !argumentEndsAt(text, end)) return null;
+    return unwrapSingle(text.slice(pos, end));
   }
   if (/^format\s*\(/.test(rest)) {
     const group = readParens(text, text.indexOf("(", pos));
-    if (!group) return null;
+    if (!group || !argumentEndsAt(text, group.end)) return null;
     const firstArg = splitAtDepth(group.inner, ",")[0] ?? "";
-    // `%I` / `%L` / `%s` stand for an identifier or value that cannot be known
-    // statically; an opaque substitute keeps the statement classifiable without
-    // pretending to know which object it names.
-    if (firstArg.startsWith("'") && firstArg.endsWith("'")) {
-      return unwrapSingle(firstArg).replace(/%[ils]/g, "x_dynamic");
+    // The format string must be ONE complete literal: `format('a ' || 'b', …)`
+    // would otherwise unwrap to garbled SQL that matches no rule.
+    if (
+      firstArg.startsWith("'") &&
+      findLiteralEnd(firstArg, 0) === firstArg.length
+    ) {
+      return unwrapSingle(firstArg).replace(FORMAT_PLACEHOLDER, "x_dynamic");
     }
     const ref = /^\$body(\d+)\$$/.exec(firstArg);
     if (ref) {
       return unwrapDollar(bodies[Number(ref[1])] ?? "").replace(
-        /%[ils]/g,
+        FORMAT_PLACEHOLDER,
         "x_dynamic",
       );
     }
@@ -120,9 +157,22 @@ export function scanDoBody(statement) {
   for (const chunk of splitStatements(body, statement.file, {
     strictTail: false,
   })) {
+    const emittedAt = new Set();
+    const hits = [...BODY_HAZARD_VERBS, ...SURFACE_HAZARD_VERBS]
+      .map((verb) => verb.exec(chunk.masked))
+      .filter(Boolean);
+    const earliest = Math.min(...hits.map((hit) => hit.index));
     for (const verb of BODY_HAZARD_VERBS) {
       const hit = verb.exec(chunk.masked);
-      if (hit) emit(chunk.masked.slice(hit.index).trim());
+      if (!hit || emittedAt.has(hit.index)) continue;
+      emittedAt.add(hit.index);
+      emit(chunk.masked.slice(hit.index).trim());
+    }
+    for (const verb of SURFACE_HAZARD_VERBS) {
+      const hit = verb.exec(chunk.masked);
+      if (!hit || hit.index !== earliest || emittedAt.has(hit.index)) continue;
+      emittedAt.add(hit.index);
+      emit(chunk.masked.slice(hit.index).trim());
     }
   }
 
