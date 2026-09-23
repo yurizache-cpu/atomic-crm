@@ -4,264 +4,107 @@ import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
 import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
 import { getUserSale } from "../_shared/getUserSale.ts";
+import {
+  inviteUser,
+  patchUser,
+  type Outcome,
+  type SaleRecord,
+  type UserManagementPorts,
+} from "./userManagement.ts";
 
-async function updateSaleDisabled(user_id: string, disabled: boolean) {
-  return await supabaseAdmin
-    .from("sales")
-    .update({ disabled: disabled ?? false })
-    .eq("user_id", user_id);
-}
+// The authorization rules and their order live in userManagement.ts (Phase 2C
+// S7); this file only adapts them to the Auth admin API and the sales table.
 
-async function updateSaleAdministrator(
-  user_id: string,
-  administrator: boolean,
-) {
-  const { data: sales, error: salesError } = await supabaseAdmin
-    .from("sales")
-    .update({
-      administrator,
-      role: administrator ? "owner" : "operator",
-    })
-    .eq("user_id", user_id)
-    .select("*");
+const firstSale = (rows: SaleRecord[] | null) => rows?.at(0) ?? null;
 
-  if (!sales?.length || salesError) {
-    console.error("Error updating user:", salesError);
-    throw salesError ?? new Error("Failed to update sale");
-  }
-  return sales.at(0);
-}
-
-async function createSale(
-  user_id: string,
-  data: {
-    email: string;
-    first_name: string;
-    last_name: string;
-    disabled: boolean;
-    administrator: boolean;
+const ports: UserManagementPorts = {
+  async findSaleById(id) {
+    const { data } = await supabaseAdmin
+      .from("sales")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    return data ?? null;
   },
-) {
-  const { data: sales, error: salesError } = await supabaseAdmin
-    .from("sales")
-    .insert({ ...data, user_id })
-    .select("*");
-
-  if (!sales?.length || salesError) {
-    console.error("Error creating user:", salesError);
-    throw salesError ?? new Error("Failed to create sale");
-  }
-  return sales.at(0);
-}
-
-const isOwner = (sale: any) =>
-  sale?.administrator === true && sale?.role === "owner" && !sale?.disabled;
-
-async function updateSaleAvatar(user_id: string, avatar: string) {
-  const { data: sales, error: salesError } = await supabaseAdmin
-    .from("sales")
-    .update({ avatar })
-    .eq("user_id", user_id)
-    .select("*");
-
-  if (!sales?.length || salesError) {
-    console.error("Error updating user:", salesError);
-    throw salesError ?? new Error("Failed to update sale");
-  }
-  return sales.at(0);
-}
-
-async function inviteUser(req: Request, currentUserSale: any) {
-  const { email, password, first_name, last_name, disabled, administrator } =
-    await req.json();
-
-  if (!isOwner(currentUserSale)) {
-    return createErrorResponse(401, "Not Authorized");
-  }
-
-  const { data, error: userError } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password,
-    user_metadata: { first_name, last_name },
-  });
-
-  let user = data?.user;
-
-  if (!user && userError?.code === "email_exists") {
-    // This may happen if users cleared their database but not the users
-    // We have to create the sale directly
+  async findSaleByUserId(userId) {
+    const { data } = await supabaseAdmin
+      .from("sales")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+    return data ?? null;
+  },
+  async updateAuthUser(userId, attributes) {
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      attributes,
+    );
+    if (error || !data?.user) console.error("Error patching user:", error);
+    return { ok: !error && !!data?.user };
+  },
+  async updateSale(userId, patch) {
+    const { data, error } = await supabaseAdmin
+      .from("sales")
+      .update(patch)
+      .eq("user_id", userId)
+      .select("*");
+    if (error) console.error("Error updating sale:", error);
+    return error ? null : firstSale(data);
+  },
+  async createAuthUser(email, metadata) {
+    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      user_metadata: metadata,
+    });
+    if (error || !data?.user) {
+      if (error?.code !== "email_exists") {
+        console.error("Error inviting user:", error);
+      }
+      return { error: error?.code ?? "no_user" };
+    }
+    return { userId: data.user.id };
+  },
+  async findAuthUserIdByEmail(email) {
     const { data, error } = await supabaseAdmin.rpc("get_user_id_by_email", {
       email,
     });
-
-    if (!data || error) {
-      console.error(
-        `Error inviting user: error=${error ?? "could not fetch users for email"}`,
-      );
-      return createErrorResponse(500, "Internal Server Error");
-    }
-
-    user = data[0];
-    try {
-      const { data: existingSale, error: salesError } = await supabaseAdmin
-        .from("sales")
-        .select("*")
-        .eq("user_id", user.id);
-      if (salesError) {
-        return createErrorResponse(salesError.status, salesError.message, {
-          code: salesError.code,
-        });
-      }
-      if (existingSale.length > 0) {
-        return createErrorResponse(
-          400,
-          "A sales for this email already exists",
-        );
-      }
-
-      const sale = await createSale(user.id, {
-        email,
-        first_name,
-        last_name,
-        disabled,
-        administrator,
-      });
-
-      return new Response(
-        JSON.stringify({
-          data: sale,
-        }),
-        {
-          headers: { "Content-Type": "application/json", ...corsHeaders },
-        },
-      );
-    } catch (error) {
-      return createErrorResponse(
-        (error as any).status ?? 500,
-        (error as Error).message,
-        {
-          code: (error as any).code,
-        },
-      );
-    }
-  } else {
-    if (userError) {
-      console.error(`Error inviting user: user_error=${userError}`);
-      return createErrorResponse(userError.status, userError.message, {
-        code: userError.code,
-      });
-    }
-    if (!data?.user) {
-      console.error("Error inviting user: undefined user");
-      return createErrorResponse(500, "Internal Server Error");
-    }
-    const { error: emailError } =
-      await supabaseAdmin.auth.admin.inviteUserByEmail(email);
-
-    if (emailError) {
-      console.error(`Error inviting user, email_error=${emailError}`);
-      return createErrorResponse(500, "Failed to send invitation mail");
-    }
-  }
-
-  try {
-    await updateSaleDisabled(user.id, disabled);
-    const sale = await updateSaleAdministrator(user.id, administrator);
-
-    return new Response(
-      JSON.stringify({
-        data: sale,
-      }),
-      {
-        headers: { "Content-Type": "application/json", ...corsHeaders },
-      },
-    );
-  } catch (e) {
-    console.error("Error patching sale:", e);
-    return createErrorResponse(500, "Internal Server Error");
-  }
-}
-
-async function patchUser(req: Request, currentUserSale: any) {
-  const {
-    sales_id,
-    email,
-    first_name,
-    last_name,
-    avatar,
-    administrator,
-    disabled,
-  } = await req.json();
-  const { data: sale } = await supabaseAdmin
-    .from("sales")
-    .select("*")
-    .eq("id", sales_id)
-    .single();
-
-  if (!sale) {
-    return createErrorResponse(404, "Not Found");
-  }
-
-  // Users can only update their own profile unless they are an administrator
-  if (!currentUserSale.administrator && currentUserSale.id !== sale.id) {
-    return createErrorResponse(401, "Not Authorized");
-  }
-
-  const { data, error: userError } =
-    await supabaseAdmin.auth.admin.updateUserById(sale.user_id, {
-      email,
-      ban_duration: disabled ? "87600h" : "none",
-      user_metadata: { first_name, last_name },
-    });
-
-  if (!data?.user || userError) {
-    console.error("Error patching user:", userError);
-    return createErrorResponse(500, "Internal Server Error");
-  }
-
-  if (avatar) {
-    await updateSaleAvatar(data.user.id, avatar);
-  }
-
-  // Only an active owner can change another user's role or disabled status.
-  if (!isOwner(currentUserSale)) {
-    const { data: new_sale } = await supabaseAdmin
+    if (error) console.error("Error finding user by email:", error);
+    return (!error && data?.[0]?.id) || null;
+  },
+  async insertSale(record) {
+    const { data, error } = await supabaseAdmin
       .from("sales")
-      .select("*")
-      .eq("id", sales_id)
-      .single();
-    return new Response(
-      JSON.stringify({
-        data: new_sale,
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders,
-        },
-      },
-    );
-  }
+      .insert(record)
+      .select("*");
+    if (error) console.error("Error creating sale:", error);
+    return error ? null : firstSale(data);
+  },
+  async inviteUserByEmail(email) {
+    const { error } = await supabaseAdmin.auth.admin.inviteUserByEmail(email);
+    if (error) console.error("Error sending the invitation:", error);
+    return { ok: !error };
+  },
+  async deleteSaleByUserId(userId) {
+    const { error } = await supabaseAdmin
+      .from("sales")
+      .delete()
+      .eq("user_id", userId);
+    return { ok: !error };
+  },
+  async deleteAuthUser(userId) {
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
+    return { ok: !error };
+  },
+};
 
-  try {
-    await updateSaleDisabled(data.user.id, disabled);
-    const sale = await updateSaleAdministrator(data.user.id, administrator);
-    return new Response(
-      JSON.stringify({
-        data: sale,
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          ...corsHeaders,
-        },
-      },
-    );
-  } catch (e) {
-    console.error("Error patching sale:", e);
-    return createErrorResponse(500, "Internal Server Error");
-  }
-}
+const respond = ({ status, body }: Outcome) =>
+  status === 200
+    ? new Response(JSON.stringify(body), {
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      })
+    : createErrorResponse(status, body.message ?? "Error", {
+        code: body.code,
+      });
 
 Deno.serve(async (req: Request) =>
   OptionsMiddleware(req, async (req) =>
@@ -273,11 +116,15 @@ Deno.serve(async (req: Request) =>
         }
 
         if (req.method === "POST") {
-          return inviteUser(req, currentUserSale);
+          return respond(
+            await inviteUser(ports, currentUserSale, await req.json()),
+          );
         }
 
         if (req.method === "PATCH") {
-          return patchUser(req, currentUserSale);
+          return respond(
+            await patchUser(ports, currentUserSale, await req.json()),
+          );
         }
 
         return createErrorResponse(405, "Method Not Allowed");
