@@ -48,9 +48,9 @@ describe("the working rule of the agent state", () => {
 
     expect(shownActivity(agent)).toBe("unknown");
     await expect
-      .element(screen.getByText("activity: unknown", { exact: true }))
+      .element(screen.getByText("Desconhecido", { exact: true }))
       .toBeVisible();
-    expect(document.body.textContent).not.toContain("activity: working");
+    expect(document.body.textContent).not.toContain("Trabalhando");
     expect(document.body.textContent).not.toContain("working runs");
   });
 

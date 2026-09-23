@@ -29,101 +29,104 @@ const adviceSummary = (): string => {
 };
 
 export const EVERY_ROUTE: readonly RouteVisit[] = [
-  { hash: "#/company-os", heading: "Overview", markers: ["Reviews pending"] },
+  {
+    hash: "#/company-os",
+    heading: "Visão geral",
+    markers: ["Decisões pendentes"],
+  },
   {
     hash: "#/company-os/activity",
-    heading: "Activity",
-    markers: [
-      "communication.outbound_failed",
-      "Synthetic pause of the follow-up desk",
-    ],
+    heading: "Atividade",
+    markers: ["Envio falhou", "Synthetic pause of the follow-up desk"],
   },
   {
     hash: `#/company-os/activity/task/${rid("task:succeeded")}`,
-    heading: "Task chain",
-    markers: ["communication.received", "agent_run.succeeded", "job leased"],
+    heading: "Cadeia da tarefa",
+    markers: [
+      "communication.received",
+      "agent_run.succeeded",
+      "Trabalho assumido por um trabalhador",
+    ],
   },
   {
     hash: `#/company-os/activity/run/${rid("run:succeeded")}`,
-    heading: "Run chain",
-    markers: ["agent_run.started", "job leased"],
+    heading: "Cadeia da execução",
+    markers: ["agent_run.started", "Trabalho assumido por um trabalhador"],
   },
   {
     hash: "#/company-os/tasks",
-    heading: "Tasks",
-    markers: [rid("task:succeeded")],
+    heading: "Tarefas",
+    markers: ["Triagem de novo lead"],
   },
   {
     hash: `#/company-os/tasks/${rid("task:accepted-1")}`,
-    heading: "Task",
+    heading: "Tarefa",
     markers: ["Synthetic test line", "131047"],
   },
   {
     hash: "#/company-os/agents",
-    heading: "Agents",
+    heading: "Equipe de IA",
     markers: ["Lead Triage", "Queue Desk"],
   },
   {
     hash: `#/company-os/agents/${rid("agent:lead-triage")}`,
-    heading: "Agent",
-    markers: [rid("run:indeterminate")],
+    heading: "Agente",
+    markers: ["Resultado incerto"],
   },
   {
     hash: "#/company-os/runs",
-    heading: "Agent runs",
-    markers: [rid("run:failed")],
+    heading: "Execuções",
+    markers: ["Triagem de novo lead"],
   },
   {
     hash: `#/company-os/runs/${rid("run:held")}`,
-    heading: "Agent run",
-    markers: ["job deferred"],
+    heading: "Execução",
+    markers: ["Trabalho adiado por uma pausa"],
   },
   {
     hash: "#/company-os/reviews",
-    heading: "Reviews",
-    markers: [rid("review:opened")],
+    heading: "Decisões",
+    markers: ["Aguardando sua revisão"],
   },
   ...(["accepted", "rejected", "needs_edit"] as const).map((status) => ({
     hash: `#/company-os/reviews?status=${status}`,
-    heading: "Reviews",
+    heading: "Decisões",
     markers: [
-      rid(
-        {
-          accepted: "review:accepted-1",
-          rejected: "review:not-pinned",
-          needs_edit: "review:invalid",
-        }[status],
-      ),
+      {
+        accepted: "Aceita",
+        rejected: "Rejeitada",
+        needs_edit: "Pede ajuste",
+      }[status],
     ],
   })),
   {
     hash: `#/company-os/reviews/${rid("review:accepted-1")}`,
-    heading: "Review",
+    heading: "Decisão",
     markers: ["Call back tomorrow"],
   },
   {
     hash: `#/company-os/reviews/${ADVICE_REVIEW}`,
-    heading: "Review",
-    markers: ["rejected, needs edit"],
+    heading: "Decisão",
+    markers: ["Rejeitada, Pede ajuste"],
   },
   {
     hash: "#/company-os/stops",
-    heading: "Execution stops",
+    heading: "Pausas",
     markers: ["Synthetic pause of the follow-up desk"],
   },
   {
     hash: "#/company-os/stops?include=cleared",
-    heading: "Execution stops",
+    heading: "Pausas",
     markers: ["Drill over", "Synthetic annex pause"],
   },
   {
     hash: "#/company-os/costs",
-    heading: "Costs",
-    markers: ["100000.000000 USD", "dbtest-cos-contract-model"],
+    heading: "Custos",
+    markers: ["US$ 100.000,00", "dbtest-cos-contract-model"],
   },
   {
     hash: "#/company-os/communications",
-    heading: "Communications status",
+    heading: "Comunicações",
     markers: ["Synthetic test line", "Production line"],
   },
 ];
@@ -149,7 +152,7 @@ export const visit = async (screen: RenderResult, route: RouteVisit) => {
 
 /** Opens the pending review's advice and waits for it. */
 export const openAdvice = async (screen: RenderResult) => {
-  await screen.getByRole("button", { name: "Show advice" }).click();
+  await screen.getByRole("button", { name: "Ver análise" }).click();
   await expect
     .element(screen.getByText(adviceSummary(), { exact: true }))
     .toBeVisible();

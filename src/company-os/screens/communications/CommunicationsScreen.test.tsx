@@ -16,7 +16,7 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 // authorized record named by the operator send request that authorized it.
 
 const rowOf = (text: string) =>
-  [...document.querySelectorAll("tr")].find((row) =>
+  [...document.querySelectorAll("article")].find((row) =>
     row.textContent?.includes(text),
   );
 
@@ -34,11 +34,17 @@ describe("the Communications status view", () => {
     await expect
       .element(screen.getByText("Production line", { exact: true }))
       .toBeVisible();
-    expect(rowOf("Synthetic test line")?.textContent).toContain("testyes");
-    expect(rowOf("Production line")?.textContent).toContain("productionno");
+    expect(rowOf("Synthetic test line")?.textContent).toContain("TesteAtivo");
+    expect(rowOf("Production line")?.textContent).toContain("ProduçãoInativo");
     await expect
-      .element(screen.getByText(UNROUTED_DELIVERIES_NOTE))
+      .element(
+        screen.getByText(
+          "Entregas que não chegam a um canal configurado nunca são guardadas.",
+        ),
+      )
       .toBeVisible();
+    // The server's own fixed note stays on the page, in the technical details.
+    expect(document.body.textContent).toContain(UNROUTED_DELIVERIES_NOTE);
     await expect
       .element(screen.getByText(COMMUNICATIONS_SCOPE_NOTE))
       .toBeVisible();
@@ -51,19 +57,19 @@ describe("the Communications status view", () => {
     );
 
     await expect
-      .element(screen.getByLabelText("Outbound attention"))
+      .element(screen.getByLabelText("Atenção nos envios"))
       .toHaveTextContent(`${ACCEPTED_WITHOUT_SEND_LABEL}0`);
     await expect
-      .element(screen.getByLabelText("Outbound records by status"))
-      .toHaveTextContent("blocked1failed1indeterminate1");
+      .element(screen.getByLabelText("Envios por situação"))
+      .toHaveTextContent("Envio bloqueado1Envio falhou1Envio incerto1");
     await expect
-      .element(screen.getByLabelText("Blocked outbound records by reason"))
+      .element(screen.getByLabelText("Envios bloqueados por motivo"))
       .toHaveTextContent("contact not found1");
     await expect
-      .element(screen.getByLabelText("Refused today by reason"))
+      .element(screen.getByLabelText("Recusadas hoje por motivo"))
       .toHaveTextContent("empty body1");
     expect(document.body.textContent).not.toMatch(
-      /approved|awaiting|waiting to be sent|ready to send/i,
+      /approved|awaiting|waiting to be sent|ready to send|aprovad|aguardando (o )?envio|pront[ao] para (o )?envi/i,
     );
   });
 
@@ -84,7 +90,7 @@ describe("the Communications status view", () => {
     );
 
     await expect
-      .element(screen.getByLabelText("Outbound records by status"))
+      .element(screen.getByLabelText("Envios por situação"))
       .toHaveTextContent(`${OUTBOUND_AUTHORIZED_TEXT}1`);
   });
 });

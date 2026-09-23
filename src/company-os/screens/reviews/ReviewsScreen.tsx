@@ -1,13 +1,6 @@
+import { Inbox } from "lucide-react";
 import { Link, Route, Routes, useSearchParams } from "react-router";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 
 import {
@@ -15,17 +8,19 @@ import {
   type ReviewStatus,
   type ReviewSummary,
 } from "../../../../contracts/company-os-api/index.ts";
+import { Note, RecordLink, ScreenLayout } from "../../components/display";
 import {
-  Note,
-  RecordLink,
-  ScreenLayout,
-  Timestamp,
-  YesNo,
-} from "../../components/display";
+  EmptyState,
+  Meta,
+  OwnerCard,
+  RelativeTime,
+  TechnicalDetails,
+} from "../../components/owner";
 import { PageControls, PagesView } from "../../components/queryStates";
 import { LIST_PATHS } from "../../components/recordPaths";
 import { REVIEW_DECISIONS_CLI_NOTE, REVIEW_NOT_A_SEND_NOTE } from "../../copy";
-import { humanize, oneOf } from "../../format/labels";
+import { oneOf } from "../../format/labels";
+import { capabilityLabel, reviewStatusLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { ReviewDetail } from "./ReviewDetail";
 import { outboundRecordText } from "./reviewLabels";
@@ -40,7 +35,10 @@ import { ReviewStatusBadge } from "./ReviewSummaryFields";
 const TABS: readonly ReviewStatus[] = REVIEW_STATUSES;
 
 const StatusTabs = ({ active }: { active: ReviewStatus }) => (
-  <nav aria-label="Review status" className="flex flex-wrap gap-1 border-b">
+  <nav
+    aria-label="Situação da decisão"
+    className="flex flex-wrap gap-1 border-b"
+  >
     {TABS.map((status) => (
       <Link
         key={status}
@@ -51,61 +49,85 @@ const StatusTabs = ({ active }: { active: ReviewStatus }) => (
           status === active ? "bg-accent font-medium" : "hover:bg-accent/50",
         )}
       >
-        {humanize(status)}
+        {reviewStatusLabel(status)}
       </Link>
     ))}
   </nav>
 );
 
-const ReviewRow = ({ review }: { review: ReviewSummary }) => (
-  <TableRow>
-    <TableCell>
-      <RecordLink kind="review" id={review.id} />
-    </TableCell>
-    <TableCell>
+const ReviewCard = ({ review }: { review: ReviewSummary }) => (
+  <OwnerCard
+    label={`Decisão ${capabilityLabel(review.capability)}`}
+    className="flex flex-col gap-3"
+  >
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <span className="rounded-xl bg-amber-500/10 p-2.5 text-amber-700 dark:text-amber-300">
+          <Inbox aria-hidden className="size-5" />
+        </span>
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">
+            {capabilityLabel(review.capability)}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Aberta <RelativeTime value={review.createdAt} />
+            {review.reviewedAt === null ? null : (
+              <>
+                {" · decidida "}
+                <RelativeTime value={review.reviewedAt} />
+              </>
+            )}
+          </span>
+        </div>
+      </div>
       <ReviewStatusBadge review={review} />
-    </TableCell>
-    <TableCell>{review.capability}</TableCell>
-    <TableCell>
-      <RecordLink kind="task" id={review.taskId} />
-    </TableCell>
-    <TableCell>
-      <YesNo value={review.doNotContact} />
-    </TableCell>
-    <TableCell>
-      <Timestamp value={review.createdAt} />
-    </TableCell>
-    <TableCell>
-      <Timestamp value={review.reviewedAt} />
-    </TableCell>
-    <TableCell>
-      <YesNo value={review.hasNote} />
-    </TableCell>
-    <TableCell>{outboundRecordText(review.outboundStatus)}</TableCell>
-  </TableRow>
+    </div>
+    <div className="flex flex-wrap gap-x-6 gap-y-1">
+      {review.doNotContact ? (
+        <span className="text-xs font-medium text-rose-700 dark:text-rose-300">
+          Não contatar
+        </span>
+      ) : null}
+      <Meta label="Envio">{outboundRecordText(review.outboundStatus)}</Meta>
+      <Meta label="Nota">{review.hasNote ? "Sim" : "Não"}</Meta>
+    </div>
+    <div className="flex flex-wrap gap-4">
+      <RecordLink
+        kind="review"
+        id={review.id}
+        label={`Ver análise da revisão ${review.id}`}
+      >
+        Ver análise
+      </RecordLink>
+      <RecordLink
+        kind="task"
+        id={review.taskId}
+        label={`Tarefa ${review.taskId}`}
+      >
+        Ver tarefa
+      </RecordLink>
+    </div>
+    <TechnicalDetails
+      rows={[
+        ["Revisão", review.id],
+        ["Tarefa", review.taskId],
+        ["Execução", review.agentRunId ?? "—"],
+        ["Capacidade", review.capability],
+        ["Situação", review.status],
+        ["Aberta (UTC)", review.createdAt],
+      ]}
+    />
+  </OwnerCard>
 );
 
 const ReviewTable = ({ reviews }: { reviews: readonly ReviewSummary[] }) => (
-  <Table aria-label="Reviews">
-    <TableHeader>
-      <TableRow>
-        <TableHead>Review</TableHead>
-        <TableHead>Status</TableHead>
-        <TableHead>Capability</TableHead>
-        <TableHead>Task</TableHead>
-        <TableHead>Do not contact</TableHead>
-        <TableHead>Opened</TableHead>
-        <TableHead>Decided</TableHead>
-        <TableHead>Note</TableHead>
-        <TableHead>Outbound record</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {reviews.map((review) => (
-        <ReviewRow key={review.id} review={review} />
-      ))}
-    </TableBody>
-  </Table>
+  <div role="list" aria-label="Decisões" className="flex flex-col gap-3">
+    {reviews.map((review) => (
+      <div role="listitem" key={review.id}>
+        <ReviewCard review={review} />
+      </div>
+    ))}
+  </div>
 );
 
 const ReviewList = () => {
@@ -115,18 +137,20 @@ const ReviewList = () => {
   const items = itemsOf(reviews.data);
   return (
     <ScreenLayout
-      title="Reviews"
+      title="Decisões"
       description={
         status === "pending"
-          ? "Pending reviews, oldest first."
-          : "Decided reviews, newest first."
+          ? "Aguardando sua revisão, das mais antigas para as mais novas."
+          : "Decisões registradas, das mais recentes para as mais antigas."
       }
     >
       <Note>{`${REVIEW_DECISIONS_CLI_NOTE} ${REVIEW_NOT_A_SEND_NOTE}`}</Note>
       <StatusTabs active={status} />
-      <PagesView query={reviews} what="the reviews">
+      <PagesView query={reviews} what="as decisões">
         <ReviewTable reviews={items} />
-        {items.length === 0 ? <Note>No review has this status.</Note> : null}
+        {items.length === 0 ? (
+          <EmptyState icon={Inbox} title="Nenhuma decisão nesta situação." />
+        ) : null}
         <PageControls query={reviews} />
       </PagesView>
     </ScreenLayout>

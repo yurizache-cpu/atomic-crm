@@ -19,9 +19,12 @@ import { TaskChain } from "./TaskChain";
 const EventFeed = () => {
   const events = useCompanyOsPages("list_events", {});
   return (
-    <Section title="Events">
-      <PagesView query={events} what="the events">
-        <EventTable events={itemsOf(events.data)} label="Tenant events" />
+    <Section title="Eventos">
+      <PagesView query={events} what="a atividade">
+        <EventTable
+          events={itemsOf(events.data)}
+          label="Atividade da empresa"
+        />
         <PageControls query={events} />
       </PagesView>
     </Section>
@@ -32,13 +35,16 @@ const StopFeed = () => {
   const stops = useCompanyOsPages("list_stops", { p_include_cleared: true });
   const items = itemsOf(stops.data);
   return (
-    <Section title={`Execution stops (${STOP_EVENTS_LABEL.toLowerCase()})`}>
+    <Section title={`Pausas (${STOP_EVENTS_LABEL.toLowerCase()})`}>
       <Note>
-        {`${STOP_EVENTS_LABEL}: these entries are read from the stop rows naming this tenant, not from the event feed.`}
+        {`${STOP_EVENTS_LABEL}: estas entradas vêm dos registros de pausa desta empresa, não do feed de eventos.`}
       </Note>
-      <PagesView query={stops} what="the stops">
-        <StopTable stops={items} label="Stops from their own rows" />
-        {items.length === 0 ? <Note>No stop names this tenant.</Note> : null}
+      <PagesView query={stops} what="as pausas">
+        <StopTable
+          stops={items}
+          label="Pausas a partir dos próprios registros"
+        />
+        {items.length === 0 ? <Note>Nenhuma pausa nesta empresa.</Note> : null}
         <PageControls query={stops} />
       </PagesView>
     </Section>
@@ -47,8 +53,8 @@ const StopFeed = () => {
 
 const ActivityFeed = () => (
   <ScreenLayout
-    title="Activity"
-    description="Every entry is an event row, a stop row naming this tenant, or a job step read from a run's own job."
+    title="Atividade"
+    description="Tudo o que aconteceu na sua empresa, do mais recente para o mais antigo."
   >
     <EventFeed />
     <StopFeed />

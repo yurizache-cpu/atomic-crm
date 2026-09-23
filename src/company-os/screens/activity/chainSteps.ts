@@ -20,19 +20,19 @@ export interface ChainStep {
 export const TASK_STEPS_BEFORE_RUNS: readonly ChainStep[] = [
   {
     id: "received",
-    label: "Event received",
+    label: "Mensagem recebida",
     eventTypes: ["communication.received", "lead_triage.admitted"],
   },
   {
     id: "task-created",
-    label: "Task created",
+    label: "Tarefa criada",
     eventTypes: ["task.created", "task.assigned"],
   },
   {
     // The task-side fact of a run request; the run's own fact is the run
     // block's "Run requested". Two steps, two labels.
     id: "execution-requested",
-    label: "Execution requested",
+    label: "Execução pedida para a tarefa",
     eventTypes: ["task.execution_requested"],
   },
 ];
@@ -43,18 +43,18 @@ export const JOB_STEP_ID = "job-leased";
 export const RUN_STEPS: readonly ChainStep[] = [
   {
     id: "run-requested",
-    label: "Run requested",
+    label: "Execução do agente pedida",
     eventTypes: ["agent_run.requested"],
   },
-  { id: JOB_STEP_ID, label: "Job leased", eventTypes: [] },
+  { id: JOB_STEP_ID, label: "Trabalho assumido", eventTypes: [] },
   {
     id: "call-begun",
-    label: "Provider call begun",
+    label: "Chamada ao modelo iniciada",
     eventTypes: ["agent_run.started"],
   },
   {
     id: "settled",
-    label: "Result settled",
+    label: "Resultado registrado",
     eventTypes: [
       "agent_run.succeeded",
       "agent_run.failed",
@@ -67,17 +67,17 @@ export const RUN_STEPS: readonly ChainStep[] = [
 export const TASK_STEPS_AFTER_RUNS: readonly ChainStep[] = [
   {
     id: "review-opened",
-    label: "Review opened",
+    label: "Revisão aberta",
     eventTypes: ["lead_triage.review_pending"],
   },
   {
     id: "decision",
-    label: "Operator decision",
+    label: "Decisão do operador",
     eventTypes: ["lead_triage.reviewed"],
   },
   {
     id: "send-requested",
-    label: "Outbound send requested",
+    label: "Envio pedido",
     eventTypes: [
       "communication.outbound_authorized",
       "communication.outbound_attempted",
@@ -86,7 +86,7 @@ export const TASK_STEPS_AFTER_RUNS: readonly ChainStep[] = [
   },
   {
     id: "provider-result",
-    label: "Provider result or status",
+    label: "Resultado ou situação do envio",
     eventTypes: [
       "communication.outbound_sent",
       "communication.outbound_failed",

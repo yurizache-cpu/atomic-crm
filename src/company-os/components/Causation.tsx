@@ -29,7 +29,7 @@ export const EventsInViewProvider = ({ children }: { children: ReactNode }) => {
 const EventLink = ({ id }: { id: string }) => (
   <button
     type="button"
-    aria-label={`Go to event ${id}`}
+    aria-label={`Ir para o evento ${id}`}
     onClick={() => focusEventEntry(id)}
     className="font-mono text-xs underline underline-offset-4"
   >
@@ -49,7 +49,7 @@ export const Causation = ({ event }: { event: EventSummary }) => {
     <span className="flex flex-col gap-0.5 text-xs">
       {event.causationId === null ? null : (
         <span className="flex flex-wrap items-center gap-1">
-          <span className="text-muted-foreground">caused by</span>
+          <span className="text-muted-foreground">causado por</span>
           {inView(event.causationId) ? (
             <EventLink id={event.causationId} />
           ) : (
@@ -59,7 +59,7 @@ export const Causation = ({ event }: { event: EventSummary }) => {
       )}
       {effects.length === 0 ? null : (
         <span className="flex flex-wrap items-center gap-1">
-          <span className="text-muted-foreground">caused</span>
+          <span className="text-muted-foreground">causou</span>
           {effects.map((id) => (
             <EventLink key={id} id={id} />
           ))}

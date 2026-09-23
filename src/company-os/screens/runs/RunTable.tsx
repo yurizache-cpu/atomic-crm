@@ -1,80 +1,127 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PlayCircle } from "lucide-react";
 
 import type { AgentRunSummary } from "../../../../contracts/company-os-api/index.ts";
+import { RecordLink } from "../../components/display";
 import {
-  MoneyText,
-  None,
-  RecordLink,
-  StateBadge,
-  Timestamp,
-} from "../../components/display";
+  Meta,
+  MoneyValue,
+  OwnerCard,
+  RelativeTime,
+  StatusChip,
+  TechnicalDetails,
+} from "../../components/owner";
+import {
+  attentionLabel,
+  capabilityLabel,
+  exactMoney,
+  runStatusLabel,
+  toneOfState,
+} from "../../format/ptBR";
+import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { shownRunStatus } from "./liveness";
 
-// Agent runs as a table (docs/PHASE_2C_BRIEF.md §12 screen 5): capability,
-// route, provider and model, status, attention, timing and the charged cost as
-// the server's string. Never the result text; a run carries none. Every table
-// passes `current`, whether its answer is younger than two polling intervals
-// (§10): once it is not, a run that can still change reads "unknown", and a
-// settled run keeps its final status (liveness.ts).
+// Agent runs as the owner reads them (docs/PHASE_2C_BRIEF.md §12 screen 5):
+// what the agent did, whether it finished, when, with which model, how long it
+// took and what it cost, never the result text (a run carries none). The
+// agent's name comes from list_agents, the same read the Equipe screen shows.
+// Ids, route, tokens and exact amounts stay in the technical details. Every
+// list passes `current`, whether its answer is younger than two polling
+// intervals (§10): once it is not, a run that can still change reads
+// "Desconhecido", and a settled run keeps its final status (liveness.ts).
 
-const RunRow = ({
+const durationLabel = (ms: number | null): string | null => {
+  if (ms === null) return null;
+  if (ms < 1000) return `${ms} ms`;
+  return `${(ms / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} s`;
+};
+
+const RunCard = ({
   run,
   current,
+  agentName,
 }: {
   run: AgentRunSummary;
   current: boolean;
-}) => (
-  <TableRow>
-    <TableCell>
-      <RecordLink kind="run" id={run.id} />
-    </TableCell>
-    <TableCell>
-      <span className="flex flex-wrap gap-1">
-        {shownRunStatus(run, current) === "unknown" ? (
-          <StateBadge value="unknown" />
-        ) : (
-          <>
-            <StateBadge value={run.status} />
-            {run.attention === null ? null : (
-              <StateBadge value={run.attention} />
+  agentName: string | null;
+}) => {
+  const status = shownRunStatus(run, current);
+  const duration = durationLabel(run.latencyMs);
+  return (
+    <OwnerCard
+      label={`Execução ${capabilityLabel(run.capability)}`}
+      className="flex flex-col gap-3"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <span className="rounded-xl bg-primary/10 p-2.5 text-primary">
+            <PlayCircle aria-hidden className="size-5" />
+          </span>
+          <div className="flex flex-col">
+            <RecordLink
+              kind="run"
+              id={run.id}
+              label={`Abrir execução ${run.id}`}
+            >
+              {agentName ?? "Agente"}
+            </RecordLink>
+            <span className="text-sm text-muted-foreground">
+              {capabilityLabel(run.capability)}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <span className="flex flex-wrap justify-end gap-1">
+            <StatusChip
+              tone={toneOfState(status)}
+              label={runStatusLabel(status)}
+            />
+            {status === "unknown" || run.attention === null ? null : (
+              <StatusChip tone="amber" label={attentionLabel(run.attention)} />
             )}
-          </>
-        )}
-      </span>
-    </TableCell>
-    <TableCell>{run.capability}</TableCell>
-    <TableCell>{run.modelRoute}</TableCell>
-    <TableCell>
-      {run.provider === null ? (
-        <None />
-      ) : (
-        <span>{`${run.provider} / ${run.model ?? "no model"}`}</span>
-      )}
-    </TableCell>
-    <TableCell>
-      <RecordLink kind="agent" id={run.agentId} />
-    </TableCell>
-    <TableCell>
-      <RecordLink kind="task" id={run.taskId} />
-    </TableCell>
-    <TableCell>
-      <Timestamp value={run.createdAt} />
-    </TableCell>
-    <TableCell>
-      <Timestamp value={run.completedAt} />
-    </TableCell>
-    <TableCell>
-      <MoneyText value={run.chargedCost} />
-    </TableCell>
-  </TableRow>
-);
+          </span>
+          <span className="text-xs text-muted-foreground">
+            <RelativeTime value={run.createdAt} />
+          </span>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-1">
+        <Meta label="Modelo">{run.model ?? run.responseModel ?? "—"}</Meta>
+        {duration === null ? null : <Meta label="Duração">{duration}</Meta>}
+        <Meta label="Custo">
+          <MoneyValue value={run.chargedCost} />
+        </Meta>
+      </div>
+      <TechnicalDetails
+        rows={[
+          ["Execução", run.id],
+          ["Tarefa", run.taskId],
+          ["Agente", run.agentId],
+          ["Capacidade", run.capability],
+          ["Rota", run.modelRoute],
+          ["Provedor", run.provider ?? "—"],
+          ["Modelo da resposta", run.responseModel ?? "—"],
+          ["Situação", run.status],
+          [
+            "Erro",
+            run.errorCategory === null
+              ? "—"
+              : `${run.errorCategory} ${run.errorCode ?? ""}`,
+          ],
+          [
+            "Tokens (entrada/saída)",
+            `${run.inputTokens ?? "—"} / ${run.outputTokens ?? "—"}`,
+          ],
+          [
+            "Custo cobrado",
+            run.chargedCost === null ? "—" : exactMoney(run.chargedCost),
+          ],
+          ["Criada (UTC)", run.createdAt],
+          ["Concluída (UTC)", run.completedAt ?? "—"],
+        ]}
+      />
+    </OwnerCard>
+  );
+};
 
 export const RunTable = ({
   runs,
@@ -85,26 +132,21 @@ export const RunTable = ({
   label: string;
   /** Whether the answer the runs came in is still current (§10). */
   current: boolean;
-}) => (
-  <Table aria-label={label}>
-    <TableHeader>
-      <TableRow>
-        <TableHead>Run</TableHead>
-        <TableHead>Status</TableHead>
-        <TableHead>Capability</TableHead>
-        <TableHead>Route</TableHead>
-        <TableHead>Provider / model</TableHead>
-        <TableHead>Agent</TableHead>
-        <TableHead>Task</TableHead>
-        <TableHead>Created</TableHead>
-        <TableHead>Completed</TableHead>
-        <TableHead>Charged</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
+}) => {
+  const agents = useCompanyOsQuery("list_agents", {});
+  const nameOf = (id: string) =>
+    agents.data?.items.find((agent) => agent.id === id)?.name ?? null;
+  return (
+    <div role="list" aria-label={label} className="flex flex-col gap-3">
       {runs.map((run) => (
-        <RunRow key={run.id} run={run} current={current} />
+        <div role="listitem" key={run.id}>
+          <RunCard
+            run={run}
+            current={current}
+            agentName={nameOf(run.agentId)}
+          />
+        </div>
       ))}
-    </TableBody>
-  </Table>
-);
+    </div>
+  );
+};

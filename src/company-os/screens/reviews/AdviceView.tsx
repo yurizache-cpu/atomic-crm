@@ -2,7 +2,7 @@ import type { LeadTriageAdvice } from "../../../../contracts/company-os-api/inde
 import { Field, Fields, None, Note, YesNo } from "../../components/display";
 import { QueryView } from "../../components/queryStates";
 import { REPLY_DRAFT_NOTE } from "../../copy";
-import { humanize } from "../../format/labels";
+import { adviceLabel } from "../../format/ptBR";
 import { useReviewAdvice } from "../../query/useReviewAdvice";
 import { WITHHELD_TEXT } from "./reviewLabels";
 
@@ -14,24 +14,24 @@ import { WITHHELD_TEXT } from "./reviewLabels";
 // draft, which the projection does not carry and its contract refuses.
 
 const LeadTriageAdviceFields = ({ advice }: { advice: LeadTriageAdvice }) => (
-  <Fields label="Advice">
-    <Field term="Outcome">{humanize(advice.outcome)}</Field>
-    <Field term="Intent">{humanize(advice.intent)}</Field>
-    <Field term="Priority">{advice.priority}</Field>
-    <Field term="Needs human review">
+  <Fields label="Análise">
+    <Field term="Classificação">{adviceLabel(advice.outcome)}</Field>
+    <Field term="Intenção">{adviceLabel(advice.intent)}</Field>
+    <Field term="Prioridade">{adviceLabel(advice.priority)}</Field>
+    <Field term="Precisa de revisão humana">
       <YesNo value={advice.needsHumanReview} />
     </Field>
-    <Field term="Flags">
+    <Field term="Alertas">
       {advice.flags.length === 0 ? (
         <None />
       ) : (
-        <span>{advice.flags.map(humanize).join(", ")}</span>
+        <span>{advice.flags.map(adviceLabel).join(", ")}</span>
       )}
     </Field>
-    <Field term="Summary">
+    <Field term="Resumo">
       <span className="whitespace-pre-wrap">{advice.summary}</span>
     </Field>
-    <Field term="Recommended next action">
+    <Field term="Próxima ação recomendada">
       <span className="whitespace-pre-wrap">
         {advice.recommendedNextAction}
       </span>
@@ -44,13 +44,13 @@ export const AdviceView = ({ reviewId }: { reviewId: string }) => {
   return (
     <div
       role="region"
-      aria-label="Structured advice"
+      aria-label="Análise estruturada"
       className="flex flex-col gap-3"
     >
-      <QueryView query={advice} what="the advice">
+      <QueryView query={advice} what="a análise">
         {(data) =>
           "withheld" in data ? (
-            <p>{`Advice withheld: ${WITHHELD_TEXT[data.withheld]}.`}</p>
+            <p>{`Análise retida: ${WITHHELD_TEXT[data.withheld]}.`}</p>
           ) : (
             <LeadTriageAdviceFields advice={data} />
           )

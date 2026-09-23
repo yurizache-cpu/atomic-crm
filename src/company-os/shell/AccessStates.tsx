@@ -18,7 +18,7 @@ const linkClass = "text-sm font-medium underline underline-offset-4";
 
 export const BackToCrmLink = () => (
   <a className={linkClass} href={CRM_HOME_HREF}>
-    Back to the CRM
+    Voltar ao CRM
   </a>
 );
 
@@ -37,7 +37,7 @@ const StateCard = ({
 
 export const LoadingState = () => (
   <main className="p-6">
-    <p className="text-sm text-muted-foreground">Loading Company OS…</p>
+    <p className="text-sm text-muted-foreground">Carregando o Company OS…</p>
   </main>
 );
 
@@ -46,16 +46,15 @@ export const SignedOutState = ({
 }: {
   signOutFailed: boolean;
 }) => (
-  <StateCard title="Signed out">
-    <p className="text-sm">Sign in through the CRM to use the Company OS.</p>
+  <StateCard title="Você saiu">
+    <p className="text-sm">Entre pelo CRM para usar o Company OS.</p>
     {signOutFailed ? (
       <p className="text-sm">
-        Sign-out did not reach the server: the session may still be active in
-        the CRM.
+        A saída não chegou ao servidor: a sessão ainda pode estar ativa no CRM.
       </p>
     ) : null}
     <a className={linkClass} href={CRM_SIGN_IN_HREF}>
-      Sign in through the CRM
+      Entrar pelo CRM
     </a>
   </StateCard>
 );
@@ -65,17 +64,16 @@ export const NoAccessState = ({
 }: {
   reason: "membership" | "read-refused";
 }) => (
-  <StateCard title="No Company OS access">
+  <StateCard title="Sem acesso ao Company OS">
     {reason === "membership" ? (
       <p className="text-sm">
-        This account holds no active Company OS membership. Memberships are
-        granted and revoked only through the operator CLI.
+        Esta conta não tem um acesso ativo ao Company OS. Os acessos são
+        concedidos e revogados apenas pelo operador.
       </p>
     ) : (
       <p className="text-sm">
-        A Company OS read was refused again right after access was checked, so
-        nothing is shown. Return to the CRM and open the Company OS again to
-        retry.
+        Uma leitura foi recusada de novo logo depois da verificação de acesso,
+        por isso nada é mostrado. Volte ao CRM e abra o Company OS de novo.
       </p>
     )}
     <BackToCrmLink />
@@ -83,11 +81,13 @@ export const NoAccessState = ({
 );
 
 export const UnavailableState = ({ onRetry }: { onRetry: () => void }) => (
-  <StateCard title="Company OS unavailable">
-    <p className="text-sm">The operator context could not be read.</p>
+  <StateCard title="Company OS indisponível">
+    <p className="text-sm">
+      Não foi possível carregar o contexto da sua empresa.
+    </p>
     <div className="flex items-center gap-4">
       <Button variant="outline" size="sm" onClick={onRetry}>
-        Try again
+        Tentar de novo
       </Button>
       <BackToCrmLink />
     </div>

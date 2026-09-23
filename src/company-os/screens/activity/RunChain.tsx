@@ -16,18 +16,25 @@ import { RunChainRows } from "./RunChainRows";
 const RunChainRead = ({ runId }: { runId: string }) => {
   const run = useCompanyOsQuery("get_run", { p_run_id: runId });
   return (
-    <QueryView query={run} what="the run">
+    <QueryView query={run} what="a execução">
       {(data) => (
-        <Section title="Steps">
+        <Section title="Etapas">
           <p className="flex flex-wrap items-center gap-2 text-sm">
-            Run <RecordLink kind="run" id={data.id} /> of task
+            <RecordLink kind="run" id={data.id} label={`Execução ${data.id}`}>
+              Ver execução
+            </RecordLink>
+            <span aria-hidden className="text-muted-foreground">
+              ·
+            </span>
             <RecordLink
               kind="taskChain"
               id={data.taskId}
-              label={`Task chain ${data.taskId}`}
-            />
+              label={`Cadeia da tarefa ${data.taskId}`}
+            >
+              Ver cadeia da tarefa
+            </RecordLink>
           </p>
-          <ChainTable label="Run chain">
+          <ChainTable label="Cadeia da execução">
             <RunChainRows runId={data.id} withHeading={false} />
           </ChainTable>
         </Section>
@@ -40,8 +47,8 @@ export const RunChain = () => {
   const runId = useRouteRecordId("runId");
   return (
     <ScreenLayout
-      title="Run chain"
-      description="The durable facts of one agent run, laid out by step; each fact shows its own time."
+      title="Cadeia da execução"
+      description="Os registros permanentes de uma execução do agente, etapa por etapa, cada um com o seu horário."
     >
       <Link
         to={LIST_PATHS.activity}

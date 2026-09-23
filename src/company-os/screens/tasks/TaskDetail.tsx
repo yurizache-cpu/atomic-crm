@@ -26,7 +26,11 @@ import {
   TASK_RUNS_CAPPED_NOTE,
   TASK_RUNS_LIMIT,
 } from "../../copy";
-import { humanize } from "../../format/labels";
+import {
+  contactResolutionLabel,
+  inboundSourceLabel,
+  taskTypeLabel,
+} from "../../format/ptBR";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { ReviewSummaryFields } from "../reviews/ReviewSummaryFields";
@@ -44,26 +48,26 @@ import { Pipeline } from "./Pipeline";
 // a run's status reads "unknown" (§10, runs/liveness.ts).
 
 const TaskFields = ({ task }: { task: TaskDetailData }) => (
-  <Fields label="Task">
-    <Field term="Task id">
+  <Fields label="Tarefa">
+    <Field term="Identificador">
       <IdText id={task.id} />
     </Field>
-    <Field term="Type">{task.type}</Field>
+    <Field term="Tipo">{taskTypeLabel(task.type)}</Field>
     <Field term={LIFECYCLE_STATUS_LABEL}>
       <StateBadge value={task.lifecycleStatus} />
     </Field>
-    <Field term="Priority">{task.priority}</Field>
-    <Field term="Due">
+    <Field term="Prioridade">{task.priority}</Field>
+    <Field term="Prazo">
       <Timestamp value={task.dueAt} />
     </Field>
-    <Field term="Created">
+    <Field term="Criada">
       <Timestamp value={task.createdAt} />
     </Field>
-    <Field term="Company">{task.company.name}</Field>
-    <Field term="Department">
+    <Field term="Empresa">{task.company.name}</Field>
+    <Field term="Departamento">
       {task.department === null ? <None /> : task.department.name}
     </Field>
-    <Field term="Assigned agent">
+    <Field term="Agente responsável">
       {task.assignedAgent === null ? (
         <None />
       ) : (
@@ -77,24 +81,26 @@ const TaskFields = ({ task }: { task: TaskDetailData }) => (
 
 const Inbound = ({ inbound }: { inbound: TaskDetailData["inbound"] }) =>
   inbound === null ? (
-    <Note>No admission record: this task did not arrive as a message.</Note>
+    <Note>
+      Sem registro de recebimento: esta tarefa não chegou como mensagem.
+    </Note>
   ) : (
-    <Fields label="Inbound">
-      <Field term="Source">{inbound.sourceKind}</Field>
-      <Field term="Channel">
+    <Fields label="Recebimento">
+      <Field term="Origem">{inboundSourceLabel(inbound.sourceKind)}</Field>
+      <Field term="Canal">
         {inbound.channelLabel === null ? <None /> : inbound.channelLabel}
       </Field>
-      <Field term="Received">
+      <Field term="Recebida">
         <Timestamp value={inbound.receivedAt} />
       </Field>
-      <Field term="Contact resolution">
+      <Field term="Contato no CRM">
         {inbound.contactResolution === null ? (
           <None />
         ) : (
-          humanize(inbound.contactResolution)
+          contactResolutionLabel(inbound.contactResolution)
         )}
       </Field>
-      <Field term="Do not contact">
+      <Field term="Não contatar">
         <YesNo value={inbound.doNotContact} />
       </Field>
     </Fields>
@@ -117,12 +123,12 @@ const TaskDetailBody = ({
   const chainLink =
     chainPath === null ? null : (
       <Link to={chainPath} className="text-sm underline underline-offset-4">
-        Open the task chain
+        Ver cadeia da tarefa
       </Link>
     );
   return (
     <>
-      <Section title="Task">
+      <Section title="Tarefa">
         <Note>{LIFECYCLE_STATUS_NOTE}</Note>
         <TaskFields task={task} />
         {chainLink}
@@ -132,16 +138,16 @@ const TaskDetailBody = ({
           {STATE_UNKNOWN_NOTE}
         </p>
       )}
-      <Section title="Pipeline">
+      <Section title="Etapas">
         <Pipeline pipeline={task.pipeline} current={current} />
       </Section>
-      <Section title="Runs">
+      <Section title="Execuções">
         {task.runs.length === 0 ? (
-          <Note>No run was requested for this task.</Note>
+          <Note>Nenhuma execução foi pedida para esta tarefa.</Note>
         ) : (
           <RunTable
             runs={task.runs}
-            label="Runs of this task"
+            label="Execuções desta tarefa"
             current={current}
           />
         )}
@@ -149,29 +155,31 @@ const TaskDetailBody = ({
           <Note>{TASK_RUNS_CAPPED_NOTE}</Note>
         )}
       </Section>
-      <Section title="Review">
+      <Section title="Revisão">
         {task.review === null ? (
-          <Note>No review was opened for this task.</Note>
+          <Note>Nenhuma revisão foi aberta para esta tarefa.</Note>
         ) : (
-          <Fields label="Review of this task">
+          <Fields label="Revisão desta tarefa">
             <ReviewSummaryFields review={task.review} />
           </Fields>
         )}
       </Section>
-      <Section title="Outbound record">
+      <Section title="Envio">
         <OutboundRecord outbound={task.outbound} />
       </Section>
-      <Section title="Inbound">
+      <Section title="Recebimento">
         <Inbound inbound={task.inbound} />
       </Section>
-      <Section title="Events">
+      <Section title="Eventos">
         {task.events.items.length === 0 ? (
-          <Note>No event names this task.</Note>
+          <Note>Nenhum evento para esta tarefa.</Note>
         ) : (
-          <EventTable events={task.events.items} label="Events of this task" />
+          <EventTable events={task.events.items} label="Eventos desta tarefa" />
         )}
         {task.events.nextCursor === null ? null : (
-          <Note>Older events of this task are in the task chain.</Note>
+          <Note>
+            Os eventos mais antigos desta tarefa estão na cadeia da tarefa.
+          </Note>
         )}
       </Section>
     </>
@@ -185,7 +193,7 @@ const TaskDetailRead = ({ taskId }: { taskId: string }) => {
     { poll: hasLiveRun },
   );
   return (
-    <QueryView query={task} what="the task">
+    <QueryView query={task} what="a tarefa">
       {(data) => <TaskDetailBody task={data} receivedAt={task.dataUpdatedAt} />}
     </QueryView>
   );
@@ -194,7 +202,7 @@ const TaskDetailRead = ({ taskId }: { taskId: string }) => {
 export const TaskDetail = () => {
   const taskId = useRouteRecordId("taskId");
   return (
-    <ScreenLayout title="Task">
+    <ScreenLayout title="Tarefa">
       <Link
         to={LIST_PATHS.tasks}
         className="text-sm underline underline-offset-4"

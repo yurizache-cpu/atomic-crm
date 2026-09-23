@@ -13,7 +13,7 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 // CLI act, and no trip or clear control.
 
 const rowOf = (text: string) =>
-  [...document.querySelectorAll("tr")].find((row) =>
+  [...document.querySelectorAll("article")].find((row) =>
     row.textContent?.includes(text),
   );
 
@@ -65,27 +65,28 @@ describe("the Execution stops screen", () => {
       )
       .toBeVisible();
     const row = rowOf("Synthetic hold of every agent run")?.textContent ?? "";
-    expect(row).toContain("read-only");
-    expect(row).toContain(`tenant ${TENANT}job kind agent_run.execute`);
-    expect(row).toContain("active");
+    expect(row).toContain("Somente leitura");
+    expect(row).toContain(TENANT);
+    expect(row).toContain("agent_run.execute");
+    expect(row).toContain("Ativa");
   });
 
   it("adds the cleared stops with their clear reason on the second tab", async () => {
     const session = createRecordedSession();
     const screen = await renderCompanyOs(session, "#/company-os/stops");
 
-    await screen.getByRole("link", { name: "Active and cleared" }).click();
+    await screen.getByRole("link", { name: "Ativas e encerradas" }).click();
 
     await expect
       .element(screen.getByText("Drill over", { exact: true }))
       .toBeVisible();
     const cleared = rowOf("Drill over")?.textContent ?? "";
-    expect(cleared).toContain("cleared");
-    expect(cleared).toContain(`tenant ${TENANT}`);
+    expect(cleared).toContain("Encerrada");
+    expect(cleared).toContain(TENANT);
     expect(cleared).toContain(rid("stop:tenant"));
     const clearedKind = rowOf("Kind drill over")?.textContent ?? "";
-    expect(clearedKind).toContain("read-only");
-    expect(clearedKind).toContain("job kind agent_run.execute");
+    expect(clearedKind).toContain("Somente leitura");
+    expect(clearedKind).toContain("agent_run.execute");
     expect(session.callsOf("list_stops").at(-1)?.args.p_include_cleared).toBe(
       true,
     );

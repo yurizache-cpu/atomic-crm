@@ -55,12 +55,12 @@ const TaskChainTable = ({
       <ReadError error={events.error} onRetry={() => void events.refetch()} />
     );
   }
-  if (events.data === undefined) return <LoadingText what="the chain" />;
+  if (events.data === undefined) return <LoadingText what="a cadeia" />;
   const complete = !events.hasNextPage;
   const other = eventsOutside(items, TASK_STEPS);
   return (
     <>
-      <ChainTable label="Task chain">
+      <ChainTable label="Cadeia da tarefa">
         {TASK_STEPS_BEFORE_RUNS.map((step) => (
           <EventStepRow
             key={step.id}
@@ -70,8 +70,8 @@ const TaskChainTable = ({
           />
         ))}
         {runIds.length === 0 ? (
-          <ChainRow label="Agent run">
-            <Note>No run was requested for this task.</Note>
+          <ChainRow label="Execução do agente">
+            <Note>Nenhuma execução foi pedida para esta tarefa.</Note>
           </ChainRow>
         ) : (
           runIds.map((runId) => (
@@ -87,7 +87,7 @@ const TaskChainTable = ({
           />
         ))}
         {other.length === 0 ? null : (
-          <ChainRow label="Other facts on this task">
+          <ChainRow label="Outros registros desta tarefa">
             <OtherFacts events={other} />
           </ChainRow>
         )}
@@ -102,9 +102,9 @@ const TaskChainTable = ({
 const TaskChainRead = ({ taskId }: { taskId: string }) => {
   const task = useCompanyOsQuery("get_task", { p_task_id: taskId });
   return (
-    <QueryView query={task} what="the task">
+    <QueryView query={task} what="a tarefa">
       {(data) => (
-        <Section title="Steps">
+        <Section title="Etapas">
           <p className="flex flex-wrap items-center gap-2 text-sm">
             Task <RecordLink kind="task" id={data.id} />
           </p>
@@ -125,8 +125,8 @@ export const TaskChain = () => {
   const taskId = useRouteRecordId("taskId");
   return (
     <ScreenLayout
-      title="Task chain"
-      description="The durable facts of one task, laid out by step; each fact shows its own time."
+      title="Cadeia da tarefa"
+      description="Os registros permanentes de uma tarefa, etapa por etapa, cada um com o seu horário."
     >
       <Link
         to={LIST_PATHS.activity}

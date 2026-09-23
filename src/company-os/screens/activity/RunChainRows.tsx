@@ -30,7 +30,7 @@ const JobRow = ({ runId }: { runId: string }) => {
       {run.isError ? (
         <ReadError error={run.error} onRetry={() => void run.refetch()} />
       ) : run.data === undefined ? (
-        <LoadingText what="the job steps" />
+        <LoadingText what="as etapas do trabalho" />
       ) : (
         <div className="flex flex-col gap-1">
           <JobStepFacts steps={run.data.jobSteps} />
@@ -86,20 +86,24 @@ export const RunChainRows = ({
   return (
     <>
       {withHeading ? (
-        <ChainRow label="Agent run">
-          <RecordLink kind="runChain" id={runId} label={`Run chain ${runId}`} />
+        <ChainRow label="Execução do agente">
+          <RecordLink
+            kind="runChain"
+            id={runId}
+            label={`Cadeia da execução ${runId}`}
+          />
         </ChainRow>
       ) : null}
       {events.isError && !events.isFetchNextPageError ? (
-        <ChainRow label="Run events">
+        <ChainRow label="Eventos da execução">
           <ReadError
             error={events.error}
             onRetry={() => void events.refetch()}
           />
         </ChainRow>
       ) : events.data === undefined ? (
-        <ChainRow label="Run events">
-          <LoadingText what="the run's events" />
+        <ChainRow label="Eventos da execução">
+          <LoadingText what="os eventos da execução" />
         </ChainRow>
       ) : (
         <>
@@ -109,12 +113,12 @@ export const RunChainRows = ({
             complete={!events.hasNextPage}
           />
           {other.length === 0 ? null : (
-            <ChainRow label="Other facts on this run">
+            <ChainRow label="Outros registros desta execução">
               <OtherFacts events={other} />
             </ChainRow>
           )}
           {events.hasNextPage || events.isFetchNextPageError ? (
-            <ChainRow label="More run events">
+            <ChainRow label="Mais eventos da execução">
               <PageControls query={events} />
             </ChainRow>
           ) : null}

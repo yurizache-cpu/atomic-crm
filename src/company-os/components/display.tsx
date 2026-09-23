@@ -1,16 +1,15 @@
 import { useId, type ReactNode } from "react";
 import { Link } from "react-router";
 
-import { Badge } from "@/components/ui/badge";
-
 import type { Money } from "../../../contracts/company-os-api/index.ts";
-import { formatTimestamp, humanize, yesNo } from "../format/labels";
+import { stateLabel, toneOfState, yesNoLabel } from "../format/ptBR";
+import { MoneyValue, RelativeTime, StatusChip } from "./owner";
 import { recordPath, type RecordKind } from "./recordPaths";
-import { toneOf } from "./tones";
 
 // The building blocks every Company OS screen renders with: React-escaped text
-// only, badges for states, internal router links for ids, money and counts
-// exactly as the server sent them (docs/PHASE_2C_BRIEF.md §6.2, §12).
+// only, status chips for states, internal router links for ids, money and
+// counts exactly as the server sent them (docs/PHASE_2C_BRIEF.md §6.2, §12),
+// presented in Brazilian Portuguese for the owner.
 
 export const ScreenLayout = ({
   title,
@@ -21,9 +20,9 @@ export const ScreenLayout = ({
   description?: string;
   children: ReactNode;
 }) => (
-  <div className="flex flex-col gap-6">
+  <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
     <div className="flex flex-col gap-1">
-      <h1 className="text-xl font-semibold">{title}</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
       {description === undefined ? null : (
         <p className="text-sm text-muted-foreground">{description}</p>
       )}
@@ -41,7 +40,10 @@ export const Section = ({
 }) => {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-3">
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-3 rounded-xl border bg-card p-4 shadow-sm"
+    >
       <h2 id={headingId} className="text-base font-semibold">
         {title}
       </h2>
@@ -61,25 +63,25 @@ export const StateBadge = ({
 }: {
   value: string;
   label?: string;
-}) => <Badge variant={toneOf(value)}>{label ?? humanize(value)}</Badge>;
+}) => (
+  <StatusChip tone={toneOfState(value)} label={label ?? stateLabel(value)} />
+);
 
-export const None = ({ children = "none" }: { children?: string }) => (
+export const None = ({ children = "—" }: { children?: string }) => (
   <span className="text-muted-foreground">{children}</span>
 );
 
-export const Timestamp = ({ value }: { value: string | null }) =>
-  value === null ? (
-    <None />
-  ) : (
-    <time dateTime={value}>{formatTimestamp(value)}</time>
-  );
+export const Timestamp = ({ value }: { value: string | null }) => (
+  <RelativeTime value={value} />
+);
 
-/** The server's USD string, verbatim: the browser does no money arithmetic. */
-export const MoneyText = ({ value }: { value: Money | null }) =>
-  value === null ? <None /> : <span>{`${value.usd} USD`}</span>;
+/** The server's amount, formatted for the owner; the exact figure is its title. */
+export const MoneyText = ({ value }: { value: Money | null }) => (
+  <MoneyValue value={value} />
+);
 
 export const YesNo = ({ value }: { value: boolean }) => (
-  <span>{yesNo(value)}</span>
+  <span>{yesNoLabel(value)}</span>
 );
 
 /** An id as text, for a record the module has no page for. */
@@ -87,7 +89,7 @@ export const IdText = ({ id }: { id: string | null }) =>
   id === null ? <None /> : <span className="font-mono text-xs">{id}</span>;
 
 /**
- * A record's id as an internal router link, or as text when it is not a uuid.
+ * A record as an internal router link, or as text when it is not a uuid.
  * The link never leaves #/company-os (components/recordPaths.ts).
  */
 export const RecordLink = ({
@@ -107,21 +109,27 @@ export const RecordLink = ({
     <Link
       to={path}
       aria-label={label}
-      className="font-mono text-xs underline underline-offset-4"
+      className={
+        children === undefined
+          ? "font-mono text-xs text-primary underline underline-offset-4"
+          : "font-medium text-primary underline-offset-4 hover:underline"
+      }
     >
       {children ?? id}
     </Link>
   );
 };
 
-/** Several run ids, each linking to its run; "none" when empty. */
+/** Several runs, each linking to its run; "—" when empty. */
 export const RunLinks = ({ ids }: { ids: readonly string[] }) =>
   ids.length === 0 ? (
     <None />
   ) : (
     <span className="flex flex-wrap gap-2">
-      {ids.map((id) => (
-        <RecordLink key={id} kind="run" id={id} />
+      {ids.map((id, index) => (
+        <RecordLink key={id} kind="run" id={id} label={`Execução ${id}`}>
+          {`Execução ${index + 1}`}
+        </RecordLink>
       ))}
     </span>
   );
@@ -135,7 +143,7 @@ export const Fields = ({
 }) => (
   <dl
     aria-label={label}
-    className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-[max-content_1fr]"
+    className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-[max-content_1fr]"
   >
     {children}
   </dl>

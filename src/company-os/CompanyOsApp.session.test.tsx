@@ -80,10 +80,10 @@ describe("the Company OS session lifecycle", () => {
     const { screen } = await renderShell(session, { hash: REVIEW_DEEP_LINK });
 
     await expect
-      .element(screen.getByRole("heading", { name: "Signed out" }))
+      .element(screen.getByRole("heading", { name: "Você saiu" }))
       .toBeVisible();
     await expect
-      .element(screen.getByRole("link", { name: "Sign in through the CRM" }))
+      .element(screen.getByRole("link", { name: "Entrar pelo CRM" }))
       .toHaveAttribute("href", "#/");
     await expect.element(screen.getByText(DATA_BANNER_TEXT)).toBeVisible();
     await outlastStrayQueries();
@@ -97,7 +97,9 @@ describe("the Company OS session lifecycle", () => {
     const { screen } = await renderShell(session, { hash: REVIEW_DEEP_LINK });
 
     await expect
-      .element(screen.getByRole("heading", { name: "No Company OS access" }))
+      .element(
+        screen.getByRole("heading", { name: "Sem acesso ao Company OS" }),
+      )
       .toBeVisible();
     await outlastStrayQueries();
     expect(session.calls.map((call) => call.operation)).toEqual([
@@ -114,13 +116,14 @@ describe("the Company OS session lifecycle", () => {
 
     const { screen } = await renderShell(session);
 
-    const header = screen.getByRole("definition");
-    await expect.element(screen.getByText("Synthetic Clinic A")).toBeVisible();
-    await expect
-      .element(screen.getByText("Synthetic or test data only"))
-      .toBeVisible();
-    await expect.element(screen.getByText("tenant_operator")).toBeVisible();
-    expect(header.elements()).toHaveLength(3);
+    const header = screen.getByRole("group", { name: "Contexto" });
+    await expect.element(header).toHaveTextContent("Synthetic Clinic A");
+    await expect.element(header).toHaveTextContent("Ambiente de teste");
+    await expect.element(header).toHaveTextContent("Operador");
+    // The tenant, the environment and the role: nothing about the person.
+    expect(header.element().textContent).toBe(
+      "Synthetic Clinic AAmbiente de testeOperador",
+    );
     expect(session.calls[0].operation).toBe("operator_context");
   });
 
@@ -138,7 +141,7 @@ describe("the Company OS session lifecycle", () => {
     await screen.getByRole("button", { name: "Read stops again" }).click();
 
     await expect
-      .element(screen.getByRole("heading", { name: "Signed out" }))
+      .element(screen.getByRole("heading", { name: "Você saiu" }))
       .toBeVisible();
     expect(probe.client().getQueryCache().getAll()).toEqual([]);
   });
@@ -189,7 +192,9 @@ describe("the Company OS session lifecycle", () => {
     await screen.getByRole("button", { name: "Read stops again" }).click();
 
     await expect
-      .element(screen.getByRole("heading", { name: "No Company OS access" }))
+      .element(
+        screen.getByRole("heading", { name: "Sem acesso ao Company OS" }),
+      )
       .toBeVisible();
     await outlastStrayQueries();
     // Gate, read, confirmation; the refused read; one re-read of the gate;
@@ -218,10 +223,16 @@ describe("the Company OS session lifecycle", () => {
     const screen = await renderCompanyOs(session, "#/company-os/tasks");
 
     await expect
-      .element(screen.getByRole("heading", { name: "No Company OS access" }))
+      .element(
+        screen.getByRole("heading", { name: "Sem acesso ao Company OS" }),
+      )
       .toBeVisible();
     await expect
-      .element(screen.getByText(/refused again right after access was checked/))
+      .element(
+        screen.getByText(
+          /recusada de novo logo depois da verificação de acesso/,
+        ),
+      )
       .toBeVisible();
     await outlastStrayQueries();
     await outlastStrayQueries();
@@ -267,10 +278,10 @@ describe("the Company OS session lifecycle", () => {
       cachedAtSignOut = probe.client().getQueryCache().getAll().length;
     });
 
-    await screen.getByRole("button", { name: "Sign out" }).click();
+    await screen.getByRole("button", { name: "Sair" }).click();
 
     await expect
-      .element(screen.getByRole("heading", { name: "Signed out" }))
+      .element(screen.getByRole("heading", { name: "Você saiu" }))
       .toBeVisible();
     expect(session.signOutRequests).toBe(1);
     expect(cachedAtSignOut).toBe(0);
@@ -285,10 +296,10 @@ describe("the Company OS session lifecycle", () => {
       throw new Error("synthetic network failure");
     });
 
-    await screen.getByRole("button", { name: "Sign out" }).click();
+    await screen.getByRole("button", { name: "Sair" }).click();
 
     await expect
-      .element(screen.getByText(/the session may still be active in the CRM/))
+      .element(screen.getByText(/a sessão ainda pode estar ativa no CRM/))
       .toBeVisible();
     expect(probe.client().getQueryCache().getAll()).toEqual([]);
   });
@@ -301,9 +312,9 @@ describe("the Company OS session lifecycle", () => {
     session.onSignOut(() => {
       throw new Error("synthetic network failure");
     });
-    await screen.getByRole("button", { name: "Sign out" }).click();
+    await screen.getByRole("button", { name: "Sair" }).click();
     await expect
-      .element(screen.getByText(/the session may still be active in the CRM/))
+      .element(screen.getByText(/a sessão ainda pode estar ativa no CRM/))
       .toBeVisible();
     const callsAtSignOut = session.calls.length;
 
@@ -313,7 +324,7 @@ describe("the Company OS session lifecycle", () => {
     await outlastStrayQueries();
 
     await expect
-      .element(screen.getByRole("heading", { name: "Signed out" }))
+      .element(screen.getByRole("heading", { name: "Você saiu" }))
       .toBeVisible();
     expect(screen.getByText("Sentinel stop").query()).toBeNull();
     expect(session.calls).toHaveLength(callsAtSignOut);
@@ -373,7 +384,7 @@ describe("the Company OS session lifecycle", () => {
     const { screen } = await renderShell(session);
 
     await expect
-      .element(screen.getByRole("heading", { name: "Company OS unavailable" }))
+      .element(screen.getByRole("heading", { name: "Company OS indisponível" }))
       .toBeVisible();
     expect(session.callsOf("operator_context")).toHaveLength(2);
 
@@ -381,7 +392,7 @@ describe("the Company OS session lifecycle", () => {
       ok(operatorContext(TENANT_A, "Synthetic Clinic A")),
     );
     session.answer("list_stops", () => ok(stopList("Synthetic stop")));
-    await screen.getByRole("button", { name: "Try again" }).click();
+    await screen.getByRole("button", { name: "Tentar de novo" }).click();
 
     await expect.element(screen.getByText("Synthetic Clinic A")).toBeVisible();
   });
@@ -398,7 +409,7 @@ describe("the Company OS session lifecycle", () => {
     const { screen } = await renderShell(session);
 
     await expect
-      .element(screen.getByRole("heading", { name: "Company OS unavailable" }))
+      .element(screen.getByRole("heading", { name: "Company OS indisponível" }))
       .toBeVisible();
     expect(screen.getByText("Sentinel Clinic Name").query()).toBeNull();
     expect(screen.getByText("Synthetic Person").query()).toBeNull();

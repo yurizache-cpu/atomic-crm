@@ -1,3 +1,4 @@
+import { PauseCircle } from "lucide-react";
 import { Link, useSearchParams } from "react-router";
 
 import { cn } from "@/lib/utils";
@@ -11,6 +12,7 @@ import {
   STOP_PLATFORM_NOTE,
 } from "../../copy";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
+import { EmptyState } from "../../components/owner";
 import { StopTable } from "./StopTable";
 
 // Screen 7, Execution stops (docs/PHASE_2C_BRIEF.md §12): the active stops
@@ -20,12 +22,15 @@ import { StopTable } from "./StopTable";
 // read-only like every other.
 
 const VIEWS = [
-  { include: false, label: "Active", search: "" },
-  { include: true, label: "Active and cleared", search: "?include=cleared" },
+  { include: false, label: "Ativas", search: "" },
+  { include: true, label: "Ativas e encerradas", search: "?include=cleared" },
 ] as const;
 
 const ViewTabs = ({ includeCleared }: { includeCleared: boolean }) => (
-  <nav aria-label="Stop view" className="flex flex-wrap gap-1 border-b">
+  <nav
+    aria-label="Visualização das pausas"
+    className="flex flex-wrap gap-1 border-b"
+  >
     {VIEWS.map((view) => (
       <Link
         key={view.label}
@@ -53,17 +58,21 @@ export const ExecutionStopsScreen = () => {
   const items = itemsOf(stops.data);
   return (
     <ScreenLayout
-      title="Execution stops"
-      description="Stops naming this tenant, newest first."
+      title="Pausas"
+      description="O que está impedido de iniciar novas execuções, e por quê."
     >
       <Note>{STOP_CLEAR_NOTE}</Note>
       <Note>{STOP_JOB_KIND_NOTE}</Note>
       <Note>{STOP_PLATFORM_NOTE}</Note>
       <ViewTabs includeCleared={includeCleared} />
-      <PagesView query={stops} what="the stops">
-        <StopTable stops={items} label="Execution stops" />
+      <PagesView query={stops} what="as pausas">
+        <StopTable stops={items} label="Pausas" />
         {items.length === 0 ? (
-          <Note>No stop naming this tenant is listed.</Note>
+          <EmptyState
+            icon={PauseCircle}
+            title="Nenhuma pausa por aqui."
+            text="Nada está impedido de iniciar novas execuções."
+          />
         ) : null}
         <PageControls query={stops} />
       </PagesView>

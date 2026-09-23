@@ -18,40 +18,43 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 // once the answer is older than two polling intervals (§10).
 
 const PROOF_LINKS: readonly (readonly [string, string])[] = [
-  ["Agents: 8", "#/company-os/agents"],
-  ["Working: 1", "#/company-os/agents?activity=working"],
-  ["Held: 1", "#/company-os/agents?activity=held"],
-  ["Queued: 1", "#/company-os/agents?activity=queued"],
-  ["Stale: 1", "#/company-os/agents?activity=stale"],
-  ["Stopped: 2", "#/company-os/agents?availability=stopped"],
-  ["Inactive: 3", "#/company-os/agents?availability=inactive"],
-  ["Runs working now: 1", "#/company-os/agents?activity=working"],
-  ["Runs needing attention: 2", "#/company-os/runs?attention=1"],
-  ["Reviews pending: 2", "#/company-os/reviews"],
-  ["Active stops naming this tenant: 3", "#/company-os/stops"],
-  ["Tenant admission: conditional", "#/company-os/costs"],
+  ["Agentes: 8", "#/company-os/agents"],
+  ["Trabalhando: 1", "#/company-os/agents?activity=working"],
+  ["Retidos por pausa: 1", "#/company-os/agents?activity=held"],
+  ["Com trabalho na fila: 1", "#/company-os/agents?activity=queued"],
+  ["Sem sinal do trabalho: 1", "#/company-os/agents?activity=stale"],
+  ["Pausados: 2", "#/company-os/agents?availability=stopped"],
+  ["Inativos: 3", "#/company-os/agents?availability=inactive"],
+  ["Execuções trabalhando agora: 1", "#/company-os/agents?activity=working"],
+  ["Execuções com atenção: 2", "#/company-os/runs?attention=1"],
+  ["Decisões aguardando revisão: 2", "#/company-os/reviews"],
+  ["Pausas ativas desta empresa: 3", "#/company-os/stops"],
+  [
+    "Novas execuções desta empresa: Liberada dentro do orçamento",
+    "#/company-os/costs",
+  ],
 ];
 
 /** Counts whose list cannot narrow to them yet: each says what its list shows. */
 const WIDER_LISTS: readonly (readonly [string, string])[] = [
   [
-    "Runs today: failed: 1 (the list shows failed runs of every day)",
+    "Execuções hoje: Falhou: 1 (a lista mostra execuções de todos os dias)",
     "#/company-os/runs?status=failed",
   ],
   [
-    "Runs today: pending: 6 (the list shows pending runs of every day)",
+    "Execuções hoje: Na fila: 6 (a lista mostra execuções de todos os dias)",
     "#/company-os/runs?status=pending",
   ],
   [
-    "Outbound records today: blocked: 1 (the list shows every task: see its pipeline column)",
+    "Envios hoje: Envio bloqueado: 1 (a lista mostra todas as tarefas: veja as etapas de cada tarefa)",
     "#/company-os/tasks",
   ],
   [
-    "Indeterminate sends open: 1 (the list shows every task: see its pipeline column)",
+    "Envios incertos em aberto: 1 (a lista mostra todas as tarefas: veja as etapas de cada tarefa)",
     "#/company-os/tasks",
   ],
   [
-    `${ACCEPTED_WITHOUT_SEND_LABEL}: 0 (the list shows every accepted review: see its outbound record column)`,
+    `${ACCEPTED_WITHOUT_SEND_LABEL}: 0 (a lista mostra todas as decisões aceitas: veja o envio de cada decisão)`,
     "#/company-os/reviews?status=accepted",
   ],
 ];
@@ -102,7 +105,9 @@ describe("the Overview screen", () => {
         .toHaveAttribute("href", href);
     }
     await expect
-      .element(screen.getByText("(the list shows failed runs of every day)"))
+      .element(
+        screen.getByText("(a lista mostra execuções de todos os dias)").first(),
+      )
       .toBeVisible();
     await expect.element(screen.getByText(OVERVIEW_PROOF_NOTE)).toBeVisible();
   });
@@ -113,13 +118,13 @@ describe("the Overview screen", () => {
       "#/company-os",
     );
     await expect
-      .element(screen.getByRole("region", { name: "Admission" }))
-      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}no`);
+      .element(screen.getByLabelText("Admissão"))
+      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}Não`);
     await expect
       .element(screen.getByText(ACCEPTED_WITHOUT_SEND_LABEL, { exact: true }))
       .toBeVisible();
     expect(document.body.textContent).not.toMatch(
-      /awaiting|waiting to be sent/i,
+      /awaiting|waiting to be sent|aguardando (o )?envio/i,
     );
     await screen.unmount();
 
@@ -129,11 +134,16 @@ describe("the Overview screen", () => {
     );
 
     await expect
-      .element(blocked.getByRole("region", { name: "Admission" }))
-      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}yes`);
+      .element(blocked.getByLabelText("Admissão"))
+      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}Sim`);
     // The platform stop holds the queued run: its agent reads held.
     await expect
-      .element(blocked.getByRole("link", { name: "Queued: 0", exact: true }))
+      .element(
+        blocked.getByRole("link", {
+          name: "Com trabalho na fila: 0",
+          exact: true,
+        }),
+      )
       .toBeVisible();
   });
 
@@ -151,7 +161,7 @@ describe("the Overview screen", () => {
     await expect
       .element(
         screen.getByRole("link", {
-          name: "Outbound records today: send authorized by an operator send request: 1 (the list shows every task: see its pipeline column)",
+          name: "Envios hoje: envio autorizado por um pedido de envio do operador: 1 (a lista mostra todas as tarefas: veja as etapas de cada tarefa)",
           exact: true,
         }),
       )
@@ -166,17 +176,21 @@ describe("the Overview screen", () => {
       { clock: () => Date.now() + skew },
     );
     await expect
-      .element(screen.getByRole("link", { name: "Reviews pending: 2" }))
+      .element(
+        screen.getByRole("link", { name: "Decisões aguardando revisão: 2" }),
+      )
       .toBeVisible();
 
     skew = STATE_UNKNOWN_AFTER_MS + 1_000;
 
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
     expect(
-      screen.getByRole("link", { name: "Reviews pending: 2" }).query(),
+      screen
+        .getByRole("link", { name: "Decisões aguardando revisão: 2" })
+        .query(),
     ).toBeNull();
     expect(
-      screen.getByText("unknown", { exact: true }).elements().length,
+      screen.getByText("Desconhecido", { exact: true }).elements().length,
     ).toBeGreaterThanOrEqual(PROOF_LINKS.length);
   });
 
@@ -193,13 +207,15 @@ describe("the Overview screen", () => {
       clock: () => Date.now() + skew,
     });
     await expect
-      .element(screen.getByText("No run was created today."))
+      .element(screen.getByText("Nenhuma execução foi criada hoje."))
       .toBeVisible();
 
     skew = STATE_UNKNOWN_AFTER_MS + 1_000;
 
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
-    expect(screen.getByText("No run was created today.").query()).toBeNull();
+    expect(
+      screen.getByText("Nenhuma execução foi criada hoje.").query(),
+    ).toBeNull();
   });
 
   it("reads the overview again every 15 s while the page is visible, and never while it is hidden", async () => {
@@ -208,7 +224,9 @@ describe("the Overview screen", () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, "#/company-os");
       await expect
-        .element(screen.getByRole("link", { name: "Reviews pending: 2" }))
+        .element(
+          screen.getByRole("link", { name: "Decisões aguardando revisão: 2" }),
+        )
         .toBeVisible();
       const reads = () => session.callsOf("overview").length;
       expect(reads()).toBe(1);

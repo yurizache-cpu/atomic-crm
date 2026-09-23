@@ -1,18 +1,19 @@
 import type { ReviewSummary } from "../../../../contracts/company-os-api/index.ts";
 import {
   Field,
-  None,
   RecordLink,
   StateBadge,
   Timestamp,
   YesNo,
 } from "../../components/display";
+import { TechnicalDetails } from "../../components/owner";
+import { capabilityLabel } from "../../format/ptBR";
 import { outboundRecordText, reviewStatusText } from "./reviewLabels";
 
-// A review's summary as definition-list rows, shared by the review detail and
-// the task detail. No reviewer label exists in the projection (the stored one
-// is free-form), and no field of the model's proposal: that is the advice,
-// read only on explicit open.
+// A review's summary as the owner reads it: its state, what kind of work it
+// decides, when it was opened and decided, and whether a send was ever
+// recorded; never a reviewer label (docs/PHASE_2C_BRIEF.md §9). The ids stay in
+// the technical details.
 
 export const ReviewStatusBadge = ({ review }: { review: ReviewSummary }) => (
   <StateBadge value={review.status} label={reviewStatusText(review.status)} />
@@ -20,37 +21,59 @@ export const ReviewStatusBadge = ({ review }: { review: ReviewSummary }) => (
 
 export const ReviewSummaryFields = ({ review }: { review: ReviewSummary }) => (
   <>
-    <Field term="Review">
-      <RecordLink kind="review" id={review.id} />
-    </Field>
-    <Field term="Status">
+    <Field term="Situação">
       <ReviewStatusBadge review={review} />
     </Field>
-    <Field term="Capability">{review.capability}</Field>
-    <Field term="Task">
-      <RecordLink kind="task" id={review.taskId} />
+    <Field term="Trabalho">{capabilityLabel(review.capability)}</Field>
+    <Field term="Tarefa">
+      <RecordLink
+        kind="task"
+        id={review.taskId}
+        label={`Tarefa ${review.taskId}`}
+      >
+        Ver tarefa
+      </RecordLink>
     </Field>
-    <Field term="Agent run">
+    <Field term="Execução da IA">
       {review.agentRunId === null ? (
-        <None />
+        <span className="text-muted-foreground">—</span>
       ) : (
-        <RecordLink kind="run" id={review.agentRunId} />
+        <RecordLink
+          kind="run"
+          id={review.agentRunId}
+          label={`Execução ${review.agentRunId}`}
+        >
+          Ver execução
+        </RecordLink>
       )}
     </Field>
-    <Field term="Do not contact">
+    <Field term="Não contatar">
       <YesNo value={review.doNotContact} />
     </Field>
-    <Field term="Opened">
+    <Field term="Aberta">
       <Timestamp value={review.createdAt} />
     </Field>
-    <Field term="Decided">
+    <Field term="Decidida">
       <Timestamp value={review.reviewedAt} />
     </Field>
-    <Field term="Has a decision note">
+    <Field term="Tem nota de decisão">
       <YesNo value={review.hasNote} />
     </Field>
-    <Field term="Outbound record">
+    <Field term="Envio">
       <span>{outboundRecordText(review.outboundStatus)}</span>
+    </Field>
+    <Field term="Técnico">
+      <TechnicalDetails
+        rows={[
+          ["Revisão", review.id],
+          ["Tarefa", review.taskId],
+          ["Execução", review.agentRunId ?? "—"],
+          ["Capacidade", review.capability],
+          ["Situação", review.status],
+          ["Aberta (UTC)", review.createdAt],
+          ["Decidida (UTC)", review.reviewedAt ?? "—"],
+        ]}
+      />
     </Field>
   </>
 );

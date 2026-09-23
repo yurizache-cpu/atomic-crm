@@ -8,7 +8,7 @@ import { UUID_PATTERN } from "../../../contracts/company-os-api/index.ts";
 /** An enum value as words: `needs_edit` reads "needs edit". */
 export const humanize = (value: string): string => value.replaceAll("_", " ");
 
-export const yesNo = (value: boolean): string => (value ? "yes" : "no");
+export const yesNo = (value: boolean): string => (value ? "Sim" : "Não");
 
 /**
  * A contract timestamp (YYYY-MM-DDTHH:MM:SS.ffffffZ, always UTC) to the
@@ -31,5 +31,7 @@ export const uuidOrNull = (value: string | null): string | null =>
   value !== null && UUID_PATTERN.test(value) ? value : null;
 
 /** A select's options for a closed vocabulary. */
-export const optionsOf = (values: readonly string[]) =>
-  values.map((value) => ({ value, label: humanize(value) }));
+export const optionsOf = (
+  values: readonly string[],
+  label: (value: string) => string = humanize,
+) => values.map((value) => ({ value, label: label(value) }));

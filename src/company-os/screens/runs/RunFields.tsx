@@ -9,6 +9,7 @@ import {
   Timestamp,
 } from "../../components/display";
 import { humanize } from "../../format/labels";
+import { attentionLabel, runStatusLabel } from "../../format/ptBR";
 
 // A run's summary fields as a definition list: identity, outcome, model,
 // tokens, latency and timing. Token counts and latency are the server's
@@ -28,83 +29,89 @@ export const RunFields = ({
   run: AgentRunSummary;
   current: boolean;
 }) => (
-  <Fields label="Run summary">
-    <Field term="Run id">
+  <Fields label="Resumo da execução">
+    <Field term="Identificador">
       <IdText id={run.id} />
     </Field>
-    <Field term="Status">
-      <StateBadge value={current ? run.status : "unknown"} />
+    <Field term="Situação">
+      <StateBadge
+        value={current ? run.status : "unknown"}
+        label={runStatusLabel(current ? run.status : "unknown")}
+      />
     </Field>
-    <Field term="Attention">
+    <Field term="Atenção">
       {!current ? (
         <StateBadge value="unknown" />
       ) : run.attention === null ? (
         <None />
       ) : (
-        <StateBadge value={run.attention} />
+        <StateBadge
+          value={run.attention}
+          label={attentionLabel(run.attention)}
+        />
       )}
     </Field>
-    <Field term="Error">
+    <Field term="Erro">
       {run.errorCategory === null ? (
         <None />
       ) : (
-        <span>{`${humanize(run.errorCategory)} (${run.errorCode ?? "no code"})`}</span>
+        <span>{`${humanize(run.errorCategory)} (${run.errorCode ?? "sem código"})`}</span>
       )}
     </Field>
-    <Field term="Agent">
+    <Field term="Agente">
       <RecordLink kind="agent" id={run.agentId} />
     </Field>
-    <Field term="Task">
+    <Field term="Tarefa">
       <RecordLink kind="task" id={run.taskId} />
     </Field>
-    <Field term="Company id">
+    <Field term="Empresa">
       <IdText id={run.companyId} />
     </Field>
-    <Field term="Capability">{run.capability}</Field>
-    <Field term="Model route">{run.modelRoute}</Field>
-    <Field term="Provider">
+    <Field term="Trabalho">{run.capability}</Field>
+    <Field term="Rota do modelo">{run.modelRoute}</Field>
+    <Field term="Provedor">
       <Text value={run.provider} />
     </Field>
-    <Field term="Model">
+    <Field term="Modelo">
       <Text value={run.model} />
     </Field>
-    <Field term="Response model">
+    <Field term="Modelo da resposta">
       <Text value={run.responseModel} />
     </Field>
-    <Field term="Input tokens">
+    <Field term="Tokens de entrada">
       <Count value={run.inputTokens} />
     </Field>
-    <Field term="Output tokens">
+    <Field term="Tokens de saída">
       <Count value={run.outputTokens} />
     </Field>
-    <Field term="Total tokens">
+    <Field term="Tokens no total">
       <Count value={run.totalTokens} />
     </Field>
-    <Field term="Cached input tokens">
+    <Field term="Tokens de entrada em cache">
       <Count value={run.cachedInputTokens} />
     </Field>
-    <Field term="Reasoning tokens">
+    <Field term="Tokens de raciocínio">
       <Count value={run.reasoningTokens} />
     </Field>
-    <Field term="Latency (ms)">
+    <Field term="Duração (ms)">
       <Count value={run.latencyMs} />
     </Field>
-    <Field term="Job attempt">
+    <Field term="Tentativa do trabalho">
       <Count value={run.jobAttempt} />
     </Field>
-    <Field term="Created">
+    <Field term="Criada">
       <Timestamp value={run.createdAt} />
     </Field>
-    <Field term="Started">
+    <Field term="Iniciada">
       <Timestamp value={run.startedAt} />
     </Field>
-    <Field term="Completed">
+    <Field term="Concluída">
       <Timestamp value={run.completedAt} />
     </Field>
-    <Field term="Stop naming this tenant">
+    <Field term="Pausa desta empresa">
       {run.stopRef === null ? <None /> : <IdText id={run.stopRef.id} />}
     </Field>
-    <Field term="Spend limit">
+    <Field term="Limite de gasto">
       {run.spendLimitRef === null ? (
         <None />
       ) : (

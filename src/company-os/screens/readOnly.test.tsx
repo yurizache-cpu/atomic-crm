@@ -3,6 +3,7 @@ import type { RenderResult } from "vitest-browser-react";
 import { COMPANY_OS_OPERATION_NAMES } from "../../../contracts/company-os-api/index.ts";
 import { NOT_FOUND_TEXT } from "../components/queryErrors";
 import * as COPY from "../copy";
+import { eventSentence } from "../format/ptBR";
 import { STATE_UNKNOWN_AFTER_MS } from "../query/freshness";
 import { DATA_BANNER_TEXT } from "../shell/DataBanner";
 import { refused, type FakeSession } from "../testing/fakeSession";
@@ -27,23 +28,24 @@ import { WITHHELD_TEXT } from "./reviews/reviewLabels";
 
 /** The only buttons the module may render: session handling and reads. */
 const READ_CONTROLS = [
-  "Sign out",
-  "Try again",
-  "Load more",
-  "Show advice",
-  "Hide advice",
+  "Sair",
+  "Tentar de novo",
+  "Carregar mais",
+  "Ver análise",
+  "Ocultar análise",
 ];
 /** Causation links move the focus to an entry on the page; they read nothing. */
-const FOCUS_LINK = /^Go to event [0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+const FOCUS_LINK =
+  /^Ir para o evento [0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 
 /** The list filters: each narrows a read. */
 const FILTER_LABELS = [
-  "Lifecycle status",
-  "Agent",
-  "Status",
-  "Attention",
-  "Activity",
-  "Availability",
+  "Situação estrutural",
+  "Agente",
+  "Situação",
+  "Atenção",
+  "Atividade",
+  "Disponibilidade",
 ];
 
 /** The one plain anchor that leaves the module: the constant CRM root. */
@@ -52,7 +54,7 @@ const INSIDE_THE_MODULE = /^#\/company-os(\/|\?|$)/;
 
 /** Wording that would present a review decision as approval to send. */
 const SEND_APPROVAL_WORDING =
-  /approved for sending|approved to send|message approved|reply approved|draft approved|send approved|awaiting (a )?send|waiting to be sent|ready to send|(acceptance|review|decision) authori[sz]|authori[sz]ed by (the |a )?(acceptance|review|decision)/i;
+  /approved for sending|approved to send|message approved|reply approved|draft approved|send approved|awaiting (a )?send|waiting to be sent|ready to send|(acceptance|review|decision) authori[sz]|authori[sz]ed by (the |a )?(acceptance|review|decision)|aprovad[ao] para (o )?envi|mensagem aprovada|resposta aprovada|rascunho aprovado|envio aprovado|aguardando (o )?envio|pront[ao] para (o )?envi|(aceita[çc][ãa]o|revis[ãa]o|decis[ãa]o) autoriz|autorizad[ao] pela (aceita[çc][ãa]o|revis[ãa]o|decis[ãa]o)/i;
 
 /**
  * "authorized" appears on a page only inside the explicit wording of the
@@ -61,9 +63,10 @@ const SEND_APPROVAL_WORDING =
  * as "the acceptance authorized a send".
  */
 const bareAuthorized = (text: string): boolean =>
-  /authori[sz]/i.test(
+  /authori[sz]|autoriz/i.test(
     text
       .replaceAll(COPY.OUTBOUND_AUTHORIZED_TEXT, "")
+      .replaceAll(eventSentence("communication.outbound_authorized"), "")
       .replace(/\b[a-z_]+(\.[a-z_]+)+\b/g, ""),
   );
 
@@ -229,7 +232,9 @@ describe("the Company OS screens are read-only", () => {
       for (const route of EVERY_ROUTE) {
         await reach(screen, route.hash, route.heading);
         await expect
-          .element(screen.getByRole("button", { name: "Try again" }).first())
+          .element(
+            screen.getByRole("button", { name: "Tentar de novo" }).first(),
+          )
           .toBeVisible();
         expectReadOnly(`${route.hash} failing`);
       }
@@ -243,11 +248,11 @@ describe("the Company OS screens are read-only", () => {
       "#/company-os/no-such-screen",
     );
     await expect
-      .element(screen.getByRole("heading", { name: "Page not found" }))
+      .element(screen.getByRole("heading", { name: "Página não encontrada" }))
       .toBeVisible();
     expectReadOnly("an unknown page");
 
-    await reach(screen, "#/company-os/tasks/not-a-uuid", "Task");
+    await reach(screen, "#/company-os/tasks/not-a-uuid", "Tarefa");
     await expect.element(screen.getByText(NOT_FOUND_TEXT)).toBeVisible();
     expectReadOnly("a malformed record id");
   });
@@ -284,10 +289,10 @@ describe("the Company OS screens are read-only", () => {
       expect(bareAuthorized(text), text).toBe(false);
     }
     expect(COPY.REVIEW_NOT_A_SEND_NOTE).toBe(
-      "Recording a decision never approves or sends a reply.",
+      "Registrar uma decisão nunca aprova nem envia uma resposta.",
     );
     expect(COPY.OUTBOUND_AUTHORIZED_TEXT).toBe(
-      "send authorized by an operator send request",
+      "envio autorizado por um pedido de envio do operador",
     );
   });
 });

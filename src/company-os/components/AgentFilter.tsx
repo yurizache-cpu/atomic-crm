@@ -24,13 +24,13 @@ export const AgentFilter = () => {
   const shown =
     active === null || options.some((option) => option.value === active)
       ? options
-      : [{ value: active, label: `agent ${active}` }, ...options];
+      : [{ value: active, label: `agente ${active}` }, ...options];
   return (
     <SearchParamSelect
-      label="Agent"
+      label="Agente"
       param="agent"
       options={shown}
-      allLabel="All agents"
+      allLabel="Todos os agentes"
     />
   );
 };

@@ -56,26 +56,26 @@ describe("the Tasks screen", () => {
     });
     const screen = await renderCompanyOs(session, "#/company-os/tasks");
     const taskLink = (id: string) =>
-      screen.getByRole("link", { name: id, exact: true });
+      screen.getByRole("link", { name: `Abrir tarefa ${id}`, exact: true });
     await expect.element(taskLink(first.id)).toBeVisible();
 
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
 
     await expect
       .element(
         screen.getByText(
-          "The request was refused. Restart from the first page.",
+          "O pedido foi recusado. Volte para a primeira página.",
         ),
       )
       .toBeVisible();
     await expect.element(taskLink(first.id)).toBeVisible();
 
-    await screen.getByRole("button", { name: "Try again" }).click();
+    await screen.getByRole("button", { name: "Tentar de novo" }).click();
 
     await expect.element(taskLink(second.id)).toBeVisible();
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
     await expect.element(taskLink(third.id)).toBeVisible();
-    await expect.element(screen.getByText("End of the list.")).toBeVisible();
+    await expect.element(screen.getByText("Fim da lista.")).toBeVisible();
     expect(
       session.callsOf("list_tasks").map((call) => call.args.p_cursor),
     ).toEqual([null, firstCursor, null, restartedCursor]);
@@ -91,10 +91,10 @@ describe("the Tasks screen", () => {
       .not.toBeNull();
 
     await screen
-      .getByLabelText("Lifecycle status", { exact: true })
+      .getByLabelText("Situação estrutural", { exact: true })
       .selectOptions("assigned");
     await screen
-      .getByLabelText("Agent", { exact: true })
+      .getByLabelText("Agente", { exact: true })
       .selectOptions("Lead Triage");
 
     await expect
@@ -105,13 +105,24 @@ describe("the Tasks screen", () => {
         p_cursor: null,
       });
     await expect
-      .element(screen.getByRole("link", { name: rid("task:accepted-1") }))
+      .element(
+        screen.getByRole("link", {
+          name: `Abrir tarefa ${rid("task:accepted-1")}`,
+        }),
+      )
       .toBeVisible();
     expect(
-      screen.getByRole("link", { name: rid("task:bare"), exact: true }).query(),
+      screen
+        .getByRole("link", {
+          name: `Abrir tarefa ${rid("task:bare")}`,
+          exact: true,
+        })
+        .query(),
     ).toBeNull();
     await expect
-      .element(screen.getByText(LIFECYCLE_STATUS_LABEL, { exact: true }))
+      .element(
+        screen.getByText(LIFECYCLE_STATUS_LABEL, { exact: true }).first(),
+      )
       .toBeVisible();
     await expect.element(screen.getByText(LIFECYCLE_STATUS_NOTE)).toBeVisible();
     expect(session.unmatched).toEqual([]);
@@ -132,9 +143,9 @@ describe("the Tasks screen", () => {
       session,
       `#/company-os/tasks?agent=${agent}`,
     );
-    const select = screen.getByLabelText("Agent", { exact: true });
+    const select = screen.getByLabelText("Agente", { exact: true });
 
-    await expect.element(select).toHaveDisplayValue(`agent ${agent}`);
+    await expect.element(select).toHaveDisplayValue(`agente ${agent}`);
     await expect.poll(() => answerAgents).toBeDefined();
     answerAgents?.();
 
@@ -149,44 +160,46 @@ describe("the Tasks screen", () => {
     );
 
     const inbound = screen.getByRole("region", {
-      name: "Inbound",
+      name: "Recebimento",
       exact: true,
     });
     await expect.element(inbound).toHaveTextContent("Synthetic test line");
     await expect
       .element(inbound)
-      .toHaveTextContent("Contact resolutionnot found");
+      .toHaveTextContent("Contato no CRMNão encontrado");
     await expect
-      .element(screen.getByRole("region", { name: "Task", exact: true }))
-      .toHaveTextContent(`${LIFECYCLE_STATUS_LABEL}assigned`);
+      .element(screen.getByRole("region", { name: "Tarefa", exact: true }))
+      .toHaveTextContent(`${LIFECYCLE_STATUS_LABEL}Atribuída`);
     await expect
       .element(
         screen.getByRole("link", {
-          name: `Latest run ${rid("run:accepted-1")}`,
+          name: `Última execução ${rid("run:accepted-1")}`,
         }),
       )
       .toHaveAttribute("href", `#/company-os/runs/${rid("run:accepted-1")}`);
     await expect
-      .element(screen.getByRole("table", { name: "Runs of this task" }))
+      .element(screen.getByRole("list", { name: "Execuções desta tarefa" }))
       .toHaveTextContent(rid("run:accepted-1"));
     const outbound = screen.getByRole("region", {
-      name: "Outbound record",
+      name: "Envio",
       exact: true,
     });
     await expect
       .element(outbound)
-      .toHaveTextContent("Provider error code131047");
+      .toHaveTextContent("Código de erro do provedor131047");
     await expect.element(outbound).toHaveTextContent(rid("review:accepted-1"));
     await expect
-      .element(screen.getByRole("table", { name: "Events of this task" }))
+      .element(screen.getByRole("list", { name: "Eventos desta tarefa" }))
       .toHaveTextContent("lead_triage.reviewed");
     expect(
       screen
-        .getByText("Older events of this task are in the task chain.")
+        .getByText(
+          "Os eventos mais antigos desta tarefa estão na cadeia da tarefa.",
+        )
         .query(),
     ).toBeNull();
     await expect
-      .element(screen.getByRole("link", { name: "Open the task chain" }))
+      .element(screen.getByRole("link", { name: "Ver cadeia da tarefa" }))
       .toHaveAttribute(
         "href",
         `#/company-os/activity/task/${rid("task:accepted-1")}`,
@@ -194,20 +207,20 @@ describe("the Tasks screen", () => {
   });
 
   it("says a needs_edit review in the pipeline has no follow-up path, in the list and in the detail", async () => {
-    const needsEdit = `needs edit: ${NEEDS_EDIT_TEXT}`;
+    const needsEdit = `Pede ajuste: ${NEEDS_EDIT_TEXT}`;
     const screen = await renderCompanyOs(
       createRecordedSession(),
       "#/company-os/tasks",
     );
 
     await expect
-      .element(screen.getByRole("table", { name: "Tasks" }))
+      .element(screen.getByRole("list", { name: "Tarefas" }))
       .toHaveTextContent(needsEdit);
 
     goTo(taskHref("task:indeterminate"));
 
     await expect
-      .element(screen.getByRole("region", { name: "Pipeline", exact: true }))
+      .element(screen.getByRole("region", { name: "Etapas", exact: true }))
       .toHaveTextContent(needsEdit);
   });
 
@@ -218,10 +231,10 @@ describe("the Tasks screen", () => {
     );
 
     await expect
-      .element(screen.getByText("No send recorded for this task."))
+      .element(screen.getByText("Nenhum envio registrado para esta tarefa."))
       .toBeVisible();
     expect(document.body.textContent).not.toMatch(
-      /awaiting|waiting to be sent/i,
+      /awaiting|waiting to be sent|aguardando envio/i,
     );
   });
 
@@ -232,22 +245,22 @@ describe("the Tasks screen", () => {
       taskHref("task:working"),
       { clock: () => Date.now() + skew },
     );
-    const runs = screen.getByRole("table", { name: "Runs of this task" });
-    await expect.element(runs).toHaveTextContent("running");
+    const runs = screen.getByRole("list", { name: "Execuções desta tarefa" });
+    await expect.element(runs).toHaveTextContent("Executando");
 
     skew = STATE_UNKNOWN_AFTER_MS + 1_000;
 
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
-    await expect.element(runs).not.toHaveTextContent("running");
-    await expect.element(runs).toHaveTextContent("unknown");
-    await expect
-      .element(screen.getByRole("region", { name: "Pipeline", exact: true }))
-      .toHaveTextContent("Latest run:unknown");
+    await expect.element(runs).not.toHaveTextContent("Executando");
+    await expect.element(runs).toHaveTextContent("Desconhecido");
+    const steps = screen.getByRole("region", { name: "Etapas", exact: true });
+    await expect.element(steps).toHaveTextContent("IA processouDesconhecido");
+    await expect.element(steps).not.toHaveTextContent("Executando");
 
     goTo(taskHref("task:failed"));
     await expect
-      .element(screen.getByRole("table", { name: "Runs of this task" }))
-      .toHaveTextContent("failed");
+      .element(screen.getByRole("list", { name: "Execuções desta tarefa" }))
+      .toHaveTextContent("Falhou");
     expect(screen.getByText(STATE_UNKNOWN_NOTE).query()).toBeNull();
   });
 
@@ -261,8 +274,8 @@ describe("the Tasks screen", () => {
           .filter((call) => call.args.p_task_id === rid(label)).length;
       const screen = await renderCompanyOs(session, taskHref("task:working"));
       await expect
-        .element(screen.getByRole("table", { name: "Runs of this task" }))
-        .toHaveTextContent("running");
+        .element(screen.getByRole("list", { name: "Execuções desta tarefa" }))
+        .toHaveTextContent("Executando");
       expect(reads("task:working")).toBe(1);
 
       vi.advanceTimersByTime(POLL_INTERVAL_MS);
@@ -270,8 +283,8 @@ describe("the Tasks screen", () => {
 
       goTo(taskHref("task:failed"));
       await expect
-        .element(screen.getByRole("table", { name: "Runs of this task" }))
-        .toHaveTextContent("failed");
+        .element(screen.getByRole("list", { name: "Execuções desta tarefa" }))
+        .toHaveTextContent("Falhou");
       vi.advanceTimersByTime(POLL_INTERVAL_MS * 3);
       await settle();
       expect(reads("task:failed")).toBe(1);
@@ -290,22 +303,24 @@ describe("the Tasks screen", () => {
     await expect.element(screen.getByText(TASK_RUNS_CAPPED_NOTE)).toBeVisible();
     expect(
       screen
-        .getByRole("table", { name: "Runs of this task" })
-        .getByRole("row")
+        .getByRole("list", { name: "Execuções desta tarefa" })
+        .getByRole("listitem")
         .elements(),
-    ).toHaveLength(TASK_RUNS_LIMIT + 1);
+    ).toHaveLength(TASK_RUNS_LIMIT);
 
     goTo(`#/company-os/activity/task/${task}`);
 
     await expect
-      .element(screen.getByRole("heading", { name: "Task chain", level: 1 }))
+      .element(
+        screen.getByRole("heading", { name: "Cadeia da tarefa", level: 1 }),
+      )
       .toBeVisible();
     await expect.element(screen.getByText(TASK_RUNS_CAPPED_NOTE)).toBeVisible();
 
     goTo(taskHref("task:retried"));
 
     await expect
-      .element(screen.getByRole("table", { name: "Runs of this task" }))
+      .element(screen.getByRole("list", { name: "Execuções desta tarefa" }))
       .toHaveTextContent(rid("run:retry"));
     expect(screen.getByText(TASK_RUNS_CAPPED_NOTE).query()).toBeNull();
   });

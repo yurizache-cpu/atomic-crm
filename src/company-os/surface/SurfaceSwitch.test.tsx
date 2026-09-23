@@ -199,7 +199,7 @@ describe("the top-level switch between the CRM and the Company OS", () => {
       await expect.element(screen.getByText("Synthetic Clinic")).toBeVisible();
       expect(livePopstate()).toBe(1);
 
-      await screen.getByRole("link", { name: "Back to the CRM" }).click();
+      await screen.getByRole("link", { name: "Voltar ao CRM" }).click();
       await expect.element(screen.getByText("CRM at /")).toBeVisible();
       expect(livePopstate()).toBe(1);
     }

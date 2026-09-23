@@ -1,11 +1,4 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { AlertTriangle, MessageSquare, Radio, Users } from "lucide-react";
 
 import {
   OUTBOUND_STATUSES,
@@ -20,10 +13,14 @@ import {
   RecordLink,
   ScreenLayout,
   Section,
-  StateBadge,
-  Timestamp,
-  YesNo,
 } from "../../components/display";
+import {
+  OwnerCard,
+  RelativeTime,
+  StatCard,
+  StatusChip,
+  TechnicalDetails,
+} from "../../components/owner";
 import { QueryView } from "../../components/queryStates";
 import {
   ACCEPTED_WITHOUT_SEND_LABEL,
@@ -71,40 +68,51 @@ const Channels = ({
   channels: CommunicationStatusSummary["channels"];
 }) =>
   channels.length === 0 ? (
-    <Note>No channel is configured for this tenant.</Note>
+    <Note>Nenhum canal configurado para esta empresa.</Note>
   ) : (
-    <Table aria-label="Channels">
-      <TableHeader>
-        <TableRow>
-          <TableHead>Label</TableHead>
-          <TableHead>Mode</TableHead>
-          <TableHead>Active</TableHead>
-          <TableHead>Agent</TableHead>
-          <TableHead>Updated</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {channels.map((channel) => (
-          <TableRow key={channel.id}>
-            <TableCell>{channel.label}</TableCell>
-            <TableCell>
-              <StateBadge value={channel.mode} />
-            </TableCell>
-            <TableCell>
-              <YesNo value={channel.active} />
-            </TableCell>
-            <TableCell>
-              <RecordLink kind="agent" id={channel.agent.id}>
+    <div role="list" aria-label="Canais" className="grid gap-3 md:grid-cols-2">
+      {channels.map((channel) => (
+        <div role="listitem" key={channel.id}>
+          <OwnerCard
+            label={`Canal ${channel.label}`}
+            className="flex flex-col gap-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium">{channel.label}</span>
+              <span className="flex gap-1">
+                <StatusChip
+                  tone={channel.mode === "test" ? "amber" : "blue"}
+                  label={channel.mode === "test" ? "Teste" : "Produção"}
+                />
+                <StatusChip
+                  tone={channel.active ? "green" : "gray"}
+                  label={channel.active ? "Ativo" : "Inativo"}
+                />
+              </span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {"Agente: "}
+              <RecordLink
+                kind="agent"
+                id={channel.agent.id}
+                label={`Agente ${channel.agent.name}`}
+              >
                 {channel.agent.name}
               </RecordLink>
-            </TableCell>
-            <TableCell>
-              <Timestamp value={channel.updatedAt} />
-            </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+              {" · atualizado "}
+              <RelativeTime value={channel.updatedAt} />
+            </span>
+            <TechnicalDetails
+              rows={[
+                ["Canal", channel.id],
+                ["Modo", channel.mode],
+                ["Atualizado (UTC)", channel.updatedAt],
+              ]}
+            />
+          </OwnerCard>
+        </div>
+      ))}
+    </div>
   );
 
 /** The outbound counts in the vocabulary's order. */
@@ -119,45 +127,67 @@ const byStatusInOrder = (
 
 const CommunicationsBody = ({ data }: { data: CommunicationStatusSummary }) => (
   <>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <StatCard
+        icon={Radio}
+        label="Canais"
+        value={data.channels.length}
+        tone="gray"
+      />
+      <StatCard
+        icon={MessageSquare}
+        label="Recebidas hoje"
+        value={data.inbound.admittedToday}
+        tone="blue"
+      />
+      <StatCard
+        icon={Users}
+        label="Conversas ativas (24 h)"
+        value={data.conversationsActive24h}
+        tone="blue"
+      />
+      <StatCard
+        icon={AlertTriangle}
+        label="Envios incertos em aberto"
+        value={data.outbound.indeterminateOpen}
+        tone={data.outbound.indeterminateOpen > 0 ? "amber" : "green"}
+      />
+    </div>
     <Note>{COMMUNICATIONS_SCOPE_NOTE}</Note>
-    <Note>{data.note}</Note>
-    <Section title="Channels">
+    <Note>
+      Entregas que não chegam a um canal configurado nunca são guardadas.
+    </Note>
+    <TechnicalDetails rows={[["Nota do servidor", data.note]]} />
+    <Section title="Canais">
       <Channels channels={data.channels} />
     </Section>
-    <Section title="Inbound today">
-      <Fields label="Inbound today">
-        <Field term="Admitted today">{data.inbound.admittedToday}</Field>
-        <Field term="Conversations active in the last 24 hours">
-          {data.conversationsActive24h}
-        </Field>
-      </Fields>
-      <h3 className="text-sm font-medium">Refused today, by reason</h3>
-      <CountFields
-        label="Refused today by reason"
-        counts={data.inbound.refusedTodayByReason}
-      />
-    </Section>
-    <Section title="Outbound records">
-      <h3 className="text-sm font-medium">By status</h3>
-      <CountFields
-        label="Outbound records by status"
-        counts={byStatusInOrder(data.outbound.byStatus)}
-        termOf={(status) => outboundStatusText(status as OutboundStatus)}
-      />
-      <h3 className="text-sm font-medium">Blocked, by reason</h3>
-      <CountFields
-        label="Blocked outbound records by reason"
-        counts={data.outbound.blockedByReason}
-      />
-      <Fields label="Outbound attention">
-        <Field term="Indeterminate sends open">
-          {data.outbound.indeterminateOpen}
-        </Field>
-        <Field term={ACCEPTED_WITHOUT_SEND_LABEL}>
-          {data.outbound.acceptedWithoutSend}
-        </Field>
-      </Fields>
-    </Section>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Section title="Recebidas hoje">
+        <h3 className="text-sm font-medium">Recusadas hoje, por motivo</h3>
+        <CountFields
+          label="Recusadas hoje por motivo"
+          counts={data.inbound.refusedTodayByReason}
+        />
+      </Section>
+      <Section title="Envios">
+        <h3 className="text-sm font-medium">Por situação</h3>
+        <CountFields
+          label="Envios por situação"
+          counts={byStatusInOrder(data.outbound.byStatus)}
+          termOf={(status) => outboundStatusText(status as OutboundStatus)}
+        />
+        <h3 className="text-sm font-medium">Bloqueados, por motivo</h3>
+        <CountFields
+          label="Envios bloqueados por motivo"
+          counts={data.outbound.blockedByReason}
+        />
+        <Fields label="Atenção nos envios">
+          <Field term={ACCEPTED_WITHOUT_SEND_LABEL}>
+            {data.outbound.acceptedWithoutSend}
+          </Field>
+        </Fields>
+      </Section>
+    </div>
   </>
 );
 
@@ -165,10 +195,10 @@ export const CommunicationsScreen = () => {
   const status = useCompanyOsQuery("communication_status", {});
   return (
     <ScreenLayout
-      title="Communications status"
-      description="Channel states and counts for this tenant."
+      title="Comunicações"
+      description="Canais e contagens desta empresa. Nada pode ser enviado ou alterado daqui."
     >
-      <QueryView query={status} what="the communications status">
+      <QueryView query={status} what="as comunicações">
         {(data) => <CommunicationsBody data={data} />}
       </QueryView>
     </ScreenLayout>

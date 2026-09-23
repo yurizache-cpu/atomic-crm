@@ -1,27 +1,19 @@
 import { Route, Routes, useSearchParams } from "react-router";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ListChecks } from "lucide-react";
 
 import {
   TASK_STATUSES,
   type TaskSummary,
 } from "../../../../contracts/company-os-api/index.ts";
 import { AgentFilter } from "../../components/AgentFilter";
+import { Note, RecordLink, ScreenLayout } from "../../components/display";
 import {
-  None,
-  Note,
-  RecordLink,
-  ScreenLayout,
-  StateBadge,
-  Timestamp,
-} from "../../components/display";
+  EmptyState,
+  OwnerCard,
+  RelativeTime,
+  TechnicalDetails,
+} from "../../components/owner";
 import { PageControls, PagesView } from "../../components/queryStates";
 import {
   FilterBar,
@@ -33,6 +25,7 @@ import {
   STATE_UNKNOWN_NOTE,
 } from "../../copy";
 import { oneOf, optionsOf, uuidOrNull } from "../../format/labels";
+import { taskStatusLabel, taskTypeLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { isLiveRun } from "../runs/liveness";
@@ -49,46 +42,57 @@ import { TaskDetail } from "./TaskDetail";
 const hasLiveLatestRun = (task: TaskSummary): boolean =>
   task.pipeline.latestRun !== null && isLiveRun(task.pipeline.latestRun);
 
-const TaskRow = ({
+const TaskCard = ({
   task,
   current,
 }: {
   task: TaskSummary;
   current: boolean;
 }) => (
-  <TableRow>
-    <TableCell>
-      <RecordLink kind="task" id={task.id} />
-    </TableCell>
-    <TableCell>{task.type}</TableCell>
-    <TableCell>
-      <StateBadge value={task.lifecycleStatus} />
-    </TableCell>
-    <TableCell>
-      <Pipeline pipeline={task.pipeline} current={current} />
-    </TableCell>
-    <TableCell>
-      {task.assignedAgent === null ? (
-        <None />
-      ) : (
-        <RecordLink kind="agent" id={task.assignedAgent.id}>
-          {task.assignedAgent.name}
-        </RecordLink>
-      )}
-    </TableCell>
-    <TableCell>
-      {task.company.name}
-      {task.department === null ? null : (
-        <div className="text-xs text-muted-foreground">
-          {task.department.name}
+  <OwnerCard
+    label={`Tarefa ${taskTypeLabel(task.type)}`}
+    className="flex flex-col gap-4"
+  >
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        <span className="rounded-xl bg-primary/10 p-2.5 text-primary">
+          <ListChecks aria-hidden className="size-5" />
+        </span>
+        <div className="flex flex-col">
+          <RecordLink
+            kind="task"
+            id={task.id}
+            label={`Abrir tarefa ${task.id}`}
+          >
+            {taskTypeLabel(task.type)}
+          </RecordLink>
+          <span className="text-xs text-muted-foreground">
+            {task.assignedAgent === null
+              ? "Sem agente responsável"
+              : `Responsável: ${task.assignedAgent.name}`}
+            {task.department === null ? "" : ` · ${task.department.name}`}
+          </span>
         </div>
-      )}
-    </TableCell>
-    <TableCell>{task.priority}</TableCell>
-    <TableCell>
-      <Timestamp value={task.createdAt} />
-    </TableCell>
-  </TableRow>
+      </div>
+      <span className="text-xs text-muted-foreground">
+        Criada <RelativeTime value={task.createdAt} />
+      </span>
+    </div>
+    <Pipeline pipeline={task.pipeline} current={current} />
+    <TechnicalDetails
+      rows={[
+        ["Tarefa", task.id],
+        ["Tipo", task.type],
+        [LIFECYCLE_STATUS_LABEL, task.lifecycleStatus],
+        ["Prioridade", String(task.priority)],
+        ["Empresa", task.company.name],
+        ["Última execução", task.pipeline.latestRun?.id ?? "—"],
+        ["Revisão", task.pipeline.review?.id ?? "—"],
+        ["Envio", task.pipeline.outbound?.id ?? "—"],
+        ["Criada (UTC)", task.createdAt],
+      ]}
+    />
+  </OwnerCard>
 );
 
 export const TaskTable = ({
@@ -99,25 +103,13 @@ export const TaskTable = ({
   /** Whether the answer the tasks came in is still current (§10). */
   current: boolean;
 }) => (
-  <Table aria-label="Tasks">
-    <TableHeader>
-      <TableRow>
-        <TableHead>Task</TableHead>
-        <TableHead>Type</TableHead>
-        <TableHead>{LIFECYCLE_STATUS_LABEL}</TableHead>
-        <TableHead>Pipeline</TableHead>
-        <TableHead>Assigned agent</TableHead>
-        <TableHead>Company / department</TableHead>
-        <TableHead>Priority</TableHead>
-        <TableHead>Created</TableHead>
-      </TableRow>
-    </TableHeader>
-    <TableBody>
-      {tasks.map((task) => (
-        <TaskRow key={task.id} task={task} current={current} />
-      ))}
-    </TableBody>
-  </Table>
+  <div role="list" aria-label="Tarefas" className="flex flex-col gap-4">
+    {tasks.map((task) => (
+      <div role="listitem" key={task.id}>
+        <TaskCard task={task} current={current} />
+      </div>
+    ))}
+  </div>
 );
 
 const TaskList = () => {
@@ -133,23 +125,29 @@ const TaskList = () => {
   const items = itemsOf(tasks.data);
   const current = useIsStateCurrent(tasks.dataUpdatedAt);
   return (
-    <ScreenLayout title="Tasks" description={LIFECYCLE_STATUS_NOTE}>
+    <ScreenLayout
+      title="Tarefas"
+      description="O trabalho da sua empresa, do recebimento ao envio."
+    >
       <FilterBar>
         <SearchParamSelect
-          label="Lifecycle status"
+          label="Situação estrutural"
           param="status"
-          options={optionsOf(TASK_STATUSES)}
+          options={optionsOf(TASK_STATUSES, taskStatusLabel)}
         />
         <AgentFilter />
       </FilterBar>
-      <PagesView query={tasks} what="the tasks">
+      <Note>{LIFECYCLE_STATUS_NOTE}</Note>
+      <PagesView query={tasks} what="as tarefas">
         {current || !items.some(hasLiveLatestRun) ? null : (
           <p role="status" className="text-sm font-medium">
             {STATE_UNKNOWN_NOTE}
           </p>
         )}
         <TaskTable tasks={items} current={current} />
-        {items.length === 0 ? <Note>No task matches.</Note> : null}
+        {items.length === 0 ? (
+          <EmptyState icon={ListChecks} title="Nenhuma tarefa para mostrar." />
+        ) : null}
         <PageControls query={tasks} />
       </PagesView>
     </ScreenLayout>

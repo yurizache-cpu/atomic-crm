@@ -32,7 +32,7 @@ const outlastStrayReads = () =>
   new Promise((resolve) => setTimeout(resolve, 150));
 
 /** The pending review of a do-not-contact lead: never accepted. */
-const DO_NOT_CONTACT_DECISIONS = "rejected, needs edit";
+const DO_NOT_CONTACT_DECISIONS = "Rejeitada, Pede ajuste";
 
 describe("the Reviews screen", () => {
   afterEach(() => {
@@ -43,16 +43,32 @@ describe("the Reviews screen", () => {
     const session = createRecordedSession();
     const screen = await renderCompanyOs(session, "#/company-os/reviews");
 
-    const table = screen.getByRole("table", { name: "Reviews" });
+    const list = screen.getByRole("list", { name: "Decisões" });
     await expect
-      .element(table.getByRole("link", { name: rid("review:opened") }))
+      .element(
+        list.getByRole("link", {
+          name: `Ver análise da revisão ${rid("review:opened")}`,
+        }),
+      )
       .toBeVisible();
-    const order = [...document.querySelectorAll("tbody tr")].map(
-      (row) => row.querySelector("a")?.textContent,
+    const order = [
+      ...document.querySelectorAll('[aria-label="Decisões"] [role="listitem"]'),
+    ].map((item) =>
+      item
+        .querySelector('a[aria-label^="Ver análise da revisão"]')
+        ?.getAttribute("aria-label"),
     );
-    expect(order).toEqual([rid("review:opened"), rid("review:no-origin")]);
+    expect(order).toEqual([
+      `Ver análise da revisão ${rid("review:opened")}`,
+      `Ver análise da revisão ${rid("review:no-origin")}`,
+    ]);
     await expect
-      .element(screen.getByRole("link", { name: "pending", exact: true }))
+      .element(
+        screen.getByRole("link", {
+          name: "Aguardando sua revisão",
+          exact: true,
+        }),
+      )
       .toHaveAttribute("aria-current", "page");
     await expect
       .element(
@@ -63,10 +79,12 @@ describe("the Reviews screen", () => {
       .toBeVisible();
     expect(session.callsOf("list_reviews")[0].args.p_status).toBe("pending");
 
-    await screen.getByRole("link", { name: "needs edit", exact: true }).click();
+    await screen
+      .getByRole("link", { name: "Pede ajuste", exact: true })
+      .click();
 
     await expect
-      .element(screen.getByText(`needs edit: ${NEEDS_EDIT_TEXT}`))
+      .element(screen.getByText(`Pede ajuste: ${NEEDS_EDIT_TEXT}`).first())
       .toBeVisible();
     expect(session.callsOf("list_reviews").at(-1)?.args.p_status).toBe(
       "needs_edit",
@@ -79,12 +97,12 @@ describe("the Reviews screen", () => {
       "#/company-os/reviews?status=accepted",
     );
 
-    const table = screen.getByRole("table", { name: "Reviews" });
-    await expect.element(table).toHaveTextContent("indeterminate");
-    await expect.element(table).toHaveTextContent("blocked");
-    await expect.element(table).toHaveTextContent("failed");
+    const list = screen.getByRole("list", { name: "Decisões" });
+    await expect.element(list).toHaveTextContent("Envio incerto");
+    await expect.element(list).toHaveTextContent("Envio bloqueado");
+    await expect.element(list).toHaveTextContent("Envio falhou");
     expect(document.body.textContent).not.toMatch(
-      /approved|awaiting|waiting to be sent|ready to send/i,
+      /approved|awaiting|waiting to be sent|ready to send|aprovad|aguardando envio|pronta para envio/i,
     );
   });
 
@@ -96,7 +114,7 @@ describe("the Reviews screen", () => {
 
     await expect
       .element(
-        screen.getByText("accepted, rejected, needs edit", { exact: true }),
+        screen.getByText("Aceita, Rejeitada, Pede ajuste", { exact: true }),
       )
       .toBeVisible();
     await expect
@@ -105,7 +123,7 @@ describe("the Reviews screen", () => {
     const buttons = document.querySelectorAll("button");
     expect(
       [...buttons].map((button) => button.textContent?.trim()).sort(),
-    ).toEqual(["Show advice", "Sign out"]);
+    ).toEqual(["Sair", "Ver análise"]);
   });
 
   it("never offers accepting a do-not-contact lead's review", async () => {
@@ -118,8 +136,8 @@ describe("the Reviews screen", () => {
       .element(screen.getByText(DO_NOT_CONTACT_DECISIONS, { exact: true }))
       .toBeVisible();
     await expect
-      .element(screen.getByRole("region", { name: "Review", exact: true }))
-      .toHaveTextContent("Do not contactyes");
+      .element(screen.getByRole("region", { name: "Revisão", exact: true }))
+      .toHaveTextContent("Não contatarSim");
   });
 
   it("shows a decided review's note, and an empty note as a note", async () => {
@@ -132,15 +150,15 @@ describe("the Reviews screen", () => {
       .element(screen.getByText("Call back tomorrow", { exact: true }))
       .toBeVisible();
     await expect
-      .element(screen.getByText("none: this review is not pending"))
+      .element(screen.getByText("nenhuma: esta revisão não está pendente"))
       .toBeVisible();
 
     goTo(reviewDetail("review:invalid"));
 
     await expect
-      .element(screen.getByRole("region", { name: "Review", exact: true }))
-      .toHaveTextContent("Has a decision noteyes");
-    expect(screen.getByText("no note", { exact: true }).query()).toBeNull();
+      .element(screen.getByRole("region", { name: "Revisão", exact: true }))
+      .toHaveTextContent("Tem nota de decisãoSim");
+    expect(screen.getByText("sem nota", { exact: true }).query()).toBeNull();
   });
 
   it("reads the advice only when opened, drops it from the cache when closed, and reads it afresh when reopened", async () => {
@@ -152,23 +170,23 @@ describe("the Reviews screen", () => {
       { screens: { reviews: capture.wrap(ReviewsScreen) } },
     );
     await expect
-      .element(screen.getByRole("button", { name: "Show advice" }))
+      .element(screen.getByRole("button", { name: "Ver análise" }))
       .toBeVisible();
     expect(session.callsOf("get_review_advice")).toEqual([]);
     expect(document.body.textContent).not.toContain(ADVICE_SUMMARY);
 
     await openAdvice(screen);
 
-    const advice = screen.getByRole("region", { name: "Structured advice" });
+    const advice = screen.getByRole("region", { name: "Análise estruturada" });
     await expect
       .element(advice)
       .toHaveTextContent("Offer two synthetic slots.");
-    await expect.element(advice).toHaveTextContent("Flagsunclear");
+    await expect.element(advice).toHaveTextContent("AlertasPouco claro");
     await expect.element(advice).toHaveTextContent(REPLY_DRAFT_NOTE);
     expect(session.callsOf("get_review_advice")).toHaveLength(1);
     expect(cachedOperations(capture.client())).toContain("get_review_advice");
 
-    await screen.getByRole("button", { name: "Hide advice" }).click();
+    await screen.getByRole("button", { name: "Ocultar análise" }).click();
 
     await expect
       .element(screen.getByText(ADVICE_SUMMARY))
@@ -211,11 +229,11 @@ describe("the Reviews screen", () => {
       goTo(reviewDetail("review:no-origin"));
       await expect
         .element(
-          screen.getByText("accepted, rejected, needs edit", { exact: true }),
+          screen.getByText("Aceita, Rejeitada, Pede ajuste", { exact: true }),
         )
         .toBeVisible();
-      await screen.getByRole("button", { name: "Show advice" }).click();
-      await expect.element(screen.getByText(/^Advice withheld/)).toBeVisible();
+      await screen.getByRole("button", { name: "Ver análise" }).click();
+      await expect.element(screen.getByText(/^Análise retida/)).toBeVisible();
 
       reach();
 
@@ -223,7 +241,7 @@ describe("the Reviews screen", () => {
         .element(screen.getByText(DO_NOT_CONTACT_DECISIONS, { exact: true }))
         .toBeVisible();
       await expect
-        .element(screen.getByRole("button", { name: "Show advice" }))
+        .element(screen.getByRole("button", { name: "Ver análise" }))
         .toHaveAttribute("aria-expanded", "false");
       await outlastStrayReads();
       expect(
@@ -251,13 +269,15 @@ describe("the Reviews screen", () => {
         reviewDetail(label),
       );
 
-      await screen.getByRole("button", { name: "Show advice" }).click();
+      await screen.getByRole("button", { name: "Ver análise" }).click();
 
       await expect
-        .element(screen.getByText(`Advice withheld: ${reason}.`))
+        .element(screen.getByText(`Análise retida: ${reason}.`))
         .toBeVisible();
-      expect(screen.getByText("Outcome", { exact: true }).query()).toBeNull();
-      expect(screen.getByText("Summary", { exact: true }).query()).toBeNull();
+      expect(
+        screen.getByText("Classificação", { exact: true }).query(),
+      ).toBeNull();
+      expect(screen.getByText("Resumo", { exact: true }).query()).toBeNull();
     },
   );
 
@@ -275,7 +295,7 @@ describe("the Reviews screen", () => {
       reviewDetail("review:opened"),
     );
 
-    await screen.getByRole("button", { name: "Show advice" }).click();
+    await screen.getByRole("button", { name: "Ver análise" }).click();
 
     await expect.element(screen.getByText(CONTRACT_ERROR_TEXT)).toBeVisible();
     expect(document.body.textContent).not.toContain(draft);
@@ -299,10 +319,12 @@ describe("the Reviews screen", () => {
     );
 
     await expect
-      .element(screen.getByText("Advice is not available to this operator."))
+      .element(
+        screen.getByText("A análise não está disponível para este operador."),
+      )
       .toBeVisible();
     expect(
-      screen.getByRole("button", { name: "Show advice" }).query(),
+      screen.getByRole("button", { name: "Ver análise" }).query(),
     ).toBeNull();
   });
 });

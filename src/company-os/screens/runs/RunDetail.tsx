@@ -30,7 +30,7 @@ import { RecordNotFound } from "../../components/RecordNotFound";
 import { useRouteRecordId } from "../../components/routeRecord";
 import { LIST_PATHS, recordPath } from "../../components/recordPaths";
 import { JOB_STEPS_NOTE, STATE_UNKNOWN_NOTE } from "../../copy";
-import { humanize } from "../../format/labels";
+import { jobStepLabel, stopScopeLabel } from "../../format/ptBR";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { isLiveRun } from "./liveness";
@@ -59,24 +59,24 @@ const JobFields = ({
   current: boolean;
 }) =>
   job === null ? (
-    <Note>No job exists for this run.</Note>
+    <Note>Não existe trabalho para esta execução.</Note>
   ) : (
-    <Fields label="Job">
-      <Field term="Job status">
+    <Fields label="Trabalho">
+      <Field term="Situação do trabalho">
         <StateBadge value={current ? job.status : "unknown"} />
       </Field>
-      <Field term="Attempts">{job.attempts}</Field>
-      <Field term="Available at">
+      <Field term="Tentativas">{job.attempts}</Field>
+      <Field term="Disponível a partir de">
         <Timestamp value={job.availableAt} />
       </Field>
-      <Field term="Live lease">
+      <Field term="Trabalhador ativo agora">
         {current ? (
           <YesNo value={job.leaseLive} />
         ) : (
           <StateBadge value="unknown" />
         )}
       </Field>
-      <Field term="Last error class">
+      <Field term="Último tipo de erro">
         {job.lastErrorClass === null ? <None /> : job.lastErrorClass}
       </Field>
     </Fields>
@@ -86,21 +86,21 @@ const JobSteps = ({ steps }: { steps: AgentRunDetail["jobSteps"] }) => (
   <>
     <Note>{JOB_STEPS_NOTE}</Note>
     {steps.length === 0 ? (
-      <Note>No job step is recorded.</Note>
+      <Note>Nenhuma etapa registrada.</Note>
     ) : (
-      <Table aria-label="Job steps">
+      <Table aria-label="Etapas do trabalho">
         <TableHeader>
           <TableRow>
-            <TableHead>Step</TableHead>
-            <TableHead>Attempt</TableHead>
-            <TableHead>At</TableHead>
+            <TableHead>Etapa</TableHead>
+            <TableHead>Tentativa</TableHead>
+            <TableHead>Quando</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {steps.map((step, index) => (
             <TableRow key={`${step.at}-${step.step}-${index}`}>
-              <TableCell>{humanize(step.step)}</TableCell>
-              <TableCell>{step.attempt ?? "none"}</TableCell>
+              <TableCell>{jobStepLabel(step.step)}</TableCell>
+              <TableCell>{step.attempt ?? "—"}</TableCell>
               <TableCell>
                 <Timestamp value={step.at} />
               </TableCell>
@@ -114,11 +114,11 @@ const JobSteps = ({ steps }: { steps: AgentRunDetail["jobSteps"] }) => (
 
 const CoveringStop = ({ stop }: { stop: AgentRunDetail["coveringStop"] }) =>
   stop === null ? (
-    <None>no stop naming this tenant covers this run</None>
+    <None>nenhuma pausa desta empresa cobre esta execução</None>
   ) : (
     <span className="flex flex-wrap items-center gap-2">
       <IdText id={stop.id} />
-      <span>{`scope ${humanize(stop.scope)}, origin ${stop.origin}`}</span>
+      <span>{`alcance: ${stopScopeLabel(stop.scope)} · origem: ${stop.origin}`}</span>
     </span>
   );
 
@@ -139,44 +139,50 @@ const RunDetailBody = ({
           {STATE_UNKNOWN_NOTE}
         </p>
       )}
-      <Section title="Run">
+      <Section title="Execução">
         <RunFields run={run} current={current} />
         {chainPath === null ? null : (
           <Link to={chainPath} className="text-sm underline underline-offset-4">
-            Open the run chain
+            Ver cadeia da execução
           </Link>
         )}
       </Section>
-      <Section title="Retries">
-        <Fields label="Retries">
-          <Field term="Retry of">
+      <Section title="Novas tentativas">
+        <Fields label="Novas tentativas">
+          <Field term="Nova tentativa de">
             {run.retryOfRunId === null ? (
               <None />
             ) : (
-              <RecordLink kind="run" id={run.retryOfRunId} />
+              <RecordLink
+                kind="run"
+                id={run.retryOfRunId}
+                label={`Execução ${run.retryOfRunId}`}
+              >
+                Ver execução original
+              </RecordLink>
             )}
           </Field>
-          <Field term="Retried by">
+          <Field term="Tentada de novo por">
             <RunLinks ids={run.retriedByRunIds} />
           </Field>
         </Fields>
       </Section>
-      <Section title="Job">
+      <Section title="Trabalho">
         <JobFields job={run.job} current={current} />
         <JobSteps steps={run.jobSteps} />
       </Section>
-      <Section title="Covering stop">
+      <Section title="Pausa que cobre esta execução">
         <CoveringStop stop={run.coveringStop} />
       </Section>
-      <Section title="Cost">
-        <Fields label="Cost">
-          <Field term="Reserved">
+      <Section title="Custo">
+        <Fields label="Custo">
+          <Field term="Reservado">
             <MoneyText value={run.reservedCost} />
           </Field>
-          <Field term="Estimated">
+          <Field term="Estimado">
             <MoneyText value={run.estimatedCost} />
           </Field>
-          <Field term="Charged">
+          <Field term="Cobrado">
             <MoneyText value={run.chargedCost} />
           </Field>
         </Fields>
@@ -192,7 +198,7 @@ const RunDetailRead = ({ runId }: { runId: string }) => {
     { poll: isLiveRunDetail },
   );
   return (
-    <QueryView query={run} what="the run">
+    <QueryView query={run} what="a execução">
       {(data) => <RunDetailBody run={data} receivedAt={run.dataUpdatedAt} />}
     </QueryView>
   );
@@ -201,7 +207,7 @@ const RunDetailRead = ({ runId }: { runId: string }) => {
 export const RunDetail = () => {
   const runId = useRouteRecordId("runId");
   return (
-    <ScreenLayout title="Agent run">
+    <ScreenLayout title="Execução">
       <Link
         to={LIST_PATHS.runs}
         className="text-sm underline underline-offset-4"

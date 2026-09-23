@@ -18,7 +18,7 @@ import { EventSubject } from "../../components/EventTable";
 import { Timestamp } from "../../components/display";
 import { eventEntryId } from "../../components/eventsInView";
 import { ABSENT_STEP_TEXT, NOT_LOADED_STEP_TEXT } from "../../copy";
-import { humanize } from "../../format/labels";
+import { jobStepLabel } from "../../format/ptBR";
 import { eventsOfStep, type ChainStep } from "./chainSteps";
 
 // A chain as a table of steps: each row names a step and lists the durable
@@ -43,7 +43,7 @@ const EventFact = ({ event }: { event: EventSummary }) => (
   >
     <span className="font-mono text-xs">{event.type}</span>
     <Timestamp value={event.createdAt} />
-    <span className="text-xs text-muted-foreground">{`source ${event.source}`}</span>
+    <span className="text-xs text-muted-foreground">{`origem ${event.source}`}</span>
     <Causation event={event} />
   </li>
 );
@@ -84,8 +84,8 @@ export const JobStepFacts = ({
           key={`${step.at}-${step.step}-${index}`}
           className="flex flex-wrap items-center gap-x-3"
         >
-          <span>{humanize(step.step)}</span>
-          <span className="text-xs text-muted-foreground">{`attempt ${step.attempt ?? "none"}`}</span>
+          <span>{jobStepLabel(step.step)}</span>
+          <span className="text-xs text-muted-foreground">{`tentativa ${step.attempt ?? "—"}`}</span>
           <Timestamp value={step.at} />
         </li>
       ))}
@@ -132,8 +132,8 @@ export const ChainTable = ({
   <Table aria-label={label}>
     <TableHeader>
       <TableRow>
-        <TableHead>Step</TableHead>
-        <TableHead>Durable facts</TableHead>
+        <TableHead>Etapa</TableHead>
+        <TableHead>Registros que comprovam</TableHead>
       </TableRow>
     </TableHeader>
     <TableBody>{children}</TableBody>

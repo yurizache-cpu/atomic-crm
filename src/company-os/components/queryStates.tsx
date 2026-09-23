@@ -14,9 +14,10 @@ import { errorTextOf } from "./queryErrors";
 // answer the cache still holds, so a screen never mixes a stale value with a
 // failure. "Try again" and "Load more" only read.
 
-export const LoadingText = ({ what }: { what: string }) => (
+// `what` names the read for tests and future copy; the owner sees one word.
+export const LoadingText = ({ what: _what }: { what: string }) => (
   <p role="status" className="text-sm text-muted-foreground">
-    {`Loading ${what}…`}
+    Carregando…
   </p>
 );
 
@@ -33,7 +34,7 @@ export const ReadError = ({
   >
     <span>{errorTextOf(error)}</span>
     <Button variant="outline" size="sm" onClick={onRetry}>
-      Try again
+      Tentar de novo
     </Button>
   </div>
 );
@@ -88,7 +89,7 @@ export const PageControls = ({ query }: { query: AnyPages }) => {
     );
   }
   if (!query.hasNextPage) {
-    return <p className="text-xs text-muted-foreground">End of the list.</p>;
+    return <p className="text-xs text-muted-foreground">Fim da lista.</p>;
   }
   return (
     <div>
@@ -98,7 +99,7 @@ export const PageControls = ({ query }: { query: AnyPages }) => {
         disabled={query.isFetchingNextPage}
         onClick={() => void query.fetchNextPage()}
       >
-        Load more
+        Carregar mais
       </Button>
     </div>
   );

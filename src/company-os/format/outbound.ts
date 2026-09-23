@@ -1,6 +1,6 @@
 import type { OutboundStatus } from "../../../contracts/company-os-api/index.ts";
 import { OUTBOUND_AUTHORIZED_TEXT } from "../copy";
-import { humanize } from "./labels";
+import { outboundStatusLabel } from "./ptBR";
 
 /**
  * An outbound record's status in words (docs/PHASE_2C_BRIEF.md §7.5). The
@@ -10,4 +10,6 @@ import { humanize } from "./labels";
  * authorized a send": it names the act that authorized it.
  */
 export const outboundStatusText = (status: OutboundStatus): string =>
-  status === "authorized" ? OUTBOUND_AUTHORIZED_TEXT : humanize(status);
+  status === "authorized"
+    ? OUTBOUND_AUTHORIZED_TEXT
+    : outboundStatusLabel(status);

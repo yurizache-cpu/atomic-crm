@@ -44,27 +44,27 @@ const AgentDetailBody = ({
   return (
     <>
       <Section title={agent.name}>
-        <Fields label="Agent configuration">
-          <Field term="Agent id">
+        <Fields label="Configuração do agente">
+          <Field term="Identificador">
             <IdText id={agent.id} />
           </Field>
-          <Field term="Slug">{agent.slug}</Field>
-          <Field term="Company">{agent.company.name}</Field>
-          <Field term="Department">{agent.department.name}</Field>
-          <Field term="Last run">
+          <Field term="Nome interno">{agent.slug}</Field>
+          <Field term="Empresa">{agent.company.name}</Field>
+          <Field term="Departamento">{agent.department.name}</Field>
+          <Field term="Última execução">
             <Timestamp value={agent.lastRunAt} />
           </Field>
         </Fields>
       </Section>
-      <Section title="State">
+      <Section title="Situação">
         {current ? null : (
           <p role="status" className="text-sm font-medium">
             {STATE_UNKNOWN_NOTE}
           </p>
         )}
         <AgentStateBadges agent={agent} current={current} />
-        <Fields label="Agent state evidence">
-          <Field term="Runs needing attention (count)">
+        <Fields label="O que comprova a situação">
+          <Field term="Execuções que precisam de atenção">
             {current ? (
               <span>{agent.attentionCount}</span>
             ) : (
@@ -74,13 +74,13 @@ const AgentDetailBody = ({
           {current ? <AgentEvidenceFields agent={agent} /> : null}
         </Fields>
       </Section>
-      <Section title="Recent runs">
+      <Section title="Execuções recentes">
         {data.recentRuns.length === 0 ? (
-          <Note>This agent has no run yet.</Note>
+          <Note>Este agente ainda não tem execuções.</Note>
         ) : (
           <RunTable
             runs={data.recentRuns}
-            label="Recent runs"
+            label="Execuções recentes"
             current={current}
           />
         )}
@@ -96,7 +96,7 @@ const AgentDetailRead = ({ agentId }: { agentId: string }) => {
     { poll: true },
   );
   return (
-    <QueryView query={agent} what="the agent">
+    <QueryView query={agent} what="o agente">
       {(data) => (
         <AgentDetailBody data={data} receivedAt={agent.dataUpdatedAt} />
       )}
@@ -107,7 +107,7 @@ const AgentDetailRead = ({ agentId }: { agentId: string }) => {
 export const AgentDetail = () => {
   const agentId = useRouteRecordId("agentId");
   return (
-    <ScreenLayout title="Agent">
+    <ScreenLayout title="Agente">
       <BackToAgents />
       {agentId === null ? (
         <RecordNotFound />

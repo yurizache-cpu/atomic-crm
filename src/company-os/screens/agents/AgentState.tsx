@@ -8,7 +8,11 @@ import {
   RunLinks,
   StateBadge,
 } from "../../components/display";
-import { humanize } from "../../format/labels";
+import {
+  activityLabel,
+  availabilityLabel,
+  stopScopeLabel,
+} from "../../format/ptBR";
 import { shownActivity } from "./activityRule";
 
 // An agent's state as docs/PHASE_2C_BRIEF.md §10 requires it to be shown:
@@ -27,11 +31,11 @@ export const AgentStateBadges = ({
   <span className="flex flex-wrap items-center gap-2">
     <StateBadge
       value={current ? agent.availability : "unknown"}
-      label={`availability: ${current ? humanize(agent.availability) : "unknown"}`}
+      label={availabilityLabel(current ? agent.availability : "unknown")}
     />
     <StateBadge
       value={current ? shownActivity(agent) : "unknown"}
-      label={`activity: ${current ? humanize(shownActivity(agent)) : "unknown"}`}
+      label={activityLabel(current ? shownActivity(agent) : "unknown")}
     />
   </span>
 );
@@ -94,11 +98,11 @@ export const ListEvidence = ({
 
 const StopEvidence = ({ stop }: { stop: AgentSummary["evidence"]["stop"] }) =>
   stop === null ? (
-    <None>no stop naming this tenant covers this agent</None>
+    <None>nenhuma pausa desta empresa cobre este agente</None>
   ) : (
     <span className="flex flex-wrap items-center gap-2">
       <IdText id={stop.id} />
-      <span>{`scope ${humanize(stop.scope)}, origin ${stop.origin}`}</span>
+      <span>{`alcance: ${stopScopeLabel(stop.scope).toLowerCase()}`}</span>
     </span>
   );
 
@@ -107,25 +111,25 @@ export const AgentEvidenceFields = ({ agent }: { agent: AgentSummary }) => {
   const { evidence } = agent;
   return (
     <>
-      <Field term="Working runs (live lease)">
+      <Field term="Trabalhando agora">
         <RunLinks ids={evidence.workingRunIds} />
       </Field>
-      <Field term="Stale runs (no live lease)">
+      <Field term="Sem sinal do trabalho">
         <RunLinks ids={evidence.staleRunIds} />
       </Field>
-      <Field term="Held runs">
+      <Field term="Retidas por pausa">
         <RunLinks ids={evidence.heldRunIds} />
       </Field>
-      <Field term="Queued runs">
+      <Field term="Na fila">
         <RunLinks ids={evidence.queuedRunIds} />
       </Field>
-      <Field term="Runs needing attention">
+      <Field term="Precisam de atenção">
         <RunLinks ids={evidence.attentionRunIds} />
       </Field>
-      <Field term="Covering stop">
+      <Field term="Pausa que o cobre">
         <StopEvidence stop={evidence.stop} />
       </Field>
-      <Field term="Inactive unit">
+      <Field term="Unidade inativa">
         {evidence.inactiveUnit === null ? (
           <None />
         ) : (

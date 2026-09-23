@@ -15,7 +15,7 @@ export const SearchParamSelect = ({
   label,
   param,
   options,
-  allLabel = "All",
+  allLabel = "Todos",
 }: {
   label: string;
   param: string;
@@ -48,7 +48,7 @@ export const SearchParamSelect = ({
         id={id}
         value={value}
         onChange={onChange}
-        className="h-9 rounded-md border bg-background px-2 text-sm"
+        className="h-9 rounded-lg border bg-background px-3 text-sm shadow-sm"
       >
         <option value="">{allLabel}</option>
         {options.map((option) => (
@@ -62,7 +62,7 @@ export const SearchParamSelect = ({
 };
 
 export const FilterBar = ({ children }: { children: ReactNode }) => (
-  <div role="group" aria-label="Filters" className="flex flex-wrap gap-4">
+  <div role="group" aria-label="Filtros" className="flex flex-wrap gap-4">
     {children}
   </div>
 );

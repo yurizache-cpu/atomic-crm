@@ -42,7 +42,7 @@ describe("the Company OS router", () => {
       .toBeVisible();
     await expect.element(screen.getByText(DATA_BANNER_TEXT)).toBeVisible();
     await expect
-      .element(screen.getByRole("link", { name: "Back to the CRM" }))
+      .element(screen.getByRole("link", { name: "Voltar ao CRM" }))
       .toHaveAttribute("href", "#/");
     const text = document.body.textContent ?? "";
     expect(text).not.toContain(FAILURE_TEXT);

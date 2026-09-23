@@ -15,13 +15,13 @@ import { DataBanner } from "../shell/DataBanner";
 // later visit starts afresh.
 
 export const COMPANY_OS_LOAD_FAILED_TEXT =
-  "The Company OS could not be loaded.";
+  "Não foi possível carregar o Company OS.";
 
 export const CompanyOsUnavailable = () => (
   <div className="flex min-h-screen flex-col bg-background text-foreground">
     <DataBanner />
     <main className="mx-auto flex w-full max-w-xl flex-col gap-3 p-6">
-      <h1 className="text-lg font-semibold">Company OS unavailable</h1>
+      <h1 className="text-lg font-semibold">Company OS indisponível</h1>
       <p className="text-sm">{COMPANY_OS_LOAD_FAILED_TEXT}</p>
       <BackToCrmLink />
     </main>

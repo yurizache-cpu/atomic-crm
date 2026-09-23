@@ -11,7 +11,7 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 // breaks its contract is not shown at all.
 
 const rowOf = (text: string) =>
-  [...document.querySelectorAll("tr")].find((row) =>
+  [...document.querySelectorAll("article")].find((row) =>
     row.textContent?.includes(text),
   );
 
@@ -29,9 +29,10 @@ describe("the Costs screen", () => {
     );
 
     await expect
-      .element(screen.getByRole("table", { name: "Daily limits" }))
+      .element(screen.getByText("Orçamento diário", { exact: true }).first())
       .toBeVisible();
-    const tenant = rowOf("conditional")?.textContent ?? "";
+    // The owner reads formatted amounts; the exact ones stay in the details.
+    const tenant = document.body.textContent ?? "";
     for (const money of [
       tenantRow.dailyLimit,
       tenantRow.charged,
@@ -43,17 +44,17 @@ describe("the Costs screen", () => {
     }
     const company = rowOf(rid("company:clinic-annex"))?.textContent ?? "";
     expect(company).toContain("0.000000 USD");
-    expect(company).toContain("blocked");
+    expect(company).toContain("Bloqueada");
     await expect
-      .element(screen.getByRole("table", { name: "Charged today by agent" }))
+      .element(screen.getByRole("list", { name: "Custo hoje por agente" }))
       .toHaveTextContent("Lead Triage");
     await expect
-      .element(screen.getByRole("table", { name: "Charged today by model" }))
+      .element(screen.getByRole("list", { name: "Custo hoje por modelo" }))
       .toHaveTextContent("dbtest-cos-contract-model");
     await expect.element(screen.getByText(MONEY_NOTE)).toBeVisible();
     await expect
-      .element(screen.getByLabelText("Window"))
-      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}no`);
+      .element(screen.getByRole("region", { name: "Janela e plataforma" }))
+      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}: Não`);
   });
 
   it("shows the platform admission as blocked, and nothing else of the platform, under a platform stop", async () => {
@@ -63,8 +64,8 @@ describe("the Costs screen", () => {
     );
 
     await expect
-      .element(screen.getByLabelText("Window"))
-      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}yes`);
+      .element(screen.getByRole("region", { name: "Janela e plataforma" }))
+      .toHaveTextContent(`${PLATFORM_ADMISSION_LABEL}: Sim`);
     expect(
       recorded("spend_summary", {}, "platform-stop").tenantRows.map(
         (row) => row.scope,

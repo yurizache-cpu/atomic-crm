@@ -25,50 +25,50 @@ export const OutboundRecord = ({
   outbound: OutboundSummary | null;
 }) =>
   outbound === null ? (
-    <Note>No send recorded for this task.</Note>
+    <Note>Nenhum envio registrado para esta tarefa.</Note>
   ) : (
-    <Fields label="Outbound record">
-      <Field term="Outbound record id">
+    <Fields label="Registro de envio">
+      <Field term="Identificador do envio">
         <IdText id={outbound.id} />
       </Field>
-      <Field term="Status">
+      <Field term="Situação">
         <StateBadge
           value={outbound.status}
           label={outboundStatusText(outbound.status)}
         />
       </Field>
-      <Field term="Review">
+      <Field term="Revisão">
         {outbound.reviewItemId === null ? (
           <None />
         ) : (
           <RecordLink kind="review" id={outbound.reviewItemId} />
         )}
       </Field>
-      <Field term="Channel id">
+      <Field term="Canal">
         <IdText id={outbound.channelId} />
       </Field>
-      <Field term="Blocked reason">
+      <Field term="Motivo do bloqueio">
         <Text value={outbound.blockedReason} />
       </Field>
-      <Field term="Error class">
+      <Field term="Tipo de erro">
         <Text value={outbound.errorClass} />
       </Field>
-      <Field term="Provider error code">
+      <Field term="Código de erro do provedor">
         <Text value={outbound.errorCode} />
       </Field>
-      <Field term="Send request recorded">
+      <Field term="Pedido de envio registrado">
         <Timestamp value={outbound.authorizedAt} />
       </Field>
-      <Field term="Sending since">
+      <Field term="Enviando desde">
         <Timestamp value={outbound.sendingAt} />
       </Field>
-      <Field term="Settled">
+      <Field term="Concluído">
         <Timestamp value={outbound.settledAt} />
       </Field>
-      <Field term="Delivered">
+      <Field term="Entregue">
         <Timestamp value={outbound.deliveredAt} />
       </Field>
-      <Field term="Read">
+      <Field term="Lido">
         <Timestamp value={outbound.readAt} />
       </Field>
     </Fields>

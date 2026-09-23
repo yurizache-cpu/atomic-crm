@@ -1,3 +1,15 @@
+import {
+  Activity,
+  Bot,
+  Inbox,
+  LayoutDashboard,
+  ListChecks,
+  MessageSquare,
+  PauseCircle,
+  PlayCircle,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import type { ComponentType } from "react";
 
 import { ActivityScreen } from "./activity/ActivityScreen";
@@ -26,27 +38,88 @@ export type ScreenId =
   | "costs"
   | "communications";
 
+export type ScreenGroup = "Operação" | "Equipe" | "Governança" | "Canais";
+
 export interface ScreenDefinition {
   readonly id: ScreenId;
   readonly label: string;
   /** Below /company-os; "" is the module's index. */
   readonly path: string;
+  readonly group: ScreenGroup;
+  readonly icon: LucideIcon;
 }
 
 export const SCREENS: readonly ScreenDefinition[] = [
-  { id: "overview", label: "Overview", path: "" },
-  { id: "activity", label: "Activity", path: "activity" },
-  { id: "tasks", label: "Tasks", path: "tasks" },
-  { id: "agents", label: "Agents", path: "agents" },
-  { id: "runs", label: "Agent runs", path: "runs" },
-  { id: "reviews", label: "Reviews", path: "reviews" },
-  { id: "stops", label: "Execution stops", path: "stops" },
-  { id: "costs", label: "Costs", path: "costs" },
+  {
+    id: "overview",
+    label: "Visão geral",
+    path: "",
+    group: "Operação",
+    icon: LayoutDashboard,
+  },
+  {
+    id: "activity",
+    label: "Atividade",
+    path: "activity",
+    group: "Operação",
+    icon: Activity,
+  },
+  {
+    id: "tasks",
+    label: "Tarefas",
+    path: "tasks",
+    group: "Operação",
+    icon: ListChecks,
+  },
+  {
+    id: "agents",
+    label: "Equipe de IA",
+    path: "agents",
+    group: "Equipe",
+    icon: Bot,
+  },
+  {
+    id: "runs",
+    label: "Execuções",
+    path: "runs",
+    group: "Equipe",
+    icon: PlayCircle,
+  },
+  {
+    id: "reviews",
+    label: "Decisões",
+    path: "reviews",
+    group: "Governança",
+    icon: Inbox,
+  },
+  {
+    id: "stops",
+    label: "Pausas",
+    path: "stops",
+    group: "Governança",
+    icon: PauseCircle,
+  },
+  {
+    id: "costs",
+    label: "Custos",
+    path: "costs",
+    group: "Governança",
+    icon: Wallet,
+  },
   {
     id: "communications",
-    label: "Communications status",
+    label: "Comunicações",
     path: "communications",
+    group: "Canais",
+    icon: MessageSquare,
   },
+];
+
+export const SCREEN_GROUPS: readonly ScreenGroup[] = [
+  "Operação",
+  "Equipe",
+  "Governança",
+  "Canais",
 ];
 
 export type ScreenComponents = Readonly<Record<ScreenId, ComponentType>>;

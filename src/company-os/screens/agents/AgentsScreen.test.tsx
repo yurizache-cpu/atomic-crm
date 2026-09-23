@@ -6,12 +6,12 @@ import { createRecordedSession, recorded, rid } from "../../testing/recorded";
 import { renderCompanyOs } from "../../testing/renderCompanyOs";
 
 // Screen 4 (docs/PHASE_2C_BRIEF.md §10, §12, §16 "Working state"), fed with
-// the agents the real projection returned: "working" appears only with at
-// least one working run id, each linking to its run; stopped and working show
-// together when both hold (the recorded tenant under an active job_kind stop);
-// the ids that prove a state are shown; a state older than two polling
-// intervals is "unknown"; and an agent whose state breaks its contract is not
-// rendered at all.
+// the agents the real projection returned: "Trabalhando" appears only with at
+// least one working run, each linking to its run; "Pausado" and "Trabalhando"
+// show together when both hold (the recorded tenant under an active job_kind
+// stop); the ids that prove a state stay in the card's technical details; a
+// state older than two polling intervals is "Desconhecido"; and an agent whose
+// state breaks its contract is not rendered at all.
 
 const runHref = (id: string) => `#/company-os/runs/${id}`;
 
@@ -25,61 +25,69 @@ describe("the Agents screen", () => {
       createRecordedSession("tenant-kind-stop"),
       "#/company-os/agents",
     );
-    const row = screen.getByRole("row").filter({ hasText: "Lead Triage" });
+    const card = screen.getByRole("article", { name: "Agente Lead Triage" });
 
-    await expect.element(row).toHaveTextContent("availability: stopped");
-    await expect.element(row).toHaveTextContent("activity: working");
+    await expect.element(card).toHaveTextContent("Pausado");
+    await expect.element(card).toHaveTextContent("Trabalhando");
     await expect
-      .element(row.getByRole("link", { name: rid("run:working") }))
+      .element(
+        card.getByRole("link", { name: `Execução ${rid("run:working")}` }),
+      )
       .toHaveAttribute("href", runHref(rid("run:working")));
-    await expect
-      .element(row.getByText(rid("stop:kind-active"), { exact: true }))
-      .toBeVisible();
+    await expect.element(card).toHaveTextContent(rid("stop:kind-active"));
   });
 
-  it("shows every activity the projection computed, each beside the ids that prove it", async () => {
+  it("shows every activity the projection computed, each with the ids that prove it", async () => {
     const screen = await renderCompanyOs(
       createRecordedSession(),
       "#/company-os/agents",
     );
-    const rowOf = (name: string) =>
-      screen.getByRole("row").filter({ hasText: name });
+    const cardOf = (name: string) =>
+      screen.getByRole("article", { name: `Agente ${name}` });
 
     await expect
-      .element(rowOf("Night Desk Agent"))
-      .toHaveTextContent(`activity: stalestale runs:${rid("run:stale")}`);
+      .element(cardOf("Night Desk Agent"))
+      .toHaveTextContent("Sem sinal do trabalho");
     await expect
-      .element(rowOf("Follow Up"))
-      .toHaveTextContent(`held runs:${rid("run:held")}`);
+      .element(cardOf("Night Desk Agent"))
+      .toHaveTextContent(rid("run:stale"));
     await expect
-      .element(rowOf("Queue Desk"))
-      .toHaveTextContent(`queued runs:${rid("run:queued")}`);
+      .element(cardOf("Follow Up"))
+      .toHaveTextContent("Retido por pausa");
     await expect
-      .element(rowOf("Archive"))
-      .toHaveTextContent(
-        "availability: inactiveactivity: idleinactive unit:agent",
-      );
+      .element(cardOf("Follow Up"))
+      .toHaveTextContent(rid("run:held"));
     await expect
-      .element(rowOf("Closed Desk"))
-      .toHaveTextContent("inactive unit:company");
+      .element(cardOf("Queue Desk"))
+      .toHaveTextContent("Com trabalho na fila");
+    await expect
+      .element(cardOf("Queue Desk"))
+      .toHaveTextContent(rid("run:queued"));
+    await expect
+      .element(cardOf("Archive"))
+      .toHaveTextContent("Inativo por decisão de configuração (agent).");
+    await expect.element(cardOf("Archive")).toHaveTextContent("Ocioso");
+    await expect
+      .element(cardOf("Closed Desk"))
+      .toHaveTextContent("Inativo por decisão de configuração (company).");
   });
 
   it("filters the one list it read by activity, without another read", async () => {
     const session = createRecordedSession();
     const screen = await renderCompanyOs(session, "#/company-os/agents");
     await expect
-      .element(screen.getByRole("link", { name: "Agent Queue Desk" }))
+      .element(screen.getByRole("link", { name: "Abrir Queue Desk" }))
       .toBeVisible();
 
     await screen
-      .getByLabelText("Activity", { exact: true })
+      .getByLabelText("Atividade", { exact: true })
       .selectOptions("working");
 
     await expect
-      .element(screen.getByRole("link", { name: "Agent Queue Desk" }))
+      .element(screen.getByRole("link", { name: "Abrir Queue Desk" }))
       .not.toBeInTheDocument();
     await expect
-      .element(screen.getByRole("link", { name: "Agent Lead Triage" }))
+      .element(screen.getByRole("link", { name: "Abrir Lead Triage" }))
       .toBeVisible();
     expect(session.callsOf("list_agents")).toHaveLength(1);
   });
@@ -90,30 +98,36 @@ describe("the Agents screen", () => {
       `#/company-os/agents/${rid("agent:lead-triage")}`,
     );
 
-    const evidence = screen.getByLabelText("Agent state evidence");
+    const evidence = screen.getByLabelText("O que comprova a situação");
     await expect
-      .element(evidence.getByRole("link", { name: rid("run:indeterminate") }))
+      .element(
+        evidence.getByRole("link", {
+          name: `Execução ${rid("run:indeterminate")}`,
+        }),
+      )
       .toHaveAttribute("href", runHref(rid("run:indeterminate")));
     await expect
-      .element(evidence.getByRole("link", { name: rid("run:working") }))
+      .element(
+        evidence.getByRole("link", { name: `Execução ${rid("run:working")}` }),
+      )
       .toHaveAttribute("href", runHref(rid("run:working")));
     await expect
       .element(evidence)
-      .toHaveTextContent("no stop naming this tenant covers this agent");
+      .toHaveTextContent("nenhuma pausa desta empresa cobre este agente");
     await expect
-      .element(screen.getByRole("table", { name: "Recent runs" }))
+      .element(screen.getByRole("list", { name: "Execuções recentes" }))
       .toHaveTextContent(rid("run:succeeded"));
   });
 
-  it("names the stop that covers a stopped agent, with its scope and origin", async () => {
+  it("names the stop that covers a stopped agent, with its scope", async () => {
     const screen = await renderCompanyOs(
       createRecordedSession(),
       `#/company-os/agents/${rid("agent:follow-up")}`,
     );
 
     await expect
-      .element(screen.getByLabelText("Agent state evidence"))
-      .toHaveTextContent(`${rid("stop:agent")}scope agent, origin owner`);
+      .element(screen.getByLabelText("O que comprova a situação"))
+      .toHaveTextContent(`${rid("stop:agent")}alcance: agente`);
   });
 
   it("renders the state as unknown, and no working run, once the answer is older than two polling intervals", async () => {
@@ -123,21 +137,22 @@ describe("the Agents screen", () => {
       "#/company-os/agents",
       { clock: () => Date.now() + skew },
     );
+    const team = screen.getByRole("list", { name: "Equipe de IA" });
     await expect
-      .element(screen.getByText("activity: working", { exact: true }))
+      .element(team.getByText("Trabalhando", { exact: true }))
       .toBeVisible();
 
     skew = STATE_UNKNOWN_AFTER_MS + 1_000;
 
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
+    expect(team.getByText("Trabalhando", { exact: true }).query()).toBeNull();
     expect(
-      screen.getByText("activity: working", { exact: true }).query(),
-    ).toBeNull();
-    expect(
-      screen.getByRole("link", { name: rid("run:working") }).query(),
+      screen
+        .getByRole("link", { name: `Execução ${rid("run:working")}` })
+        .query(),
     ).toBeNull();
     await expect
-      .element(screen.getByText("activity: unknown", { exact: true }).first())
+      .element(team.getByText("Desconhecido", { exact: true }).first())
       .toBeVisible();
   });
 
@@ -148,16 +163,16 @@ describe("the Agents screen", () => {
       `#/company-os/agents/${rid("agent:lead-triage")}`,
       { clock: () => Date.now() + skew },
     );
-    const recentRuns = screen.getByRole("table", { name: "Recent runs" });
-    await expect.element(recentRuns).toHaveTextContent("running");
+    const recentRuns = screen.getByRole("list", { name: "Execuções recentes" });
+    await expect.element(recentRuns).toHaveTextContent("Executando");
 
     skew = STATE_UNKNOWN_AFTER_MS + 1_000;
 
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
-    await expect.element(recentRuns).toHaveTextContent("unknown");
-    await expect.element(recentRuns).not.toHaveTextContent("running");
-    await expect.element(recentRuns).not.toHaveTextContent("pending");
-    await expect.element(recentRuns).toHaveTextContent("succeeded");
+    await expect.element(recentRuns).toHaveTextContent("Desconhecido");
+    await expect.element(recentRuns).not.toHaveTextContent("Executando");
+    await expect.element(recentRuns).not.toHaveTextContent("Na fila");
+    await expect.element(recentRuns).toHaveTextContent("Concluída");
   });
 
   it("renders an error, not the agent, when a working agent comes without a working run", async () => {
@@ -180,6 +195,8 @@ describe("the Agents screen", () => {
       .element(screen.getByText(CONTRACT_ERROR_TEXT).first())
       .toBeVisible();
     expect(document.body.textContent).not.toContain(impostor.name);
-    expect(document.body.textContent).not.toContain("activity: working");
+    expect(
+      screen.getByRole("list", { name: "Equipe de IA" }).query(),
+    ).toBeNull();
   });
 });

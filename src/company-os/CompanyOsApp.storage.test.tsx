@@ -233,7 +233,7 @@ describe("the Company OS keeps what it reads out of browser storage", () => {
 
       // Then the advice view closes, the module unmounts and the page is left:
       // a write on any of those must be seen as well.
-      await screen.getByRole("button", { name: "Hide advice" }).click();
+      await screen.getByRole("button", { name: "Ocultar análise" }).click();
       await expect
         .element(screen.getByText(ADVICE_SUMMARY, { exact: true }))
         .not.toBeInTheDocument();
@@ -258,7 +258,7 @@ describe("the Company OS keeps what it reads out of browser storage", () => {
     session.emit("SIGNED_OUT", null);
 
     await expect
-      .element(screen.getByRole("heading", { name: "Signed out" }))
+      .element(screen.getByRole("heading", { name: "Você saiu" }))
       .toBeVisible();
     expect(probe.client().getQueryCache().getAll()).toEqual([]);
     expect(await browserStorage()).toEqual(before);

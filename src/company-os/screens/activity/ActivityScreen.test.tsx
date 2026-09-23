@@ -11,17 +11,28 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 
 // Screen 2 (docs/PHASE_2C_BRIEF.md §11, §12), fed with the events the real
 // projection returned: the tenant's feed paged with the opaque cursor the
-// server returned; each event's source exactly as given ("other" included) and
-// its allowlisted facts as key/value text; causation ids as links to the
-// causing and caused entries on the page; the stops naming the tenant from
-// their own rows, labelled "stop trips write no event"; and the per-task and
-// per-run chains laid out by step, each fact with its own time, a step with no
-// durable fact shown as absent.
+// server returned; each event as a sentence, with its source exactly as given
+// ("other" included) and its allowlisted facts as key/value text under its
+// technical details; causation ids as links to the causing and caused entries
+// on the page; the stops naming the tenant from their own rows, labelled
+// "stop trips write no event"; and the per-task and per-run chains laid out by
+// step, each fact with its own time, a step with no durable fact shown as
+// absent.
 
+/** The feed entry whose text holds `text`, technical details included. */
 const rowOf = (text: string) =>
-  [...document.querySelectorAll("tr")].find((row) =>
-    row.textContent?.includes(text),
-  );
+  [
+    ...document.querySelectorAll('[aria-label="Atividade da empresa"] > li'),
+  ].find((entry) => entry.textContent?.includes(text));
+
+/** Opens every closed "Detalhes técnicos" on the page, one click each. */
+const expandDetails = () => {
+  for (const summary of document.querySelectorAll(
+    "details:not([open]) > summary",
+  )) {
+    (summary as HTMLElement).click();
+  }
+};
 
 /** The chain row of `step`, as the text of its cells. */
 const stepRow = (step: string) =>
@@ -46,26 +57,26 @@ describe("the Activity screen", () => {
     const first = recorded("list_events");
     const second = recorded("list_events", { p_cursor: first.nextCursor });
     const screen = await renderCompanyOs(session, "#/company-os/activity");
-    const feed = screen.getByRole("table", { name: "Tenant events" });
+    const feed = screen.getByRole("list", { name: "Atividade da empresa" });
     await expect.element(feed).toHaveTextContent("dbtest.contract_probe");
     const reviewed = rowOf("lead_triage.reviewed")?.textContent ?? "";
-    expect(reviewed).toMatch(/decision(accepted|rejected|needs_edit)/);
+    expect(reviewed).toMatch(/decision: (accepted|rejected|needs_edit)/);
     expect(reviewed).toContain("operator-cli");
     const probe = rowOf("dbtest.contract_probe")?.textContent ?? "";
     expect(probe).toContain("other");
-    expect(probe).toContain("facts withheld");
+    expect(probe).toContain("fatos retidos");
 
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
     await expect
       .element(feed)
       .toHaveTextContent(second.items[second.items.length - 1].id);
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
 
     await expect
       .element(
         screen
-          .getByRole("region", { name: "Events", exact: true })
-          .getByText("End of the list."),
+          .getByRole("region", { name: "Eventos", exact: true })
+          .getByText("Fim da lista."),
       )
       .toBeVisible();
     const feedCursors = session
@@ -81,11 +92,11 @@ describe("the Activity screen", () => {
       createRecordedSession(),
       "#/company-os/activity",
     );
-    const feed = screen.getByRole("table", { name: "Tenant events" });
+    const feed = screen.getByRole("list", { name: "Atividade da empresa" });
     await expect.element(feed).toHaveTextContent("dbtest.contract_probe");
     // On the second page, an agent_run.started whose agent_run.requested is
     // on the third page, not loaded yet.
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
     const started = FEED().find(
       (event) =>
         event.type === "agent_run.started" &&
@@ -93,24 +104,29 @@ describe("the Activity screen", () => {
     )!;
     await expect.element(feed).toHaveTextContent(started.id);
     const cause = started.causationId!;
+    expandDetails();
     expect(
-      screen.getByRole("button", { name: `Go to event ${cause}` }).query(),
+      screen.getByRole("button", { name: `Ir para o evento ${cause}` }).query(),
     ).toBeNull();
     expect(
       document.getElementById(eventEntryId(started.id))?.textContent,
-    ).toContain(`caused by${cause}`);
+    ).toContain(`causado por${cause}`);
 
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
+    await expect
+      .poll(() => document.getElementById(eventEntryId(cause)))
+      .not.toBeNull();
+    expandDetails();
 
     // The cause caused more than one fact on the page: every one links to it.
     const link = screen
-      .getByRole("button", { name: `Go to event ${cause}` })
+      .getByRole("button", { name: `Ir para o evento ${cause}` })
       .first();
     await expect.element(link).toBeVisible();
     await link.click();
     expect(document.activeElement?.id).toBe(eventEntryId(cause));
     await screen
-      .getByRole("button", { name: `Go to event ${started.id}` })
+      .getByRole("button", { name: `Ir para o evento ${started.id}` })
       .first()
       .click();
     expect(document.activeElement?.id).toBe(eventEntryId(started.id));
@@ -123,12 +139,16 @@ describe("the Activity screen", () => {
     );
 
     await expect
-      .element(screen.getByRole("table", { name: "Stops from their own rows" }))
+      .element(
+        screen.getByRole("list", {
+          name: "Pausas a partir dos próprios registros",
+        }),
+      )
       .toHaveTextContent("Drill over");
     await expect
       .element(
         screen.getByRole("heading", {
-          name: `Execution stops (${STOP_EVENTS_LABEL.toLowerCase()})`,
+          name: `Pausas (${STOP_EVENTS_LABEL.toLowerCase()})`,
         }),
       )
       .toBeVisible();
@@ -144,23 +164,31 @@ describe("the Activity screen", () => {
       .toBeVisible();
     await expect
       .poll(() =>
-        stepRow("Job leased").some((cell) => cell.includes("job leased")),
+        stepRow("Trabalho assumido").some((cell) =>
+          cell.includes("Trabalho assumido por um trabalhador"),
+        ),
       )
       .toBe(true);
 
-    const received = stepRow("Event received")[0];
+    const received = stepRow("Mensagem recebida")[0];
     expect(received).toContain("communication.received");
     expect(received).toContain("lead_triage.admitted");
-    expect(stepRow("Task created")[0]).toContain("task.created");
-    expect(stepRow("Execution requested")[0]).toContain(
+    expect(stepRow("Tarefa criada")[0]).toContain("task.created");
+    expect(stepRow("Execução pedida para a tarefa")[0]).toContain(
       "task.execution_requested",
     );
-    expect(stepRow("Run requested")[0]).toContain("agent_run.requested");
-    expect(stepRow("Provider call begun")[0]).toContain("agent_run.started");
-    expect(stepRow("Result settled")[0]).toContain("agent_run.succeeded");
-    expect(stepRow("Review opened")[0]).toContain("lead_triage.review_pending");
-    expect(stepRow("Operator decision")).toEqual([ABSENT_STEP_TEXT]);
-    expect(stepRow("Outbound send requested")).toEqual([ABSENT_STEP_TEXT]);
+    expect(stepRow("Execução do agente pedida")[0]).toContain(
+      "agent_run.requested",
+    );
+    expect(stepRow("Chamada ao modelo iniciada")[0]).toContain(
+      "agent_run.started",
+    );
+    expect(stepRow("Resultado registrado")[0]).toContain("agent_run.succeeded");
+    expect(stepRow("Revisão aberta")[0]).toContain(
+      "lead_triage.review_pending",
+    );
+    expect(stepRow("Decisão do operador")).toEqual([ABSENT_STEP_TEXT]);
+    expect(stepRow("Envio pedido")).toEqual([ABSENT_STEP_TEXT]);
   });
 
   it("names the task's and the run's request steps apart, and links the task's to the run fact that caused it", async () => {
@@ -176,12 +204,14 @@ describe("the Activity screen", () => {
     }).items.find((event) => event.type === "task.execution_requested")!;
     const link = screen
       .getByRole("row")
-      .filter({ hasText: "Execution requested" })
-      .getByRole("button", { name: `Go to event ${requested.causationId}` });
+      .filter({ hasText: "Execução pedida para a tarefa" })
+      .getByRole("button", {
+        name: `Ir para o evento ${requested.causationId}`,
+      });
 
     await expect.element(link).toBeVisible();
-    expect(stepRow("Execution requested")).toHaveLength(1);
-    expect(stepRow("Run requested")).toHaveLength(1);
+    expect(stepRow("Execução pedida para a tarefa")).toHaveLength(1);
+    expect(stepRow("Execução do agente pedida")).toHaveLength(1);
     await link.click();
     expect(document.activeElement?.id).toBe(
       eventEntryId(requested.causationId!),
@@ -199,12 +229,14 @@ describe("the Activity screen", () => {
     await expect
       .element(screen.getByText("agent_run.indeterminate", { exact: true }))
       .toBeVisible();
-    await expect.poll(() => stepRow("Provider call begun")).toHaveLength(2);
+    await expect
+      .poll(() => stepRow("Chamada ao modelo iniciada"))
+      .toHaveLength(2);
 
-    const begun = stepRow("Provider call begun");
+    const begun = stepRow("Chamada ao modelo iniciada");
     expect(begun.filter((cell) => cell === ABSENT_STEP_TEXT)).toHaveLength(1);
     expect(begun.some((cell) => cell.includes("agent_run.started"))).toBe(true);
-    expect(stepRow("Execution requested")[0]).toMatch(
+    expect(stepRow("Execução pedida para a tarefa")[0]).toMatch(
       /task\.execution_requested.*task\.execution_requested/,
     );
   });
@@ -220,18 +252,18 @@ describe("the Activity screen", () => {
       )
       .toBeVisible();
 
-    expect(stepRow("Operator decision")[0]).toContain("lead_triage.reviewed");
-    expect(stepRow("Outbound send requested")[0]).toContain(
+    expect(stepRow("Decisão do operador")[0]).toContain("lead_triage.reviewed");
+    expect(stepRow("Envio pedido")[0]).toContain(
       "communication.outbound_authorized",
     );
-    expect(stepRow("Provider result or status")[0]).toContain(
+    expect(stepRow("Resultado ou situação do envio")[0]).toContain(
       "communication.outbound_failed",
     );
     // Its run is still queued: nothing after the request.
     await expect
-      .poll(() => stepRow("Job leased")[0] ?? "")
+      .poll(() => stepRow("Trabalho assumido")[0] ?? "")
       .toContain(ABSENT_STEP_TEXT);
-    expect(stepRow("Provider call begun")).toEqual([ABSENT_STEP_TEXT]);
+    expect(stepRow("Chamada ao modelo iniciada")).toEqual([ABSENT_STEP_TEXT]);
   });
 
   it("says a step is not loaded yet, never absent, while older facts of the task remain unread", async () => {
@@ -270,16 +302,16 @@ describe("the Activity screen", () => {
       `#/company-os/activity/task/${task}`,
     );
     await expect
-      .poll(() => stepRow("Event received")[0] ?? "")
+      .poll(() => stepRow("Mensagem recebida")[0] ?? "")
       .toContain("communication.received");
-    expect(stepRow("Task created")).toEqual([NOT_LOADED_STEP_TEXT]);
+    expect(stepRow("Tarefa criada")).toEqual([NOT_LOADED_STEP_TEXT]);
 
-    await screen.getByRole("button", { name: "Load more" }).click();
+    await screen.getByRole("button", { name: "Carregar mais" }).click();
 
     await expect
-      .poll(() => stepRow("Task created")[0] ?? "")
+      .poll(() => stepRow("Tarefa criada")[0] ?? "")
       .toContain("task.created");
-    expect(stepRow("Task created")[0]).toContain("task.assigned");
+    expect(stepRow("Tarefa criada")[0]).toContain("task.assigned");
     expect(
       session
         .callsOf("list_events")
@@ -294,16 +326,24 @@ describe("the Activity screen", () => {
       `#/company-os/activity/run/${rid("run:succeeded")}`,
     );
     await expect
-      .element(screen.getByText("job leased", { exact: true }))
+      .element(
+        screen.getByText("Trabalho assumido por um trabalhador", {
+          exact: true,
+        }),
+      )
       .toBeVisible();
 
-    expect(stepRow("Run requested")[0]).toContain("agent_run.requested");
-    expect(stepRow("Provider call begun")[0]).toContain("agent_run.started");
-    expect(stepRow("Result settled")[0]).toContain("agent_run.succeeded");
+    expect(stepRow("Execução do agente pedida")[0]).toContain(
+      "agent_run.requested",
+    );
+    expect(stepRow("Chamada ao modelo iniciada")[0]).toContain(
+      "agent_run.started",
+    );
+    expect(stepRow("Resultado registrado")[0]).toContain("agent_run.succeeded");
     await expect
       .element(
         screen.getByRole("link", {
-          name: `Task chain ${rid("task:succeeded")}`,
+          name: `Cadeia da tarefa ${rid("task:succeeded")}`,
         }),
       )
       .toHaveAttribute(

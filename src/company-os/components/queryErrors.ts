@@ -15,24 +15,24 @@ import { CompanyOsGenerationError } from "../session/generation";
 // contract, so the server was never asked), and a refusal the server gave.
 
 export const CONTRACT_ERROR_TEXT =
-  "The response did not match its contract, so it is not shown.";
+  "A resposta não veio no formato esperado, por isso não é mostrada.";
 
 export const INPUT_ERROR_TEXT =
-  "The request was not sent: an argument did not match its contract.";
+  "O pedido não foi enviado: um dado não estava no formato esperado.";
 
 /** What a missing record reads as, whether the server or the route says so. */
-export const NOT_FOUND_TEXT = "Not found.";
+export const NOT_FOUND_TEXT = "Não encontrado.";
 
-export const ACCESS_RECHECK_TEXT = "Access is being checked again.";
+export const ACCESS_RECHECK_TEXT = "Seu acesso está sendo verificado de novo.";
 
 const API_ERROR_TEXT: Readonly<Record<CompanyOsApiError["code"], string>> = {
-  OS400: "The request was refused. Restart from the first page.",
-  OS401: "The session ended. Checking access again.",
+  OS400: "O pedido foi recusado. Volte para a primeira página.",
+  OS401: "A sessão terminou. Verificando o acesso de novo.",
   OS403: ACCESS_RECHECK_TEXT,
   OS404: NOT_FOUND_TEXT,
   OS409: ACCESS_RECHECK_TEXT,
-  OS429: "The request could not be completed yet. Retry.",
-  OS500: "The server could not answer this read.",
+  OS429: "O pedido ainda não pôde ser concluído. Tente de novo.",
+  OS500: "Não foi possível carregar esta área.",
 };
 
 export const errorTextOf = (error: unknown): string => {

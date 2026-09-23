@@ -1,8 +1,11 @@
+import { PlayCircle } from "lucide-react";
 import { Route, Routes, useSearchParams } from "react-router";
 
 import { AGENT_RUN_STATUSES } from "../../../../contracts/company-os-api/index.ts";
 import { AgentFilter } from "../../components/AgentFilter";
-import { Note, ScreenLayout } from "../../components/display";
+import { ScreenLayout } from "../../components/display";
+import { EmptyState } from "../../components/owner";
+import { runStatusLabel } from "../../format/ptBR";
 import { PageControls, PagesView } from "../../components/queryStates";
 import {
   FilterBar,
@@ -23,7 +26,9 @@ import { RunTable } from "./RunTable";
 // the answer is older than two polling intervals such a run's status reads
 // "unknown" (§10, liveness.ts), as on the run's own page.
 
-const ATTENTION_OPTIONS = [{ value: "1", label: "Needing attention only" }];
+const ATTENTION_OPTIONS = [
+  { value: "1", label: "Só as que precisam de atenção" },
+];
 
 const RunList = () => {
   const [params] = useSearchParams();
@@ -40,31 +45,36 @@ const RunList = () => {
   const current = useIsStateCurrent(runs.dataUpdatedAt);
   return (
     <ScreenLayout
-      title="Agent runs"
-      description="Newest first. Costs are the server's figures; no result text is ever shown."
+      title="Execuções"
+      description="O que seus agentes fizeram, das mais recentes para as mais antigas."
     >
       <FilterBar>
         <SearchParamSelect
-          label="Status"
+          label="Situação"
           param="status"
-          options={optionsOf(AGENT_RUN_STATUSES)}
+          options={optionsOf(AGENT_RUN_STATUSES, runStatusLabel)}
         />
         <AgentFilter />
         <SearchParamSelect
-          label="Attention"
+          label="Atenção"
           param="attention"
           options={ATTENTION_OPTIONS}
-          allLabel="All runs"
+          allLabel="Todas"
         />
       </FilterBar>
-      <PagesView query={runs} what="the runs">
+      <PagesView query={runs} what="as execuções">
         {current || !items.some(isLiveRun) ? null : (
           <p role="status" className="text-sm font-medium">
             {STATE_UNKNOWN_NOTE}
           </p>
         )}
-        <RunTable runs={items} label="Agent runs" current={current} />
-        {items.length === 0 ? <Note>No run matches.</Note> : null}
+        <RunTable runs={items} label="Execuções" current={current} />
+        {items.length === 0 ? (
+          <EmptyState
+            icon={PlayCircle}
+            title="Nenhuma execução corresponde a este filtro."
+          />
+        ) : null}
         <PageControls query={runs} />
       </PagesView>
     </ScreenLayout>

@@ -21,7 +21,7 @@ import {
   REVIEW_DECISIONS_CLI_NOTE,
   REVIEW_NOT_A_SEND_NOTE,
 } from "../../copy";
-import { humanize } from "../../format/labels";
+import { reviewStatusLabel } from "../../format/ptBR";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useOperatorScope } from "../../session/runtime";
 import { AdviceView } from "./AdviceView";
@@ -34,21 +34,23 @@ import { ReviewSummaryFields } from "./ReviewSummaryFields";
 // (docs/PHASE_2C_BRIEF.md §13 item 3). The reply draft is never shown.
 
 const Decision = ({ review }: { review: ReviewDetailData }) => (
-  <Section title="Decision">
+  <Section title="Decisão">
     <Note>{`${REVIEW_DECISIONS_CLI_NOTE} ${REVIEW_NOT_A_SEND_NOTE}`}</Note>
-    <Fields label="Decision">
-      <Field term="Decision note">
+    <Fields label="Decisão">
+      <Field term="Nota da decisão">
         {review.decisionNote === null ? (
-          <None>no note</None>
+          <None>sem nota</None>
         ) : (
           <span className="whitespace-pre-wrap">{review.decisionNote}</span>
         )}
       </Field>
-      <Field term="Decisions the server would accept">
+      <Field term="Decisões que o servidor aceitaria">
         {review.allowedDecisions.length === 0 ? (
-          <None>none: this review is not pending</None>
+          <None>nenhuma: esta revisão não está pendente</None>
         ) : (
-          <span>{review.allowedDecisions.map(humanize).join(", ")}</span>
+          <span>
+            {review.allowedDecisions.map(reviewStatusLabel).join(", ")}
+          </span>
         )}
       </Field>
     </Fields>
@@ -63,16 +65,16 @@ const Advice = ({ reviewId }: { reviewId: string }) => {
   const [open, setOpen] = useState(false);
   if (!context.allowedActions.viewAdvice) {
     return (
-      <Section title="Advice">
-        <Note>Advice is not available to this operator.</Note>
+      <Section title="Análise da IA">
+        <Note>A análise não está disponível para este operador.</Note>
       </Section>
     );
   }
   return (
-    <Section title="Advice">
+    <Section title="Análise da IA">
       <Note>
-        The structured advice is read only when you open it, and is dropped when
-        you close it.
+        A análise estruturada só é lida quando você a abre, e é descartada
+        quando você a fecha.
       </Note>
       <div>
         <Button
@@ -81,7 +83,7 @@ const Advice = ({ reviewId }: { reviewId: string }) => {
           aria-expanded={open}
           onClick={() => setOpen(!open)}
         >
-          {open ? "Hide advice" : "Show advice"}
+          {open ? "Ocultar análise" : "Ver análise"}
         </Button>
       </div>
       {open ? <AdviceView reviewId={reviewId} /> : null}
@@ -91,8 +93,8 @@ const Advice = ({ reviewId }: { reviewId: string }) => {
 
 const ReviewDetailBody = ({ review }: { review: ReviewDetailData }) => (
   <>
-    <Section title="Review">
-      <Fields label="Review">
+    <Section title="Revisão">
+      <Fields label="Revisão">
         <ReviewSummaryFields review={review} />
       </Fields>
     </Section>
@@ -107,7 +109,7 @@ const ReviewDetailBody = ({ review }: { review: ReviewDetailData }) => (
 const ReviewDetailRead = ({ reviewId }: { reviewId: string }) => {
   const review = useCompanyOsQuery("get_review", { p_review_id: reviewId });
   return (
-    <QueryView query={review} what="the review">
+    <QueryView query={review} what="a revisão">
       {(data) => <ReviewDetailBody review={data} />}
     </QueryView>
   );
@@ -116,12 +118,12 @@ const ReviewDetailRead = ({ reviewId }: { reviewId: string }) => {
 export const ReviewDetail = () => {
   const reviewId = useRouteRecordId("reviewId");
   return (
-    <ScreenLayout title="Review">
+    <ScreenLayout title="Decisão">
       <Link
         to={LIST_PATHS.reviews}
         className="text-sm underline underline-offset-4"
       >
-        All pending reviews
+        ← Voltar às decisões
       </Link>
       {reviewId === null ? (
         <RecordNotFound />
