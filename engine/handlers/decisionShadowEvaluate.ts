@@ -6,8 +6,10 @@
 //            records `running` with this provider, and hands back the
 //            allowlisted input and the vector version the evaluation's policy
 //            accepts (Phase 2D.2). `stopped` holds the job; anything but
-//            `running` settles it without asking anyone, and so does a policy
-//            whose vector version this worker does not answer with.
+//            `running` settles it without asking anyone. A policy whose vector
+//            version this worker does not answer with rolls the start back:
+//            the evaluation stays pending, for a compatible worker or the
+//            owner's `decision recover`.
 //   call     (no transaction, no capabilities) ask the provider. Data in, an
 //            unknown value out; nothing here can reach the database.
 //   settle   (TX2b) validate the answer against the strict vector schema, the
@@ -67,9 +69,8 @@ type SettleCapability = "settleShadowDecision";
 
 interface ShadowState {
   readonly evaluationId: string;
-  /** null when nothing may be asked; `refusal` then says why. */
+  /** null when the database's input failed this worker's schema: nothing is asked. */
   readonly request: DecisionRequest | null;
-  readonly refusal: "input_rejected" | "vector_version_unsupported" | null;
 }
 
 export type DecisionShadowEvaluateHandler = ExternalCallHandlerDefinition<
@@ -161,41 +162,33 @@ export function createDecisionShadowEvaluateHandler(dependencies: {
           "lease too short to ask the decision provider; nothing was started",
         );
       }
-      // The evaluation's policy names the one vector version it accepts; a
-      // worker that answers with another asks nobody.
+      // The evaluation's policy names the one vector version it accepts. A
+      // worker that answers with another asks nobody, and throws, so the start
+      // rolls back and the evaluation stays pending (never burnt as failed).
       if (start.vectorVersion !== DECISION_VECTOR_VERSION) {
-        return {
-          kind: "call",
-          state: Object.freeze({
-            evaluationId: named,
-            request: null,
-            refusal: "vector_version_unsupported",
-          }),
-        };
+        throw new TransientError(
+          "this worker does not answer the evaluation's vector version; nothing was started",
+        );
       }
       const input = DecisionInputSchema.safeParse(start.input);
-      const request =
-        input.success && typeof start.inputFingerprint === "string"
-          ? Object.freeze({
-              input: input.data,
-              inputFingerprint: start.inputFingerprint,
-            })
-          : null;
       return {
         kind: "call",
         state: Object.freeze({
           evaluationId: named,
-          request,
-          refusal: request === null ? "input_rejected" : null,
+          request:
+            input.success && typeof start.inputFingerprint === "string"
+              ? Object.freeze({
+                  input: input.data,
+                  inputFingerprint: start.inputFingerprint,
+                })
+              : null,
         }),
       };
     },
 
     async call(state, context) {
       if (state.request === null) {
-        throw new DecisionProviderUnavailableError(
-          state.refusal ?? "input_rejected",
-        );
+        throw new DecisionProviderUnavailableError("input_rejected");
       }
       return decisionPort.evaluate(state.request, { signal: context.signal });
     },

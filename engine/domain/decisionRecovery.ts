@@ -5,9 +5,8 @@
 //
 //   created    no evaluation existed under the current policy: requested now,
 //              exactly as the post-settlement step would have;
-//   stopped    an active stop covers it: a new request is recorded refused,
-//              with no job (owner decision E); a pending one is left pending,
-//              with nothing enqueued, to be repaired after the clear;
+//   stopped    an active stop covers it: nothing is created, enqueued or
+//              recorded; run it again once a person has cleared the stop;
 //   repaired   a pending evaluation had no job, or its job ended without ever
 //              starting it: one new job is attached;
 //   in_progress                        its job is still queued or leased, or it

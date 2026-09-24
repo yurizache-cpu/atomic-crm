@@ -248,6 +248,11 @@ describe("the decision contract, in the database and the worker", () => {
       ...LEAD_TRIAGE_REASON_CODES.map((code) => vector([code])),
       vector(["maria_silva_anxiety"]),
       vector(["flag_spam", "legacy_reason"]),
+      { ...vector(["triage_complete"]), version: null },
+      {
+        ...vector(["triage_complete"]),
+        provider: { ...FAKE_DECISION_PROVIDER, kind: null },
+      },
     ];
 
     for (const candidate of cases) {

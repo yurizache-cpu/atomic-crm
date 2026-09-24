@@ -76,7 +76,9 @@ export const DecisionIntelligenceGroupSchema = z
 export const DecisionIntelligenceSchema = z.strictObject({
   mode: z.literal("shadow"),
   currentPolicyVersion: ShadowPolicyVersionSchema.nullable(),
-  groups: z.array(DecisionIntelligenceGroupSchema).max(200),
+  // One group per policy and provider version: small, and unbounded in SQL,
+  // so no cap here could fail the whole overview.
+  groups: z.array(DecisionIntelligenceGroupSchema),
 });
 
 export type DecisionIntelligence = z.infer<typeof DecisionIntelligenceSchema>;

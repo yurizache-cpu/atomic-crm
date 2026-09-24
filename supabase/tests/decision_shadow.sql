@@ -270,6 +270,8 @@ begin
       ('confidence as text', jsonb_build_object('confidence', '0.9')),
       ('a huge confidence', '{"confidence": 1e400}'::jsonb),
       ('an unknown version', jsonb_build_object('version', 'decision_vector.v3')),
+      ('a null version', '{"version": null}'::jsonb),
+      ('a null provider kind', '{"provider": {"kind": null, "id": "fake-rules", "version": "2"}}'::jsonb),
       ('a code outside the vocabulary', jsonb_build_object('reasonCodes', jsonb_build_array('maria_silva_anxiety'))),
       ('a known and an unknown code', jsonb_build_object('reasonCodes', jsonb_build_array('flag_spam', 'legacy_reason'))),
       ('a mode other than shadow', jsonb_build_object('mode', 'enforce')),
@@ -1022,14 +1024,18 @@ begin
     end if;
   end loop;
 
-  -- Under a stop: a new request is recorded refused, with no job (owner
-  -- decision E); a pending one is left as it is, and repaired after the clear.
+  -- Under a stop a repair does nothing and records nothing, for a missing
+  -- request and a pending one alike; after the clear it does its work.
   v_stop := ops.trip_execution_stop('agent', 'ds recover stop', 'ds-suite', ta, co, null, ag2, null);
-  if pg_temp.recover(r_stop) <> 'stopped' or (pg_temp.eval(r_stop)).status <> 'refused'
-     or (pg_temp.eval(r_stop)).refusal_code <> 'stopped' or pg_temp.shadow_jobs(r_stop) <> 0 then
-    raise exception 'D14: a recovery under a stop was not recorded refused without a job';
+  if pg_temp.recover(r_stop) <> 'stopped'
+     or exists (select 1 from ops.decision_evaluations d where d.review_item_id = r_stop)
+     or pg_temp.shadow_jobs(r_stop) <> 0 then
+    raise exception 'D14: a recovery under a stop created, recorded or enqueued something';
   end if;
   perform ops.clear_execution_stop(v_stop, 'ds clear', 'ds-suite');
+  if pg_temp.recover(r_stop) <> 'created' or pg_temp.shadow_jobs(r_stop) <> 1 then
+    raise exception 'D14: a recovery after the clear did not create the request';
+  end if;
   e := pg_temp.eval(r_pend);
   update ops.jobs set status = 'failed', last_error_class = 'permanent', updated_at = now() where id = e.job_id;
   v_stop := ops.trip_execution_stop('tenant', 'ds recover stop', 'ds-suite', ta, null, null, null, null);

@@ -12,7 +12,11 @@ import type {
   ShadowDecisionProvider,
   ShadowDecisionSettlement,
 } from "../worker/capabilities.ts";
-import { PermanentError, SecurityError } from "../worker/failures.ts";
+import {
+  PermanentError,
+  SecurityError,
+  TransientError,
+} from "../worker/failures.ts";
 import type { LeasedJob } from "../worker/job.ts";
 import {
   DECISION_SHADOW_EVALUATE_KIND,
@@ -271,23 +275,23 @@ describe("the decision.shadow_evaluate handler", () => {
     ["an unknown", "decision_vector.v3"],
     ["no", undefined],
   ])(
-    "asks nothing when the policy wants %s vector version",
+    "asks nothing and rolls the start back when the policy wants %s vector version",
     async (_label, vectorVersion) => {
       const evaluate = vi.fn();
-      const { caps } = await runOnce(
-        { identity: FAKE_DECISION_PROVIDER, evaluate },
-        running({ vectorVersion }),
-        "failed",
-      );
+      const handler = createDecisionShadowEvaluateHandler({
+        decisionPort: { identity: FAKE_DECISION_PROVIDER, evaluate },
+      });
+      const caps = scripted(running({ vectorVersion }));
 
+      await expect(
+        handler.prepare(
+          job({ decision_evaluation_id: EVALUATION }),
+          caps.prepare,
+          budget,
+        ),
+      ).rejects.toBeInstanceOf(TransientError);
       expect(evaluate).not.toHaveBeenCalled();
-      expect(caps.settled).toEqual([
-        {
-          outcome: "failed",
-          vector: null,
-          errorCode: "vector_version_unsupported",
-        },
-      ]);
+      expect(caps.settled).toEqual([]);
     },
   );
 

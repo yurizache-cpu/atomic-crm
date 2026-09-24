@@ -107,22 +107,30 @@ const Distribution = ({ totals }: { totals: Totals }) =>
     <Note>{DECISION_INTELLIGENCE_DISTRIBUTION_HIDDEN}</Note>
   ) : (
     <div className="grid gap-4 md:grid-cols-2">
-      <Fields label="Recomendações do motor">
-        {(["accept", "needs_edit", "reject", "abstain"] as const).map((key) => (
-          <Field key={key} term={SHADOW_RECOMMENDATION_LABELS[key]}>
-            {totals.byRecommendation[key]}
-          </Field>
-        ))}
-      </Fields>
-      <Fields label="Decisões humanas">
-        {(["pending", "accepted", "rejected", "needs_edit"] as const).map(
-          (key) => (
-            <Field key={key} term={reviewStatusLabel(key)}>
-              {totals.byHumanOutcome[key]}
-            </Field>
-          ),
-        )}
-      </Fields>
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Recomendações do motor</h3>
+        <Fields label="Recomendações do motor">
+          {(["accept", "needs_edit", "reject", "abstain"] as const).map(
+            (key) => (
+              <Field key={key} term={SHADOW_RECOMMENDATION_LABELS[key]}>
+                {totals.byRecommendation[key]}
+              </Field>
+            ),
+          )}
+        </Fields>
+      </div>
+      <div className="flex flex-col gap-2">
+        <h3 className="text-sm font-medium">Decisões humanas</h3>
+        <Fields label="Decisões humanas">
+          {(["pending", "accepted", "rejected", "needs_edit"] as const).map(
+            (key) => (
+              <Field key={key} term={reviewStatusLabel(key)}>
+                {totals.byHumanOutcome[key]}
+              </Field>
+            ),
+          )}
+        </Fields>
+      </div>
     </div>
   );
 

@@ -22,8 +22,8 @@
 --      started: one under a live lease is in progress, any other running or
 --      indeterminate one is reported for a person, never re-asked; a settled
 --      one is reported complete. It honours the scope (BASELINE Q8) and the
---      stops: a new request under a stop is recorded refused (owner decision
---      E), and a pending one is left untouched until the stop is cleared.
+--      stops: under an active stop it does nothing and records nothing, and
+--      is run again once a person has cleared the stop.
 --   5. ops.cos_decision_intelligence: neutral, aggregate calibration counts per
 --      policy and provider version (agreement, never "accuracy"), returned in
 --      the overview projection. Counts only: no id, name, text or input.
@@ -66,7 +66,10 @@ begin
   if (select pg_catalog.array_agg(k order by k) from pg_catalog.jsonb_object_keys(p_vector) k) is distinct from c_keys then
     return false;
   end if;
-  if p_vector ->> 'version' not in ('decision_vector.v1', 'decision_vector.v2')
+  -- Every value is typed before it is compared: a JSON null never reaches a
+  -- `not in`, where it would read as unknown and pass.
+  if pg_catalog.jsonb_typeof(p_vector -> 'version') is distinct from 'string'
+     or p_vector ->> 'version' not in ('decision_vector.v1', 'decision_vector.v2')
      or p_vector ->> 'mode' is distinct from 'shadow'
      or pg_catalog.jsonb_typeof(p_vector -> 'recommendation') is distinct from 'string'
      or p_vector ->> 'recommendation' not in ('accept', 'needs_edit', 'reject', 'abstain')
@@ -84,6 +87,7 @@ begin
   if pg_catalog.jsonb_typeof(p_vector -> 'provider') is distinct from 'object'
      or (select pg_catalog.array_agg(k order by k) from pg_catalog.jsonb_object_keys(p_vector -> 'provider') k)
         is distinct from c_provider
+     or pg_catalog.jsonb_typeof(p_vector #> '{provider,kind}') is distinct from 'string'
      or p_vector #>> '{provider,kind}' not in ('fake', 'jev')
      or pg_catalog.jsonb_typeof(p_vector #> '{provider,id}') is distinct from 'string'
      or p_vector #>> '{provider,id}' !~ c_name
@@ -239,7 +243,7 @@ alter table ops.decision_evaluations
     status <> 'completed' or policy_outcome is not distinct from ops.decision_policy_outcome(policy_version, vector));
 alter table ops.decision_evaluations
   add constraint decision_evaluations_vector_matches_policy check (
-    vector is null or vector ->> 'version' = ops.decision_policy_vector_version(policy_version));
+    vector is null or vector ->> 'version' is not distinct from ops.decision_policy_vector_version(policy_version));
 alter table ops.decision_evaluations drop constraint decision_evaluations_trigger_source_check;
 alter table ops.decision_evaluations
   add constraint decision_evaluations_trigger_source_check
@@ -497,6 +501,7 @@ declare
   v_policy pg_catalog.text := ops.current_shadow_policy_version();
   v_item   ops.review_items;
   v_eval   ops.decision_evaluations;
+  v_run    ops.agent_runs;
   v_job    ops.jobs;
   v_new    pg_catalog.uuid;
   v_id     pg_catalog.uuid;
@@ -518,11 +523,20 @@ begin
    where e.tenant_id = p_tenant_id and e.review_item_id = v_item.id and e.policy_version = v_policy
      for update;
   if not found then
+    -- Under an active stop a repair does nothing and records nothing: it is
+    -- run again once a person has cleared the stop. (The shared lock is held
+    -- to the end of the transaction, so no stop can be tripped in between.)
+    select * into v_run from ops.agent_runs r where r.tenant_id = p_tenant_id and r.id = v_item.agent_run_id;
+    perform pg_catalog.pg_advisory_xact_lock_shared(ops.execution_stop_lock_key());
+    if ops.covering_execution_stop(p_tenant_id, 'decision.shadow_evaluate', v_run.company_id, v_run.department_id,
+                                   v_run.agent_id) is not null then
+      return pg_catalog.jsonb_build_object('outcome', 'stopped', 'evaluationId', null);
+    end if;
     v_id := ops.request_shadow_decision(p_tenant_id, v_item.id, 'operator.recover');
-    select * into v_eval from ops.decision_evaluations e where e.id = v_id;
-    return pg_catalog.jsonb_build_object(
-      'outcome', case when v_eval.status = 'refused' then 'stopped' else 'created' end,
-      'evaluationId', v_id);
+    if v_id is null then
+      return pg_catalog.jsonb_build_object('outcome', 'not_eligible');
+    end if;
+    return pg_catalog.jsonb_build_object('outcome', 'created', 'evaluationId', v_id);
   end if;
 
   if v_eval.job_id is not null then
@@ -532,7 +546,7 @@ begin
   -- Started or settled: never asked again, never rewritten. A start whose
   -- lease is still live is simply in progress; any other started one may have
   -- reached the provider, so a person looks at it.
-  if v_eval.status = 'running' and v_job.status = 'leased' and v_job.lease_expires_at > pg_catalog.now() then
+  if v_eval.status = 'running' and v_job.status = 'leased' and v_job.lease_expires_at > pg_catalog.clock_timestamp() then
     return pg_catalog.jsonb_build_object('outcome', 'in_progress', 'evaluationId', v_eval.id);
   end if;
   if v_eval.status in ('running', 'indeterminate') then
@@ -624,7 +638,8 @@ language sql stable security invoker set search_path = '' as $$
                                                         'reject', g.rec_reject, 'abstain', g.rec_abstain),
       'byHumanOutcome', pg_catalog.jsonb_build_object('pending', g.human_pending, 'accepted', g.human_accepted,
                                                       'rejected', g.human_rejected, 'needs_edit', g.human_needs_edit))
-      order by g.policy_version desc, g.provider_kind nulls last, g.provider_id, g.provider_version), '[]'::pg_catalog.jsonb))
+      order by pg_catalog.substring(g.policy_version, '[0-9]+$')::pg_catalog.int4 desc, g.provider_kind nulls last,
+               g.provider_id, g.provider_version), '[]'::pg_catalog.jsonb))
     from g;
 $$;
 
