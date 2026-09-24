@@ -957,11 +957,12 @@
           "status": "completed",
           "caution": "low",
           "refusal": null,
-          "provider": { "id": "fake-rules", "kind": "fake", "version": "1" },
+          "provider": { "id": "fake-rules", "kind": "fake", "version": "2" },
           "settledAt": "2026-09-22T10:00:00.000000Z",
           "confidence": 0.82,
           "reasonCodes": ["triage_complete", "intent_information"],
           "requestedAt": "2026-09-22T10:00:00.000000Z",
+          "policyVersion": "decision_shadow.v2",
           "recommendation": "accept"
         },
         "allowedDecisions": ["accepted", "rejected", "needs_edit"]
@@ -10221,7 +10222,45 @@
           "acceptedWithoutSend": 0
         },
         "platform": { "globalAdmissionBlocked": false },
-        "admission": { "tenantAdmission": "conditional" }
+        "admission": { "tenantAdmission": "conditional" },
+        "decisionIntelligence": {
+          "mode": "shadow",
+          "groups": [
+            {
+              "failed": 0,
+              "invalid": 0,
+              "pending": 0,
+              "refused": 0,
+              "provider": {
+                "id": "fake-rules",
+                "kind": "fake",
+                "version": "2"
+              },
+              "abstained": 0,
+              "agreements": 0,
+              "comparable": 0,
+              "evaluations": 1,
+              "disagreements": 0,
+              "indeterminate": 0,
+              "policyVersion": "decision_shadow.v2",
+              "byHumanOutcome": {
+                "pending": 1,
+                "accepted": 0,
+                "rejected": 0,
+                "needs_edit": 0
+              },
+              "recommendations": 1,
+              "byRecommendation": {
+                "accept": 1,
+                "reject": 0,
+                "abstain": 0,
+                "needs_edit": 0
+              },
+              "withHumanDecision": 0
+            }
+          ],
+          "currentPolicyVersion": "decision_shadow.v2"
+        }
       }
     },
     {
