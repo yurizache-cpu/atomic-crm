@@ -62,21 +62,21 @@ import {
 
 const WORKER_DATABASE_URL = "OPS_WORKER_DATABASE_URL";
 const SOURCE = "lead-triage-demo";
-const MODEL = "fake-model-1";
+export const MODEL = "fake-model-1";
 const MAX_STEPS = 5;
 
 /** The fictitious sender, and the trusted consent source that knows it. */
-const DEMO_CONTACT = "synthetic:lead-demo";
-const DEMO_CONTACT_POLICY = createSyntheticContactPolicy({
+export const DEMO_CONTACT = "synthetic:lead-demo";
+export const DEMO_CONTACT_POLICY = createSyntheticContactPolicy({
   eligible: [DEMO_CONTACT],
 });
 
 /** A fictitious enquiry, written for this demonstration. */
-const SYNTHETIC_BODY =
+export const SYNTHETIC_BODY =
   "Oi, vi o site. Tenho tido muita ansiedade e pensamentos demais e queria entender como funciona a primeira consulta.";
 
 /** What the fake provider answers. A real model would write its own. */
-const CANNED_ADVICE: LeadTriage = Object.freeze({
+export const CANNED_ADVICE: LeadTriage = Object.freeze({
   outcome: "triaged",
   summary:
     "New enquiry asking how a first session works, mentioning ongoing anxiety. No clinical judgement is made here.",
@@ -97,7 +97,7 @@ export interface LeadTriageDemoDependencies {
   readonly openDatabase: (connectionString: string) => WorkerDatabase;
 }
 
-interface Placement {
+export interface Placement {
   readonly tenantId: string;
   readonly companyId: string;
   readonly agentId: string;
@@ -112,7 +112,7 @@ const PLACEMENT_SQL = `select a.tenant_id, a.company_id, a.id as agent_id
    order by a.created_at
    limit 1`;
 
-async function readPlacement(tx: TxClient): Promise<Placement> {
+export async function readPlacement(tx: TxClient): Promise<Placement> {
   const { rows } = await tx.query<{
     tenant_id: string;
     company_id: string;
@@ -182,7 +182,7 @@ const DEMO_DAILY_USD = "1";
 const QUEUE_BUSY_SQL =
   "select count(*)::int as n from ops.jobs where status in ('queued', 'leased')";
 
-async function queueIsBusy(tx: TxClient): Promise<boolean> {
+export async function queueIsBusy(tx: TxClient): Promise<boolean> {
   const { rows } = await tx.query<{ n: number }>(QUEUE_BUSY_SQL, []);
   return Number(rows[0]?.n ?? 0) > 0;
 }
@@ -197,7 +197,7 @@ async function queueIsBusy(tx: TxClient): Promise<boolean> {
  * owner's limit, and the price it records is for a model no real provider
  * serves.
  */
-async function configureFakeGovernance(
+export async function configureFakeGovernance(
   tx: TxClient,
   tenantId: string,
   now: Date,

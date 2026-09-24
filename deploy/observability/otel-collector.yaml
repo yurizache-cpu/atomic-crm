@@ -1,0 +1,32 @@
+# The OpenTelemetry Collector's pipeline for the LOCAL stack (Phase 2E.1).
+#
+# It receives OTLP/HTTP traces and prints what it received to its own log.
+# It forwards nothing: a deployment swaps the debug exporter for a backend the
+# owner approves, here and nowhere else. The Company OS emits only the span
+# attributes engine/telemetry/catalog.ts allows (kinds, outcomes, versions and
+# internal ids), never content, so nothing clinical can reach this file's
+# pipeline to begin with.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        # Inside the container; compose publishes it on 127.0.0.1 only.
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 128
+  batch: {}
+
+exporters:
+  debug:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

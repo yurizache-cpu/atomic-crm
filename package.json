@@ -37,6 +37,7 @@
     "ops": "node engine/cli/operator.ts",
     "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts",
     "lead-triage:demo": "node engine/cli/leadTriageDemo.ts",
+    "observability:demo": "node engine/cli/observabilityDemo.ts",
     "gateway:provision": "node scripts/provision-gateway-role.mjs",
     "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
     "messaging": "node engine/cli/messaging.ts"

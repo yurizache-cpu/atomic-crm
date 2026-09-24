@@ -1,0 +1,18 @@
+# Prometheus for the LOCAL stack (Phase 2E.1): it scrapes the Company OS
+# worker's GET /metrics and nothing else. It holds no database credential and
+# reads nothing but that endpoint, whose metrics carry no tenant, job, run,
+# review, contact or message id (engine/telemetry/catalog.ts).
+#
+# The worker serves metrics only with METRICS_ENABLED=true and METRICS_PORT
+# set, on 127.0.0.1 by default; on Docker Desktop a container reaches that
+# loopback listener as host.docker.internal.
+
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+
+scrape_configs:
+  - job_name: company-os-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9464"]
