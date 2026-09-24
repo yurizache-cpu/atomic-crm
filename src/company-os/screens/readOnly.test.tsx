@@ -344,6 +344,8 @@ describe("the Company OS screens are read-only, except the review decision and t
       ...Object.values(COPY.TRIP_CONFIRM_TITLE),
       ...Object.values(COPY.SHADOW_RECOMMENDATION_LABELS),
       ...Object.values(COPY.SHADOW_STATE_TEXT),
+      ...Object.values(COPY.SHADOW_REASON_LABELS),
+      ...Object.values(COPY.DECISION_INTELLIGENCE_CARDS),
       ...Object.values(WITHHELD_TEXT),
       DATA_BANNER_TEXT,
     ];

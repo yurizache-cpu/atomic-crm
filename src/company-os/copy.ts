@@ -146,7 +146,54 @@ export const SHADOW_STATE_TEXT = {
     "Não avaliada: uma pausa estava ativa quando a avaliação foi pedida.",
   refused_not_eligible:
     "Não avaliada: fora do escopo de dados sintéticos ou de teste.",
+  refused_policy_retired:
+    "Não avaliada: pedida sob uma versão de política já substituída.",
 } as const;
+
+/**
+ * lead_triage_reasons.v1 (Phase 2D.2), as the owner reads them. The codes
+ * themselves stay under the technical details.
+ */
+export const SHADOW_REASON_LABELS = {
+  triage_complete: "Triagem completa",
+  intent_book_appointment: "Quer agendar",
+  intent_pricing: "Pergunta sobre valores",
+  intent_information: "Pede informações",
+  flag_possible_crisis: "Possível situação de crise",
+  flag_minor: "Possível menor de idade",
+  flag_spam: "Possível spam",
+  contact_do_not_contact: "Contato pediu para não ser contatado",
+  outcome_out_of_scope: "Fora do escopo do atendimento",
+  outcome_needs_input: "Faltam informações",
+  insufficient_signal: "Sinais insuficientes",
+} as const;
+
+/** A code outside the current vocabulary: stored history (policy v1). */
+export const SHADOW_REASON_UNKNOWN = "Motivo de uma versão anterior";
+
+// Phase 2D.3: the shadow calibration view (Decisões → Inteligência).
+export const DECISION_INTELLIGENCE_TAB = "Inteligência";
+
+export const DECISION_INTELLIGENCE_EXPLANATION =
+  "Estes números comparam recomendações do motor com decisões humanas. Eles não representam uma medida de acurácia clínica ou verdade objetiva.";
+
+export const DECISION_INTELLIGENCE_CARDS = {
+  evaluations: "Avaliações em sombra",
+  withHumanDecision: "Com decisão humana",
+  agreements: "Concordâncias",
+  disagreements: "Discordâncias",
+  abstained: "Sem recomendação",
+  indeterminate: "Indeterminadas",
+} as const;
+
+export const DECISION_INTELLIGENCE_EMPTY =
+  "Nenhuma avaliação em sombra foi registrada ainda.";
+
+export const DECISION_INTELLIGENCE_SMALL_SAMPLE =
+  "Amostra pequena demais para uma taxa.";
+
+export const DECISION_INTELLIGENCE_DISTRIBUTION_HIDDEN =
+  "A distribuição aparece quando houver ao menos 5 avaliações.";
 
 /**
  * The `authorized` outbound state: recorded by an operator's CLI send request,

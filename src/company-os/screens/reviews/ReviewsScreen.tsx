@@ -18,10 +18,16 @@ import {
 } from "../../components/owner";
 import { PageControls, PagesView } from "../../components/queryStates";
 import { LIST_PATHS } from "../../components/recordPaths";
-import { REVIEW_DECISIONS_NOTE, REVIEW_NOT_A_SEND_NOTE } from "../../copy";
+import {
+  DECISION_INTELLIGENCE_TAB,
+  REVIEW_DECISIONS_NOTE,
+  REVIEW_NOT_A_SEND_NOTE,
+  SHADOW_TITLE,
+} from "../../copy";
 import { oneOf } from "../../format/labels";
 import { capabilityLabel, reviewStatusLabel } from "../../format/ptBR";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
+import { DecisionIntelligenceView } from "./DecisionIntelligenceView";
 import { ReviewDetail } from "./ReviewDetail";
 import { NO_REPLY_SENT_TEXT, outboundRecordText } from "./reviewLabels";
 import { ReviewStatusBadge } from "./ReviewSummaryFields";
@@ -31,10 +37,23 @@ import { ReviewStatusBadge } from "./ReviewSummaryFields";
 // server orders it; each decided status has its own tab. Read-only in this
 // phase: decisions are recorded through the operator CLI, and no screen offers
 // one. A list carries no field of the model's proposal and no decision note.
+// Phase 2D.3 adds one read-only tab, "Inteligência" (?view=intelligence): the
+// shadow calibration counts (DecisionIntelligenceView).
 
 const TABS: readonly ReviewStatus[] = REVIEW_STATUSES;
+const INTELLIGENCE = "intelligence";
 
-const StatusTabs = ({ active }: { active: ReviewStatus }) => (
+const tabClass = (current: boolean) =>
+  cn(
+    "rounded-t-md px-3 py-2 text-sm",
+    current ? "bg-accent font-medium" : "hover:bg-accent/50",
+  );
+
+const StatusTabs = ({
+  active,
+}: {
+  active: ReviewStatus | typeof INTELLIGENCE;
+}) => (
   <nav
     aria-label="Situação da decisão"
     className="flex flex-wrap gap-1 border-b"
@@ -44,14 +63,18 @@ const StatusTabs = ({ active }: { active: ReviewStatus }) => (
         key={status}
         to={`${LIST_PATHS.reviews}?${new URLSearchParams({ status }).toString()}`}
         aria-current={status === active ? "page" : undefined}
-        className={cn(
-          "rounded-t-md px-3 py-2 text-sm",
-          status === active ? "bg-accent font-medium" : "hover:bg-accent/50",
-        )}
+        className={tabClass(status === active)}
       >
         {reviewStatusLabel(status)}
       </Link>
     ))}
+    <Link
+      to={`${LIST_PATHS.reviews}?${new URLSearchParams({ view: INTELLIGENCE }).toString()}`}
+      aria-current={active === INTELLIGENCE ? "page" : undefined}
+      className={tabClass(active === INTELLIGENCE)}
+    >
+      {DECISION_INTELLIGENCE_TAB}
+    </Link>
   </nav>
 );
 
@@ -136,6 +159,16 @@ const ReviewTable = ({ reviews }: { reviews: readonly ReviewSummary[] }) => (
   </div>
 );
 
+const IntelligenceTab = () => (
+  <ScreenLayout
+    title="Decisões"
+    description={`${SHADOW_TITLE}: recomendações do motor comparadas com as suas decisões.`}
+  >
+    <StatusTabs active={INTELLIGENCE} />
+    <DecisionIntelligenceView />
+  </ScreenLayout>
+);
+
 const ReviewList = () => {
   const [params] = useSearchParams();
   const status = oneOf(params.get("status"), REVIEW_STATUSES) ?? "pending";
@@ -163,9 +196,18 @@ const ReviewList = () => {
   );
 };
 
+const ReviewsIndex = () => {
+  const [params] = useSearchParams();
+  return params.get("view") === INTELLIGENCE ? (
+    <IntelligenceTab />
+  ) : (
+    <ReviewList />
+  );
+};
+
 export const ReviewsScreen = () => (
   <Routes>
-    <Route index element={<ReviewList />} />
+    <Route index element={<ReviewsIndex />} />
     <Route path=":reviewId" element={<ReviewDetail />} />
   </Routes>
 );

@@ -4,6 +4,8 @@ import {
   SHADOW_BADGE,
   SHADOW_NOTE,
   SHADOW_POLICY_REQUIRED,
+  SHADOW_REASON_LABELS,
+  SHADOW_REASON_UNKNOWN,
   SHADOW_STATE_TEXT,
   SHADOW_TITLE,
 } from "../../copy";
@@ -78,6 +80,41 @@ describe("the shadow decision on a review", () => {
     expect(document.body.textContent).not.toMatch(/sha256|inputFingerprint/);
   });
 
+  it("names the reasons as the owner reads them, and the policy and provider versions, keeping the codes technical", async () => {
+    const screen = await renderCompanyOs(
+      withShadow(
+        "review:open",
+        evaluation({
+          reasonCodes: [
+            "intent_pricing",
+            "flag_possible_crisis",
+            "legacy_reason",
+          ],
+        }),
+      ),
+      reviewPage("review:open"),
+    );
+
+    const shadow = region(screen);
+    await expect
+      .element(shadow)
+      .toHaveTextContent(
+        `Motivos${SHADOW_REASON_LABELS.intent_pricing} · ${SHADOW_REASON_LABELS.flag_possible_crisis} · ${SHADOW_REASON_UNKNOWN}`,
+      );
+    await expect.element(shadow).toHaveTextContent("Versão da políticav2");
+    await expect
+      .element(shadow)
+      .toHaveTextContent("Simulação determinística (não é o Jev) · versão 2");
+    // The raw codes sit only under the technical details.
+    const owner = shadow.element().querySelector("dl");
+    const technical = shadow.element().querySelector("details");
+    expect(owner?.textContent).not.toMatch(/intent_pricing|decision_shadow/);
+    expect(technical?.textContent).toContain(
+      "intent_pricing, flag_possible_crisis, legacy_reason",
+    );
+    expect(technical?.textContent).toContain("decision_shadow.v2");
+  });
+
   it("says a review outside the synthetic and test scope is not evaluated", async () => {
     const screen = await renderCompanyOs(
       createRecordedSession(),
@@ -146,6 +183,21 @@ describe("the shadow decision on a review", () => {
         provider: { kind: "jev", id: "jev", version: "unconnected" },
       }),
       SHADOW_STATE_TEXT.failed,
+    ],
+    [
+      "one requested under a policy since retired",
+      evaluation({
+        status: "refused",
+        policyVersion: "decision_shadow.v1",
+        recommendation: null,
+        confidence: null,
+        caution: null,
+        reasonCodes: [],
+        policy: { outcome: null, humanReviewRequired: true },
+        provider: null,
+        refusal: "policy_retired",
+      }),
+      SHADOW_STATE_TEXT.refused_policy_retired,
     ],
     [
       "one refused under a stop",
