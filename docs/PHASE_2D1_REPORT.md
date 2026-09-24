@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **IMPLEMENTED LOCALLY; OWNER VISUAL TEST PENDING (2026-09-24).** Phase 2D has STARTED; 2D.1 is its first slice. Not pushed, no PR. |
+| **Status** | **OWNER-TESTED / READY FOR INTEGRATION (2026-09-24).** Phase 2D has STARTED; 2D.1 is its first slice. Pushed for remote CI; no PR yet. Real Jev NOT CONNECTED; Q8 OPEN; browser mutable RPCs 2; no execution authority added. |
 | **Base** | `feature/clinical-phase-1` at `f195c2a74725fa77233b23053cfed59f260017e1` (the PR #9 merge that integrated S7.2). Post-merge CI Check #62 (run 36004980326): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped, the same cases) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red. The workflow is not green. `main` unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-2d-decision-shadow` |
 | **Governing records** | [PHASE_2C_BRIEF.md](PHASE_2C_BRIEF.md) §22 and decision P ([DECISIONS.md](DECISIONS.md)): a provider-neutral DecisionPort, Jev in shadow mode first, never authoritative. No Phase 2D brief or ADR exists yet; this slice stays inside the recorded direction and changes no authority. |
@@ -109,6 +109,14 @@ The fake provider is not Jev, and the screen says so.
 - a malformed answer → invalid;
 - two concurrent requests → one evaluation and one job;
 - a repeated step → the same evaluation.
+
+## 4a. Owner visual test (2026-09-24): PASS
+
+On a synthetic review, the owner saw the fake shadow provider recommend **Aceitar at 82%**. The page showed "Modo sombra", "Revisão humana obrigatória", "Simulação determinística (não é o Jev)" and the no-action warning.
+
+The owner deliberately disagreed and recorded **Precisa de ajuste**. The confirmation read "Esta ação registra sua decisão. Nenhuma mensagem será enviada."
+
+The human result was persisted independently: the review is `needs_edit`, recorded by the member's principal. The shadow evaluation was unchanged (still `accept`, 0.82). The comparison showed "Concordância com a recomendação: Não". No message was sent (no outbound row), and the shadow engine executed no action. A shadow recommendation is not decision authority.
 
 ## 5. Review (one focused pass)
 
