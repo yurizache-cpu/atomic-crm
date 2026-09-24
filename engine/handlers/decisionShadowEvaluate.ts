@@ -37,6 +37,7 @@ import {
 } from "../decision/decisionVector.ts";
 import type {
   ExternalCallHandlerDefinition,
+  ObservedSettlement,
   PrepareOutcome,
 } from "../worker/handlerRegistry.ts";
 import type { CallOutcome } from "../worker/handlerRegistry.ts";
@@ -62,6 +63,8 @@ const startSchema = z.object({
   inputFingerprint: z.string().optional(),
   input: z.unknown().optional(),
   vectorVersion: z.string().optional(),
+  // For telemetry only (Phase 2E.1): the policy version the start recorded.
+  policyVersion: z.string().optional(),
 });
 
 type PrepareCapability = "startShadowDecision";
@@ -69,6 +72,8 @@ type SettleCapability = "settleShadowDecision";
 
 interface ShadowState {
   readonly evaluationId: string;
+  /** The evaluation's policy version, for telemetry only. */
+  readonly policyVersion: string | undefined;
   /** null when the database's input failed this worker's schema: nothing is asked. */
   readonly request: DecisionRequest | null;
 }
@@ -173,8 +178,10 @@ export function createDecisionShadowEvaluateHandler(dependencies: {
       const input = DecisionInputSchema.safeParse(start.input);
       return {
         kind: "call",
+        providerKind: identity.kind,
         state: Object.freeze({
           evaluationId: named,
+          policyVersion: start.policyVersion,
           request:
             input.success && typeof start.inputFingerprint === "string"
               ? Object.freeze({
@@ -193,7 +200,11 @@ export function createDecisionShadowEvaluateHandler(dependencies: {
       return decisionPort.evaluate(state.request, { signal: context.signal });
     },
 
-    async settle(state, outcome: CallOutcome<unknown>, capabilities) {
+    async settle(
+      state,
+      outcome: CallOutcome<unknown>,
+      capabilities,
+    ): Promise<ObservedSettlement> {
       let settlement: ShadowDecisionSettlement;
       if (outcome.ok) {
         const vector = DecisionVectorSchema.safeParse(outcome.value);
@@ -215,7 +226,14 @@ export function createDecisionShadowEvaluateHandler(dependencies: {
           "the shadow decision was not this attempt's to settle",
         );
       }
-      return describe(state.evaluationId, status);
+      return {
+        detail: describe(state.evaluationId, status),
+        observation: {
+          subject: "decision_evaluation",
+          status,
+          policyVersion: state.policyVersion,
+        },
+      };
     },
   };
   return Object.freeze(handler);

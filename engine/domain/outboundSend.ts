@@ -24,8 +24,18 @@
 //
 // Nothing here decides whether a message may be sent; the database does, in
 // TX1 and TX2. Nothing here retries.
+//
+// Phase 2E.1: the CALL is observed through TelemetryPort (a span and the
+// external-call metrics), with the operation, the provider kind and the
+// outcome class only: never the recipient, the text or the provider's answer.
+// Telemetry cannot change the call, the settlement or the report.
 
 import type { WorkerDatabase } from "../db/types.ts";
+import {
+  guardTelemetry,
+  NOOP_TELEMETRY,
+  type TelemetryPort,
+} from "../telemetry/telemetryPort.ts";
 import type {
   OutboundOutcome,
   OutboundTransport,
@@ -79,12 +89,42 @@ const callOnce = async (
   }
 };
 
+/** The send's one call, observed. What it returns is the call's, unchanged. */
+const observedCall = async (
+  telemetry: TelemetryPort,
+  tenantId: string,
+  call: () => Promise<OutboundOutcome>,
+): Promise<OutboundOutcome> => {
+  const span = telemetry.startSpan("company_os.whatsapp.send", {
+    "company_os.operation": "whatsapp.send",
+    "company_os.provider.kind": "meta",
+    "company_os.tenant.id": tenantId,
+  });
+  const startedAt = Date.now();
+  const outcome = await call();
+  const callClass = outcome.kind === "accepted" ? "ok" : "error";
+  span.setAttributes({ "company_os.call.outcome": callClass });
+  span.end(callClass);
+  telemetry.count("company_os_external_calls_total", {
+    operation: "whatsapp.send",
+    outcome: callClass,
+  });
+  telemetry.observe(
+    "company_os_provider_duration_seconds",
+    Math.max(0, Date.now() - startedAt) / 1000,
+    { provider_kind: "meta", operation: "whatsapp.send" },
+  );
+  return outcome;
+};
+
 export async function sendApprovedReview(
   owner: WorkerDatabase,
   transport: OutboundTransport,
   input: RequestSendInput,
   seams: SendSeams = {},
+  telemetry: TelemetryPort = NOOP_TELEMETRY,
 ): Promise<SendReport> {
+  const observed = guardTelemetry(telemetry);
   // --- TX1: request. A refusal throws and records nothing. ----------------
   const requested = await owner.withTransaction((tx) =>
     requestOutboundSend(tx, input),
@@ -122,7 +162,9 @@ export async function sendApprovedReview(
   if (seams.afterBegin) await seams.afterBegin(requested.outboundMessageId);
 
   // --- CALL: exactly one. -------------------------------------------------
-  const outcome = await callOnce(transport, begun.request);
+  const outcome = await observedCall(observed, input.tenantId, () =>
+    callOnce(transport, begun.request),
+  );
   const evidence = {
     providerCalled: true,
     providerOutcome: outcome.kind,
