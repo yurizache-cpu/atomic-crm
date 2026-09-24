@@ -1569,7 +1569,9 @@ begin
     ('overview', array[
       '.admission', '.admission.tenantAdmission', '.agents', '.agents.held', '.agents.inactive',
       '.agents.queued', '.agents.stale', '.agents.stopped', '.agents.total', '.agents.working', '.asOf',
-      '.outbound', '.outbound.acceptedWithoutSend', '.outbound.indeterminateOpen', '.outbound.todayByStatus',
+      -- Phase 2D.3: the group key paths are pinned exactly by decision_shadow.sql D15.
+      '.decisionIntelligence', '.decisionIntelligence.currentPolicyVersion', '.decisionIntelligence.groups',
+      '.decisionIntelligence.mode', '.outbound', '.outbound.acceptedWithoutSend', '.outbound.indeterminateOpen', '.outbound.todayByStatus',
       '.outbound.todayByStatus.*', '.platform', '.platform.globalAdmissionBlocked', '.reviews',
       '.reviews.oldestPendingAt', '.reviews.pending', '.runs', '.runs.needingAttention', '.runs.todayByStatus',
       '.runs.todayByStatus.*', '.runs.workingNow', '.stops', '.stops.tenantScopedActive', '.v']),
@@ -3006,7 +3008,9 @@ insert into cos_internal values
   ('ops.cos_review_decidable(uuid, ops.review_items)', 's'),
   ('ops.trip_stop_in_tenant(uuid, text, text, uuid)', 'v'),
   -- Phase 2D.1: get_review's shadow decision, read only.
-  ('ops.cos_review_shadow_decision(uuid, ops.review_items)', 's');
+  ('ops.cos_review_shadow_decision(uuid, ops.review_items)', 's'),
+  -- Phase 2D.3: the overview's shadow calibration counts, read only.
+  ('ops.cos_decision_intelligence(uuid)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3312,7 +3316,9 @@ begin
    where not (m.callee ~ '^(gate_|read_|cos_)'
               or m.callee in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state',
                               'execution_stop_covers', 'job_covering_stop', 'spend_status', 'spend_window_start',
-                              'agent_run_result_valid'))
+                              'agent_run_result_valid',
+                              -- Phase 2D.2: reads the policy registry's one current version.
+                              'current_shadow_policy_version'))
       or m.callee in ('crm_contact_by_phone', 'whatsapp_send_eligibility')
       or (m.callee !~ '^(gate_|read_|cos_)' and m.callee <> 'spend_window_start'
           and m.callee ~ '(^|_)(send|mark|clear|request|start|trip|grant|revoke|admit|receive|configure|record|enforce|settle|lease|claim|defer|reap|assign|transition)(_|$)')

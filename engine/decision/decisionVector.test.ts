@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DecisionInputSchema,
   DecisionVectorSchema,
+  LEAD_TRIAGE_REASON_CODES,
   type DecisionVector,
 } from "./decisionVector.ts";
 
@@ -10,7 +11,7 @@ import {
 // provider's answer is refused, never coerced, when anything about it is off.
 
 const VECTOR: DecisionVector = {
-  version: "decision_vector.v1",
+  version: "decision_vector.v2",
   mode: "shadow",
   recommendation: "accept",
   confidence: 0.82,
@@ -52,7 +53,16 @@ describe("DecisionVectorSchema", () => {
     ["NaN confidence", { confidence: Number.NaN }],
     ["infinite confidence", { confidence: Number.POSITIVE_INFINITY }],
     ["confidence as text", { confidence: "0.9" }],
-    ["an unknown schema version", { version: "decision_vector.v2" }],
+    ["an unknown schema version", { version: "decision_vector.v3" }],
+    ["the history-only v1 version", { version: "decision_vector.v1" }],
+    [
+      "a well-formed code outside the closed vocabulary",
+      { reasonCodes: ["maria_silva_anxiety"] },
+    ],
+    [
+      "one known and one unknown code",
+      { reasonCodes: ["flag_spam", "because_i_said_so"] },
+    ],
     ["a mode other than shadow", { mode: "enforce" }],
     ["an unknown caution level", { caution: "extreme" }],
     ["a malformed reason code", { reasonCodes: ["Because I said so"] }],
@@ -60,7 +70,7 @@ describe("DecisionVectorSchema", () => {
     ["a repeated reason code", { reasonCodes: ["flag_spam", "flag_spam"] }],
     [
       "nine reason codes",
-      { reasonCodes: [..."abcdefghi"].map((c) => `r_${c}`) },
+      { reasonCodes: LEAD_TRIAGE_REASON_CODES.slice(0, 9) },
     ],
     ["a malformed fingerprint", { inputFingerprint: "sha256:xyz" }],
     ["a malformed timestamp", { evaluatedAt: "yesterday" }],

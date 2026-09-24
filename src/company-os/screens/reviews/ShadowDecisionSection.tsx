@@ -9,18 +9,23 @@ import {
   SHADOW_BADGE,
   SHADOW_NOTE,
   SHADOW_POLICY_REQUIRED,
+  SHADOW_REASON_LABELS,
+  SHADOW_REASON_UNKNOWN,
   SHADOW_RECOMMENDATION_LABELS,
   SHADOW_STATE_TEXT,
   SHADOW_TITLE,
 } from "../../copy";
 import { reviewStatusLabel } from "../../format/ptBR";
+import { policyVersionLabel, providerLabel } from "./shadowLabels";
 
 // Phase 2D.1: the shadow decision a review carries (get_review's
 // `shadowDecision`), read only. It shows what the decision layer recommended,
 // how confident it was, and what the deterministic policy made of it, which is
 // always "human review required". It offers no control, never pretends a
 // recommendation exists when none was stored, and shows no input, prompt or
-// reasoning: only stable reason codes, under the technical details.
+// reasoning. Phase 2D.2 adds the policy and provider versions and the reason
+// codes as the owner reads them; the codes themselves stay under the
+// technical details.
 
 const POLICY_LABELS: Record<string, string> = {
   recommendation_available: "Recomendação disponível",
@@ -38,12 +43,9 @@ const CAUTION_LABELS: Record<string, string> = {
   high: "Alta",
 };
 
-const providerLabel = (kind: string): string =>
-  kind === "fake"
-    ? "Simulação determinística (não é o Jev)"
-    : kind === "jev"
-      ? "Jev"
-      : "Nenhum motor configurado";
+const reasonLabel = (code: string): string =>
+  (SHADOW_REASON_LABELS as Record<string, string>)[code] ??
+  SHADOW_REASON_UNKNOWN;
 
 /** The human decision each recommendation corresponds to; abstain has none. */
 const HUMAN_DECISION: Record<ShadowRecommendation, string | null> = {
@@ -71,7 +73,9 @@ const stateText = (shadow: ShadowDecision | null): string | null => {
     case "refused":
       return shadow.refusal === "stopped"
         ? SHADOW_STATE_TEXT.refused_stopped
-        : SHADOW_STATE_TEXT.refused_not_eligible;
+        : shadow.refusal === "policy_retired"
+          ? SHADOW_STATE_TEXT.refused_policy_retired
+          : SHADOW_STATE_TEXT.refused_not_eligible;
     case "completed":
       return null;
   }
@@ -107,11 +111,21 @@ const Completed = ({
       <Field term="Cautela">
         {shadow.caution === null ? "—" : CAUTION_LABELS[shadow.caution]}
       </Field>
+      <Field term="Motivos">
+        {shadow.reasonCodes.length === 0
+          ? "—"
+          : [...new Set(shadow.reasonCodes.map(reasonLabel))].join(" · ")}
+      </Field>
       <Field term="Política">
         {`${POLICY_LABELS[shadow.policy.outcome ?? ""] ?? "—"} · ${SHADOW_POLICY_REQUIRED}`}
       </Field>
+      <Field term="Versão da política">
+        {policyVersionLabel(shadow.policyVersion)}
+      </Field>
       <Field term="Motor">
-        {shadow.provider === null ? "—" : providerLabel(shadow.provider.kind)}
+        {shadow.provider === null
+          ? "—"
+          : `${providerLabel(shadow.provider.kind)} · versão ${shadow.provider.version}`}
       </Field>
       {review.status === "pending" ? null : (
         <>
@@ -128,6 +142,7 @@ const Completed = ({
       rows={[
         ["Motivos", shadow.reasonCodes.join(", ") || "—"],
         ["Política", shadow.policy.outcome ?? "—"],
+        ["Versão da política", shadow.policyVersion],
         [
           "Motor",
           shadow.provider === null

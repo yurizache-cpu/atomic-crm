@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **OWNER-TESTED / READY FOR INTEGRATION (2026-09-24).** Phase 2D has STARTED; 2D.1 is its first slice. Pushed for remote CI; no PR yet. Real Jev NOT CONNECTED; Q8 OPEN; browser mutable RPCs 2; no execution authority added. |
+| **Status** | **OWNER-TESTED / READY FOR INTEGRATION (2026-09-24).** *(Integrated 2026-09-24 by PR #10: normal merge `6adc4a7e7741950967f83577013f8b293a0e16a9` into `feature/clinical-phase-1`, parents `f195c2a7` and `4966655b`; PR CI Check #64 and post-merge CI Check #65: core jobs green, only the historical e2e and Prettier baseline red. The next slice is [PHASE_2D23_REPORT.md](PHASE_2D23_REPORT.md).)* Phase 2D has STARTED; 2D.1 is its first slice. Pushed for remote CI; no PR yet. Real Jev NOT CONNECTED; Q8 OPEN; browser mutable RPCs 2; no execution authority added. |
 | **Base** | `feature/clinical-phase-1` at `f195c2a74725fa77233b23053cfed59f260017e1` (the PR #9 merge that integrated S7.2). Post-merge CI Check #62 (run 36004980326): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped, the same cases) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red. The workflow is not green. `main` unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-2d-decision-shadow` |
 | **Governing records** | [PHASE_2C_BRIEF.md](PHASE_2C_BRIEF.md) §22 and decision P ([DECISIONS.md](DECISIONS.md)): a provider-neutral DecisionPort, Jev in shadow mode first, never authoritative. No Phase 2D brief or ADR exists yet; this slice stays inside the recorded direction and changes no authority. |

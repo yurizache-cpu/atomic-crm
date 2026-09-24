@@ -103,6 +103,12 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     ],
   })),
   {
+    // Phase 2D.3: the shadow calibration tab, read only.
+    hash: "#/company-os/reviews?view=intelligence",
+    heading: "Decisões",
+    markers: ["Avaliações em sombra"],
+  },
+  {
     hash: `#/company-os/reviews/${rid("review:accepted-1")}`,
     heading: "Decisão",
     markers: ["Call back tomorrow"],

@@ -21,6 +21,10 @@ import {
   textUpToSchema,
 } from "./primitives.ts";
 import {
+  ShadowPolicyVersionSchema,
+  ShadowProviderSchema,
+} from "./decisions.ts";
+import {
   AdviceWithheldReasonSchema,
   LEAD_TRIAGE_FLAGS,
   LEAD_TRIAGE_INTENTS,
@@ -84,12 +88,12 @@ export const SHADOW_STATUSES = [
   "refused",
 ] as const;
 
-const SHADOW_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-
 const ShadowEvaluationSchema = z
   .strictObject({
     status: z.enum(SHADOW_STATUSES),
     mode: z.literal("shadow"),
+    // Phase 2D.2: the exact policy version it was made under.
+    policyVersion: ShadowPolicyVersionSchema,
     recommendation: z.enum(SHADOW_RECOMMENDATIONS).nullable(),
     confidence: z.number().finite().min(0).max(1).nullable(),
     caution: z.enum(["low", "medium", "high"]).nullable(),
@@ -98,14 +102,8 @@ const ShadowEvaluationSchema = z
       outcome: z.enum(SHADOW_POLICY_OUTCOMES).nullable(),
       humanReviewRequired: z.literal(true),
     }),
-    provider: z
-      .strictObject({
-        kind: z.enum(["fake", "jev", "none"]),
-        id: z.string().regex(SHADOW_NAME),
-        version: z.string().regex(SHADOW_NAME),
-      })
-      .nullable(),
-    refusal: z.enum(["stopped", "not_eligible"]).nullable(),
+    provider: ShadowProviderSchema.nullable(),
+    refusal: z.enum(["stopped", "not_eligible", "policy_retired"]).nullable(),
     requestedAt: TimestampSchema,
     settledAt: TimestampSchema.nullable(),
   })

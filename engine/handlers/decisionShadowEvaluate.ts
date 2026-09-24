@@ -4,8 +4,12 @@
 //   prepare  (TX2a, committed) start the evaluation the LEASE is bound to: the
 //            database re-checks the synthetic and test scope and the stops,
 //            records `running` with this provider, and hands back the
-//            allowlisted input. `stopped` holds the job; anything but `running`
-//            settles it without asking anyone.
+//            allowlisted input and the vector version the evaluation's policy
+//            accepts (Phase 2D.2). `stopped` holds the job; anything but
+//            `running` settles it without asking anyone. A policy whose vector
+//            version this worker does not answer with rolls the start back:
+//            the evaluation stays pending, for a compatible worker or the
+//            owner's `decision recover`.
 //   call     (no transaction, no capabilities) ask the provider. Data in, an
 //            unknown value out; nothing here can reach the database.
 //   settle   (TX2b) validate the answer against the strict vector schema, the
@@ -27,6 +31,7 @@ import {
   type DecisionRequest,
 } from "../decision/decisionPort.ts";
 import {
+  DECISION_VECTOR_VERSION,
   DecisionInputSchema,
   DecisionVectorSchema,
 } from "../decision/decisionVector.ts";
@@ -56,6 +61,7 @@ const startSchema = z.object({
   evaluationId: z.string().regex(UUID).optional(),
   inputFingerprint: z.string().optional(),
   input: z.unknown().optional(),
+  vectorVersion: z.string().optional(),
 });
 
 type PrepareCapability = "startShadowDecision";
@@ -154,6 +160,14 @@ export function createDecisionShadowEvaluateHandler(dependencies: {
       if (budget.remainingMs() < MIN_DECISION_CALL_BUDGET_MS) {
         throw new TransientError(
           "lease too short to ask the decision provider; nothing was started",
+        );
+      }
+      // The evaluation's policy names the one vector version it accepts. A
+      // worker that answers with another asks nobody, and throws, so the start
+      // rolls back and the evaluation stays pending (never burnt as failed).
+      if (start.vectorVersion !== DECISION_VECTOR_VERSION) {
+        throw new TransientError(
+          "this worker does not answer the evaluation's vector version; nothing was started",
         );
       }
       const input = DecisionInputSchema.safeParse(start.input);

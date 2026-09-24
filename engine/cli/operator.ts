@@ -24,6 +24,7 @@
 //   npm run ops -- triage reject --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>]
 //   npm run ops -- triage recover [--tenant <uuid>] [--limit <n>]
+//   npm run ops -- decision recover --review <uuid> --tenant <uuid>
 //   npm run ops -- membership grant --tenant <uuid> --auth-user-id <uuid>
 //                  --display-name <label> --actor <label> --reason <text>
 //   npm run ops -- membership revoke --id <uuid> --actor <label> --reason <text>
@@ -38,6 +39,11 @@
 // contacted is refused by the database. `recover` opens the reviews that
 // succeeded runs are missing, from their stored results.
 //
+// DECISION (Phase 2D.2) repairs a shadow decision request that never ran:
+// it creates a missing request or attaches a job to one that never started. It
+// never asks the provider again for an evaluation that was started, never
+// rewrites a settled one, and decides nothing (engine/domain/decisionRecovery.ts).
+//
 // MEMBERSHIP (Phase 2C) is who may use the Company OS operator surface. A person
 // is named ONLY by auth user id: no option takes an email, and anything else is a
 // usage error before any connection opens. `revoke` is the Company OS off-switch
@@ -47,7 +53,8 @@
 // the first statement of its transaction, so it cannot change anything, even
 // through a function with a side effect. The tool changes state only through an
 // explicit allowlist of acts (OPERATOR_ACTS): price record, limit set and retire,
-// triage accept, reject, needs-edit and recover, and membership grant and revoke.
+// triage accept, reject, needs-edit and recover, decision recover (Phase 2D.2),
+// and membership grant and revoke.
 // None has a force flag, every other command is a read, and no further act
 // exists without a reviewed extension of SI-39. Tripping and clearing stops stay
 // in `npm run execution-stop`.
@@ -86,6 +93,7 @@ import {
   type GrantMembershipInput,
   type MembershipAct,
 } from "../domain/memberships.ts";
+import { recoverShadowDecision } from "../domain/decisionRecovery.ts";
 import {
   listModelPrices,
   recordModelPrice,
@@ -197,6 +205,11 @@ type ActCommand =
       readonly limit?: number;
     }
   | {
+      readonly kind: "decision recover";
+      readonly tenantId: string;
+      readonly reviewId: string;
+    }
+  | {
       readonly kind: "membership grant";
       readonly input: GrantMembershipInput;
       readonly act: MembershipAct;
@@ -215,7 +228,7 @@ export type OperatorCommand =
 type CommandName = (ReadCommand | ActCommand)["kind"];
 
 export const OPERATOR_SYNOPSIS =
-  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>] | membership grant --tenant <uuid> --auth-user-id <uuid> --display-name <label> --actor <label> --reason <text> | membership revoke --id <uuid> --actor <label> --reason <text> | membership list [--tenant <uuid>] [--limit <n>]";
+  "npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>] | decision recover --review <uuid> --tenant <uuid> | membership grant --tenant <uuid> --auth-user-id <uuid> --display-name <label> --actor <label> --reason <text> | membership revoke --id <uuid> --actor <label> --reason <text> | membership list [--tenant <uuid>] [--limit <n>]";
 
 /** The first statement of every read command's transaction. */
 export const READ_ONLY_TRANSACTION = "set transaction read only";
@@ -336,6 +349,10 @@ const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
   ["triage reject", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage needs-edit", grammar(false, DECISION_FLAGS, [], DECISION_REQUIRED)],
   ["triage recover", grammar(false, ["tenant", "limit"])],
+  [
+    "decision recover",
+    grammar(false, ["review", "tenant"], [], ["review", "tenant"]),
+  ],
   // No option takes an email; a person is named only by --auth-user-id.
   [
     "membership grant",
@@ -358,6 +375,7 @@ const GROUPS: ReadonlyMap<string, readonly string[]> = new Map([
   ["price", ["record"]],
   ["limit", ["set", "retire"]],
   ["triage", ["list", "show", "accept", "reject", "needs-edit", "recover"]],
+  ["decision", ["recover"]],
   ["membership", ["grant", "revoke", "list"]],
 ]);
 
@@ -623,6 +641,12 @@ export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
     case "triage recover":
     case "membership list":
       return buildTenantLimit(name, values);
+    case "decision recover":
+      return {
+        kind: "decision recover",
+        tenantId: values.get("tenant") as string,
+        reviewId: values.get("review") as string,
+      };
     case "membership grant":
       return buildMembershipGrant(values);
     case "membership revoke":
@@ -737,6 +761,21 @@ async function runAct(
         limit: command.limit,
       });
       return [{ result: "recovered", opened }];
+    }
+    case "decision recover": {
+      // A request that never ran is created or given a job; anything started
+      // or settled is reported, never re-asked and never rewritten.
+      const recovered = await recoverShadowDecision(tx, {
+        tenantId: command.tenantId,
+        reviewId: command.reviewId,
+      });
+      return [
+        {
+          result: recovered.outcome,
+          reviewItemId: command.reviewId,
+          evaluationId: recovered.evaluationId,
+        },
+      ];
     }
     case "membership grant":
       return [await grantMembership(tx, command.input, command.act)];

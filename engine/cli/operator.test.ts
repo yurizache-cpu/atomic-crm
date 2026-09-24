@@ -18,6 +18,7 @@ import {
 import {
   ACTS,
   AUTH_USER,
+  DECISION_RECOVER,
   LIMIT,
   LIMIT_RETIRE,
   LIMIT_SET,
@@ -32,6 +33,8 @@ import {
   TENANT,
   withoutFlag,
 } from "./testSupport/operatorArgv.ts";
+
+const EVALUATION = "00000000-0000-4000-8000-00000000e001";
 
 // The operator tool with no database: which transactions it opens, what it
 // prints and what it never reads or prints. What it accepts and refuses is
@@ -64,6 +67,9 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   if (sql.includes("ops.set_spend_limit")) return [{ result: LIMIT }];
   if (sql.includes("ops.retire_spend_limit")) return [{ result: true }];
   if (sql.includes("ops.open_missing_reviews")) return [{ result: 2 }];
+  if (sql.includes("ops.recover_shadow_decision")) {
+    return [{ result: { outcome: "created", evaluationId: EVALUATION } }];
+  }
   if (sql.includes("ops.grant_membership")) {
     return [
       {
@@ -186,6 +192,7 @@ describe("running the operator tool", () => {
     ["price record", PRICE_RECORD, "ops.record_model_price"],
     ["limit set", LIMIT_SET, "ops.set_spend_limit"],
     ["limit retire", LIMIT_RETIRE, "ops.retire_spend_limit"],
+    ["decision recover", DECISION_RECOVER, "ops.recover_shadow_decision"],
     ["membership grant", MEMBERSHIP_GRANT, "ops.grant_membership"],
     ["membership revoke", MEMBERSHIP_REVOKE, "ops.revoke_membership"],
   ])(
@@ -221,6 +228,7 @@ describe("running the operator tool", () => {
       { result: "recorded", reviewItemId: REVIEW, status: "rejected" },
       { result: "recorded", reviewItemId: REVIEW, status: "needs_edit" },
       { result: "recovered", opened: 2 },
+      { result: "created", reviewItemId: REVIEW, evaluationId: EVALUATION },
       { principalId: PRINCIPAL, membershipId: MEMBERSHIP, recorded: true },
       { membershipId: MEMBERSHIP, revoked: true },
     ]);
@@ -235,6 +243,7 @@ describe("running the operator tool", () => {
       "triage reject",
       "triage needs-edit",
       "triage recover",
+      "decision recover",
       "membership grant",
       "membership revoke",
     ]);

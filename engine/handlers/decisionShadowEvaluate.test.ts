@@ -12,7 +12,11 @@ import type {
   ShadowDecisionProvider,
   ShadowDecisionSettlement,
 } from "../worker/capabilities.ts";
-import { PermanentError, SecurityError } from "../worker/failures.ts";
+import {
+  PermanentError,
+  SecurityError,
+  TransientError,
+} from "../worker/failures.ts";
 import type { LeasedJob } from "../worker/job.ts";
 import {
   DECISION_SHADOW_EVALUATE_KIND,
@@ -62,6 +66,7 @@ const running = (overrides: Record<string, unknown> = {}) => ({
   evaluationId: EVALUATION,
   inputFingerprint: FINGERPRINT,
   input: INPUT,
+  vectorVersion: "decision_vector.v2",
   ...overrides,
 });
 
@@ -264,6 +269,31 @@ describe("the decision.shadow_evaluate handler", () => {
       { outcome: "failed", vector: null, errorCode: "input_rejected" },
     ]);
   });
+
+  it.each([
+    ["the retired v1", "decision_vector.v1"],
+    ["an unknown", "decision_vector.v3"],
+    ["no", undefined],
+  ])(
+    "asks nothing and rolls the start back when the policy wants %s vector version",
+    async (_label, vectorVersion) => {
+      const evaluate = vi.fn();
+      const handler = createDecisionShadowEvaluateHandler({
+        decisionPort: { identity: FAKE_DECISION_PROVIDER, evaluate },
+      });
+      const caps = scripted(running({ vectorVersion }));
+
+      await expect(
+        handler.prepare(
+          job({ decision_evaluation_id: EVALUATION }),
+          caps.prepare,
+          budget,
+        ),
+      ).rejects.toBeInstanceOf(TransientError);
+      expect(evaluate).not.toHaveBeenCalled();
+      expect(caps.settled).toEqual([]);
+    },
+  );
 
   it("refuses a settlement the database says is not this attempt's", async () => {
     await expect(
