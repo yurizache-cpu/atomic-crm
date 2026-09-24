@@ -2985,14 +2985,33 @@ const INVARIANTS: Invariant[] = [
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
       {
-        // Today the browser can cause none: the read migration creates only
-        // the catalogued reads, and the static guard refuses anything else.
+        // S7.1: the browser can cause exactly one mutation, the review
+        // decision; the read migration creates only the reads, the second
+        // allowlisted migration exactly the one act, and the static guard
+        // refuses anything else.
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker: /company_os_api does not hold exactly the catalogue/,
       },
       {
+        file: "supabase/migrations/20260923120000_company_os_review_decision.sql",
+        marker:
+          /company_os_api function whose volatility contradicts the one act/,
+      },
+      {
+        file: "supabase/migrations/20260923120000_company_os_review_decision.sql",
+        marker:
+          /a browser-facing role can execute an outbound or send function/,
+      },
+      {
         file: "supabase/tests/companyOsMigrationGuard.test.ts",
-        marker: /No browser act exists before the S7 prerequisite \(SI-58\)/,
+        marker:
+          /The read surface holds no act; the one act is the S7\.1 file's\./,
+      },
+      // The S7 user-management prerequisite the act waits for.
+      {
+        file: "supabase/functions/users/userManagement.test.ts",
+        marker:
+          /refuses a CRM administrator changing another user's login email, and changes nothing/,
       },
       {
         file: "supabase/invariants/companyOsFunctions.mjs",
@@ -3000,7 +3019,15 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/tests/company_os_api.sql",
-        marker: /P1: an act function exists before S8/,
+        marker: /P1: a trip or clear function exists before S8/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P5b: the act''s path names a send, an outbound row, a job/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /V1: a decision touched the send path or the runtime/,
       },
       {
         file: "supabase/tests/company_os_api.sql",
@@ -3009,7 +3036,7 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/tests/companyOsApiExposure.mjs",
-        marker: /\(decide_review, trip_stop: 404 PGRST202\) before S8/,
+        marker: /\(trip_stop: 404 PGRST202\) before S8/,
       },
       // Owner decision S0-B: the 2 s bound, measured on the authoritative path the future trip gate calls.
       {
@@ -3017,15 +3044,21 @@ const INVARIANTS: Invariant[] = [
         marker:
           /fails with 55P03 within about the bound, identically whatever holds the lock, creates nothing/,
       },
-      // A tripwire, not the boundary: an operator context claiming an act fails to parse.
+      // A tripwire, not the boundary: an operator context claiming the trip fails to parse.
       {
         file: "contracts/company-os-api/context.ts",
         marker:
-          /decideReview: z\.literal\(false\),\s*tripStop: z\.literal\(false\),/,
+          /decideReview: z\.boolean\(\),\s*tripStop: z\.literal\(false\),/,
       },
       {
         file: "engine/domain/companyOsContracts.dbtest.ts",
-        marker: /no act, act gate or trip service exists before S8/,
+        marker:
+          /the one act and its gate exist, and no trip service exists before S8/,
+      },
+      {
+        file: "supabase/tests/companyOsProbe/actChecks.mjs",
+        marker:
+          /the decision was not recorded as the principal with nothing sent/,
       },
       {
         file: "src/company-os/screens/readOnly.test.tsx",
@@ -3038,7 +3071,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "Phase 2C read-only: neither act exists in any migration or database. They arrive only in a second allowlisted migration (S8), after the S7 user-management prerequisite is fixed, tested and approved; a frontend flag is never the boundary.",
+      "S7.1: the review decision exists, in a second allowlisted migration (20260923120000), after the S7 user-management prerequisite (supabase/functions/users/userManagement.ts) was fixed and tested; it sends nothing. The trip exists in no migration or database until S8; a frontend flag is never the boundary.",
   },
   {
     id: "SI-59",

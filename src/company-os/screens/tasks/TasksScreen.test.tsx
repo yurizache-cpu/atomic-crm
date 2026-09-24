@@ -207,7 +207,7 @@ describe("the Tasks screen", () => {
   });
 
   it("says a needs_edit review in the pipeline has no follow-up path, in the list and in the detail", async () => {
-    const needsEdit = `Pede ajuste: ${NEEDS_EDIT_TEXT}`;
+    const needsEdit = `Precisa de ajuste: ${NEEDS_EDIT_TEXT}`;
     const screen = await renderCompanyOs(
       createRecordedSession(),
       "#/company-os/tasks",

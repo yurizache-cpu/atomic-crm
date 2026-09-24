@@ -1,14 +1,15 @@
 // The operation catalogue (docs/PHASE_2C_BRIEF.md §8): the 15 read RPCs of the
 // function-only schema company_os_api, each with its exact argument names,
 // PostgreSQL types and DEFAULTs, the input a client may send, and the response
-// contract. engine/domain/companyOsContracts.dbtest.ts compares the catalogue
+// contract; and, apart from them, the one browser act (S7.1: decide_review,
+// brief §9 row 16). engine/domain/companyOsContracts.dbtest.ts compares both
 // with pg_proc.
 //
 // No operation takes a tenant, company, actor, reviewer, source or causation
 // argument: the identity gate derives them. Every uuid argument is a selector
-// resolved inside the caller's tenant. The two browser acts (decide_review,
-// trip_stop) are NOT here: their functions exist in no database until the S7
-// prerequisite is closed and S8 lands.
+// resolved inside the caller's tenant. The act is a separate catalogue so that
+// nothing typed as a read (a query, a poll, a prefetch) can name it; trip_stop
+// is in neither: it exists in no database before S8.
 //
 // The inputs are strict, so a client cannot send a key the function does not
 // take; PostgREST would refuse it anyway (PGRST202), and the contract says so
@@ -31,6 +32,7 @@ import { PageLimitSchema, UuidSchema } from "./primitives.ts";
 import {
   ReviewAdviceSchema,
   ReviewCursorSchema,
+  ReviewDecisionResultSchema,
   ReviewDetailSchema,
   ReviewListSchema,
 } from "./reviews.ts";
@@ -44,6 +46,7 @@ import { TaskCursorSchema, TaskDetailSchema, TaskListSchema } from "./tasks.ts";
 import {
   AgentRunStatusSchema,
   EventSubjectTypeSchema,
+  ReviewDecisionSchema,
   ReviewStatusSchema,
   TaskStatusSchema,
 } from "./vocabulary.ts";
@@ -224,18 +227,49 @@ export const COMPANY_OS_OPERATIONS = Object.freeze({
   ),
 });
 
+/**
+ * The one browser act (S7.1). The browser names a review and a decision, and
+ * nothing else: the gate derives the tenant and the reviewer. Recording a
+ * decision sends nothing (SI-45).
+ */
+export const COMPANY_OS_ACTS = Object.freeze({
+  decide_review: operation(
+    [required("p_review_id", "uuid"), required("p_decision", "text")],
+    z.strictObject({
+      p_review_id: UuidSchema,
+      p_decision: ReviewDecisionSchema,
+    }),
+    ReviewDecisionResultSchema,
+  ),
+});
+
 export type CompanyOsOperation = keyof typeof COMPANY_OS_OPERATIONS;
+export type CompanyOsAct = keyof typeof COMPANY_OS_ACTS;
 
 export const COMPANY_OS_OPERATION_NAMES: readonly CompanyOsOperation[] =
   Object.freeze(Object.keys(COMPANY_OS_OPERATIONS) as CompanyOsOperation[]);
+export const COMPANY_OS_ACT_NAMES: readonly CompanyOsAct[] = Object.freeze(
+  Object.keys(COMPANY_OS_ACTS) as CompanyOsAct[],
+);
 
-export type OperationInput<O extends CompanyOsOperation> = z.input<
-  (typeof COMPANY_OS_OPERATIONS)[O]["input"]
+/** Every exposed function: the reads and the act. */
+const COMPANY_OS_FUNCTIONS = Object.freeze({
+  ...COMPANY_OS_OPERATIONS,
+  ...COMPANY_OS_ACTS,
+});
+export type CompanyOsFunction = keyof typeof COMPANY_OS_FUNCTIONS;
+
+export type FunctionInput<F extends CompanyOsFunction> = z.input<
+  (typeof COMPANY_OS_FUNCTIONS)[F]["input"]
+>;
+export type FunctionResult<F extends CompanyOsFunction> = z.output<
+  (typeof COMPANY_OS_FUNCTIONS)[F]["response"]
 >;
 
-export type OperationResult<O extends CompanyOsOperation> = z.output<
-  (typeof COMPANY_OS_OPERATIONS)[O]["response"]
->;
+export type OperationInput<O extends CompanyOsOperation> = FunctionInput<O>;
+export type OperationResult<O extends CompanyOsOperation> = FunctionResult<O>;
+export type ActInput<A extends CompanyOsAct> = FunctionInput<A>;
+export type ActResult<A extends CompanyOsAct> = FunctionResult<A>;
 
 /**
  * What an issue path shows in place of a key the contract does not declare. A
@@ -322,16 +356,16 @@ const issuesOf = (
  * is a CompanyOsInputError: the request never left, so it says nothing about
  * the server's answer.
  */
-export const parseOperationInput = <O extends CompanyOsOperation>(
-  operation: O,
+export const parseOperationInput = <F extends CompanyOsFunction>(
+  operation: F,
   input: unknown,
-): OperationInput<O> => {
-  const schema = COMPANY_OS_OPERATIONS[operation].input;
+): FunctionInput<F> => {
+  const schema = COMPANY_OS_FUNCTIONS[operation].input;
   const result = schema.safeParse(input);
   if (!result.success) {
     throw new CompanyOsInputError(operation, issuesOf(schema, result.error));
   }
-  return result.data as OperationInput<O>;
+  return result.data as FunctionInput<F>;
 };
 
 /**
@@ -343,11 +377,11 @@ export const parseOperationInput = <O extends CompanyOsOperation>(
  * companyOsRecordedResponses.dbtest.ts, src/company-os/testing/recorded.ts).
  */
 export const withoutDefaultArguments = (
-  operation: CompanyOsOperation,
+  operation: CompanyOsFunction,
   input: Readonly<Record<string, unknown>>,
 ): Record<string, unknown> => {
   const defaults = new Map(
-    COMPANY_OS_OPERATIONS[operation].args.map((arg) => [
+    COMPANY_OS_FUNCTIONS[operation].args.map((arg) => [
       arg.name,
       arg.optional ? arg.defaultValue : undefined,
     ]),
@@ -366,14 +400,14 @@ export const withoutDefaultArguments = (
 };
 
 /** A response, parsed with its contract; anything unexpected throws. */
-export const parseOperationResult = <O extends CompanyOsOperation>(
-  operation: O,
+export const parseOperationResult = <F extends CompanyOsFunction>(
+  operation: F,
   data: unknown,
-): OperationResult<O> => {
-  const schema = COMPANY_OS_OPERATIONS[operation].response;
+): FunctionResult<F> => {
+  const schema = COMPANY_OS_FUNCTIONS[operation].response;
   const result = schema.safeParse(data);
   if (!result.success) {
     throw new CompanyOsContractError(operation, issuesOf(schema, result.error));
   }
-  return result.data as OperationResult<O>;
+  return result.data as FunctionResult<F>;
 };

@@ -25,7 +25,6 @@ import { ACTOR, BODY, PHONE } from "./testSupport/companyOsContractFixture.ts";
 
 const { COMPANY_OS_OPERATION_NAMES, EVENT_FACTS, KNOWN_EVENT_TYPES } =
   contracts;
-type CompanyOsOperation = contracts.CompanyOsOperation;
 
 let admin: Pool;
 
@@ -383,10 +382,15 @@ describe("the contract vocabularies equal the database's", () => {
         order by p.proname`,
     );
     expect(sorted(rows.map((row) => row.name.slice("gate_".length)))).toEqual(
-      sorted(COMPANY_OS_OPERATION_NAMES),
+      sorted([
+        ...COMPANY_OS_OPERATION_NAMES,
+        ...contracts.COMPANY_OS_ACT_NAMES,
+      ]),
     );
     for (const { name, source } of rows) {
-      const operation = name.slice("gate_".length) as CompanyOsOperation;
+      const operation = name.slice(
+        "gate_".length,
+      ) as contracts.CompanyOsFunction;
       const raised = [
         ...source.matchAll(
           /errcode = '([A-Z0-9]{5})', message = 'company_os_api\.([a-z_]+): ([^']+)'/g,

@@ -46,9 +46,7 @@ const seal = JSON.parse(readFileSync(join(INVARIANTS_DIR, "seal.json"), "utf8"))
   .migrations as Record<string, string>;
 const corpus = loadMigrationCorpus(join(ROOT, "supabase", "migrations"));
 
-/** The 15 read RPCs of Phase 2C (brief §9), canonical signatures, sorted. No
- *  decide_review and no trip_stop: the browser acts do not exist before the
- *  S7 prerequisite (SI-58). */
+/** The 15 read RPCs of Phase 2C (brief §9), canonical signatures, sorted. */
 const COMPANY_OS_READ_CATALOGUE = [
   "communication_status()",
   "get_agent(uuid)",
@@ -66,6 +64,15 @@ const COMPANY_OS_READ_CATALOGUE = [
   "overview()",
   "spend_summary()",
 ];
+
+/** The one browser act (S7.1, brief §9 row 16), after the S7 user-management
+ *  prerequisite. No trip_stop: it waits for S8 (SI-58). */
+const COMPANY_OS_ACT_CATALOGUE = ["decide_review(uuid,text)"];
+
+const COMPANY_OS_CATALOGUE = [
+  ...COMPANY_OS_READ_CATALOGUE,
+  ...COMPANY_OS_ACT_CATALOGUE,
+].sort();
 
 /**
  * FROZEN CONSTANTS — the trust root, pinned HERE rather than in the data file.
@@ -119,12 +126,17 @@ const FROZEN = {
     schema: "company_os_api",
     role: "ops_operator_api",
     migrationIdentity: "postgres",
-    catalogue: COMPANY_OS_READ_CATALOGUE.map((f) => `company_os_api.${f}`),
-    gates: COMPANY_OS_READ_CATALOGUE.map((f) => `ops.gate_${f}`),
-    allowlistedMigrations: ["20260922120000_company_os_read_surface.sql"],
+    catalogue: COMPANY_OS_CATALOGUE.map((f) => `company_os_api.${f}`),
+    gates: COMPANY_OS_CATALOGUE.map((f) => `ops.gate_${f}`),
+    allowlistedMigrations: [
+      "20260922120000_company_os_read_surface.sql",
+      "20260923120000_company_os_review_decision.sql",
+    ],
     transfers: {
       "20260922120000_company_os_read_surface.sql":
         COMPANY_OS_READ_CATALOGUE.map((f) => `company_os_api.${f}`),
+      "20260923120000_company_os_review_decision.sql":
+        COMPANY_OS_ACT_CATALOGUE.map((f) => `company_os_api.${f}`),
     },
   },
 };

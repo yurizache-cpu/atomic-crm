@@ -29,7 +29,7 @@ export const reviewStatusLabel = labelFrom({
   pending: "Aguardando sua revisão",
   accepted: "Aceita",
   rejected: "Rejeitada",
-  needs_edit: "Pede ajuste",
+  needs_edit: "Precisa de ajuste",
 });
 
 export const taskStatusLabel = labelFrom({
@@ -307,7 +307,7 @@ export const stateLabel = labelFrom({
   cancelled: "Cancelada",
   accepted: "Aceita",
   rejected: "Rejeitada",
-  needs_edit: "Pede ajuste",
+  needs_edit: "Precisa de ajuste",
   working: "Trabalhando",
   stale: "Sem sinal",
   held: "Retido",

@@ -83,7 +83,7 @@ describe("declaration.json cannot be mis-keyed into a no-op", () => {
         withSurface({
           transfers: {
             "20260922120000_company_os_read_surface.sql": [
-              "company_os_api.decide_review(uuid,text)",
+              "company_os_api.trip_stop(text,uuid,text)",
             ],
           },
         }),

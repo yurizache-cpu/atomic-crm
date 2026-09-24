@@ -1,4 +1,4 @@
-import type { CompanyOsOperation } from "../../../contracts/company-os-api/index.ts";
+import type { CompanyOsFunction } from "../../../contracts/company-os-api/index.ts";
 import type {
   RpcResponse,
   SessionEvent,
@@ -14,7 +14,7 @@ import type {
 // assertion on `calls` catches it.
 
 export interface RecordedCall {
-  readonly operation: CompanyOsOperation;
+  readonly operation: CompanyOsFunction;
   readonly args: Readonly<Record<string, unknown>>;
 }
 
@@ -28,12 +28,12 @@ export interface FakeSession {
   /** How often the Company OS asked the port to end the session. */
   readonly signOutRequests: number;
   /** Answer `operation` with `responder` from now on. */
-  answer(operation: CompanyOsOperation, responder: Responder): void;
+  answer(operation: CompanyOsFunction, responder: Responder): void;
   /** The session changes, and every listener hears it. */
   emit(event: SessionEvent, user: SessionUser | null): void;
   /** Runs when the Company OS asks to end the session, before it ends. */
   onSignOut(hook: () => void): void;
-  callsOf(operation: CompanyOsOperation): readonly RecordedCall[];
+  callsOf(operation: CompanyOsFunction): readonly RecordedCall[];
 }
 
 export const ok = (data: unknown): RpcResponse => ({ data, error: null });
@@ -48,7 +48,7 @@ export const createFakeSession = (
 ): FakeSession => {
   let user = initialUser;
   const listeners = new Set<SessionListener>();
-  const responders = new Map<CompanyOsOperation, Responder>();
+  const responders = new Map<CompanyOsFunction, Responder>();
   const calls: RecordedCall[] = [];
   let signOutRequests = 0;
   let signOutHook = () => {};

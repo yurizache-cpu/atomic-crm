@@ -17,14 +17,18 @@ import {
 } from "../testing/routes";
 import { WITHHELD_TEXT } from "./reviews/reviewLabels";
 
-// docs/PHASE_2C_BRIEF.md §12 (OD-11: every screen read-only first), §7.5 and
-// §16 (B: no decision, trip, clear, send, resend, draft, channel or limit
-// control; acceptance never presented as approval to send). Every page of the
-// module is visited over the recorded tenant (its tabs included), then again
-// with every answer too old to be current, then with every read failing, and
-// the pages no screen owns; the pending review with its advice open too.
-// Everything a person could press, follow or type into is collected from the
-// live DOM on each.
+// docs/PHASE_2C_BRIEF.md §12 (OD-11), §7.5 and §16 (B: no trip, clear, send,
+// resend, draft, channel or limit control; acceptance never presented as
+// approval to send). Every page of the module is visited over the recorded
+// tenant (its tabs included), then again with every answer too old to be
+// current, then with every read failing, and the pages no screen owns; the
+// pending review with its advice open too. Everything a person could press,
+// follow or type into is collected from the live DOM on each.
+//
+// The one exception (S7.1): the decision surface of an open review, on a
+// review's own page only, inside its "Registrar decisão" group, offering at
+// most the three decisions. Visiting never calls the act: a decision needs a
+// click and a confirmation (reviews/ReviewsScreen.test.tsx).
 
 /** The only buttons the module may render: session handling and reads. */
 const READ_CONTROLS = [
@@ -34,6 +38,11 @@ const READ_CONTROLS = [
   "Ver análise",
   "Ocultar análise",
 ];
+/** The one act's controls (S7.1), allowed only inside the decision group. */
+const DECISION_CONTROLS = ["Aceitar", "Precisa de ajuste", "Rejeitar"];
+const DECISION_GROUP = "[role='group'][aria-label='Registrar decisão']";
+const REVIEW_PAGE = /^#\/company-os\/reviews\/[0-9a-f-]{36}$/;
+
 /** Causation links move the focus to an entry on the page; they read nothing. */
 const FOCUS_LINK =
   /^Ir para o evento [0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
@@ -85,12 +94,18 @@ const nameOf = (control: HTMLElement): string =>
 
 const controlsOnPage = () => {
   const body = document.body;
+  const pressable = [
+    ...body.querySelectorAll<HTMLElement>(
+      "button, [role='button'], input[type='button'], input[type='submit']",
+    ),
+  ];
   return {
-    buttons: [
-      ...body.querySelectorAll<HTMLElement>(
-        "button, [role='button'], input[type='button'], input[type='submit']",
-      ),
-    ].map(nameOf),
+    buttons: pressable
+      .filter((control) => control.closest(DECISION_GROUP) === null)
+      .map(nameOf),
+    decisions: pressable
+      .filter((control) => control.closest(DECISION_GROUP) !== null)
+      .map(nameOf),
     links: [...body.querySelectorAll("a")].map((link) =>
       link.getAttribute("href"),
     ),
@@ -112,6 +127,20 @@ const expectReadOnly = (where: string) => {
     ),
     `buttons on ${where}`,
   ).toEqual([]);
+  // The decision surface: on a review's own page only, the three decisions
+  // at most, and no confirmation is open until a person asks for one.
+  expect(
+    controls.decisions.filter(
+      (name) =>
+        !DECISION_CONTROLS.includes(name) ||
+        !REVIEW_PAGE.test(window.location.hash),
+    ),
+    `decision controls on ${where}`,
+  ).toEqual([]);
+  expect(
+    document.querySelectorAll("[role='alertdialog']").length,
+    `an open confirmation on ${where}`,
+  ).toBe(0);
   expect(
     controls.links.filter(
       (href) =>
@@ -165,13 +194,13 @@ const reach = async (screen: RenderResult, hash: string, heading: string) => {
     .toBeVisible();
 };
 
-describe("the Company OS screens are read-only", () => {
+describe("the Company OS screens are read-only, except the one review decision", () => {
   afterEach(() => {
     history.replaceState(null, "", "#/");
   });
 
   it(
-    "no page, tab or opened advice renders a decision, stop, clear, send, draft or configuration control, and no link leaves the module except to the CRM",
+    "no page, tab or opened advice renders a stop, clear, send, draft or configuration control, only an open review offers its decisions, and no link leaves the module except to the CRM",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
@@ -258,7 +287,7 @@ describe("the Company OS screens are read-only", () => {
   });
 
   it(
-    "calls only the 15 catalogued read operations, each of them somewhere, and never an act",
+    "calls only the 15 catalogued read operations, each of them somewhere, and never the act while visiting",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
@@ -280,6 +309,8 @@ describe("the Company OS screens are read-only", () => {
       ...(Object.values(COPY) as unknown[]).filter(
         (value): value is string => typeof value === "string",
       ),
+      ...COPY.DECISION_ACTIONS.map((action) => action.label),
+      ...Object.values(COPY.DECISION_CONFIRM_TITLE),
       ...Object.values(WITHHELD_TEXT),
       DATA_BANNER_TEXT,
     ];

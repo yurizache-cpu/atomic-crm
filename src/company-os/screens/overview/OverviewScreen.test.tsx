@@ -27,7 +27,7 @@ const PROOF_LINKS: readonly (readonly [string, string])[] = [
   ["Inativos: 3", "#/company-os/agents?availability=inactive"],
   ["Execuções trabalhando agora: 1", "#/company-os/agents?activity=working"],
   ["Execuções com atenção: 2", "#/company-os/runs?attention=1"],
-  ["Decisões aguardando revisão: 2", "#/company-os/reviews"],
+  ["Decisões aguardando revisão: 3", "#/company-os/reviews"],
   ["Pausas ativas desta empresa: 3", "#/company-os/stops"],
   [
     "Novas execuções desta empresa: Liberada dentro do orçamento",
@@ -177,7 +177,7 @@ describe("the Overview screen", () => {
     );
     await expect
       .element(
-        screen.getByRole("link", { name: "Decisões aguardando revisão: 2" }),
+        screen.getByRole("link", { name: "Decisões aguardando revisão: 3" }),
       )
       .toBeVisible();
 
@@ -186,7 +186,7 @@ describe("the Overview screen", () => {
     await expect.element(screen.getByText(STATE_UNKNOWN_NOTE)).toBeVisible();
     expect(
       screen
-        .getByRole("link", { name: "Decisões aguardando revisão: 2" })
+        .getByRole("link", { name: "Decisões aguardando revisão: 3" })
         .query(),
     ).toBeNull();
     expect(
@@ -225,7 +225,7 @@ describe("the Overview screen", () => {
       const screen = await renderCompanyOs(session, "#/company-os");
       await expect
         .element(
-          screen.getByRole("link", { name: "Decisões aguardando revisão: 2" }),
+          screen.getByRole("link", { name: "Decisões aguardando revisão: 3" }),
         )
         .toBeVisible();
       const reads = () => session.callsOf("overview").length;

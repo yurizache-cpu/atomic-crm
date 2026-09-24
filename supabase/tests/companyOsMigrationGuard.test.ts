@@ -37,22 +37,47 @@ describe("the Company OS surface and its OD-8a exception", () => {
     expect(findingsOf(lifecycle).map(formatFinding).join("\n\n")).toBe("");
   });
 
-  it("allowlists exactly the committed S2 migration, which carries the whole lifecycle itself", () => {
-    const [file] = declaration.companyOsApi.allowlistedMigrations;
-    const s2 = corpus.find((m) => m.file === file)!;
-    expect(s2, `${file} is not in the corpus`).toBeDefined();
-    const transfers = s2.sql.match(
-      /^alter function company_os_api\.\S+\(.*\) owner to ops_operator_api;$/gm,
-    );
+  it("allowlists exactly the committed S2 and S7.1 migrations, each carrying its whole lifecycle itself", () => {
+    const { allowlistedMigrations, transfers, catalogue } =
+      declaration.companyOsApi;
+    expect(allowlistedMigrations).toEqual([
+      "20260922120000_company_os_read_surface.sql",
+      "20260923120000_company_os_review_decision.sql",
+    ]);
     // The declaration's catalogue is pinned to the frozen trust root
-    // (FROZEN.companyOsApi) by migrationInvariants.test.ts.
-    expect(transfers).toHaveLength(declaration.companyOsApi.catalogue.length);
-    expect(s2.sql).toMatch(/^grant ops_operator_api to postgres;$/m);
-    expect(s2.sql).toMatch(/^revoke ops_operator_api from postgres;$/m);
-    expect(s2.sql).not.toMatch(/\bcurrent_user\s*;|to\s+current_user\b/);
-    // No browser act exists before the S7 prerequisite (SI-58).
-    expect(s2.sql).not.toMatch(
-      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop)\b/,
+    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the two
+    // files transfer every catalogued function, once.
+    expect(Object.values(transfers).flat().sort()).toEqual(
+      [...catalogue].sort(),
+    );
+    for (const file of allowlistedMigrations) {
+      const migration = corpus.find((m) => m.file === file)!;
+      expect(migration, `${file} is not in the corpus`).toBeDefined();
+      const transferred = migration.sql.match(
+        /^alter function company_os_api\.\S+\(.*\) owner to ops_operator_api;$/gm,
+      );
+      expect(transferred).toHaveLength(transfers[file].length);
+      expect(migration.sql).toMatch(/^grant ops_operator_api to postgres;$/m);
+      expect(migration.sql).toMatch(
+        /^revoke ops_operator_api from postgres;$/m,
+      );
+      expect(migration.sql).not.toMatch(
+        /\bcurrent_user\s*;|to\s+current_user\b/,
+      );
+      // No trip exists before S8 (SI-58).
+      expect(migration.sql).not.toMatch(
+        /function\s+(company_os_api|ops)\.(gate_)?trip_stop\b/,
+      );
+    }
+    // The read surface holds no act; the one act is the S7.1 file's.
+    const [s2, s71] = allowlistedMigrations.map(
+      (file) => corpus.find((m) => m.file === file)!.sql,
+    );
+    expect(s2).not.toMatch(
+      /function\s+(company_os_api|ops)\.(gate_)?decide_review\b/,
+    );
+    expect(s71).toMatch(
+      /^create function company_os_api\.decide_review\(p_review_id pg_catalog\.uuid, p_decision pg_catalog\.text\)/m,
     );
   });
 

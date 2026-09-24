@@ -1,13 +1,13 @@
-// The fixed sentences the read-only screens show (docs/PHASE_2C_BRIEF.md §7.5,
-// §10, §12), in Brazilian Portuguese for the owner. One place, so a test can
-// pin them and a review sees every change.
+// The fixed sentences the screens show (docs/PHASE_2C_BRIEF.md §7.5, §10,
+// §12), in Brazilian Portuguese for the owner. One place, so a test can pin
+// them and a review sees every change.
 //
 // No sentence here, and no label anywhere in the module, says or implies that
 // a message, draft or reply was approved for sending: recording a review
 // decision is never a send (REVIEW ACCEPTANCE ≠ SEND, SI-45, SI-58).
 
-export const REVIEW_DECISIONS_CLI_NOTE =
-  "A decisão ainda é registrada pelo operador nesta fase.";
+export const REVIEW_DECISIONS_NOTE =
+  "Abra uma análise aguardando revisão para registrar sua decisão.";
 
 export const REVIEW_NOT_A_SEND_NOTE =
   "Registrar uma decisão nunca aprova nem envia uma resposta.";
@@ -17,8 +17,39 @@ export const REPLY_DRAFT_NOTE = "O rascunho de resposta nunca é mostrado aqui."
 export const NEEDS_EDIT_TEXT =
   "registrada; nesta fase não há próximo passo para ajuste";
 
-export const ALLOWED_DECISIONS_NOTE =
-  "Apenas informativo: são as decisões que o servidor aceitaria para esta revisão.";
+// The one act (S7.1): a decision on an open review, confirmed, never a send.
+export const DECISION_ACTIONS = [
+  { decision: "accepted", label: "Aceitar" },
+  { decision: "needs_edit", label: "Precisa de ajuste" },
+  { decision: "rejected", label: "Rejeitar" },
+] as const;
+
+export const DECISION_CONFIRM_TITLE = {
+  accepted: "Aceitar esta análise?",
+  needs_edit: "Marcar como “Precisa de ajuste”?",
+  rejected: "Rejeitar esta análise?",
+} as const;
+
+export const DECISION_RECORDS_TEXT = "Esta ação registra sua decisão.";
+
+export const NO_MESSAGE_SENT_TEXT = "Nenhuma mensagem será enviada.";
+
+export const NO_MESSAGE_WAS_SENT_TEXT = "Nenhuma mensagem foi enviada.";
+
+export const DECISION_ALREADY_RECORDED_TEXT = "Esta decisão já foi registrada.";
+
+export const DECISION_NOT_ALLOWED_TEXT =
+  "Você não tem mais permissão para decidir esta análise.";
+
+export const DECISION_NOT_FOUND_TEXT = "Esta análise não foi encontrada.";
+
+export const DECISION_REFUSED_TEXT = "Não foi possível registrar esta decisão.";
+
+export const DECISION_UNKNOWN_TEXT =
+  "Não foi possível confirmar se a decisão foi registrada. Atualizamos o estado da análise para verificar.";
+
+export const DO_NOT_CONTACT_ACCEPT_NOTE =
+  "Aceitar não está disponível: este contato pediu para não ser contatado.";
 
 export const STOP_CLEAR_NOTE = "Encerrar uma pausa é um ato do operador.";
 
