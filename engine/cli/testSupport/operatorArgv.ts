@@ -107,6 +107,11 @@ export const TRIAGE_RECOVER = argv("triage recover", {
   limit: "50",
 });
 
+export const DECISION_RECOVER = argv("decision recover", {
+  review: REVIEW,
+  tenant: TENANT,
+});
+
 export const MEMBERSHIP_GRANT = argv("membership grant", {
   tenant: TENANT,
   "auth-user-id": AUTH_USER,
@@ -136,6 +141,7 @@ export const ACTS: readonly (readonly string[])[] = [
   TRIAGE_REJECT,
   TRIAGE_NEEDS_EDIT,
   TRIAGE_RECOVER,
+  DECISION_RECOVER,
   MEMBERSHIP_GRANT,
   MEMBERSHIP_REVOKE,
 ];
