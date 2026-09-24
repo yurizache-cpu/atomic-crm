@@ -166,7 +166,7 @@ export const CONTRACT_SAMPLES: {
       dataPolicy: "synthetic_or_test_only",
       allowedActions: {
         decideReview: true,
-        tripStop: false,
+        tripStop: true,
         viewAdvice: true,
       },
       serverTime: LATER,

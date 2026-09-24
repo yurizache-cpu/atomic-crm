@@ -61,6 +61,58 @@ export const STOP_PLATFORM_NOTE =
 
 export const STOP_EVENTS_LABEL = "Pausas não geram eventos";
 
+// The second act (S7.2): interrupt the execution of the tenant or one unit,
+// confirmed. It only ever adds a stop: nothing here clears one.
+export const TRIP_ACTION_LABEL = "Interromper execução";
+
+export const TRIP_CONFIRM_LABEL = "Confirmar interrupção";
+
+export const TRIP_CONFIRM_TITLE = {
+  tenant: "Interromper a execução de toda a empresa?",
+  company: "Interromper a execução desta empresa?",
+  department: "Interromper a execução deste departamento?",
+  agent: "Interromper a execução deste agente?",
+} as const;
+
+export const TRIP_BLOCKS_TEXT =
+  "Novas execuções ficarão bloqueadas até que a interrupção seja removida por uma operação administrativa.";
+
+export const TRIP_PANEL_NOTE =
+  "Interromper impede novas execuções do alvo escolhido; uma execução já iniciada não é interrompida.";
+
+export const TRIP_RUNNING_LABEL = "Em execução";
+
+export const TRIP_STOPPED_LABEL = "Execução interrompida";
+
+export const TRIP_COVERED_LABEL = "Interrompida por uma pausa mais ampla";
+
+export const TRIP_STATE_UNKNOWN_LABEL = "Situação desconhecida";
+
+export const TRIP_STOPPED_TEXT = "Execução interrompida.";
+
+export const TRIP_ALREADY_STOPPED_TEXT =
+  "Esta execução já estava interrompida.";
+
+export const TRIP_NOT_ALLOWED_TEXT =
+  "Você não tem permissão para interromper esta execução.";
+
+export const TRIP_NOT_FOUND_TEXT = "Este alvo não foi encontrado.";
+
+export const TRIP_BUSY_TEXT =
+  "O pedido ainda não pôde ser concluído. Tente de novo.";
+
+export const TRIP_REFUSED_TEXT = "Não foi possível interromper esta execução.";
+
+export const TRIP_NOT_CONFIRMED_TEXT =
+  "Não foi possível confirmar a interrupção: nenhuma pausa ativa foi encontrada para este alvo. Você pode tentar de novo.";
+
+export const TRIP_UNKNOWN_TEXT =
+  "Não foi possível confirmar se a execução foi interrompida. Atualize a página para verificar antes de tentar de novo.";
+
+/** How a stop tripped from this screen shows its server-fixed reason. */
+export const TRIP_REASON_TEXT =
+  "Interrupção pedida pelo responsável no Company OS";
+
 /**
  * The `authorized` outbound state: recorded by an operator's CLI send request,
  * never by a review decision (REVIEW ACCEPTANCE is not a send, §7.5).

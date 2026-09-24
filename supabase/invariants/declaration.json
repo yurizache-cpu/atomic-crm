@@ -59,7 +59,8 @@
       "company_os_api.list_tasks(text,text,uuid,integer)",
       "company_os_api.operator_context()",
       "company_os_api.overview()",
-      "company_os_api.spend_summary()"
+      "company_os_api.spend_summary()",
+      "company_os_api.trip_stop(text,uuid)"
     ],
     "gates": [
       "ops.gate_communication_status()",
@@ -77,11 +78,13 @@
       "ops.gate_list_tasks(text,text,uuid,integer)",
       "ops.gate_operator_context()",
       "ops.gate_overview()",
-      "ops.gate_spend_summary()"
+      "ops.gate_spend_summary()",
+      "ops.gate_trip_stop(text,uuid)"
     ],
     "allowlistedMigrations": [
       "20260922120000_company_os_read_surface.sql",
-      "20260923120000_company_os_review_decision.sql"
+      "20260923120000_company_os_review_decision.sql",
+      "20260924120000_company_os_execution_stop.sql"
     ],
     "transfers": {
       "20260922120000_company_os_read_surface.sql": [
@@ -103,6 +106,9 @@
       ],
       "20260923120000_company_os_review_decision.sql": [
         "company_os_api.decide_review(uuid,text)"
+      ],
+      "20260924120000_company_os_execution_stop.sql": [
+        "company_os_api.trip_stop(text,uuid)"
       ]
     }
   },

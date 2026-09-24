@@ -7,6 +7,7 @@ import { z } from "zod";
 import {
   CURSOR_KINDS,
   DottedNameSchema,
+  ENVELOPE_SHAPE,
   NameSchema,
   TimestampSchema,
   UuidSchema,
@@ -78,6 +79,55 @@ export const ExecutionStopListSchema = envelopedPageSchema(
 
 export const StopCursorSchema = cursorSchema(CURSOR_KINDS.stops);
 
+/**
+ * The scopes a member may trip (S7.2): never global, never job_kind. The gate
+ * refuses both with OS403 whatever the browser sends.
+ */
+export const TRIP_STOP_SCOPES = [
+  "tenant",
+  "company",
+  "department",
+  "agent",
+] as const;
+export const TripStopScopeSchema = z.enum(TRIP_STOP_SCOPES);
+
+/**
+ * The reason every browser trip records: fixed by the server, never sent by
+ * the browser, so a stop's free-form reason never comes from a page.
+ */
+export const MEMBER_TRIP_REASON =
+  "owner requested execution stop via Company OS";
+
+/**
+ * trip_stop's input: a scope and, except for the tenant, the target it names.
+ * The tenant, the actor and the reason are the gate's, never the browser's.
+ */
+export const TripStopInputSchema = z
+  .strictObject({
+    p_scope: TripStopScopeSchema,
+    p_target_id: UuidSchema.nullable().optional(),
+  })
+  .refine(
+    (input) => (input.p_scope === "tenant") === (input.p_target_id == null),
+    {
+      path: ["p_target_id"],
+      message: "only a tenant stop names no target",
+    },
+  );
+
+/**
+ * trip_stop: the stop that now holds the target. `stopped` when this call
+ * recorded it; `already_stopped` when an active stop at the same coordinates
+ * already did, whoever tripped it. Nothing is ever cleared.
+ */
+export const StopTripResultSchema = z.strictObject({
+  ...ENVELOPE_SHAPE,
+  stopId: UuidSchema,
+  outcome: z.enum(["stopped", "already_stopped"]),
+});
+
 export type TenantStopRef = z.infer<typeof TenantStopRefSchema>;
 export type ExecutionStopSummary = z.infer<typeof ExecutionStopSummarySchema>;
 export type ExecutionStopList = z.infer<typeof ExecutionStopListSchema>;
+export type TripStopScope = z.infer<typeof TripStopScopeSchema>;
+export type StopTripResult = z.infer<typeof StopTripResultSchema>;

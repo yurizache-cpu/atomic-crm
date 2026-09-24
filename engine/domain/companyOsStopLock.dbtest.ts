@@ -3,12 +3,13 @@
 // through the real `pg` driver, with a second session holding the lock.
 //
 // The browser trip (company_os_api.trip_stop, its gate and
-// ops.trip_stop_in_tenant) does not exist before S7 and S8, and nothing here
-// creates it. What the gate will do is fixed: set `lock_timeout = '2s'` and
-// call the AUTHORITATIVE ops.trip_execution_stop, with no lock-free pre-check,
-// the outcome read exactly as the CLI reads it (tripExecutionStopWithOutcome).
-// So this file drives that path now, bound by a transaction-local lock_timeout
-// of the pinned value, and proves:
+// ops.trip_stop_in_tenant) exists since S7.2, and companyOsExecutionStop.dbtest.ts
+// drives it through the gate. What the gate does is fixed: set
+// `lock_timeout = '2s'` and call the AUTHORITATIVE ops.trip_execution_stop,
+// with no lock-free pre-check, the outcome read exactly as the CLI reads it
+// (tripExecutionStopWithOutcome). This file drives that authoritative path
+// directly, bound by a transaction-local lock_timeout of the pinned value, and
+// proves:
 //
 //   * with the lock held exclusively (an open trip, in this tenant or another)
 //     or shared (as a lease or start holds it), the trip fails with 55P03 after

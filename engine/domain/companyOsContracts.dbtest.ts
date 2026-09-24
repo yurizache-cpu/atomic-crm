@@ -8,8 +8,9 @@
 // but the derived TENANT_STOP_SCOPES equals what SQL bounds or emits. This
 // file:
 //
-//   * compares the operation catalogue with pg_proc: the 15 functions of
-//     company_os_api, their argument names, types and DEFAULTs, and no act;
+//   * compares the operation catalogue with pg_proc: the 15 reads of
+//     company_os_api and its two acts, their argument names, types and
+//     DEFAULTs;
 //   * builds a synthetic tenant whose rows reach every branch the projections
 //     have (testSupport/companyOsContractFixture.ts: each agent availability
 //     and activity, each run status and attention reason, each review status
@@ -142,7 +143,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe("the operation catalogue equals pg_proc", () => {
-  it("company_os_api holds exactly the 15 catalogued reads and the one act, with their argument names, types and defaults", async () => {
+  it("company_os_api holds exactly the 15 catalogued reads and the two acts, with their argument names, types and defaults", async () => {
     const { rows } = await admin.query<{
       name: string;
       args: string;
@@ -174,7 +175,7 @@ describe("the operation catalogue equals pg_proc", () => {
     );
     const acts = new Set<string>(COMPANY_OS_ACT_NAMES);
     for (const row of rows) {
-      // Every read is STABLE; the one act is VOLATILE.
+      // Every read is STABLE; each act is VOLATILE.
       expect(
         {
           result: row.result,
@@ -190,19 +191,23 @@ describe("the operation catalogue equals pg_proc", () => {
     }
   });
 
-  it("the one act and its gate exist, and no trip service exists before S8", async () => {
+  it("the two acts and their gates exist, with the trip's one tenant-scoped callee, and nothing clears", async () => {
     const { rows } = await admin.query<{ fn: string }>(
       `select p.oid::regprocedure::text as fn
          from pg_proc p join pg_namespace n on n.oid = p.pronamespace
         where n.nspname in ('ops', $1)
           and p.proname in ('decide_review', 'trip_stop', 'gate_decide_review',
-                            'gate_trip_stop', 'trip_stop_in_tenant')
+                            'gate_trip_stop', 'trip_stop_in_tenant',
+                            'clear_stop', 'gate_clear_stop', 'clear_stop_in_tenant')
         order by 1`,
       [COMPANY_OS_API_SCHEMA],
     );
     expect(rows.map((row) => row.fn)).toEqual([
       "company_os_api.decide_review(uuid,text)",
+      "company_os_api.trip_stop(text,uuid)",
       "ops.gate_decide_review(uuid,text)",
+      "ops.gate_trip_stop(text,uuid)",
+      "ops.trip_stop_in_tenant(uuid,text,text,uuid)",
     ]);
   });
 });

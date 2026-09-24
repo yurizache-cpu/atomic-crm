@@ -13,13 +13,17 @@ import {
 } from "../../copy";
 import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { EmptyState } from "../../components/owner";
+import { useOperatorScope } from "../../session/runtime";
 import { StopTable } from "./StopTable";
+import { TripStopPanel } from "./TripStopPanel";
 
 // Screen 7, Execution stops (docs/PHASE_2C_BRIEF.md §12): the active stops
 // naming this tenant, or all of them with the cleared ones, each a committed
-// row. Read-only in this phase: clearing is an operator CLI act and tripping
-// has no browser control; a job_kind stop naming the tenant is listed
-// read-only like every other.
+// row, and, when operator_context allows it, the one control that adds a stop
+// (S7.2, TripStopPanel). Clearing stays an operator CLI act; a job_kind stop
+// naming the tenant is listed read-only like every other. While the trip is
+// offered, the stops are read again every cycle so each target's state stays
+// current.
 
 const VIEWS = [
   { include: false, label: "Ativas", search: "" },
@@ -49,12 +53,18 @@ const ViewTabs = ({ includeCleared }: { includeCleared: boolean }) => (
   </nav>
 );
 
+const always = () => true;
+
 export const ExecutionStopsScreen = () => {
   const [params] = useSearchParams();
+  const { context } = useOperatorScope();
+  const canTrip = context.allowedActions.tripStop;
   const includeCleared = params.get("include") === "cleared";
-  const stops = useCompanyOsPages("list_stops", {
-    p_include_cleared: includeCleared,
-  });
+  const stops = useCompanyOsPages(
+    "list_stops",
+    { p_include_cleared: includeCleared },
+    canTrip ? { poll: always } : {},
+  );
   const items = itemsOf(stops.data);
   return (
     <ScreenLayout
@@ -64,6 +74,9 @@ export const ExecutionStopsScreen = () => {
       <Note>{STOP_CLEAR_NOTE}</Note>
       <Note>{STOP_JOB_KIND_NOTE}</Note>
       <Note>{STOP_PLATFORM_NOTE}</Note>
+      {canTrip && stops.data !== undefined ? (
+        <TripStopPanel stops={items} stopsReceivedAt={stops.dataUpdatedAt} />
+      ) : null}
       <ViewTabs includeCleared={includeCleared} />
       <PagesView query={stops} what="as pausas">
         <StopTable stops={items} label="Pausas" />

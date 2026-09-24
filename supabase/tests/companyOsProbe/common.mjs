@@ -39,17 +39,19 @@ export const CATALOGUE = Object.freeze([
   "communication_status",
 ]);
 
-/** The one browser act (S7.1) and its arguments. */
+/** The two browser acts (S7.1, S7.2) and their arguments. */
 export const ACTS = Object.freeze({
   decide_review: ["p_review_id", "p_decision"],
+  trip_stop: ["p_scope", "p_target_id"],
 });
 
 /** Every exposed function: the reads and the one act. */
 export const EXPOSED = Object.freeze([...CATALOGUE, ...Object.keys(ACTS)]);
 
-/** The trip: it may exist in no database before S8. */
+/** A clear: the browser can never reach one, under any name. */
 export const ABSENT_ACTS = Object.freeze({
-  trip_stop: ["p_scope", "p_target_id", "p_reason"],
+  clear_stop: ["p_stop_id"],
+  clear_execution_stop: ["p_stop_id", "p_reason"],
 });
 
 // The two persistent probe tenants, found by these fixed slugs on every run. A

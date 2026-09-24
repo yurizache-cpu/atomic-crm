@@ -301,7 +301,9 @@ begin
     ('ops_operator_api', 'ops.gate_spend_summary()'::regprocedure),
     ('ops_operator_api', 'ops.gate_communication_status()'::regprocedure),
     -- S7.1: the one act (supabase/tests/company_os_api.sql, section V).
-    ('ops_operator_api', 'ops.gate_decide_review(uuid, text)'::regprocedure)
+    ('ops_operator_api', 'ops.gate_decide_review(uuid, text)'::regprocedure),
+    -- S7.2: the trip (supabase/tests/company_os_api.sql, section W).
+    ('ops_operator_api', 'ops.gate_trip_stop(text, uuid)'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -357,7 +359,7 @@ begin
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',
                            'gate_list_reviews', 'gate_get_review', 'gate_get_review_advice',
                            'gate_list_events', 'gate_list_stops', 'gate_spend_summary',
-                           'gate_communication_status', 'gate_decide_review');
+                           'gate_communication_status', 'gate_decide_review', 'gate_trip_stop');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

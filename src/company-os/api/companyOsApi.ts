@@ -64,7 +64,7 @@ export const createCompanyOsApi = (session: SessionPort): CompanyOsApi => {
     }
     return parseOperationResult(operation, response.data);
   };
-  // The reads and the one act share every check; they differ only in what
+  // The reads and the acts share every check; they differ only in what
   // they may name (ports.ts).
   return { call: invoke, act: invoke };
 };

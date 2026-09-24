@@ -77,10 +77,11 @@ export interface CompanyOsApi {
     options?: CallOptions,
   ): Promise<OperationResult<O>>;
   /**
-   * The one act (S7.1: decide_review), apart from the reads so nothing typed
-   * as a read can name it. The same checks as call. Called once per explicit
-   * human confirmation, never retried: a lost connection is OS500, whose
-   * outcome is unknown, and the caller re-reads the state instead.
+   * The two acts (S7.1 decide_review, S7.2 trip_stop), apart from the reads
+   * so nothing typed as a read can name one. The same checks as call. Called
+   * once per explicit human confirmation, never retried: a lost connection is
+   * OS500, whose outcome is unknown, and the caller re-reads the state
+   * instead.
    */
   act<A extends CompanyOsAct>(
     act: A,

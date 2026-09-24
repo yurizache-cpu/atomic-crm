@@ -321,27 +321,29 @@ describe("the operation catalogue", () => {
     }
   });
 
-  it("pins the trip to false in the operator context while it does not exist (S8 widens it), and lets the review decision be either", () => {
+  it("lets either act hint be true or false in the operator context, and names no clear", () => {
     const [context] = CONTRACT_SAMPLES.operator_context;
     const allowed = context.allowedActions as Record<string, boolean>;
     const schema = COMPANY_OS_OPERATIONS.operator_context.response;
     expect(schema.safeParse(context).success).toBe(true);
+    for (const act of ["decideReview", "tripStop"]) {
+      for (const value of [true, false]) {
+        expect(
+          schema.safeParse({
+            ...context,
+            allowedActions: { ...allowed, [act]: value },
+          }).success,
+          `${act} ${value}`,
+        ).toBe(true);
+      }
+    }
     expect(
       schema.safeParse({
         ...context,
-        allowedActions: { ...allowed, tripStop: true },
+        allowedActions: { ...allowed, clearStop: false },
       }).success,
-      "tripStop",
+      "clearStop",
     ).toBe(false);
-    for (const decideReview of [true, false]) {
-      expect(
-        schema.safeParse({
-          ...context,
-          allowedActions: { ...allowed, decideReview },
-        }).success,
-        `decideReview ${decideReview}`,
-      ).toBe(true);
-    }
     // The advice hint is not an act: either value parses.
     expect(
       schema.safeParse({

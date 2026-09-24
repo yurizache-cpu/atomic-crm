@@ -37,15 +37,16 @@ describe("the Company OS surface and its OD-8a exception", () => {
     expect(findingsOf(lifecycle).map(formatFinding).join("\n\n")).toBe("");
   });
 
-  it("allowlists exactly the committed S2 and S7.1 migrations, each carrying its whole lifecycle itself", () => {
+  it("allowlists exactly the committed S2, S7.1 and S7.2 migrations, each carrying its whole lifecycle itself", () => {
     const { allowlistedMigrations, transfers, catalogue } =
       declaration.companyOsApi;
     expect(allowlistedMigrations).toEqual([
       "20260922120000_company_os_read_surface.sql",
       "20260923120000_company_os_review_decision.sql",
+      "20260924120000_company_os_execution_stop.sql",
     ]);
     // The declaration's catalogue is pinned to the frozen trust root
-    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the two
+    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the three
     // files transfer every catalogued function, once.
     expect(Object.values(transfers).flat().sort()).toEqual(
       [...catalogue].sort(),
@@ -64,20 +65,29 @@ describe("the Company OS surface and its OD-8a exception", () => {
       expect(migration.sql).not.toMatch(
         /\bcurrent_user\s*;|to\s+current_user\b/,
       );
-      // No trip exists before S8 (SI-58).
+      // No browser clear exists in any of them (SI-58).
       expect(migration.sql).not.toMatch(
-        /function\s+(company_os_api|ops)\.(gate_)?trip_stop\b/,
+        /function\s+(company_os_api|ops)\.(gate_)?[a-z_]*(clear|resume|untrip)[a-z_]*\s*\(/,
       );
     }
-    // The read surface holds no act; the one act is the S7.1 file's.
-    const [s2, s71] = allowlistedMigrations.map(
+    // The read surface holds no act; each act is its own file's.
+    const [s2, s71, s72] = allowlistedMigrations.map(
       (file) => corpus.find((m) => m.file === file)!.sql,
     );
-    expect(s2).not.toMatch(
-      /function\s+(company_os_api|ops)\.(gate_)?decide_review\b/,
-    );
+    const act =
+      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop)\b/;
+    expect(s2).not.toMatch(act);
     expect(s71).toMatch(
       /^create function company_os_api\.decide_review\(p_review_id pg_catalog\.uuid, p_decision pg_catalog\.text\)/m,
+    );
+    expect(s71).not.toMatch(
+      /function\s+(company_os_api|ops)\.(gate_)?trip_stop\b/,
+    );
+    expect(s72).toMatch(
+      /^create function company_os_api\.trip_stop\(p_scope pg_catalog\.text, p_target_id pg_catalog\.uuid default null\)/m,
+    );
+    expect(s72).not.toMatch(
+      /function\s+(company_os_api|ops)\.(gate_)?decide_review\b/,
     );
   });
 

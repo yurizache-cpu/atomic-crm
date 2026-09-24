@@ -1,6 +1,9 @@
 import { PauseCircle } from "lucide-react";
 
-import type { ExecutionStopSummary } from "../../../../contracts/company-os-api/index.ts";
+import {
+  MEMBER_TRIP_REASON,
+  type ExecutionStopSummary,
+} from "../../../../contracts/company-os-api/index.ts";
 import { RecordLink } from "../../components/display";
 import {
   Meta,
@@ -9,15 +12,17 @@ import {
   StatusChip,
   TechnicalDetails,
 } from "../../components/owner";
+import { TRIP_REASON_TEXT } from "../../copy";
 import { agentDisplayName, tenantDisplayName } from "../../format/displayNames";
 import { stopScopeLabel } from "../../format/ptBR";
 import { useOperatorScope } from "../../session/runtime";
 
 // Stops naming the caller's tenant, from their own rows
 // (docs/PHASE_2C_BRIEF.md §9, §12): what is paused, why and since when, and
-// whether the pause is still active. Read-only: a stop is tripped and cleared
-// only through the operator CLI, and no tripped_by or cleared_by label is ever
-// shown. A tenant job_kind stop is listed read-only like the others.
+// whether the pause is still active. Read-only: a card never clears a stop
+// (only the operator CLI does), and no tripped_by or cleared_by label is ever
+// shown. A stop tripped from this screen shows its server-fixed reason in the
+// owner's words. A tenant job_kind stop is listed read-only like the others.
 
 const meaningOf = (stop: ExecutionStopSummary): string => {
   if (stop.clearedAt !== null) return "Esta pausa foi encerrada.";
@@ -91,7 +96,11 @@ const StopCard = ({ stop }: { stop: ExecutionStopSummary }) => {
       <div className="flex flex-col gap-1">
         <Meta label="Alcance">{stopScopeLabel(stop.scope)}</Meta>
         <Meta label="Motivo">
-          <span className="whitespace-pre-wrap">{stop.reason}</span>
+          <span className="whitespace-pre-wrap">
+            {stop.reason === MEMBER_TRIP_REASON
+              ? TRIP_REASON_TEXT
+              : stop.reason}
+          </span>
         </Meta>
         <Meta label="Início">
           <RelativeTime value={stop.trippedAt} />

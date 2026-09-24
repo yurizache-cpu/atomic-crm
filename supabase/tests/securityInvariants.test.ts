@@ -2985,9 +2985,9 @@ const INVARIANTS: Invariant[] = [
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
       {
-        // S7.1: the browser can cause exactly one mutation, the review
-        // decision; the read migration creates only the reads, the second
-        // allowlisted migration exactly the one act, and the static guard
+        // S7.1 and S7.2: the browser can cause exactly two mutations, the
+        // review decision and the trip; the read migration creates only the
+        // reads, each act migration exactly its own act, and the static guard
         // refuses anything else.
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker: /company_os_api does not hold exactly the catalogue/,
@@ -3003,9 +3003,22 @@ const INVARIANTS: Invariant[] = [
           /a browser-facing role can execute an outbound or send function/,
       },
       {
-        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        file: "supabase/migrations/20260924120000_company_os_execution_stop.sql",
         marker:
-          /The read surface holds no act; the one act is the S7\.1 file's\./,
+          /company_os_api function whose volatility contradicts the two acts/,
+      },
+      {
+        file: "supabase/migrations/20260924120000_company_os_execution_stop.sql",
+        marker:
+          /a browser-facing role can execute a clear, outbound or send function/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker: /No browser clear exists in any of them \(SI-58\)\./,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker: /The read surface holds no act; each act is its own file's\./,
       },
       // The S7 user-management prerequisite the act waits for.
       {
@@ -3019,7 +3032,7 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/tests/company_os_api.sql",
-        marker: /P1: a trip or clear function exists before S8/,
+        marker: /P1: a clear function is exposed to the browser/,
       },
       {
         file: "supabase/tests/company_os_api.sql",
@@ -3032,33 +3045,64 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/company_os_api.sql",
         marker:
+          /P5b: the trip''s callee reaches beyond trip_execution_stop and cos_ts/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /P5b: the trip''s path names a clear/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /W3: a refused trip changed a stop or anything else/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /W4: % can write ops\.execution_stops directly/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
           /P5: a graph body reads public or an email, writes, runs dynamic SQL or names a forbidden serv/,
       },
       {
         file: "supabase/tests/companyOsApiExposure.mjs",
-        marker: /\(trip_stop: 404 PGRST202\) before S8/,
+        marker: /await memberTripsOnce\(t, rpc\);/,
       },
-      // Owner decision S0-B: the 2 s bound, measured on the authoritative path the future trip gate calls.
+      // Owner decision S0-B: the 2 s bound, measured on the authoritative path and through the trip gate.
       {
         file: "engine/domain/companyOsStopLock.dbtest.ts",
         marker:
           /fails with 55P03 within about the bound, identically whatever holds the lock, creates nothing/,
       },
-      // A tripwire, not the boundary: an operator context claiming the trip fails to parse.
+      {
+        file: "engine/domain/companyOsExecutionStop.dbtest.ts",
+        marker:
+          /a member's trip under contention answers OS429 within about the bound and creates nothing/,
+      },
+      {
+        file: "engine/domain/companyOsExecutionStop.dbtest.ts",
+        marker:
+          /two members tripping the same target at once record one stop: one stopped, one already_stopped/,
+      },
+      // Hints only, never the boundary: the context reports the two acts, and no clear.
       {
         file: "contracts/company-os-api/context.ts",
-        marker:
-          /decideReview: z\.boolean\(\),\s*tripStop: z\.literal\(false\),/,
+        marker: /decideReview: z\.boolean\(\),\s*tripStop: z\.boolean\(\),/,
       },
       {
         file: "engine/domain/companyOsContracts.dbtest.ts",
         marker:
-          /the one act and its gate exist, and no trip service exists before S8/,
+          /the two acts and their gates exist, with the trip's one tenant-scoped callee, and nothing clears/,
       },
       {
         file: "supabase/tests/companyOsProbe/actChecks.mjs",
         marker:
           /the decision was not recorded as the principal with nothing sent/,
+      },
+      {
+        file: "supabase/tests/companyOsProbe/actChecks.mjs",
+        marker:
+          /member: the trip was not recorded as the principal, origin owner, with the fixed reason/,
       },
       {
         file: "src/company-os/screens/readOnly.test.tsx",
@@ -3071,7 +3115,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "S7.1: the review decision exists, in a second allowlisted migration (20260923120000), after the S7 user-management prerequisite (supabase/functions/users/userManagement.ts) was fixed and tested; it sends nothing. The trip exists in no migration or database until S8; a frontend flag is never the boundary.",
+      "S7.1: the review decision exists, in a second allowlisted migration (20260923120000), after the S7 user-management prerequisite (supabase/functions/users/userManagement.ts) was fixed and tested; it sends nothing. S7.2: the trip exists in a third allowlisted migration (20260924120000); the browser names only a scope and a target, the actor is the principal and the reason is fixed by the server, and there is no browser clear. A frontend flag is never the boundary.",
   },
   {
     id: "SI-59",

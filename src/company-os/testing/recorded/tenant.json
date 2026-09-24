@@ -10154,7 +10154,7 @@
         "dataPolicy": "synthetic_or_test_only",
         "serverTime": "2026-09-22T11:00:00.000000Z",
         "allowedActions": {
-          "tripStop": false,
+          "tripStop": true,
           "viewAdvice": true,
           "decideReview": true
         }

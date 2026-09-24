@@ -24,7 +24,7 @@ export const operatorContext = (tenantId: string, tenantName: string) => ({
   tenant: { id: tenantId, name: tenantName },
   role: "tenant_operator",
   dataPolicy: "synthetic_or_test_only",
-  allowedActions: { decideReview: true, tripStop: false, viewAdvice: true },
+  allowedActions: { decideReview: true, tripStop: true, viewAdvice: true },
   serverTime: AT,
 });
 
