@@ -3014,14 +3014,14 @@ $$;
 -- K4. A second external kind, inside this rolled-back transaction only, so a kind
 --     stop can name it and a job of it can be requested for a task without being an
 --     agent run. The final block proves the classification is back to exactly
---     {agent_run.execute}.
+--     {agent_run.execute, decision.shadow_evaluate} (the second since Phase 2D.1).
 create or replace function ops.external_job_kinds()
 returns text[]
 language sql
 immutable
 set search_path to ''
 as $function$
-  select array['agent_run.execute', 'rg1d.probe_external']::text[];
+  select array['agent_run.execute', 'decision.shadow_evaluate', 'rg1d.probe_external']::text[];
 $function$;
 
 do $$
@@ -3239,7 +3239,7 @@ language sql
 immutable
 set search_path to ''
 as $function$
-  select array['agent_run.execute']::text[];
+  select array['agent_run.execute', 'decision.shadow_evaluate']::text[];
 $function$;
 
 -- ===========================================================================
@@ -4081,7 +4081,7 @@ begin
   if exists (select 1 from ops.execution_stops x where x.cleared_at is null) then
     raise exception 'Z4: a section left an execution stop active';
   end if;
-  if ops.external_job_kinds() is distinct from array['agent_run.execute']::text[] then
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate']::text[] then
     raise exception 'Z4: the external job kinds were not restored inside the transaction';
   end if;
 end
@@ -4109,7 +4109,7 @@ begin
   if exists (select 1 from ops.jobs where kind in ('rg1d.probe_external', 'rg1d.unclassified', 'rg1d.lease_probe', 'rg1d.lock_probe')) then
     raise exception 'runtime_governance.sql left a job behind';
   end if;
-  if ops.external_job_kinds() is distinct from array['agent_run.execute']::text[] then
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate']::text[] then
     raise exception 'runtime_governance.sql left the external job kinds widened';
   end if;
 end

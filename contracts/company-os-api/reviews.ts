@@ -55,6 +55,82 @@ export const ReviewListSchema = envelopedPageSchema(
   ReviewSummarySchema,
 );
 
+// Phase 2D.1: the shadow decision a review carries, read only. ADVISORY: it
+// changes nothing about the review or the decisions a person may make, and
+// `humanReviewRequired` is pinned true, so a projection that ever claimed a
+// recommendation stood for the person fails to parse (a tripwire; the database
+// enforces the constant).
+export const SHADOW_RECOMMENDATIONS = [
+  "accept",
+  "needs_edit",
+  "reject",
+  "abstain",
+] as const;
+export const SHADOW_POLICY_OUTCOMES = [
+  "recommendation_available",
+  "low_confidence",
+  "high_caution",
+  "abstained",
+  "provider_indeterminate",
+  "provider_invalid",
+  "provider_failed",
+] as const;
+export const SHADOW_STATUSES = [
+  "pending",
+  "completed",
+  "indeterminate",
+  "invalid",
+  "failed",
+  "refused",
+] as const;
+
+const SHADOW_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+const ShadowEvaluationSchema = z
+  .strictObject({
+    status: z.enum(SHADOW_STATUSES),
+    mode: z.literal("shadow"),
+    recommendation: z.enum(SHADOW_RECOMMENDATIONS).nullable(),
+    confidence: z.number().finite().min(0).max(1).nullable(),
+    caution: z.enum(["low", "medium", "high"]).nullable(),
+    reasonCodes: z.array(z.string().regex(/^[a-z][a-z0-9_]{0,63}$/)).max(8),
+    policy: z.strictObject({
+      outcome: z.enum(SHADOW_POLICY_OUTCOMES).nullable(),
+      humanReviewRequired: z.literal(true),
+    }),
+    provider: z
+      .strictObject({
+        kind: z.enum(["fake", "jev", "none"]),
+        id: z.string().regex(SHADOW_NAME),
+        version: z.string().regex(SHADOW_NAME),
+      })
+      .nullable(),
+    refusal: z.enum(["stopped", "not_eligible"]).nullable(),
+    requestedAt: TimestampSchema,
+    settledAt: TimestampSchema.nullable(),
+  })
+  .superRefine((shadow, ctx) => {
+    const completed = shadow.status === "completed";
+    if (
+      completed !==
+        (shadow.recommendation !== null && shadow.confidence !== null) ||
+      (shadow.status === "refused") !== (shadow.refusal !== null)
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["status"],
+        message:
+          "only a completed evaluation recommends, and only a refused one has a refusal",
+      });
+    }
+  });
+
+/** `unavailable`: out of the synthetic and test scope (BASELINE Q8). */
+export const ShadowDecisionSchema = z.union([
+  z.strictObject({ status: z.literal("unavailable") }),
+  ShadowEvaluationSchema,
+]);
+
 /** get_review: the summary, the decision note and the server-computed decisions. */
 export const ReviewDetailSchema = z
   .strictObject({
@@ -63,6 +139,8 @@ export const ReviewDetailSchema = z
     // Stored as the operator typed it: at most 1000 characters, possibly empty.
     decisionNote: textUpToSchema(1000).nullable(),
     allowedDecisions: z.array(ReviewDecisionSchema).max(3),
+    // null: in scope, and no shadow decision was requested.
+    shadowDecision: ShadowDecisionSchema.nullable(),
   })
   .superRefine((review, ctx) => {
     if (review.hasNote !== (review.decisionNote !== null)) {
@@ -124,6 +202,8 @@ export const ReviewCursorSchema = cursorSchema(CURSOR_KINDS.reviews);
 export type ReviewSummary = z.infer<typeof ReviewSummarySchema>;
 export type ReviewList = z.infer<typeof ReviewListSchema>;
 export type ReviewDetail = z.infer<typeof ReviewDetailSchema>;
+export type ShadowDecision = z.infer<typeof ShadowDecisionSchema>;
+export type ShadowRecommendation = (typeof SHADOW_RECOMMENDATIONS)[number];
 export type LeadTriageAdvice = z.infer<typeof LeadTriageAdviceSchema>;
 export type AdviceWithheld = z.infer<typeof AdviceWithheldSchema>;
 export type ReviewAdvice = z.infer<typeof ReviewAdviceSchema>;

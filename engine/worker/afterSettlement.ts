@@ -28,15 +28,23 @@ import type { LeasedJob } from "./job.ts";
 import type { WorkerLogger } from "./log.ts";
 
 /** The complete set of post-settlement steps. Adding one is a review event. */
-export type AfterSettlementStep = "openRunReview";
+export type AfterSettlementStep = "openRunReview" | "requestShadowDecision";
 
 /**
  * One statement per step, bound to ($1 worker id, $2 job id) and nothing else.
  * `openRunReview` opens the review of the run the job settled, when there is one
  * to open. Its recovery is ops.open_missing_reviews (`npm run ops -- triage recover`).
+ * `requestShadowDecision` (Phase 2D.1) records one shadow decision request for
+ * that review, in scope (synthetic or test) and not under a stop, and queues
+ * its job; it decides nothing. The owner can request one for a review with
+ * ops.request_shadow_decision.
  */
 const STEP_SQL: ReadonlyMap<string, string> = new Map([
   ["openRunReview", "select ops.open_review_for_settled_job($1, $2)"],
+  [
+    "requestShadowDecision",
+    "select ops.request_shadow_decision_for_settled_job($1, $2)",
+  ],
 ]);
 
 /** A SQLSTATE and nothing else. Anything that is not one reads "unknown". */

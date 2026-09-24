@@ -173,6 +173,8 @@ export async function deleteCompanyOsRows(
     // Phase 2A's two tables reference companies and tasks, all with ON DELETE
     // RESTRICT, so they go before the runs whose settlement derived them.
     "delete from ops.outbound_messages where tenant_id = any($1::uuid[])",
+    // Phase 2D.1's shadow decisions reference the reviews they evaluated.
+    "delete from ops.decision_evaluations where tenant_id = any($1::uuid[])",
     "delete from ops.review_items where tenant_id = any($1::uuid[])",
     "delete from ops.inbound_messages where tenant_id = any($1::uuid[])",
     "delete from ops.conversations where tenant_id = any($1::uuid[])",

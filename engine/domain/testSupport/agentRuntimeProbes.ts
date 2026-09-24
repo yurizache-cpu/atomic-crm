@@ -31,6 +31,7 @@ import {
   type PrepareBudget,
 } from "../../worker/handlerRegistry.ts";
 import type { LeasedJob } from "../../worker/job.ts";
+import type { DecisionPort } from "../../decision/decisionPort.ts";
 import { createHandlerRegistry } from "../../worker/registry.ts";
 import {
   runOneJob,
@@ -150,13 +151,22 @@ export interface RunEvent {
   payload: Record<string, unknown>;
 }
 
-/** The production registry, its `standard` route served by `provider`. */
-export function registryServing(provider: ModelProvider): HandlerRegistry {
+/**
+ * The production registry, its `standard` route served by `provider`, and,
+ * for the Phase 2D.1 suites, a shadow decision provider.
+ */
+export function registryServing(
+  provider: ModelProvider,
+  decision: {
+    readonly decisionPort?: DecisionPort;
+    readonly requestsShadowDecisions?: boolean;
+  } = {},
+): HandlerRegistry {
   const modelRouter = createModelRouter({
     routes: new Map([["standard", { provider: provider.name, model: MODEL }]]),
     providers: new Map([[provider.name, provider]]),
   });
-  return createHandlerRegistry({ modelRouter });
+  return createHandlerRegistry({ modelRouter, ...decision });
 }
 
 /** The production registry, its `standard` route served by a counting fake provider. */

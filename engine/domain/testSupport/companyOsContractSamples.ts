@@ -264,6 +264,22 @@ export const CONTRACT_SAMPLES: {
       ...REVIEW_SUMMARY,
       decisionNote: "Call back tomorrow",
       allowedDecisions: [],
+      shadowDecision: {
+        status: "completed",
+        mode: "shadow",
+        recommendation: "accept",
+        confidence: 0.82,
+        caution: "low",
+        reasonCodes: ["triage_complete", "intent_information"],
+        policy: {
+          outcome: "recommendation_available",
+          humanReviewRequired: true,
+        },
+        provider: { kind: "fake", id: "fake-rules", version: "1" },
+        refusal: null,
+        requestedAt: AT,
+        settledAt: AT,
+      },
     },
     {
       ...ENVELOPE,
@@ -275,6 +291,7 @@ export const CONTRACT_SAMPLES: {
       doNotContact: true,
       decisionNote: null,
       allowedDecisions: ["rejected", "needs_edit"],
+      shadowDecision: { status: "unavailable" },
     },
   ],
   get_review_advice: [

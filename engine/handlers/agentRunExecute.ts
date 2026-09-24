@@ -96,6 +96,11 @@ export interface AgentRunExecuteDependencies {
   readonly modelRouter: ModelRouter;
   /** Epoch ms on the same clock as the runtime's deadline. Tests only. */
   readonly now?: () => number;
+  /**
+   * Phase 2D.1: whether a settled run's review also requests a shadow decision
+   * (engine/decision/providerFromEnv.ts). Off unless a provider is configured.
+   */
+  readonly requestsShadowDecisions?: boolean;
 }
 
 /** What prepare hands the call. Frozen; nothing in it reaches the database. */
@@ -331,7 +336,13 @@ export function createAgentRunExecuteHandler(
     ]),
     // Never inside the settlement: a review that cannot be opened must not be
     // able to take a paid answer down with it (docs/PHASE_2A_REPORT.md §16).
-    afterSettlement: Object.freeze<AfterSettlementStep[]>(["openRunReview"]),
+    // The shadow decision request follows the review it evaluates, in its own
+    // transaction, and only when this worker has a decision provider.
+    afterSettlement: Object.freeze<AfterSettlementStep[]>(
+      dependencies.requestsShadowDecisions === true
+        ? ["openRunReview", "requestShadowDecision"]
+        : ["openRunReview"],
+    ),
 
     async prepare(job, capabilities, budget) {
       const parsed = claimSchema.safeParse(await capabilities.claimAgentRun());

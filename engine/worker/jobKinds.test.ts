@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { AGENT_RUN_EXECUTE_KIND } from "../handlers/agentRunExecute.ts";
+import { DECISION_SHADOW_EVALUATE_KIND } from "../handlers/decisionShadowEvaluate.ts";
 import { POSTMARK_LEDGER_RETENTION_KIND } from "../handlers/postmarkLedgerRetention.ts";
 import { createModelRouter } from "../models/router.ts";
 import {
@@ -62,7 +63,10 @@ describe("the worker's registry classifies every job kind for the kill switch", 
   });
 
   it("names exactly the handlers' own kind constants in each list", () => {
-    expect([...EXTERNAL_JOB_KINDS]).toEqual([AGENT_RUN_EXECUTE_KIND]);
+    expect([...EXTERNAL_JOB_KINDS]).toEqual([
+      AGENT_RUN_EXECUTE_KIND,
+      DECISION_SHADOW_EVALUATE_KIND,
+    ]);
     expect([...INTERNAL_JOB_KINDS]).toEqual([POSTMARK_LEDGER_RETENTION_KIND]);
   });
 
