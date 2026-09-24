@@ -1478,7 +1478,8 @@ begin
       '.recentRuns[].taskId', '.recentRuns[].totalTokens', '.v']),
     ('get_review', array[
       '.agentRunId', '.allowedDecisions', '.asOf', '.capability', '.createdAt', '.decisionNote',
-      '.doNotContact', '.hasNote', '.id', '.outboundStatus', '.reviewedAt', '.status', '.taskId', '.v']),
+      '.doNotContact', '.hasNote', '.id', '.outboundStatus', '.reviewedAt', '.shadowDecision',
+      '.shadowDecision.status', '.status', '.taskId', '.v']),
     ('get_review_advice', array[
       '.asOf', '.capability', '.flags', '.intent', '.needsHumanReview', '.outcome', '.priority',
       '.recommendedNextAction', '.reviewId', '.summary', '.v', '.withheld']),
@@ -3003,7 +3004,9 @@ insert into cos_internal values
   ('ops.read_communication_status(uuid)', 's'),
   ('ops.decide_review_as_member(uuid, text, uuid, text)', 'v'),
   ('ops.cos_review_decidable(uuid, ops.review_items)', 's'),
-  ('ops.trip_stop_in_tenant(uuid, text, text, uuid)', 'v');
+  ('ops.trip_stop_in_tenant(uuid, text, text, uuid)', 'v'),
+  -- Phase 2D.1: get_review's shadow decision, read only.
+  ('ops.cos_review_shadow_decision(uuid, ops.review_items)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');

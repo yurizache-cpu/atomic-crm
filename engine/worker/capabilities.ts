@@ -82,6 +82,21 @@ export interface AgentRunFailure {
   readonly latencyMs: number | null;
 }
 
+/** Who answers a shadow decision, recorded before the provider is asked. */
+export interface ShadowDecisionProvider {
+  readonly kind: string;
+  readonly id: string;
+  readonly version: string;
+}
+
+/** A shadow decision's settlement: the vector, or why there is none. */
+export interface ShadowDecisionSettlement {
+  readonly outcome: "completed" | "indeterminate" | "invalid" | "failed";
+  /** The validated vector, for `completed` only. The database validates it again. */
+  readonly vector: unknown;
+  readonly errorCode: string | null;
+}
+
 /** The complete set of capabilities that exist. Adding one is a review event. */
 export interface Capabilities {
   /**
@@ -107,6 +122,16 @@ export interface Capabilities {
   completeAgentRun(completion: AgentRunCompletion): Promise<string>;
   /** Stores this attempt's failure. `not_running` as above. */
   failAgentRun(failure: AgentRunFailure): Promise<string>;
+  /**
+   * Phase 2D.1. The allowlisted input of the shadow decision bound to the
+   * leased job, recorded as `running` with this provider BEFORE it is asked.
+   * Settles an earlier attempt's `running` as indeterminate rather than asking
+   * again, answers `stopped` under a covering stop (recording nothing), and
+   * `refused` out of the synthetic and test scope.
+   */
+  startShadowDecision(provider: ShadowDecisionProvider): Promise<unknown>;
+  /** Stores the settlement. `not_running` means it is not this attempt's to settle. */
+  settleShadowDecision(settlement: ShadowDecisionSettlement): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -118,6 +143,8 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "refuseAgentRun",
   "completeAgentRun",
   "failAgentRun",
+  "startShadowDecision",
+  "settleShadowDecision",
 ]);
 
 /**
@@ -218,6 +245,29 @@ function allCapabilities(tx: TxClient): Capabilities {
         ],
       );
       return statusOf(rows, "ops.fail_agent_run");
+    },
+
+    async startShadowDecision(provider) {
+      const { rows } = await tx.query<{ start: unknown }>(
+        "select ops.start_shadow_decision($1, $2, $3) as start",
+        [provider.kind, provider.id, provider.version],
+      );
+      return rows[0]?.start;
+    },
+
+    async settleShadowDecision(settlement) {
+      // Provider output travels as ONE bound jsonb parameter, never spliced.
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.settle_shadow_decision($1, $2::jsonb, $3) as status",
+        [
+          settlement.outcome,
+          settlement.outcome === "completed"
+            ? JSON.stringify(settlement.vector)
+            : null,
+          settlement.errorCode,
+        ],
+      );
+      return statusOf(rows, "ops.settle_shadow_decision");
     },
   };
 }

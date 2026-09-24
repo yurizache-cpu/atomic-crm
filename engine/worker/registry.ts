@@ -13,15 +13,29 @@ import {
   createAgentRunExecuteHandler,
 } from "../handlers/agentRunExecute.ts";
 import {
+  DECISION_SHADOW_EVALUATE_KIND,
+  createDecisionShadowEvaluateHandler,
+} from "../handlers/decisionShadowEvaluate.ts";
+import {
   POSTMARK_LEDGER_RETENTION_KIND,
   postmarkLedgerRetention,
 } from "../handlers/postmarkLedgerRetention.ts";
+import {
+  UNCONFIGURED_DECISION_PORT,
+  type DecisionPort,
+} from "../decision/decisionPort.ts";
 import type { ModelRouter } from "../models/router.ts";
 import { createRegistry, type HandlerRegistry } from "./handlerRegistry.ts";
 import { assertRegistryClassified } from "./jobKinds.ts";
 
 export interface HandlerRegistryDependencies {
   readonly modelRouter: ModelRouter;
+  /**
+   * Phase 2D.1: the shadow decision provider, and whether a settled triage
+   * requests a shadow decision. Absent: no provider, and no request.
+   */
+  readonly decisionPort?: DecisionPort;
+  readonly requestsShadowDecisions?: boolean;
 }
 
 export function createHandlerRegistry(
@@ -29,7 +43,13 @@ export function createHandlerRegistry(
 ): HandlerRegistry {
   const registry = createRegistry([
     postmarkLedgerRetention,
-    createAgentRunExecuteHandler({ modelRouter: dependencies.modelRouter }),
+    createAgentRunExecuteHandler({
+      modelRouter: dependencies.modelRouter,
+      requestsShadowDecisions: dependencies.requestsShadowDecisions === true,
+    }),
+    createDecisionShadowEvaluateHandler({
+      decisionPort: dependencies.decisionPort ?? UNCONFIGURED_DECISION_PORT,
+    }),
   ]);
   // Every kind here is external or internal, with the matching shape (ADR 0017
   // §6): the kill switch holds exactly the external ones.
@@ -46,4 +66,5 @@ export function createHandlerRegistry(
 export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   POSTMARK_LEDGER_RETENTION_KIND,
   AGENT_RUN_EXECUTE_KIND,
+  DECISION_SHADOW_EVALUATE_KIND,
 ]);

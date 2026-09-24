@@ -354,7 +354,9 @@ describe("the capability list", () => {
     // If this fails, a capability was added. That is fine — but it is a review
     // event, and this test is the prompt for it. The five agent run
     // capabilities were that review event for Phase 1D: each is a lease-bound
-    // SECURITY DEFINER function that takes no id (ADR 0016).
+    // SECURITY DEFINER function that takes no id (ADR 0016). Phase 2D.1 adds
+    // the shadow decision's two, on the same terms: they reach only the
+    // evaluation bound to the leased job, and decide nothing.
     expect([...CAPABILITY_NAMES]).toEqual([
       "purgeInboundEmailLedger",
       "claimAgentRun",
@@ -362,6 +364,8 @@ describe("the capability list", () => {
       "refuseAgentRun",
       "completeAgentRun",
       "failAgentRun",
+      "startShadowDecision",
+      "settleShadowDecision",
     ]);
   });
 });

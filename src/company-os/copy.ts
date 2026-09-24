@@ -113,6 +113,41 @@ export const TRIP_UNKNOWN_TEXT =
 export const TRIP_REASON_TEXT =
   "Interrupção pedida pelo responsável no Company OS";
 
+// Phase 2D.1: the shadow decision on a review. Advisory only: it performs
+// nothing, and the person's decision stays required.
+export const SHADOW_TITLE = "Inteligência de decisão";
+
+export const SHADOW_BADGE = "Modo sombra";
+
+export const SHADOW_NOTE =
+  "Esta recomendação não executa nenhuma ação e não substitui sua decisão.";
+
+export const SHADOW_POLICY_REQUIRED = "Revisão humana obrigatória";
+
+export const SHADOW_RECOMMENDATION_LABELS = {
+  accept: "Aceitar",
+  needs_edit: "Precisa de ajuste",
+  reject: "Rejeitar",
+  abstain: "Sem recomendação",
+} as const;
+
+export const SHADOW_STATE_TEXT = {
+  none: "Nenhuma avaliação foi feita para esta revisão.",
+  unavailable:
+    "Indisponível: só revisões com dados sintéticos ou de teste são avaliadas.",
+  pending: "Avaliação em andamento. Nenhuma recomendação ainda.",
+  indeterminate:
+    "O resultado da avaliação é incerto. Nenhuma recomendação foi registrada.",
+  invalid:
+    "A resposta do motor de decisão foi recusada por não seguir o formato. Nenhuma recomendação foi registrada.",
+  failed:
+    "O motor de decisão não estava disponível. Nenhuma recomendação foi registrada.",
+  refused_stopped:
+    "Não avaliada: uma pausa estava ativa quando a avaliação foi pedida.",
+  refused_not_eligible:
+    "Não avaliada: fora do escopo de dados sintéticos ou de teste.",
+} as const;
+
 /**
  * The `authorized` outbound state: recorded by an operator's CLI send request,
  * never by a review decision (REVIEW ACCEPTANCE is not a send, §7.5).

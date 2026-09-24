@@ -29,6 +29,7 @@ import type { ModelRouter } from "../models/router.ts";
 import { createModelRouterFromEnv } from "../models/routingConfig.ts";
 import { createLogger } from "./log.ts";
 import { createHandlerRegistry } from "./registry.ts";
+import { decisionShadowFromEnv } from "../decision/providerFromEnv.ts";
 import { DEFAULT_LEASE_SAFETY_MARGIN_MS } from "./runOneJob.ts";
 import { runWorker } from "./runWorker.ts";
 
@@ -126,6 +127,7 @@ export async function main(): Promise<void> {
   // variables, never their values.
   const leaseSeconds = readInt("OPS_WORKER_LEASE_SECONDS", 60);
   const modelRouter = createModelRouterFromEnv(process.env);
+  const decisionShadow = decisionShadowFromEnv(process.env);
   assertLeaseFitsModelRoutes(leaseSeconds, modelRouter.maxConfiguredTimeoutMs);
   const startDetail = workerStartDetail(modelRouter);
 
@@ -156,7 +158,11 @@ export async function main(): Promise<void> {
     await runWorker({
       workerId,
       db,
-      registry: createHandlerRegistry({ modelRouter }),
+      registry: createHandlerRegistry({
+        modelRouter,
+        decisionPort: decisionShadow.port,
+        requestsShadowDecisions: decisionShadow.requestsShadowDecisions,
+      }),
       signal: controller.signal,
       pollIntervalMs: readInt("OPS_WORKER_POLL_INTERVAL_MS", 1_000),
       heartbeatIntervalMs: readInt("OPS_WORKER_HEARTBEAT_INTERVAL_MS", 15_000),

@@ -801,6 +801,7 @@
         "decisionNote": null,
         "doNotContact": true,
         "outboundStatus": null,
+        "shadowDecision": null,
         "allowedDecisions": ["rejected", "needs_edit"]
       }
     },
@@ -821,6 +822,7 @@
         "decisionNote": "Call back tomorrow",
         "doNotContact": false,
         "outboundStatus": "failed",
+        "shadowDecision": null,
         "allowedDecisions": []
       }
     },
@@ -841,6 +843,7 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": "blocked",
+        "shadowDecision": null,
         "allowedDecisions": []
       }
     },
@@ -861,6 +864,7 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": "indeterminate",
+        "shadowDecision": null,
         "allowedDecisions": []
       }
     },
@@ -881,6 +885,7 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
+        "shadowDecision": { "status": "unavailable" },
         "allowedDecisions": []
       }
     },
@@ -901,6 +906,7 @@
         "decisionNote": "",
         "doNotContact": false,
         "outboundStatus": null,
+        "shadowDecision": null,
         "allowedDecisions": []
       }
     },
@@ -921,6 +927,7 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
+        "shadowDecision": { "status": "unavailable" },
         "allowedDecisions": []
       }
     },
@@ -941,6 +948,22 @@
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
+        "shadowDecision": {
+          "mode": "shadow",
+          "policy": {
+            "outcome": "recommendation_available",
+            "humanReviewRequired": true
+          },
+          "status": "completed",
+          "caution": "low",
+          "refusal": null,
+          "provider": { "id": "fake-rules", "kind": "fake", "version": "1" },
+          "settledAt": "2026-09-22T10:00:00.000000Z",
+          "confidence": 0.82,
+          "reasonCodes": ["triage_complete", "intent_information"],
+          "requestedAt": "2026-09-22T10:00:00.000000Z",
+          "recommendation": "accept"
+        },
         "allowedDecisions": ["accepted", "rejected", "needs_edit"]
       }
     },

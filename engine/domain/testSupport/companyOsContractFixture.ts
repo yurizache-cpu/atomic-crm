@@ -270,6 +270,57 @@ async function insertReview(
 }
 
 /**
+ * Phase 2D.1: a completed shadow decision on `reviewId`, recorded as the owner
+ * through the guarded lifecycle (pending, running, completed) that the worker's
+ * capabilities follow. The fake provider's answer for an information enquiry.
+ */
+async function recordShadowDecision(
+  tx: TxClient,
+  reviewId: string,
+): Promise<void> {
+  const id = await one<string>(
+    tx,
+    `insert into ops.decision_evaluations
+       (tenant_id, company_id, department_id, agent_id, review_item_id, subject, trigger_source,
+        policy_version, idempotency_key, status)
+     select r.tenant_id, r.company_id, a.department_id, a.id, r.id, 'lead_triage.review', 'review.opened',
+            'decision_shadow.v1', 'review:' || r.id || ':decision_shadow.v1', 'pending'
+       from ops.review_items r
+       join ops.tasks t on t.tenant_id = r.tenant_id and t.id = r.task_id
+       join ops.agents a on a.tenant_id = t.tenant_id and a.id = t.assigned_agent_id
+      where r.id = $1
+     returning id as v`,
+    [reviewId],
+  );
+  const fingerprint = `sha256:${"0".repeat(64)}`;
+  await tx.query(
+    `update ops.decision_evaluations
+        set status = 'running', started_at = now(), provider_kind = 'fake', provider_id = 'fake-rules',
+            provider_version = '1', input_fingerprint = $2
+      where id = $1`,
+    [id, fingerprint],
+  );
+  const vector = {
+    version: "decision_vector.v1",
+    mode: "shadow",
+    recommendation: "accept",
+    confidence: 0.82,
+    caution: "low",
+    reasonCodes: ["triage_complete", "intent_information"],
+    provider: { kind: "fake", id: "fake-rules", version: "1" },
+    inputFingerprint: fingerprint,
+    evaluatedAt: "2026-09-22T11:00:00.000Z",
+  };
+  await tx.query(
+    `update ops.decision_evaluations
+        set status = 'completed', vector = $2::jsonb,
+            policy_outcome = ops.decision_shadow_policy($2::jsonb), settled_at = now()
+      where id = $1`,
+    [id, JSON.stringify(vector)],
+  );
+}
+
+/**
  * An authorized send for an accepted review of a WhatsApp task: the row and the
  * event ops.request_outbound_send writes. That service itself refuses here,
  * because send eligibility needs a CRM contact the fixture never creates.
@@ -677,6 +728,9 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
     false,
   );
   name("review:open", open);
+  // Phase 2D.1: its shadow decision, completed, through the guarded lifecycle
+  // (the worker's own path needs a real run; this review has none).
+  await recordShadowDecision(tx, open);
 
   // Sends: failed after sending, blocked by eligibility, marked indeterminate.
   await tx.query(

@@ -283,6 +283,11 @@ begin
     ('ops_worker',   'ops.defer_job()'::regprocedure),
     ('ops_worker',   'ops.enforce_spend_ceiling()'::regprocedure),
     ('ops_worker',   'ops.open_review_for_settled_job(text, uuid)'::regprocedure),
+    -- Phase 2D.1: the shadow decision's runtime step and its two lease-bound
+    -- capabilities (supabase/tests/decision_shadow.sql).
+    ('ops_worker',   'ops.request_shadow_decision_for_settled_job(text, uuid)'::regprocedure),
+    ('ops_worker',   'ops.start_shadow_decision(text, text, text)'::regprocedure),
+    ('ops_worker',   'ops.settle_shadow_decision(text, jsonb, text)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -343,7 +348,11 @@ begin
   --     Phase 2C (2026-09-22) adds one identity gate per company_os_api read,
   --     executable only by ops_operator_api: each runs the resolver first and
   --     reaches one pinned projection inside the caller's own tenant
-  --     (supabase/tests/company_os_api.sql pins the graph).
+  --     (supabase/tests/company_os_api.sql pins the graph). Phase 2D.1 adds the
+  --     shadow decision's three: a runtime step bound to a job the calling
+  --     worker completed (like open_review_for_settled_job), and two capabilities
+  --     bound to the live lease's job. They record advice; they decide nothing
+  --     (supabase/tests/decision_shadow.sql).
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -353,7 +362,8 @@ begin
                            'claim_agent_run', 'refuse_agent_run', 'start_agent_run',
                            'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
                            'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
-                           'open_review_for_settled_job',
+                           'open_review_for_settled_job', 'request_shadow_decision_for_settled_job',
+                           'start_shadow_decision', 'settle_shadow_decision',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',
