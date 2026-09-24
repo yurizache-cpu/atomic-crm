@@ -66,8 +66,6 @@ export interface JobTrace {
 
 export interface WorkerTelemetry {
   startJob(job: ObservedJob): JobTrace;
-  /** Agent runs the reaper tick settled indeterminate. */
-  staleRunsSettled(count: number): void;
   /** Ready jobs across the deployment, from the reaper tick. */
   queueDepth(depth: number): void;
   /**
@@ -127,7 +125,6 @@ const NOOP_TRACE: JobTrace = Object.freeze({
 
 export const NOOP_WORKER_TELEMETRY: WorkerTelemetry = Object.freeze({
   startJob: () => NOOP_TRACE,
-  staleRunsSettled() {},
   queueDepth() {},
   readsQueueDepth: false,
 });
@@ -273,15 +270,6 @@ export function createWorkerTelemetry(
 
   return Object.freeze({
     startJob,
-    staleRunsSettled(count: number) {
-      if (Number.isSafeInteger(count) && count > 0) {
-        telemetry.count(
-          "company_os_agent_runs_total",
-          { outcome: "indeterminate" },
-          count,
-        );
-      }
-    },
     queueDepth(depth: number) {
       if (Number.isSafeInteger(depth) && depth >= 0) {
         telemetry.setGauge("company_os_worker_queue_depth", depth);

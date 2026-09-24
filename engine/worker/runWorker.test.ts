@@ -826,7 +826,7 @@ describe("telemetry observes the loop and never steers it (Phase 2E.1)", () => {
     expect(sql.some((s) => s.includes("ops.worker_queue_depth"))).toBe(false);
   });
 
-  it("reads the queue depth in its own transaction on the reaper tick, and publishes it with the stale settlements", async () => {
+  it("reads the queue depth in its own transaction on the reaper tick, and never counts the reaper's settlements as an outcome it cannot know", async () => {
     const recording = createRecordingTelemetry();
     const { db, sql, transactionOf } = scriptedDb({
       queue: ["noop", null],
@@ -855,11 +855,10 @@ describe("telemetry observes the loop and never steers it (Phase 2E.1)", () => {
         .filter((m) => m.metric === "company_os_worker_queue_depth")
         .map((m) => m.value),
     ).toEqual([5, 5]);
-    expect(
-      recording.counted("company_os_agent_runs_total", {
-        outcome: "indeterminate",
-      }),
-    ).toBe(4);
+    // The reaper settled 4 runs; the database knows how many were
+    // indeterminate and how many failed, so telemetry claims neither.
+    expect(stats.staleRunsSettled).toBe(4);
+    expect(recording.counted("company_os_agent_runs_total")).toBe(0);
     expect(
       recording.counted("company_os_jobs_total", {
         job_kind: "other",

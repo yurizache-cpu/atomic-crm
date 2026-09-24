@@ -178,8 +178,10 @@ export async function runWorker(
       });
       if (settled > 0) {
         stats.staleRunsSettled += settled;
+        // Not counted by telemetry: the one number mixes runs settled
+        // indeterminate (stale running) and failed (orphaned pending), and
+        // only the database knows which. Saúde operacional reads that.
         log("agent_run.stale_settled", { workerId, count: settled });
-        telemetry.staleRunsSettled(settled);
       }
     } catch (error) {
       log("worker.poll_failed", {

@@ -147,20 +147,14 @@ describe("the worker telemetry facade", () => {
     expect(recording.spans.map((span) => span.ends)).toEqual([1, 1]);
   });
 
-  it("adds the reaper's settled runs to the indeterminate count and publishes the queue depth", () => {
+  it("publishes the queue depth, and only a whole, non-negative one", () => {
     const recording = createRecordingTelemetry();
     const telemetry = createWorkerTelemetry(recording, {
       readsQueueDepth: true,
     });
-    telemetry.staleRunsSettled(3);
-    telemetry.staleRunsSettled(0);
     telemetry.queueDepth(12);
     telemetry.queueDepth(Number.NaN);
-    expect(
-      recording.counted("company_os_agent_runs_total", {
-        outcome: "indeterminate",
-      }),
-    ).toBe(3);
+    telemetry.queueDepth(-1);
     expect(
       recording.metrics
         .filter((m) => m.metric === "company_os_worker_queue_depth")

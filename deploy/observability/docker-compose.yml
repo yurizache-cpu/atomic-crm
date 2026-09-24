@@ -47,8 +47,10 @@ services:
     ports:
       # The Prometheus UI and API. Loopback only.
       - "127.0.0.1:9090:9090"
-    # Docker Desktop provides host.docker.internal; on Linux this maps it to
-    # the host, where the worker's metrics listener binds 127.0.0.1.
+    # On Docker Desktop, host.docker.internal reaches the worker's metrics
+    # listener on host loopback (127.0.0.1, the default). On Linux it resolves
+    # to the docker bridge gateway, which a loopback listener does not answer:
+    # bind METRICS_HOST to that bridge address there, never 0.0.0.0.
     extra_hosts: ["host.docker.internal:host-gateway"]
     networks: [observability]
     read_only: true

@@ -16,8 +16,9 @@
 --       and those pending now;
 --     * WhatsApp sends created in the last 24 hours by status;
 --     * spend: charged today (the tenant's budget day), in the last 24 hours
---       and the last 7 days, and what running calls hold reserved, in exact
---       integer micros.
+--       and the last 7 days, keyed on started_at exactly as the spend limits
+--       count it (ops.spend_window_total), and what running calls hold
+--       reserved now, in exact integer micros.
 --
 -- WHERE IT COMES FROM: PostgreSQL rows only (ops.jobs, ops.agent_runs,
 -- ops.decision_evaluations, ops.outbound_messages), never Prometheus or any
@@ -71,14 +72,17 @@ language sql stable security invoker set search_path = '' as $$
      where e.tenant_id = p_tenant_id
        and (e.status in ('pending', 'running') or e.requested_at >= (select since from bounds))
   ),
+  -- Keyed on started_at, as the budget is: a run held by a stop and started
+  -- after the clear is charged to the day it started. A started run always
+  -- carries its charge (agent_runs_cost_iff_started).
   spend as (
-    select coalesce(sum(r.charged_cost_micros) filter (where r.created_at >= p_today), 0)::pg_catalog.int8 as today,
-           coalesce(sum(r.charged_cost_micros) filter (where r.created_at >= (select since from bounds)), 0)::pg_catalog.int8 as in_window,
-           coalesce(sum(r.charged_cost_micros) filter (where r.created_at >= (select week_since from bounds)), 0)::pg_catalog.int8 as week,
+    select coalesce(sum(r.charged_cost_micros) filter (where r.started_at >= p_today), 0)::pg_catalog.int8 as today,
+           coalesce(sum(r.charged_cost_micros) filter (where r.started_at >= (select since from bounds)), 0)::pg_catalog.int8 as in_window,
+           coalesce(sum(r.charged_cost_micros) filter (where r.started_at >= (select week_since from bounds)), 0)::pg_catalog.int8 as week,
            coalesce(sum(r.charged_cost_micros) filter (where r.status = 'running'), 0)::pg_catalog.int8 as reserved
       from ops.agent_runs r
      where r.tenant_id = p_tenant_id
-       and r.created_at >= least(p_today, (select week_since from bounds))
+       and (r.started_at >= least(p_today, (select week_since from bounds)) or r.status = 'running')
   )
   select pg_catalog.jsonb_build_object(
     'windowHours', 24,

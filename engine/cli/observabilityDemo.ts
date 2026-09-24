@@ -57,7 +57,9 @@ import {
 } from "./leadTriageDemo.ts";
 
 const WORKER_DATABASE_URL = "OPS_WORKER_DATABASE_URL";
-const SOURCE = "observability-demo";
+// The Phase 2A demo's own provenance label: this is the same synthetic flow,
+// and ops.cos_event_source allowlists exactly the labels something writes.
+const SOURCE = "lead-triage-demo";
 const LEADS = 6;
 /** The 1-based provider call that meets a scripted 5xx. */
 const AMBIGUOUS_CALL = 4;
@@ -78,13 +80,13 @@ const JOBS_LIVE_SQL =
 
 const SUMMARY_SQL = `select
     (select jsonb_object_agg(s.status, s.n) from (select status, count(*) as n from ops.agent_runs
-       where tenant_id = $1 and requested_by = $2 group by status) s) as runs,
+       where tenant_id = $1 and requested_by = $2 and created_at >= $3 group by status) s) as runs,
     (select count(*)::int from ops.review_items v join ops.agent_runs r on r.tenant_id = v.tenant_id and r.id = v.agent_run_id
-      where v.tenant_id = $1 and r.requested_by = $2 and v.status = 'pending') as pending_reviews,
+      where v.tenant_id = $1 and r.requested_by = $2 and r.created_at >= $3 and v.status = 'pending') as pending_reviews,
     (select jsonb_object_agg(s.status, s.n) from (select e.status, count(*) as n from ops.decision_evaluations e
        join ops.review_items v on v.tenant_id = e.tenant_id and v.id = e.review_item_id
        join ops.agent_runs r on r.tenant_id = v.tenant_id and r.id = v.agent_run_id
-      where e.tenant_id = $1 and r.requested_by = $2 group by e.status) s) as decisions`;
+      where e.tenant_id = $1 and r.requested_by = $2 and r.created_at >= $3 group by e.status) s) as decisions`;
 
 export async function runObservabilityDemo(
   dependencies: ObservabilityDemoDependencies,
@@ -137,6 +139,7 @@ export async function runObservabilityDemo(
       return EXIT_REFUSED;
     }
     const placement = await owner.withTransaction(readPlacement);
+    const demoStartedAt = new Date().toISOString();
     await owner.withTransaction((tx) =>
       configureFakeGovernance(tx, placement.tenantId, new Date()),
     );
@@ -215,6 +218,7 @@ export async function runObservabilityDemo(
       const { rows } = await tx.query<Record<string, unknown>>(SUMMARY_SQL, [
         placement.tenantId,
         SOURCE,
+        demoStartedAt,
       ]);
       return rows[0];
     });

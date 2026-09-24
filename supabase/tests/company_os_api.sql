@@ -938,10 +938,13 @@ begin
        (select count(*) from ops.decision_evaluations where tenant_id = tb and status in ('pending', 'running'))
      or (v_h -> 'spend' -> 'chargedToday' ->> 'micros')::int8 is distinct from
        (select coalesce(sum(charged_cost_micros), 0) from ops.agent_runs
-         where tenant_id = tb and created_at >= ops.cos_today_start(tb))
+         where tenant_id = tb and started_at >= ops.cos_today_start(tb))
+     or (v_h -> 'spend' -> 'chargedToday' ->> 'micros')::int8 is distinct from
+       (select coalesce(sum(x.charged_micros), 0) from ops.spend_status() x
+         where x.scope = 'tenant' and x.tenant_id = tb)
      or (v_h -> 'spend' -> 'reservedInFlight' ->> 'micros')::int8 is distinct from
        (select coalesce(sum(charged_cost_micros), 0) from ops.agent_runs
-         where tenant_id = tb and status = 'running' and created_at >= clock_timestamp() - interval '7 days') then
+         where tenant_id = tb and status = 'running') then
     raise exception 'T1b: the decision or spend facts are not tenant B''s own: % %', v_h -> 'decisions', v_h -> 'spend';
   end if;
   -- Percentiles only from their minimum samples, never from one or two.

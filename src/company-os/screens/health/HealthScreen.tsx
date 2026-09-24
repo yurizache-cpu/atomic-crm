@@ -199,13 +199,13 @@ const QueueSection = ({ data, current }: { data: Data; current: boolean }) => {
         <Field term="Prontos para executar">
           <Count value={queue.ready} current={current} />
         </Field>
-        <Field term="Agendados (aguardando horário ou nova tentativa)">
+        <Field term="Agendados para depois">
           <Count value={queue.scheduled} current={current} />
         </Field>
         <Field term="Em execução agora">
           <Count value={queue.running} current={current} />
         </Field>
-        <Field term="Execuções que precisam de atenção (prazo vencido)">
+        <Field term="Precisam de atenção (prazo vencido)">
           <Count value={queue.expiredLeases} current={current} />
         </Field>
         <Field term="Espera do mais antigo pronto">
@@ -318,7 +318,7 @@ const AgentsSection = ({ data, current }: { data: Data; current: boolean }) => {
         )}
       </Fields>
       <Fields label="Tempo de resposta do modelo">
-        <Field term="Amostras (execuções concluídas, 24 h)">
+        <Field term="Amostras (24 h)">
           <Count value={runs.latency.sampleSize} current={current} />
         </Field>
         <Field term="Mediana (p50)">
@@ -328,7 +328,7 @@ const AgentsSection = ({ data, current }: { data: Data; current: boolean }) => {
             current={current}
           />
         </Field>
-        <Field term="Percentil 95 (p95: 95 em cada 100 respondem em até)">
+        <Field term="Percentil 95 (p95)">
           <LatencyValue
             value={runs.latency.p95Ms}
             minimum={runs.latency.minSamplesP95}
@@ -416,7 +416,7 @@ const DecisionsSection = ({
         <Field term="Abstenções">
           <Count value={decisions.inWindow.abstained} current={current} />
         </Field>
-        <Field term="Respostas inválidas (guardadas, nunca usadas)">
+        <Field term="Respostas inválidas">
           <Count value={decisions.inWindow.invalid} current={current} />
         </Field>
         <Field term="Falharam">

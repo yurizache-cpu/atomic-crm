@@ -157,7 +157,7 @@ export const METRICS = Object.freeze({
   },
   company_os_agent_runs_total: {
     type: "counter",
-    help: "Agent run settlements this worker recorded after a provider call, plus runs the reaper settled.",
+    help: "Agent run settlements this worker recorded after a provider call (runs the reaper settles are counted by the database, not here).",
     labels: { outcome: AGENT_RUN_OUTCOME },
   },
   company_os_agent_run_duration_seconds: {
