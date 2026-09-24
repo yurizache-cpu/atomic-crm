@@ -284,7 +284,7 @@ async function recordShadowDecision(
        (tenant_id, company_id, department_id, agent_id, review_item_id, subject, trigger_source,
         policy_version, idempotency_key, status)
      select r.tenant_id, r.company_id, a.department_id, a.id, r.id, 'lead_triage.review', 'review.opened',
-            'decision_shadow.v1', 'review:' || r.id || ':decision_shadow.v1', 'pending'
+            'decision_shadow.v2', 'review:' || r.id || ':decision_shadow.v2', 'pending'
        from ops.review_items r
        join ops.tasks t on t.tenant_id = r.tenant_id and t.id = r.task_id
        join ops.agents a on a.tenant_id = t.tenant_id and a.id = t.assigned_agent_id
@@ -296,25 +296,26 @@ async function recordShadowDecision(
   await tx.query(
     `update ops.decision_evaluations
         set status = 'running', started_at = now(), provider_kind = 'fake', provider_id = 'fake-rules',
-            provider_version = '1', input_fingerprint = $2
+            provider_version = '2', input_fingerprint = $2
       where id = $1`,
     [id, fingerprint],
   );
   const vector = {
-    version: "decision_vector.v1",
+    version: "decision_vector.v2",
     mode: "shadow",
     recommendation: "accept",
     confidence: 0.82,
     caution: "low",
     reasonCodes: ["triage_complete", "intent_information"],
-    provider: { kind: "fake", id: "fake-rules", version: "1" },
+    provider: { kind: "fake", id: "fake-rules", version: "2" },
     inputFingerprint: fingerprint,
     evaluatedAt: "2026-09-22T11:00:00.000Z",
   };
   await tx.query(
     `update ops.decision_evaluations
         set status = 'completed', vector = $2::jsonb,
-            policy_outcome = ops.decision_shadow_policy($2::jsonb), settled_at = now()
+            policy_outcome = ops.decision_policy_outcome('decision_shadow.v2', $2::jsonb),
+            settled_at = now()
       where id = $1`,
     [id, JSON.stringify(vector)],
   );

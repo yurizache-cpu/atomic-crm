@@ -15,10 +15,12 @@ import {
   type DecisionVector,
 } from "./decisionVector.ts";
 
+// Version 2 answers decision_vector.v2, whose codes come from the closed
+// vocabulary; version 1 (Phase 2D.1) answered v1 vectors.
 export const FAKE_DECISION_PROVIDER: DecisionProviderIdentity = Object.freeze({
   kind: "fake",
   id: "fake-rules",
-  version: "1",
+  version: "2",
 });
 
 type Verdict = Pick<

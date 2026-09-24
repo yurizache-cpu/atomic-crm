@@ -62,6 +62,7 @@ const running = (overrides: Record<string, unknown> = {}) => ({
   evaluationId: EVALUATION,
   inputFingerprint: FINGERPRINT,
   input: INPUT,
+  vectorVersion: "decision_vector.v2",
   ...overrides,
 });
 
@@ -264,6 +265,31 @@ describe("the decision.shadow_evaluate handler", () => {
       { outcome: "failed", vector: null, errorCode: "input_rejected" },
     ]);
   });
+
+  it.each([
+    ["the retired v1", "decision_vector.v1"],
+    ["an unknown", "decision_vector.v3"],
+    ["no", undefined],
+  ])(
+    "asks nothing when the policy wants %s vector version",
+    async (_label, vectorVersion) => {
+      const evaluate = vi.fn();
+      const { caps } = await runOnce(
+        { identity: FAKE_DECISION_PROVIDER, evaluate },
+        running({ vectorVersion }),
+        "failed",
+      );
+
+      expect(evaluate).not.toHaveBeenCalled();
+      expect(caps.settled).toEqual([
+        {
+          outcome: "failed",
+          vector: null,
+          errorCode: "vector_version_unsupported",
+        },
+      ]);
+    },
+  );
 
   it("refuses a settlement the database says is not this attempt's", async () => {
     await expect(
