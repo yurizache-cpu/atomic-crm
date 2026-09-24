@@ -20,6 +20,7 @@ export * from "./decisions.ts";
 export * from "./errors.ts";
 export * from "./events.ts";
 export * from "./governance.ts";
+export * from "./health.ts";
 export * from "./operations.ts";
 export * from "./primitives.ts";
 export * from "./reviews.ts";

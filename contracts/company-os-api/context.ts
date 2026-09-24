@@ -3,10 +3,13 @@
 // OperatorContext names the principal by id only: no display name, email or
 // membership row. OverviewSummary is counts only; its one platform-derived
 // field is `platform.globalAdmissionBlocked` (OD-7); its shadow calibration
-// section is aggregate agreement counts only (Phase 2D.3).
+// section is aggregate agreement counts only (Phase 2D.3); its operational
+// health section is exact, tenant-scoped counts, times and micros from
+// authoritative rows, never telemetry (Phase 2E.2).
 
 import { z } from "zod";
 import { DecisionIntelligenceSchema } from "./decisions.ts";
+import { OperationalHealthSchema } from "./health.ts";
 import {
   CountSchema,
   ENVELOPE_SHAPE,
@@ -76,6 +79,8 @@ export const OverviewSummarySchema = z.strictObject({
   platform: PlatformStateSchema,
   // Phase 2D.3: shadow calibration, agreement counts only (decisions.ts).
   decisionIntelligence: DecisionIntelligenceSchema,
+  // Phase 2E.2: operational health (health.ts).
+  operationalHealth: OperationalHealthSchema,
 });
 
 export type OperatorContext = z.infer<typeof OperatorContextSchema>;

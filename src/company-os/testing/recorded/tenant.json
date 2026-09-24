@@ -10223,6 +10223,70 @@
         },
         "platform": { "globalAdmissionBlocked": false },
         "admission": { "tenantAdmission": "conditional" },
+        "operationalHealth": {
+          "queue": {
+            "ready": 5,
+            "running": 1,
+            "scheduled": 1,
+            "expiredLeases": 1,
+            "oldestReadyAt": "2026-09-22T10:00:00.000000Z",
+            "failedInWindow": 0,
+            "succeededInWindow": 4
+          },
+          "spend": {
+            "chargedToday": { "usd": "0.122684", "micros": "122684" },
+            "chargedInWindow": { "usd": "0.122684", "micros": "122684" },
+            "chargedLast7Days": { "usd": "0.122684", "micros": "122684" },
+            "reservedInFlight": { "usd": "0.061191", "micros": "61191" }
+          },
+          "outbound": {
+            "inWindowByStatus": {
+              "failed": 1,
+              "blocked": 1,
+              "indeterminate": 1
+            }
+          },
+          "agentRuns": {
+            "latency": {
+              "p50Ms": null,
+              "p95Ms": null,
+              "sampleSize": 1,
+              "minSamplesP50": 5,
+              "minSamplesP95": 20
+            },
+            "inWindowByStatus": {
+              "failed": 1,
+              "pending": 6,
+              "running": 2,
+              "cancelled": 2,
+              "succeeded": 1,
+              "indeterminate": 2
+            }
+          },
+          "decisions": {
+            "inWindow": {
+              "failed": 0,
+              "invalid": 0,
+              "refused": 0,
+              "abstained": 0,
+              "completed": 1,
+              "indeterminate": 0
+            },
+            "pendingNow": 0
+          },
+          "queueByKind": [
+            {
+              "kind": "agent_run.execute",
+              "ready": 5,
+              "running": 1,
+              "scheduled": 1,
+              "expiredLeases": 1,
+              "failedInWindow": 0,
+              "succeededInWindow": 4
+            }
+          ],
+          "windowHours": 24
+        },
         "decisionIntelligence": {
           "mode": "shadow",
           "groups": [

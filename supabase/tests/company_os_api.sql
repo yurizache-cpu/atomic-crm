@@ -903,6 +903,61 @@ begin
 end
 $$;
 
+-- T1b. Phase 2E.2: the overview's operationalHealth is EXACT. Tenant B, busy
+--      in every state, reads the counts its own rows give, recomputed here
+--      from the tables; it carries no identifier; and a latency percentile
+--      appears only from its minimum sample size.
+do $$
+declare
+  tb      uuid := pg_temp.id('tenant_b');
+  v_h     jsonb;
+  v_since timestamptz;
+  v_bad   text;
+begin
+  v_h := ops.read_overview(tb) -> 'operationalHealth';
+  v_since := clock_timestamp() - interval '24 hours';
+  if (v_h -> 'queue' ->> 'ready')::int8 is distinct from
+       (select count(*) from ops.jobs where tenant_id = tb and status = 'queued' and available_at <= now())
+     or (v_h -> 'queue' ->> 'scheduled')::int8 is distinct from
+       (select count(*) from ops.jobs where tenant_id = tb and status = 'queued' and available_at > now())
+     or (v_h -> 'queue' ->> 'running')::int8 is distinct from
+       (select count(*) from ops.jobs where tenant_id = tb and status = 'leased' and lease_expires_at > now())
+     or (v_h -> 'queue' ->> 'expiredLeases')::int8 is distinct from
+       (select count(*) from ops.jobs where tenant_id = tb and status = 'leased' and lease_expires_at <= now()) then
+    raise exception 'T1b: the queue counts are not tenant B''s own: %', v_h -> 'queue';
+  end if;
+  if (select count(*) from ops.jobs where tenant_id = tb and status in ('queued', 'leased')) = 0 then
+    raise exception 'T1b: tenant B has no live job, so the queue check proves nothing';
+  end if;
+  if v_h -> 'agentRuns' -> 'inWindowByStatus' is distinct from
+       (select coalesce(jsonb_object_agg(x.status, x.n), '{}') from
+          (select status, count(*) as n from ops.agent_runs where tenant_id = tb and created_at >= v_since group by status) x) then
+    raise exception 'T1b: the run counts are not tenant B''s own: %', v_h -> 'agentRuns';
+  end if;
+  if (v_h -> 'decisions' ->> 'pendingNow')::int8 is distinct from
+       (select count(*) from ops.decision_evaluations where tenant_id = tb and status in ('pending', 'running'))
+     or (v_h -> 'spend' -> 'chargedToday' ->> 'micros')::int8 is distinct from
+       (select coalesce(sum(charged_cost_micros), 0) from ops.agent_runs
+         where tenant_id = tb and created_at >= ops.cos_today_start(tb))
+     or (v_h -> 'spend' -> 'reservedInFlight' ->> 'micros')::int8 is distinct from
+       (select coalesce(sum(charged_cost_micros), 0) from ops.agent_runs
+         where tenant_id = tb and status = 'running' and created_at >= clock_timestamp() - interval '7 days') then
+    raise exception 'T1b: the decision or spend facts are not tenant B''s own: % %', v_h -> 'decisions', v_h -> 'spend';
+  end if;
+  -- Percentiles only from their minimum samples, never from one or two.
+  if ((v_h -> 'agentRuns' -> 'latency' ->> 'sampleSize')::int < 5) <> (v_h -> 'agentRuns' -> 'latency' -> 'p50Ms' = 'null')
+     or ((v_h -> 'agentRuns' -> 'latency' ->> 'sampleSize')::int < 20) <> (v_h -> 'agentRuns' -> 'latency' -> 'p95Ms' = 'null') then
+    raise exception 'T1b: a latency percentile disagrees with its sample size: %', v_h -> 'agentRuns' -> 'latency';
+  end if;
+  -- No identifier of any kind: every row id is a uuid, and none is here.
+  select string_agg(m[1], ', ') into v_bad
+    from regexp_matches(v_h::text, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 'g') m;
+  if v_bad is not null then
+    raise exception 'T1b: operationalHealth carries an identifier: %', v_bad;
+  end if;
+end
+$$;
+
 -- T2. The platform differential: a platform stop, and the global ceiling
 --     exhausted by tenant B's spend (tripping system:spend_ceiling), change
 --     tenant A's outputs only at the pinned platform-derived paths (brief §9).
@@ -1433,7 +1488,7 @@ $$;
 --     pinned key set (dynamic maps and event facts folded; N5 pins the facts).
 create function pg_temp.norm_path(p text) returns text
 language sql immutable as $$
-  select regexp_replace(regexp_replace(p, '\.(todayByStatus|byStatus|blockedByReason|refusedTodayByReason)\.[^.\[]+',
+  select regexp_replace(regexp_replace(p, '\.(todayByStatus|byStatus|inWindowByStatus|blockedByReason|refusedTodayByReason)\.[^.\[]+',
                                        '.\1.*', 'g'),
                         '\.facts\.[^.\[]+', '.facts.*', 'g');
 $$;
@@ -1571,7 +1626,34 @@ begin
       '.agents.queued', '.agents.stale', '.agents.stopped', '.agents.total', '.agents.working', '.asOf',
       -- Phase 2D.3: the group key paths are pinned exactly by decision_shadow.sql D15.
       '.decisionIntelligence', '.decisionIntelligence.currentPolicyVersion', '.decisionIntelligence.groups',
-      '.decisionIntelligence.mode', '.outbound', '.outbound.acceptedWithoutSend', '.outbound.indeterminateOpen', '.outbound.todayByStatus',
+      '.decisionIntelligence.mode',
+      -- Phase 2E.2: exact operational health, counts, times and micros only.
+      '.operationalHealth', '.operationalHealth.agentRuns', '.operationalHealth.agentRuns.inWindowByStatus',
+      '.operationalHealth.agentRuns.inWindowByStatus.*', '.operationalHealth.agentRuns.latency',
+      '.operationalHealth.agentRuns.latency.minSamplesP50', '.operationalHealth.agentRuns.latency.minSamplesP95',
+      '.operationalHealth.agentRuns.latency.p50Ms', '.operationalHealth.agentRuns.latency.p95Ms',
+      '.operationalHealth.agentRuns.latency.sampleSize', '.operationalHealth.decisions',
+      '.operationalHealth.decisions.inWindow', '.operationalHealth.decisions.inWindow.abstained',
+      '.operationalHealth.decisions.inWindow.completed', '.operationalHealth.decisions.inWindow.failed',
+      '.operationalHealth.decisions.inWindow.indeterminate', '.operationalHealth.decisions.inWindow.invalid',
+      '.operationalHealth.decisions.inWindow.refused', '.operationalHealth.decisions.pendingNow',
+      '.operationalHealth.outbound', '.operationalHealth.outbound.inWindowByStatus',
+      '.operationalHealth.outbound.inWindowByStatus.*', '.operationalHealth.queue',
+      '.operationalHealth.queue.expiredLeases', '.operationalHealth.queue.failedInWindow',
+      '.operationalHealth.queue.oldestReadyAt', '.operationalHealth.queue.ready', '.operationalHealth.queue.running',
+      '.operationalHealth.queue.scheduled', '.operationalHealth.queue.succeededInWindow',
+      '.operationalHealth.queueByKind', '.operationalHealth.queueByKind[].expiredLeases',
+      '.operationalHealth.queueByKind[].failedInWindow', '.operationalHealth.queueByKind[].kind',
+      '.operationalHealth.queueByKind[].ready', '.operationalHealth.queueByKind[].running',
+      '.operationalHealth.queueByKind[].scheduled', '.operationalHealth.queueByKind[].succeededInWindow',
+      '.operationalHealth.spend', '.operationalHealth.spend.chargedInWindow',
+      '.operationalHealth.spend.chargedInWindow.micros', '.operationalHealth.spend.chargedInWindow.usd',
+      '.operationalHealth.spend.chargedLast7Days', '.operationalHealth.spend.chargedLast7Days.micros',
+      '.operationalHealth.spend.chargedLast7Days.usd', '.operationalHealth.spend.chargedToday',
+      '.operationalHealth.spend.chargedToday.micros', '.operationalHealth.spend.chargedToday.usd',
+      '.operationalHealth.spend.reservedInFlight', '.operationalHealth.spend.reservedInFlight.micros',
+      '.operationalHealth.spend.reservedInFlight.usd', '.operationalHealth.windowHours',
+      '.outbound', '.outbound.acceptedWithoutSend', '.outbound.indeterminateOpen', '.outbound.todayByStatus',
       '.outbound.todayByStatus.*', '.platform', '.platform.globalAdmissionBlocked', '.reviews',
       '.reviews.oldestPendingAt', '.reviews.pending', '.runs', '.runs.needingAttention', '.runs.todayByStatus',
       '.runs.todayByStatus.*', '.runs.workingNow', '.stops', '.stops.tenantScopedActive', '.v']),
@@ -1612,6 +1694,8 @@ begin
          lateral (select k, 'run' as voc from jsonb_object_keys(o.result -> 'body' -> 'runs' -> 'todayByStatus') k
                   union all select k, 'outbound' from jsonb_object_keys(o.result -> 'body' -> 'outbound' -> 'todayByStatus') k
                   union all select k, 'outbound' from jsonb_object_keys(o.result -> 'body' -> 'outbound' -> 'byStatus') k
+                  union all select k, 'run' from jsonb_object_keys(o.result -> 'body' -> 'operationalHealth' -> 'agentRuns' -> 'inWindowByStatus') k
+                  union all select k, 'outbound' from jsonb_object_keys(o.result -> 'body' -> 'operationalHealth' -> 'outbound' -> 'inWindowByStatus') k
                   union all select k, 'reason' from jsonb_object_keys(o.result -> 'body' -> 'outbound' -> 'blockedByReason') k
                   union all select k, 'reason' from jsonb_object_keys(o.result -> 'body' -> 'inbound' -> 'refusedTodayByReason') k) e
    where o.snapshot = 'busy' and o.fn in ('overview', 'communication_status')
@@ -3010,7 +3094,9 @@ insert into cos_internal values
   -- Phase 2D.1: get_review's shadow decision, read only.
   ('ops.cos_review_shadow_decision(uuid, ops.review_items)', 's'),
   -- Phase 2D.3: the overview's shadow calibration counts, read only.
-  ('ops.cos_decision_intelligence(uuid)', 's');
+  ('ops.cos_decision_intelligence(uuid)', 's'),
+  -- Phase 2E.2: the overview's operational health, read only.
+  ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');

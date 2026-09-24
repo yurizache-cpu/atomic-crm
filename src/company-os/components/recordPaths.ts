@@ -32,4 +32,6 @@ export const LIST_PATHS = {
   stops: `${COMPANY_OS_ROOT}/stops`,
   costs: `${COMPANY_OS_ROOT}/costs`,
   activity: `${COMPANY_OS_ROOT}/activity`,
+  health: `${COMPANY_OS_ROOT}/health`,
+  communications: `${COMPANY_OS_ROOT}/communications`,
 } as const;
