@@ -8,6 +8,8 @@ import {
 } from "./handlerRegistry.ts";
 import type { WorkerLogEvent, WorkerLogFields } from "./log.ts";
 import { runWorker } from "./runWorker.ts";
+import { createRecordingTelemetry } from "../telemetry/testSupport/recordingTelemetry.ts";
+import { createWorkerTelemetry } from "../telemetry/workerTelemetry.ts";
 
 interface ScriptedOptions {
   /** Outcome of each successive lease attempt: a kind, or null for empty. */
@@ -23,6 +25,8 @@ interface ScriptedOptions {
   stopId?: string | null;
   /** What ops.enforce_spend_ceiling() answers. Default: no stop tripped. */
   ceilingStop?: unknown;
+  /** What ops.worker_queue_depth() answers, as pg returns a bigint. */
+  queueDepth?: number;
 }
 
 const TENANT = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -122,6 +126,11 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
             statement.includes("ops.defer_job")
           ) {
             return { rows: [{ stop_id: options.stopId ?? null }] } as never;
+          }
+          if (statement.includes("ops.worker_queue_depth")) {
+            return {
+              rows: [{ depth: String(options.queueDepth ?? 0) }],
+            } as never;
           }
           if (statement.includes("ops.enforce_spend_ceiling")) {
             return {
@@ -794,5 +803,93 @@ describe("the boot heartbeat carries the detail the worker was started with", ()
     expect(beats[0]).toEqual(["w1", "booted"]);
     expect(beats.length).toBeGreaterThan(1);
     for (const params of beats.slice(1)) expect(params).toEqual(["w1", null]);
+  });
+});
+
+describe("telemetry observes the loop and never steers it (Phase 2E.1)", () => {
+  const tick = () => {
+    let clock = 0;
+    return () => (clock += 100);
+  };
+
+  it("reads no queue depth, and issues no extra statement, without telemetry", async () => {
+    const { db, sql } = scriptedDb({ queue: [null, null] });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: tick(),
+    });
+    expect(sql.some((s) => s.includes("ops.worker_queue_depth"))).toBe(false);
+  });
+
+  it("reads the queue depth in its own transaction on the reaper tick, and publishes it with the stale settlements", async () => {
+    const recording = createRecordingTelemetry();
+    const { db, sql, transactionOf } = scriptedDb({
+      queue: ["noop", null],
+      staleSettled: 2,
+      queueDepth: 5,
+    });
+    const stats = await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: tick(),
+      telemetry: createWorkerTelemetry(recording, { readsQueueDepth: true }),
+    });
+    const depthAt = sql.findIndex((s) => s.includes("ops.worker_queue_depth"));
+    const ceilingAt = sql.findIndex((s) =>
+      s.includes("ops.enforce_spend_ceiling"),
+    );
+    expect(depthAt).toBeGreaterThan(ceilingAt);
+    expect(transactionOf[depthAt]).toBe(transactionOf[ceilingAt] + 1);
+    expect(sql[depthAt - 1]).toBe("set local role ops_worker");
+    expect(
+      recording.metrics
+        .filter((m) => m.metric === "company_os_worker_queue_depth")
+        .map((m) => m.value),
+    ).toEqual([5, 5]);
+    expect(
+      recording.counted("company_os_agent_runs_total", {
+        outcome: "indeterminate",
+      }),
+    ).toBe(4);
+    expect(
+      recording.counted("company_os_jobs_total", {
+        job_kind: "other",
+        outcome: "succeeded",
+      }),
+    ).toBe(1);
+    expect(stats.succeeded).toBe(1);
+  });
+
+  it("keeps leasing and running work when the queue depth cannot be read", async () => {
+    const events: WorkerLogEvent[] = [];
+    const { db } = scriptedDb({
+      queue: ["noop", "noop"],
+      failStatement: "ops.worker_queue_depth",
+    });
+    const stats = await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: tick(),
+      log: (event) => events.push(event),
+      telemetry: createWorkerTelemetry(createRecordingTelemetry(), {
+        readsQueueDepth: true,
+      }),
+    });
+    expect(stats.succeeded).toBe(2);
+    expect(stats.pollFailures).toBe(0);
+    expect(events.filter((e) => e === "worker.poll_failed")).toHaveLength(2);
   });
 });

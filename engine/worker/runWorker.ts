@@ -26,6 +26,10 @@ import { describeError } from "./failures.ts";
 import type { HandlerRegistry } from "./handlerRegistry.ts";
 import { silentLogger, type WorkerLogger } from "./log.ts";
 import { runOneJob, type RunOneJobResult } from "./runOneJob.ts";
+import {
+  NOOP_WORKER_TELEMETRY,
+  type WorkerTelemetry,
+} from "../telemetry/workerTelemetry.ts";
 
 export interface RunWorkerOptions {
   workerId: string;
@@ -53,6 +57,11 @@ export interface RunWorkerOptions {
    * never holds a key or a connection string.
    */
   startDetail?: string;
+  /**
+   * Phase 2E.1: what the worker reports to telemetry. Observation only; the
+   * no-op default records nothing and reads nothing extra.
+   */
+  telemetry?: WorkerTelemetry;
 }
 
 export interface WorkerStats {
@@ -109,6 +118,7 @@ export async function runWorker(
     now = () => Date.now(),
     sleep = defaultSleep,
     startDetail = "started",
+    telemetry = NOOP_WORKER_TELEMETRY,
   } = options;
 
   if (!workerId.trim()) {
@@ -169,6 +179,7 @@ export async function runWorker(
       if (settled > 0) {
         stats.staleRunsSettled += settled;
         log("agent_run.stale_settled", { workerId, count: settled });
+        telemetry.staleRunsSettled(settled);
       }
     } catch (error) {
       log("worker.poll_failed", {
@@ -210,6 +221,29 @@ export async function runWorker(
     }
   };
 
+  // Phase 2E.1: the deployment's ready queue, for the metrics gauge only, and
+  // only when something records metrics. Its own transaction and a contained
+  // failure, like the two steps above: a count nobody needs to act on must
+  // never back the worker off or reach lease recovery.
+  const readQueueDepth = async () => {
+    if (!telemetry.readsQueueDepth) return;
+    try {
+      const depth = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ depth: number | string }>(
+          "select ops.worker_queue_depth() as depth",
+        );
+        return Number(rows[0]?.depth);
+      });
+      telemetry.queueDepth(depth);
+    } catch (error) {
+      log("worker.poll_failed", {
+        workerId,
+        detail: `queue depth read failed: ${describeError(error)}`,
+      });
+    }
+  };
+
   await heartbeat(startDetail);
   log("worker.started", { workerId });
 
@@ -229,6 +263,7 @@ export async function runWorker(
           await reap();
           await settleStaleAgentRuns();
           await enforceSpendCeiling();
+          await readQueueDepth();
           lastReap = now();
         }
         if (now() - lastHeartbeat >= heartbeatIntervalMs) {
@@ -251,6 +286,7 @@ export async function runWorker(
           // Reaches an external call, so shutdown does not wait out a slow
           // service. A transactional job in flight still finishes.
           signal,
+          telemetry,
         });
         consecutivePollFailures = 0;
       } catch (error) {

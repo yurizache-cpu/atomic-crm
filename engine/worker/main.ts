@@ -32,6 +32,7 @@ import { createHandlerRegistry } from "./registry.ts";
 import { decisionShadowFromEnv } from "../decision/providerFromEnv.ts";
 import { DEFAULT_LEASE_SAFETY_MARGIN_MS } from "./runOneJob.ts";
 import { runWorker } from "./runWorker.ts";
+import { startWorkerObservability } from "../telemetry/fromEnv.ts";
 
 /**
  * Lease time spent before a call can start: the lease commit, then the prepare
@@ -132,6 +133,8 @@ export async function main(): Promise<void> {
   const startDetail = workerStartDetail(modelRouter);
 
   const log = createLogger();
+  // Phase 2E.1: off unless configured, and never a reason to refuse to start.
+  const observability = await startWorkerObservability(process.env, log);
   const db = createWorkerDatabase({
     connectionString,
     max: readInt("OPS_WORKER_POOL_SIZE", 4),
@@ -170,9 +173,11 @@ export async function main(): Promise<void> {
       leaseSeconds,
       log,
       startDetail,
+      telemetry: observability.telemetry,
     });
   } finally {
     await db.close();
+    await observability.close();
   }
 }
 
