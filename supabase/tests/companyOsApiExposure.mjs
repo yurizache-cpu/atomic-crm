@@ -37,14 +37,20 @@
 //   * `ops` answers 406 PGRST106 by profile for every credential, a signed-in
 //     member included, across the whole live ops catalogue for the member;
 //   * a tenant, company, actor or reviewer argument, or any other extra key,
-//     matches no function (404 PGRST202), and the trip does not exist
-//     (trip_stop: 404 PGRST202) before S8;
+//     matches no function (404 PGRST202), and no clear exists (404
+//     PGRST202);
 //   * the one act, decide_review (S7.1): every other signed-in caller is
 //     refused OS403 first; a tenant, actor, reviewer or note argument matches
 //     no function; another tenant's review answers like a random uuid; a
 //     review outside the synthetic and test scope is refused; the member's
 //     decision is recorded once, no-store, as the principal, and nothing is
 //     sent;
+//   * the second act, trip_stop (S7.2): the same identity refusals; a
+//     tenant, actor, reason or job kind argument matches no function; a
+//     global or job_kind stop is refused; another tenant's company answers
+//     like a random uuid; a department stop is recorded once, no-store, as
+//     the principal with origin owner, and a repeat or an existing stop
+//     answers already_stopped;
 //   * GraphQL introspection with a member's JWT reflects nothing of
 //     company_os_api or ops, and the anonymous OpenAPI document lists no
 //     company_os_api function;
@@ -173,7 +179,10 @@ import {
   othersAreRefused,
   signOutTakesEffect,
 } from "./companyOsProbe/sessionChecks.mjs";
-import { memberDecidesOnce } from "./companyOsProbe/actChecks.mjs";
+import {
+  memberDecidesOnce,
+  memberTripsOnce,
+} from "./companyOsProbe/actChecks.mjs";
 
 const CLIENT_OPTIONS = Object.freeze({
   auth: {
@@ -198,7 +207,7 @@ async function main() {
     process.exit(1);
   }
   process.stdout.write(
-    `  ${EXPOSED.length} company_os_api functions (${CATALOGUE.length} reads, 1 act), 5 keys and 7 real sessions: ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
+    `  ${EXPOSED.length} company_os_api functions (${CATALOGUE.length} reads, ${EXPOSED.length - CATALOGUE.length} acts), 5 keys and 7 real sessions: ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
   );
 }
 
@@ -288,6 +297,7 @@ async function probe(origin, keys) {
           p_review_id: t.ids.review_open,
           p_decision: "rejected",
         },
+        trip_stop: { p_scope: "department", p_target_id: t.ids.department_a },
       })[fn] ?? {};
     /** A member read that must succeed, kept for the final sweep. */
     t.read = async (fn, args, credential = t.member.credential) => {
@@ -312,6 +322,7 @@ async function probe(origin, keys) {
     await emailChangeKeepsThePrincipal(t, admin, signIn, emailOf);
     await othersAreRefused(t, rpc);
     await memberDecidesOnce(t, rpc);
+    await memberTripsOnce(t, rpc);
     await signOutTakesEffect(t, origin, keys, rpc);
     sweepMemberOutputs(t);
   } finally {

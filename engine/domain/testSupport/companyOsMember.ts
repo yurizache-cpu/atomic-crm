@@ -30,7 +30,7 @@ import type { TxClient, WorkerDatabase } from "../../db/types.ts";
 /**
  * The Phase 2C read catalogue (brief §8 rows 1-15), taken from the contracts,
  * which companyOsContracts.dbtest.ts pins to pg_proc, so this helper can never
- * call a function the catalogue does not name. No act exists before S8.
+ * call a function the catalogue does not name. It never calls an act.
  */
 export const COMPANY_OS_READS = COMPANY_OS_OPERATION_NAMES;
 
@@ -77,7 +77,13 @@ class RolledBack<T> {
   constructor(readonly value: T) {}
 }
 
-async function signInAsMember(
+/**
+ * Signs `tx` in as a member of `tenantId`, exactly as PostgREST would call
+ * company_os_api: a synthetic auth user and session, the local-CRM flag lent
+ * to the tenant, a membership, then `authenticated` and the claims. The caller
+ * owns the transaction and must roll it back.
+ */
+export async function signInAsMember(
   tx: TxClient,
   tenantId: string,
   member: MemberIdentity,

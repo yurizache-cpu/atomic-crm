@@ -65,9 +65,13 @@ const COMPANY_OS_READ_CATALOGUE = [
   "spend_summary()",
 ];
 
-/** The one browser act (S7.1, brief §9 row 16), after the S7 user-management
- *  prerequisite. No trip_stop: it waits for S8 (SI-58). */
-const COMPANY_OS_ACT_CATALOGUE = ["decide_review(uuid,text)"];
+/** The two browser acts, after the S7 user-management prerequisite: the
+ *  review decision (S7.1, brief §9 row 16) and the trip (S7.2, row 17). No
+ *  clear exists (SI-58). */
+const COMPANY_OS_ACT_CATALOGUE = [
+  "decide_review(uuid,text)",
+  "trip_stop(text,uuid)",
+];
 
 const COMPANY_OS_CATALOGUE = [
   ...COMPANY_OS_READ_CATALOGUE,
@@ -131,12 +135,17 @@ const FROZEN = {
     allowlistedMigrations: [
       "20260922120000_company_os_read_surface.sql",
       "20260923120000_company_os_review_decision.sql",
+      "20260924120000_company_os_execution_stop.sql",
     ],
     transfers: {
       "20260922120000_company_os_read_surface.sql":
         COMPANY_OS_READ_CATALOGUE.map((f) => `company_os_api.${f}`),
-      "20260923120000_company_os_review_decision.sql":
-        COMPANY_OS_ACT_CATALOGUE.map((f) => `company_os_api.${f}`),
+      "20260923120000_company_os_review_decision.sql": [
+        "company_os_api.decide_review(uuid,text)",
+      ],
+      "20260924120000_company_os_execution_stop.sql": [
+        "company_os_api.trip_stop(text,uuid)",
+      ],
     },
   },
 };

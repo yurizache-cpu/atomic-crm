@@ -33,8 +33,8 @@ export async function memberResolves(t) {
   );
   check(
     sdk.data?.allowedActions?.decideReview === true &&
-      sdk.data?.allowedActions?.tripStop === false,
-    "member: operator_context does not report exactly the review decision as allowed",
+      sdk.data?.allowedActions?.tripStop === true,
+    "member: operator_context does not report the two acts as allowed",
   );
 
   const answers = {};
@@ -274,7 +274,7 @@ export async function contextArgumentsMatchNothing(t, rpc) {
       `member: ${fn} with ${Object.keys(body).join(", ")}`,
     );
   }
-  // The trip does not exist before S8, under any argument shape.
+  // No clear exists, under any argument shape.
   for (const [act, names] of Object.entries(ABSENT_ACTS)) {
     const nulls = Object.fromEntries(names.map((name) => [name, null]));
     for (const body of [{}, nulls]) {

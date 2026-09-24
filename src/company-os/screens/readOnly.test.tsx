@@ -25,10 +25,13 @@ import { WITHHELD_TEXT } from "./reviews/reviewLabels";
 // pending review with its advice open too. Everything a person could press,
 // follow or type into is collected from the live DOM on each.
 //
-// The one exception (S7.1): the decision surface of an open review, on a
+// The two exceptions: the decision surface of an open review (S7.1), on a
 // review's own page only, inside its "Registrar decisão" group, offering at
-// most the three decisions. Visiting never calls the act: a decision needs a
-// click and a confirmation (reviews/ReviewsScreen.test.tsx).
+// most the three decisions; and the trip surface (S7.2), on the stops page
+// only, inside its "Interromper execução" group, offering only "Interromper
+// execução" for one named target at a time. Neither ever offers a clear.
+// Visiting never calls an act: each needs a click and a confirmation
+// (reviews/ReviewsScreen.test.tsx, stops/TripStopPanel.test.tsx).
 
 /** The only buttons the module may render: session handling and reads. */
 const READ_CONTROLS = [
@@ -42,6 +45,10 @@ const READ_CONTROLS = [
 const DECISION_CONTROLS = ["Aceitar", "Precisa de ajuste", "Rejeitar"];
 const DECISION_GROUP = "[role='group'][aria-label='Registrar decisão']";
 const REVIEW_PAGE = /^#\/company-os\/reviews\/[0-9a-f-]{36}$/;
+/** The second act's controls (S7.2): one per named target, inside the trip group. */
+const TRIP_CONTROL = /^Interromper execução: \S.*$/;
+const TRIP_GROUP = "[role='group'][aria-label='Interromper execução']";
+const STOPS_PAGE = /^#\/company-os\/stops(\?include=cleared)?$/;
 
 /** Causation links move the focus to an entry on the page; they read nothing. */
 const FOCUS_LINK =
@@ -101,10 +108,17 @@ const controlsOnPage = () => {
   ];
   return {
     buttons: pressable
-      .filter((control) => control.closest(DECISION_GROUP) === null)
+      .filter(
+        (control) =>
+          control.closest(DECISION_GROUP) === null &&
+          control.closest(TRIP_GROUP) === null,
+      )
       .map(nameOf),
     decisions: pressable
       .filter((control) => control.closest(DECISION_GROUP) !== null)
+      .map(nameOf),
+    trips: pressable
+      .filter((control) => control.closest(TRIP_GROUP) !== null)
       .map(nameOf),
     links: [...body.querySelectorAll("a")].map((link) =>
       link.getAttribute("href"),
@@ -136,6 +150,22 @@ const expectReadOnly = (where: string) => {
         !REVIEW_PAGE.test(window.location.hash),
     ),
     `decision controls on ${where}`,
+  ).toEqual([]);
+  // The trip surface: on the stops page only, one "Interromper execução" per
+  // named target, and never a clear or a resume.
+  expect(
+    controls.trips.filter(
+      (name) =>
+        !TRIP_CONTROL.test(name) || !STOPS_PAGE.test(window.location.hash),
+    ),
+    `trip controls on ${where}`,
+  ).toEqual([]);
+  expect(
+    [...controls.buttons, ...controls.decisions, ...controls.trips].filter(
+      (name) =>
+        /encerrar|retomar|remover|desfazer|liberar|clear|resume/i.test(name),
+    ),
+    `a clear or resume control on ${where}`,
   ).toEqual([]);
   expect(
     document.querySelectorAll("[role='alertdialog']").length,
@@ -194,13 +224,13 @@ const reach = async (screen: RenderResult, hash: string, heading: string) => {
     .toBeVisible();
 };
 
-describe("the Company OS screens are read-only, except the one review decision", () => {
+describe("the Company OS screens are read-only, except the review decision and the trip", () => {
   afterEach(() => {
     history.replaceState(null, "", "#/");
   });
 
   it(
-    "no page, tab or opened advice renders a stop, clear, send, draft or configuration control, only an open review offers its decisions, and no link leaves the module except to the CRM",
+    "no page, tab or opened advice renders a clear, send, draft or configuration control, only an open review offers its decisions and only the stops page its trips, and no link leaves the module except to the CRM",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
@@ -287,7 +317,7 @@ describe("the Company OS screens are read-only, except the one review decision",
   });
 
   it(
-    "calls only the 15 catalogued read operations, each of them somewhere, and never the act while visiting",
+    "calls only the 15 catalogued read operations, each of them somewhere, and never an act while visiting",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
@@ -311,6 +341,7 @@ describe("the Company OS screens are read-only, except the one review decision",
       ),
       ...COPY.DECISION_ACTIONS.map((action) => action.label),
       ...Object.values(COPY.DECISION_CONFIRM_TITLE),
+      ...Object.values(COPY.TRIP_CONFIRM_TITLE),
       ...Object.values(WITHHELD_TEXT),
       DATA_BANNER_TEXT,
     ];

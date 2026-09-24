@@ -2541,7 +2541,10 @@ begin
     ('list_stops', 'company_os_api.list_stops(p_limit => 0)', 'OS400'),
     ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('b.review_ok'), 'rejected'), 'OS404'),
     ('decide_review', format('company_os_api.decide_review(%L, %L)', v_random, 'rejected'), 'OS404'),
-    ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('a.review_ok'), 'bogus'), 'OS400');
+    ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('a.review_ok'), 'bogus'), 'OS400'),
+    ('trip_stop', format('company_os_api.trip_stop(%L, %L)', 'company', pg_temp.id('b.company')), 'OS404'),
+    ('trip_stop', format('company_os_api.trip_stop(%L)', 'global'), 'OS403'),
+    ('trip_stop', format('company_os_api.trip_stop(%L)', 'bogus'), 'OS400');
 
   -- Every exposed function has variants, and for the member each variant
   -- answers as intended: the bad ones are really bad.
@@ -2938,7 +2941,9 @@ $$;
 -- catalogue prints it, and the one callee its gate may reach, with the
 -- arguments the gate passes.
 create temporary table cos_catalogue (op text primary key, args text not null, callee text not null, callee_args text not null,
-                                       act boolean not null default false)
+                                       act boolean not null default false,
+                                       gate_config text[] not null default '{"search_path=\"\""}',
+                                       extra_handler text not null default '')
   on commit drop;
 insert into cos_catalogue values
   ('operator_context', '', 'read_operator_context', 'v.tenant_id, v.principal_id, v.role'),
@@ -2964,6 +2969,12 @@ insert into cos_catalogue values
 insert into cos_catalogue (op, args, callee, callee_args, act) values
   ('decide_review', 'p_review_id uuid, p_decision text', 'decide_review_as_member',
    'v.tenant_id, v.actor, p_review_id, p_decision', true);
+-- The trip (S7.2): its gate carries owner decision S0-B's 2 s lock_timeout and
+-- answers a lock wait past it with the one generic, retryable refusal.
+insert into cos_catalogue (op, args, callee, callee_args, act, gate_config, extra_handler) values
+  ('trip_stop', 'p_scope text, p_target_id uuid DEFAULT NULL::uuid', 'trip_stop_in_tenant',
+   'v.tenant_id, v.actor, p_scope, p_target_id', true, '{"search_path=\"\"",lock_timeout=2s}',
+   'when sqlstate ''55P03'' then raise exception using errcode = ''OS429'', message = ''company_os_api.trip_stop: could not be completed yet; retry''; ');
 
 -- The internal catalogue the read-surface migration adds to ops besides the
 -- gates, with each function's volatility and configuration: search_path = ''
@@ -2991,7 +3002,8 @@ insert into cos_internal values
   ('ops.read_stops_in_tenant(uuid, boolean, text, integer)', 's'), ('ops.read_spend_summary(uuid)', 's'),
   ('ops.read_communication_status(uuid)', 's'),
   ('ops.decide_review_as_member(uuid, text, uuid, text)', 'v'),
-  ('ops.cos_review_decidable(uuid, ops.review_items)', 's');
+  ('ops.cos_review_decidable(uuid, ops.review_items)', 's'),
+  ('ops.trip_stop_in_tenant(uuid, text, text, uuid)', 'v');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3003,10 +3015,10 @@ language sql stable as $$
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace where f.oid = p;
 $$;
 
--- P1. The catalogue: exactly the 16 exposed functions (15 reads and the one
---     act, decide_review) with their full signatures, one gate each with the
---     same arguments, the internal set, no overload, no relation or type in
---     the exposed schema, and no trip.
+-- P1. The catalogue: exactly the 17 exposed functions (15 reads and the two
+--     acts, decide_review and trip_stop) with their full signatures, one gate
+--     each with the same arguments, the internal set, no overload, no
+--     relation or type in the exposed schema, and no clear.
 create function pg_temp.pin_catalogue() returns void
 language plpgsql as $f$
 declare
@@ -3048,20 +3060,20 @@ begin
            where n.nspname = 'ops' and (f.proname ~ '^(cos_|read_)'
               or f.proname in ('guard_principal_change', 'guard_membership_change', 'refuse_identity_truncate',
                                'membership_tenant_eligible', 'grant_membership', 'revoke_membership',
-                               'operator_scope', 'agent_operational_state', 'decide_review_as_member'))) f
+                               'operator_scope', 'agent_operational_state', 'decide_review_as_member',
+                               'trip_stop_in_tenant'))) f
     full join cos_internal i on i.signature = pg_temp.sig(f.oid)
    where f.oid is null or i.signature is null;
   if v_bad is not null then
     raise exception 'P1: the internal catalogue drifted: %', v_bad;
   end if;
-  -- The review decision is the one act (S7.1); no trip and no clear exists
-  -- before S8, anywhere.
+  -- The two acts are the review decision (S7.1) and the trip (S7.2); nothing
+  -- the browser reaches clears, resumes or untrips a stop, anywhere.
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad from pg_proc f
-   where f.proname in ('trip_stop', 'gate_trip_stop', 'trip_stop_in_tenant')
-      or (f.pronamespace = 'company_os_api'::regnamespace and f.proname ~ 'clear')
-      or (f.pronamespace = 'ops'::regnamespace and f.proname ~ '^gate_.*clear');
+   where (f.pronamespace = 'company_os_api'::regnamespace and f.proname ~ '(clear|resume|untrip)')
+      or (f.pronamespace = 'ops'::regnamespace and f.proname ~ '^gate_.*(clear|resume|untrip)');
   if v_bad is not null then
-    raise exception 'P1: a trip or clear function exists before S8: %', v_bad;
+    raise exception 'P1: a clear function is exposed to the browser: %', v_bad;
   end if;
 end
 $f$;
@@ -3141,7 +3153,7 @@ begin
            case when f.proowner <> 'postgres'::regrole then 'owner ' || f.proowner::regrole::text end,
            case when f.proacl is distinct from '{postgres=X/postgres,ops_operator_api=X/postgres}'::aclitem[]
                 then 'acl ' || coalesce(f.proacl::text, 'default (PUBLIC)') end,
-           case when f.proconfig is distinct from '{"search_path=\"\""}'::text[] then 'config ' || coalesce(f.proconfig::text, 'none') end,
+           case when f.proconfig is distinct from c.gate_config then 'config ' || coalesce(f.proconfig::text, 'none') end,
            case when f.provolatile <> pg_temp.volatility_of(c.op) then 'volatility ' || f.provolatile::text end,
            case when b.actual <> b.expected then 'body ' || b.actual end,
            case when b.callees is distinct from b.pinned then 'callees ' || b.callees::text end)), '; ') into v_bad
@@ -3158,15 +3170,16 @@ begin
                     'when sqlstate ''OS403'' then raise exception using errcode = ''OS403'', message = ''company_os_api.%s: no access''; '
                     'when sqlstate ''OS404'' then raise exception using errcode = ''OS404'', message = ''company_os_api.%s: not found''; '
                     'when sqlstate ''OS409'' then raise exception using errcode = ''OS409'', message = ''company_os_api.%s: conflict''; '
+                    '%s'
                     'when others then raise exception using errcode = ''OS500'', message = ''company_os_api.%s: internal error''; end',
-                    c.callee, c.callee_args, c.op, c.op, c.op, c.op, c.op, c.op) as expected,
+                    c.callee, c.callee_args, c.op, c.op, c.op, c.op, c.op, c.extra_handler, c.op) as expected,
              (select array_agg(distinct m[1] order by m[1])
                 from regexp_matches(f.prosrc, '([a-z_]+\."?[a-z_0-9]+"?)\s*\(', 'g') m) as callees,
              (select array_agg(x order by x) from unnest(array['ops.operator_scope', 'ops.' || c.callee, 'pg_catalog.set_config']) x)
                as pinned) b
    where not f.prosecdef or f.proowner <> 'postgres'::regrole
       or f.proacl is distinct from '{postgres=X/postgres,ops_operator_api=X/postgres}'::aclitem[]
-      or f.proconfig is distinct from '{"search_path=\"\""}'::text[] or f.provolatile <> pg_temp.volatility_of(c.op)
+      or f.proconfig is distinct from c.gate_config or f.provolatile <> pg_temp.volatility_of(c.op)
       or b.actual <> b.expected or b.callees is distinct from b.pinned;
   if v_bad is not null then
     raise exception 'P3: a gate is not exactly the resolver, its one pinned callee and no-store, with its pinned owner and ACL: %', v_bad;
@@ -3211,12 +3224,12 @@ $f$;
 --     resolver only, auth.sessions and auth.users). Each named service a
 --     browser must never reach is VOLATILE, so the volatility rule alone would
 --     catch it.
--- The READ graph: the one act's path (decide_review and its gate) writes by
--- design and is pinned on its own by P5b.
+-- The READ graph: the acts' paths (decide_review, trip_stop and their gates)
+-- write by design and are pinned on their own by P5b.
 create function pg_temp.graph_bodies() returns table (fid oid)
 language sql stable as $$
   select f.oid from pg_proc f join pg_namespace n on n.oid = f.pronamespace
-   where f.proname not in ('decide_review', 'gate_decide_review')
+   where f.proname not in ('decide_review', 'gate_decide_review', 'trip_stop', 'gate_trip_stop')
      and (n.nspname = 'company_os_api'
           or (n.nspname = 'ops' and (f.proname ~ '^(gate_|read_|cos_)'
               or f.proname in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state'))));
@@ -3638,7 +3651,14 @@ declare
   c_path constant regprocedure[] := array[
     'company_os_api.decide_review(uuid, text)'::regprocedure, 'ops.gate_decide_review(uuid, text)'::regprocedure,
     'ops.decide_review_as_member(uuid, text, uuid, text)'::regprocedure,
-    'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure];
+    'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure,
+    'company_os_api.trip_stop(text, uuid)'::regprocedure, 'ops.gate_trip_stop(text, uuid)'::regprocedure,
+    'ops.trip_stop_in_tenant(uuid, text, text, uuid)'::regprocedure,
+    'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)'::regprocedure];
+  -- The authoritative operations write; the acts' own layers never do.
+  c_writers constant regprocedure[] := array[
+    'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure,
+    'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)'::regprocedure];
   v_bad text;
 begin
   select string_agg(distinct m[1], ', ') into v_bad
@@ -3648,13 +3668,28 @@ begin
   if v_bad is not null then
     raise exception 'P5b: the act''s callee reaches beyond record_review_decision, cos_ts and cos_review_decidable: %', v_bad;
   end if;
+  select string_agg(distinct m[1], ', ') into v_bad
+    from pg_proc f, regexp_matches(pg_temp.code_only(f.prosrc), 'ops\."?([a-z_0-9]+)"?\s*\(', 'g') m
+   where f.oid = 'ops.trip_stop_in_tenant(uuid, text, text, uuid)'::regprocedure
+     and m[1] not in ('trip_execution_stop', 'cos_ts');
+  if v_bad is not null then
+    raise exception 'P5b: the trip''s callee reaches beyond trip_execution_stop and cos_ts: %', v_bad;
+  end if;
+  -- Nothing on the browser's side of the trip names a clear.
+  select string_agg(pg_temp.sig(f.oid), ', ') into v_bad
+    from pg_proc f
+   where f.oid in ('company_os_api.trip_stop(text, uuid)'::regprocedure, 'ops.gate_trip_stop(text, uuid)'::regprocedure,
+                   'ops.trip_stop_in_tenant(uuid, text, text, uuid)'::regprocedure)
+     and pg_temp.code_only(f.prosrc) ~ '(clear|resume|untrip)';
+  if v_bad is not null then
+    raise exception 'P5b: the trip''s path names a clear: %', v_bad;
+  end if;
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad
     from pg_proc f, lateral (select regexp_replace(pg_temp.code_only(f.prosrc), 'for\s+update', ' ', 'g') as code) b
    where f.oid = any (c_path)
      and (b.code ~ '(outbound|send|enqueue|_jobs?\M|\mjobs?\M|agent_runs?\M|whatsapp|crm_|public\.|email)'
           or b.code ~ '(^|[\s;])execute\s'
-          or (f.oid <> 'ops.record_review_decision(uuid, uuid, text, text, text, text)'::regprocedure
-              and b.code ~ '\m(insert|update|delete|truncate|merge|copy)\M'));
+          or (f.oid <> all (c_writers) and b.code ~ '\m(insert|update|delete|truncate|merge|copy)\M'));
   if v_bad is not null then
     raise exception 'P5b: the act''s path names a send, an outbound row, a job, a run, a WhatsApp or CRM service, public, an email or dynamic SQL, or writes outside the authoritative operation: %', v_bad;
   end if;
@@ -3846,6 +3881,17 @@ begin
          return ops.record_review_decision(p_tenant_id, p_review_id, p_decision, p_actor, 'company-os-ui', null);
        end $b$$m$,
     'pg_temp.pin_act_graph', 'P5b: the act''s callee reaches beyond');
+  perform pg_temp.expect_pin_failure('X24 the trip''s callee clearing a stop',
+    $m$create or replace function ops.trip_stop_in_tenant(p_tenant_id pg_catalog.uuid, p_actor pg_catalog.text,
+                                                    p_scope pg_catalog.text, p_target_id pg_catalog.uuid)
+       returns pg_catalog.jsonb language plpgsql volatile security invoker set search_path = '' as $b$
+       begin
+         perform ops.clear_execution_stop(p_target_id, 'x', p_actor);
+         return pg_catalog.jsonb_build_object('v', 1);
+       end $b$$m$,
+    'pg_temp.pin_act_graph', 'P5b: the trip''s callee reaches beyond');
+  perform pg_temp.expect_pin_failure('X25 the trip gate''s S0-B lock_timeout dropped',
+    'alter function ops.gate_trip_stop(text, uuid) reset lock_timeout', 'pg_temp.pin_gates', 'P3: a gate is not exactly');
 end
 $x$;
 
@@ -4156,6 +4202,202 @@ begin
   end loop;
 end
 $$;
+
+-- ===========================================================================
+-- W. THE SECOND ACT: trip_stop (S7.2; brief §9 row 17 and the trip
+--    coordinates table; owner decision S0-B; SI-58).
+--    A member trips an execution stop at tenant, company, department or agent
+--    scope of their own tenant: always through the authoritative
+--    ops.trip_execution_stop, with the principal as the actor, a fixed server
+--    reason and origin owner, and the coordinates the brief fixes. A repeat is
+--    already_stopped with the same stop and nothing new; a global or job_kind
+--    stop is OS403; a foreign or missing target answers like a random uuid;
+--    nothing is cleared, no event is written, and nothing else moves. The
+--    identity shapes are refused first (section I).
+-- ===========================================================================
+
+-- Fresh targets in tenant A, so no fixture's own stop answers for them.
+create temporary table cos_trip (name text primary key, id uuid) on commit drop;
+
+do $$
+declare
+  t  uuid := pg_temp.id('tenant_a');
+  co uuid;
+  d  uuid;
+begin
+  co := ops.create_company(t, 'trip-clinic', 'Trip Clinic', 'cos-api-suite');
+  d := ops.create_department(t, co, 'trip-desk', 'Trip Desk', 'cos-api-suite');
+  insert into cos_trip values
+    ('company', co),
+    ('department', d),
+    ('agent', ops.create_agent(t, co, d, 'trip-agent', 'Trip Agent', 'Synthetic role', 'cos-api-suite',
+                               'Synthetic agent a member stops'));
+  -- Tenant A's own tenant stop was cleared by its fixture: none is active.
+  if exists (select 1 from ops.execution_stops s
+              where s.tenant_id = t and s.scope = 'tenant' and s.cleared_at is null) then
+    raise exception 'W: tenant A already holds an active tenant stop, so W1 would prove less than it claims';
+  end if;
+end
+$$;
+
+-- What a trip must not touch, beyond ops.execution_stops.
+create function pg_temp.trip_untouched() returns jsonb
+language sql stable as $$
+  select pg_temp.act_untouched() || jsonb_build_object(
+    'events', (select count(*) from ops.events),
+    'cleared', (select count(*) from ops.execution_stops s where s.cleared_at is not null),
+    'reviews', (select jsonb_agg(to_jsonb(r) order by r.id) from ops.review_items r));
+$$;
+
+-- W1. Each scope, once, as the principal: the authoritative row with the
+--     brief's coordinates, the fixed reason, origin owner; the pinned response
+--     shape; and nothing else moves (no event, no clear, no job, run, task,
+--     outbound row or review change).
+do $$
+declare
+  t         uuid := pg_temp.id('tenant_a');
+  v_before  jsonb := pg_temp.trip_untouched();
+  v_actor   text := 'principal:' || pg_temp.id('principal.m_a');
+  c         record;
+  v         jsonb;
+  v_stop    ops.execution_stops;
+begin
+  for c in select * from (values
+      ('tenant', null::uuid, null::uuid, null::uuid, null::uuid),
+      ('company', (select id from cos_trip where name = 'company'),
+       (select id from cos_trip where name = 'company'), null, null),
+      ('department', (select id from cos_trip where name = 'department'),
+       (select id from cos_trip where name = 'company'), (select id from cos_trip where name = 'department'), null),
+      ('agent', (select id from cos_trip where name = 'agent'),
+       (select id from cos_trip where name = 'company'), null, (select id from cos_trip where name = 'agent'))
+    ) as x (scope, target, company, department, agent) loop
+    v := pg_temp.member_body('W1', format('company_os_api.trip_stop(%L, %L)', c.scope, c.target));
+    if (select array_agg(k order by k) from jsonb_object_keys(v) k) is distinct from
+         array['asOf', 'outcome', 'stopId', 'v']
+       or v ->> 'outcome' <> 'stopped' or (v ->> 'v')::int <> 1 then
+      raise exception 'W1: % answered %', c.scope, v;
+    end if;
+    select * into v_stop from ops.execution_stops s where s.id = (v ->> 'stopId')::uuid;
+    if v_stop.scope <> c.scope or v_stop.tenant_id <> t
+       or v_stop.company_id is distinct from c.company or v_stop.department_id is distinct from c.department
+       or v_stop.agent_id is distinct from c.agent or v_stop.job_kind is not null
+       or v_stop.tripped_by <> v_actor or v_stop.origin <> 'owner'
+       or v_stop.reason <> 'owner requested execution stop via Company OS' or v_stop.cleared_at is not null then
+      raise exception 'W1: % recorded %', c.scope, to_jsonb(v_stop);
+    end if;
+    insert into cos_trip values ('stop:' || c.scope, v_stop.id);
+  end loop;
+  if pg_temp.trip_untouched() is distinct from v_before then
+    raise exception 'W1: a trip touched something beyond its stop: before %, after %', v_before, pg_temp.trip_untouched();
+  end if;
+end
+$$;
+
+-- W2. A repeat by another member is already_stopped: the same stop, no new
+--     row, nothing cleared. (This file is ONE transaction, so the same
+--     principal repeating here would share now() and read as recorded; that
+--     case, across real transactions, is engine/domain/
+--     companyOsExecutionStop.dbtest.ts.) The member's own read of the stops
+--     shows each trip and never an actor label.
+do $$
+declare
+  v_rows bigint := (select count(*) from ops.execution_stops);
+  c      record;
+  v      jsonb;
+begin
+  for c in select * from (values ('banned_past', 'agent'), ('banned_past', 'tenant')) as x (who, scope) loop
+    v := pg_temp.api(pg_temp.claims(c.who),
+           format('company_os_api.trip_stop(%L, %L)', c.scope, (select id from cos_trip where name = c.scope)));
+    if not (v ->> 'ok')::boolean or v -> 'body' ->> 'outcome' <> 'already_stopped'
+       or (v -> 'body' ->> 'stopId')::uuid <> (select id from cos_trip where name = 'stop:' || c.scope) then
+      raise exception 'W2: % repeating the % trip answered %', c.who, c.scope, v;
+    end if;
+  end loop;
+  if (select count(*) from ops.execution_stops) <> v_rows then
+    raise exception 'W2: a repeated trip wrote a new stop';
+  end if;
+  v := pg_temp.member_body('W2', 'company_os_api.list_stops()');
+  if not (v -> 'items' @> jsonb_build_array(jsonb_build_object('id', (select id from cos_trip where name = 'stop:agent'))))
+     or v::text ~ 'principal:' then
+    raise exception 'W2: the member''s stops do not show the trip, or show an actor label';
+  end if;
+end
+$$;
+
+-- W3. Refusals that write nothing: a global or job_kind stop (OS403); any
+--     other scope, a tenant stop with a target, an organisational stop without
+--     one (OS400); another tenant's company, department or agent, and a random
+--     uuid, all the same OS404.
+do $$
+declare
+  v_before jsonb := pg_temp.trip_untouched();
+  v_rows   bigint := (select count(*) from ops.execution_stops);
+  c        record;
+  v        jsonb;
+begin
+  for c in select * from (values
+      ('a global stop', 'global', null::uuid, 'OS403'),
+      ('a job_kind stop', 'job_kind', null, 'OS403'),
+      ('a scope outside the vocabulary', 'bogus', null, 'OS400'),
+      ('no scope', null, null, 'OS400'),
+      ('a tenant stop naming a target', 'tenant', pg_temp.id('b.company'), 'OS400'),
+      ('a company stop without a target', 'company', null, 'OS400'),
+      ('tenant B''s company', 'company', pg_temp.id('b.company'), 'OS404'),
+      ('tenant B''s department', 'department', pg_temp.id('b.department'), 'OS404'),
+      ('tenant B''s agent', 'agent', pg_temp.id('b.agent_triage'), 'OS404'),
+      ('a department id named as a company', 'company', pg_temp.id('a.department'), 'OS404'),
+      ('a random uuid', 'agent', gen_random_uuid(), 'OS404')
+    ) as x (label, scope, target, code) loop
+    v := pg_temp.api(pg_temp.claims('m_a'), format('company_os_api.trip_stop(%L, %L)', c.scope, c.target));
+    if v is distinct from jsonb_build_object('ok', false, 'code', c.code, 'message',
+         'company_os_api.trip_stop: ' || case c.code when 'OS400' then 'bad request' when 'OS403' then 'no access'
+                                                     when 'OS404' then 'not found' end,
+         'detail', '', 'hint', '') then
+      raise exception 'W3: % answered %', c.label, v;
+    end if;
+  end loop;
+  if (select count(*) from ops.execution_stops) <> v_rows or pg_temp.trip_untouched() is distinct from v_before then
+    raise exception 'W3: a refused trip changed a stop or anything else';
+  end if;
+end
+$$;
+
+-- W4. No other role reaches the trip's path, and nothing any browser-facing
+--     role can run clears a stop.
+do $$
+declare
+  v jsonb;
+  r text;
+  f text;
+begin
+  foreach r in array array['anon', 'service_role'] loop
+    v := pg_temp.api(pg_temp.claims('m_a'), 'company_os_api.trip_stop(''tenant'')', r);
+    if (v ->> 'ok')::boolean or v ->> 'code' <> '42501' then
+      raise exception 'W4: % reached trip_stop: %', r, v;
+    end if;
+  end loop;
+  foreach r in array array['anon', 'authenticated', 'service_role', 'ops_worker', 'ops_gateway', 'ops_operator_api'] loop
+    foreach f in array array['ops.trip_stop_in_tenant(uuid, text, text, uuid)',
+                             'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)',
+                             'ops.clear_execution_stop(uuid, text, text)'] loop
+      if has_function_privilege(r, f::regprocedure, 'EXECUTE') then
+        raise exception 'W4: % can execute %', r, f;
+      end if;
+    end loop;
+    if r <> 'ops_operator_api' and has_function_privilege(r, 'ops.gate_trip_stop(text, uuid)'::regprocedure, 'EXECUTE') then
+      raise exception 'W4: % can execute the trip gate', r;
+    end if;
+    if has_table_privilege(r, 'ops.execution_stops', 'INSERT,UPDATE,DELETE,TRUNCATE') then
+      raise exception 'W4: % can write ops.execution_stops directly', r;
+    end if;
+  end loop;
+  v := pg_temp.member_body('W4', 'company_os_api.operator_context()');
+  if v -> 'allowedActions' is distinct from '{"decideReview": true, "tripStop": true, "viewAdvice": true}'::jsonb then
+    raise exception 'W4: operator_context reports %', v -> 'allowedActions';
+  end if;
+end
+$$;
+
 
 rollback;
 

@@ -1,15 +1,15 @@
 // The operation catalogue (docs/PHASE_2C_BRIEF.md §8): the 15 read RPCs of the
 // function-only schema company_os_api, each with its exact argument names,
 // PostgreSQL types and DEFAULTs, the input a client may send, and the response
-// contract; and, apart from them, the one browser act (S7.1: decide_review,
-// brief §9 row 16). engine/domain/companyOsContracts.dbtest.ts compares both
-// with pg_proc.
+// contract; and, apart from them, the two browser acts (S7.1: decide_review,
+// brief §9 row 16; S7.2: trip_stop, row 17).
+// engine/domain/companyOsContracts.dbtest.ts compares both with pg_proc.
 //
 // No operation takes a tenant, company, actor, reviewer, source or causation
 // argument: the identity gate derives them. Every uuid argument is a selector
-// resolved inside the caller's tenant. The act is a separate catalogue so that
-// nothing typed as a read (a query, a poll, a prefetch) can name it; trip_stop
-// is in neither: it exists in no database before S8.
+// resolved inside the caller's tenant. The acts are a separate catalogue so
+// that nothing typed as a read (a query, a poll, a prefetch) can name one. No
+// clear exists in either.
 //
 // The inputs are strict, so a client cannot send a key the function does not
 // take; PostgREST would refuse it anyway (PGRST202), and the contract says so
@@ -41,7 +41,12 @@ import {
   AgentRunListSchema,
   RunCursorSchema,
 } from "./runs.ts";
-import { ExecutionStopListSchema, StopCursorSchema } from "./stops.ts";
+import {
+  ExecutionStopListSchema,
+  StopCursorSchema,
+  StopTripResultSchema,
+  TripStopInputSchema,
+} from "./stops.ts";
 import { TaskCursorSchema, TaskDetailSchema, TaskListSchema } from "./tasks.ts";
 import {
   AgentRunStatusSchema,
@@ -228,9 +233,11 @@ export const COMPANY_OS_OPERATIONS = Object.freeze({
 });
 
 /**
- * The one browser act (S7.1). The browser names a review and a decision, and
- * nothing else: the gate derives the tenant and the reviewer. Recording a
- * decision sends nothing (SI-45).
+ * The two browser acts. decide_review (S7.1): the browser names a review and a
+ * decision, and nothing else; the gate derives the tenant and the reviewer, and
+ * recording a decision sends nothing (SI-45). trip_stop (S7.2): the browser
+ * names a scope and a target, and nothing else; the gate derives the tenant,
+ * the actor and a fixed reason, and a trip is never cleared from here.
  */
 export const COMPANY_OS_ACTS = Object.freeze({
   decide_review: operation(
@@ -240,6 +247,11 @@ export const COMPANY_OS_ACTS = Object.freeze({
       p_decision: ReviewDecisionSchema,
     }),
     ReviewDecisionResultSchema,
+  ),
+  trip_stop: operation(
+    [required("p_scope", "text"), defaulted("p_target_id", "uuid", null)],
+    TripStopInputSchema,
+    StopTripResultSchema,
   ),
 });
 
@@ -252,7 +264,7 @@ export const COMPANY_OS_ACT_NAMES: readonly CompanyOsAct[] = Object.freeze(
   Object.keys(COMPANY_OS_ACTS) as CompanyOsAct[],
 );
 
-/** Every exposed function: the reads and the act. */
+/** Every exposed function: the reads and the acts. */
 const COMPANY_OS_FUNCTIONS = Object.freeze({
   ...COMPANY_OS_OPERATIONS,
   ...COMPANY_OS_ACTS,

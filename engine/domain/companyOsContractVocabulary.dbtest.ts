@@ -396,11 +396,16 @@ describe("the contract vocabularies equal the database's", () => {
           /errcode = '([A-Z0-9]{5})', message = 'company_os_api\.([a-z_]+): ([^']+)'/g,
         ),
       ];
-      // One fixed, data-free message per code (brief §7.3).
+      // One fixed, data-free message per code (brief §7.3). Only the trip
+      // answers lock contention, with the one retryable code (owner S0-B).
       expect(
         raised.map((m) => m[1]),
         name,
-      ).toEqual(["OS400", "OS401", "OS403", "OS404", "OS409", "OS500"]);
+      ).toEqual(
+        operation === "trip_stop"
+          ? ["OS400", "OS401", "OS403", "OS404", "OS409", "OS429", "OS500"]
+          : ["OS400", "OS401", "OS403", "OS404", "OS409", "OS500"],
+      );
       for (const [, code, op, text] of raised) {
         expect(contracts.isOsErrorCode(code), `${name} ${code}`).toBe(true);
         expect(op, name).toBe(operation);
