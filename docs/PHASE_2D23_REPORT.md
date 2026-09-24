@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **LOCAL, OWNER VISUAL REVIEW REQUIRED (2026-09-24).** Four implementation commits, one review-fix commit and this record on `feature/phase-2d-decision-quality`; not pushed, no PR, not merged. Real Jev NOT CONNECTED; Q8 OPEN; browser mutable RPCs still 2; no execution authority added. |
+| **Status** | **OWNER VISUAL REVIEW PASS; SI-39 EXTENSION OWNER-APPROVED (2026-09-24).** Four implementation commits, one review-fix commit, this record and one owner-review commit (the approved copy correction and these records) on `feature/phase-2d-decision-quality`, ready for the single remote integration cycle (push, PR, merge into `feature/clinical-phase-1`). Real Jev NOT CONNECTED; Q8 OPEN; browser mutable RPCs still 2; no execution authority added. |
 | **Base** | `feature/clinical-phase-1` at `6adc4a7e7741950967f83577013f8b293a0e16a9`, the PR #10 merge that integrated 2D.1 (a normal merge; parents `f195c2a7` and `4966655b`). Post-merge CI Check #65 (run 36037591630): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped, the same cases) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red. `main` unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-2d-decision-quality` |
 | **Governing records** | [PHASE_2D1_REPORT.md](PHASE_2D1_REPORT.md); decision P ([DECISIONS.md](DECISIONS.md)): a provider-neutral DecisionPort, Jev in shadow mode first, never authoritative. |
@@ -58,7 +58,19 @@
 | `indeterminate_requires_human_operator` | Started, and no live lease (running or indeterminate) | Nothing: the provider may have been asked, so it is NEVER asked again |
 | `not_eligible` | Outside the synthetic and test scope (BASELINE Q8), or not a lead triage review with a stored result | Nothing |
 
-Every outcome is idempotent. Recovery decides no review, sends nothing, writes no CRM row and trips or clears no stop. SI-39's act allowlist gains `decision recover`: a reviewed extension of the invariant, **whose wording needs the owner's confirmation** (the SI texts are owner-approved).
+Every outcome is idempotent. Recovery decides no review, sends nothing, writes no CRM row and trips or clears no stop.
+
+**SI-39: owner-approved (2026-09-24).** The owner approved adding `decision recover` to SI-39 under this strict meaning: an operator may repair missing or incomplete shadow-evaluation workflow state only when doing so does not replay a provider call that has already started.
+
+Recovery must NOT:
+
+- repeat an already-started provider invocation;
+- overwrite a completed, an invalid or an indeterminate evaluation;
+- change human review state;
+- bypass execution stops or Q8;
+- send WhatsApp, mutate the CRM, or trip or clear stops.
+
+It remains operator and CLI only. There is no browser recovery capability, and the browser's mutable RPCs stay exactly two. SI-39's statement ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md)) carries this meaning.
 
 ## 4. Calibration (2D.3)
 
@@ -78,6 +90,18 @@ It carries no id, name, text, input, reason or time. It is **AGREEMENT, never ac
 - There is no chart, no score, no colour judgement and no control.
 
 A review's section adds the policy version, the provider version and the reason codes as the owner reads them ("Possível situação de crise", "Pergunta sobre valores", and so on). A code outside the current vocabulary reads "Motivo de uma versão anterior". The raw codes stay under "Detalhes técnicos".
+
+## 4a. Owner visual review (2026-09-24): PASS
+
+The owner reviewed Decisões → Inteligência on the synthetic demo and saw:
+
+- "Modo sombra" and "Revisão humana obrigatória";
+- 10 shadow evaluations, 7 with a recorded decision, 4 agreements, 2 disagreements, 1 without recommendation and 0 indeterminate;
+- "Concordância: 4 de 6 comparáveis (67%)".
+
+The owner confirmed that the screen communicates agreement, not clinical accuracy or objective truth, and that it says so explicitly. The recorded decisions in the demo were synthetic fixtures (reviewer label `synthetic-fixture`), not the owner's; the owner made no decision in the demo.
+
+**One owner-approved copy correction.** The tab's heading line said the engine's recommendations were compared "com as suas decisões", which misleads when the compared decisions are fixtures. It now reads "Inteligência de decisão: recomendações do motor comparadas com decisões registradas." (`DECISION_INTELLIGENCE_DESCRIPTION`, covered by the fixed-wording sweep). The explanation about agreement versus accuracy is unchanged. This was the only product change after the review. It was verified by the intelligence UI tests, the read-only sweep, typecheck, ESLint and Prettier; the broad suites in §6 were not rerun, since no implementation code or SQL changed.
 
 ## 5. Jev readiness (documentation only)
 

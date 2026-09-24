@@ -174,6 +174,13 @@ export const SHADOW_REASON_UNKNOWN = "Motivo de uma versão anterior";
 // Phase 2D.3: the shadow calibration view (Decisões → Inteligência).
 export const DECISION_INTELLIGENCE_TAB = "Inteligência";
 
+/**
+ * Neutral on purpose (owner review 2026-09-24): the decisions compared are the
+ * recorded ones, which in a synthetic demo are fixtures, not the owner's own.
+ */
+export const DECISION_INTELLIGENCE_DESCRIPTION =
+  "Inteligência de decisão: recomendações do motor comparadas com decisões registradas.";
+
 export const DECISION_INTELLIGENCE_EXPLANATION =
   "Estes números comparam recomendações do motor com decisões humanas. Eles não representam uma medida de acurácia clínica ou verdade objetiva.";
 

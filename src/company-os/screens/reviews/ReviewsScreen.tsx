@@ -19,10 +19,10 @@ import {
 import { PageControls, PagesView } from "../../components/queryStates";
 import { LIST_PATHS } from "../../components/recordPaths";
 import {
+  DECISION_INTELLIGENCE_DESCRIPTION,
   DECISION_INTELLIGENCE_TAB,
   REVIEW_DECISIONS_NOTE,
   REVIEW_NOT_A_SEND_NOTE,
-  SHADOW_TITLE,
 } from "../../copy";
 import { oneOf } from "../../format/labels";
 import { capabilityLabel, reviewStatusLabel } from "../../format/ptBR";
@@ -162,7 +162,7 @@ const ReviewTable = ({ reviews }: { reviews: readonly ReviewSummary[] }) => (
 const IntelligenceTab = () => (
   <ScreenLayout
     title="Decisões"
-    description={`${SHADOW_TITLE}: recomendações do motor comparadas com as suas decisões.`}
+    description={DECISION_INTELLIGENCE_DESCRIPTION}
   >
     <StatusTabs active={INTELLIGENCE} />
     <DecisionIntelligenceView />

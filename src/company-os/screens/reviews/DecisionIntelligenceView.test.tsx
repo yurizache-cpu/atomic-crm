@@ -3,6 +3,7 @@ import type { RenderResult } from "vitest-browser-react";
 import type { DecisionIntelligenceGroup } from "../../../../contracts/company-os-api/index.ts";
 import {
   DECISION_INTELLIGENCE_CARDS,
+  DECISION_INTELLIGENCE_DESCRIPTION,
   DECISION_INTELLIGENCE_DISTRIBUTION_HIDDEN,
   DECISION_INTELLIGENCE_EMPTY,
   DECISION_INTELLIGENCE_EXPLANATION,
@@ -112,6 +113,12 @@ describe("the decision intelligence view", () => {
     await expect
       .element(screen.getByText(SHADOW_BADGE, { exact: true }))
       .toBeVisible();
+    // Neutral: the decisions compared are the recorded ones, which in a
+    // synthetic demo are fixtures, never "your" decisions.
+    await expect
+      .element(screen.getByText(DECISION_INTELLIGENCE_DESCRIPTION))
+      .toBeVisible();
+    expect(document.body.textContent).not.toMatch(/suas decisões/);
     expect(location.hash).toBe(PAGE);
   });
 
