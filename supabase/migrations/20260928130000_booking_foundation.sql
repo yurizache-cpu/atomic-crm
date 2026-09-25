@@ -138,7 +138,7 @@ create table ops.booking_types (
 );
 
 comment on table ops.booking_types is
-  'A kind of appointment: its duration, buffers and offered-start step. The label is tenant vocabulary; a new duration is a new type.';
+  'A kind of booking: its duration, buffers and offered-start step. The label is tenant vocabulary; a new duration is a new type.';
 
 create table ops.availability_rules (
   id              uuid primary key default gen_random_uuid(),
@@ -251,7 +251,7 @@ create table ops.bookings (
 );
 
 comment on table ops.bookings is
-  'One appointment of one resource, as authoritative instants. No two booked bookings of a resource overlap (an exclusion constraint). A reschedule closes a booking and chains a successor; nothing booked is ever deleted.';
+  'One reservation of one resource, as authoritative instants. No two booked bookings of a resource overlap (an exclusion constraint). A reschedule closes a booking and chains a successor; nothing booked is ever deleted.';
 
 create index bookings_agenda_idx on ops.bookings (tenant_id, start_at);
 

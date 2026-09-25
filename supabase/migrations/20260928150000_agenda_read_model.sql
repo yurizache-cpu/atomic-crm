@@ -197,7 +197,7 @@ end
 $$;
 
 comment on function ops.cos_agenda(pg_catalog.uuid, pg_catalog.timestamptz) is
-  'Phase 3A: the tenant''s agenda at an instant: bookings, follow-ups, next available slots and calendar state, keyed on appointment and due instants in the tenant''s scheduling zone. Deterministic in its rows and as_of. Read by ops.read_overview; never a mutation.';
+  'Phase 3A: the tenant''s agenda at an instant: bookings, follow-ups, next available slots and calendar state, keyed on booking start and due instants in the tenant''s scheduling zone. Deterministic in its rows and as_of. Read by ops.read_overview; never a mutation.';
 
 -- The overview gains the agenda section; nothing else in it changes
 -- (20260927130000_operational_health.sql).

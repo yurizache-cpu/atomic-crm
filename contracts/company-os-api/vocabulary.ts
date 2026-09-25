@@ -209,6 +209,7 @@ export const EVENT_SOURCES = [
   "company-os-ui",
   "lead-triage-demo",
   "operator-cli",
+  "scheduling-demo",
   "seed",
   "whatsapp-gateway",
 ] as const;

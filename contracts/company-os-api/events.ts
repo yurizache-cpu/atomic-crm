@@ -64,6 +64,19 @@ export const KNOWN_EVENT_TYPES = [
   "communication.outbound_failed",
   "communication.outbound_indeterminate",
   "communication.delivery_updated",
+  "follow_up.scheduled",
+  "follow_up.due",
+  "follow_up.completed",
+  "follow_up.cancelled",
+  "follow_up.superseded",
+  "booking.created",
+  "booking.rescheduled",
+  "booking.cancelled",
+  "calendar.sync_requested",
+  "calendar.sync_completed",
+  "calendar.sync_failed",
+  "calendar.sync_indeterminate",
+  "calendar.sync_skipped",
 ] as const;
 
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
@@ -122,6 +135,22 @@ export const DeliveryUpdatedFactsSchema = z.strictObject({
   previous: StatusNameSchema.nullable(),
 });
 
+/** Phase 3A: a follow-up's step, and why it was cancelled (null otherwise). */
+export const FollowUpFactsSchema = z.strictObject({
+  step: z.number().int().min(0).max(99).nullable(),
+  reason: ReasonCodeSchema.nullable(),
+});
+
+export const BookingCancelledFactsSchema = z.strictObject({
+  reason: ReasonCodeSchema.nullable(),
+});
+
+/** Phase 3A.2: the calendar operation, and why it ended without success. */
+export const CalendarSyncFactsSchema = z.strictObject({
+  operation: z.enum(["create", "update", "cancel"]).nullable(),
+  error_code: ReasonCodeSchema.nullable(),
+});
+
 /** The one facts shape each known type may carry (ops.cos_event_facts). */
 export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "company.created": NoFactsSchema,
@@ -157,6 +186,19 @@ export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "communication.outbound_failed": OutboundFactsSchema,
   "communication.outbound_indeterminate": OutboundFactsSchema,
   "communication.delivery_updated": DeliveryUpdatedFactsSchema,
+  "follow_up.scheduled": FollowUpFactsSchema,
+  "follow_up.due": FollowUpFactsSchema,
+  "follow_up.completed": FollowUpFactsSchema,
+  "follow_up.cancelled": FollowUpFactsSchema,
+  "follow_up.superseded": FollowUpFactsSchema,
+  "booking.created": NoFactsSchema,
+  "booking.rescheduled": NoFactsSchema,
+  "booking.cancelled": BookingCancelledFactsSchema,
+  "calendar.sync_requested": CalendarSyncFactsSchema,
+  "calendar.sync_completed": CalendarSyncFactsSchema,
+  "calendar.sync_failed": CalendarSyncFactsSchema,
+  "calendar.sync_indeterminate": CalendarSyncFactsSchema,
+  "calendar.sync_skipped": CalendarSyncFactsSchema,
 };
 
 const EventFactsSchema = z.union([
@@ -169,6 +211,9 @@ const EventFactsSchema = z.union([
   OutboundBlockedFactsSchema,
   OutboundFactsSchema,
   DeliveryUpdatedFactsSchema,
+  FollowUpFactsSchema,
+  BookingCancelledFactsSchema,
+  CalendarSyncFactsSchema,
 ]);
 
 export const EventSummarySchema = z
