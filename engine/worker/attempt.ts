@@ -23,6 +23,7 @@ import {
 } from "./handlerRegistry.ts";
 import type { LeasedJob } from "./job.ts";
 import type { WorkerLogger } from "./log.ts";
+import type { JobTrace } from "../telemetry/workerTelemetry.ts";
 
 export type JobOutcome =
   /** The queue had nothing available. */
@@ -72,6 +73,11 @@ export interface AttemptScope {
   /** The row TX1 leased. */
   readonly job: LeasedJob;
   readonly startedAt: number;
+  /**
+   * This attempt's telemetry (Phase 2E.1). It observes; nothing reads it back,
+   * and it never throws into the attempt.
+   */
+  readonly trace: JobTrace;
 }
 
 export const SHAPE_CHANGED =

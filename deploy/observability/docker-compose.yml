@@ -1,0 +1,66 @@
+# Company OS observability, LOCAL and deployment-reference (Phase 2E.1).
+#
+#   docker compose -f deploy/observability/docker-compose.yml up -d
+#   docker compose -f deploy/observability/docker-compose.yml down -v
+#
+# Two official images, pinned by tag AND digest (docs/OSS_PROVENANCE.md):
+#   * the OpenTelemetry Collector (core distribution): the single, swappable
+#     egress for traces. It receives OTLP/HTTP and, here, only prints what it
+#     received (debug exporter). Nothing is forwarded anywhere.
+#   * Prometheus: scrapes the worker's GET /metrics and keeps 2 days.
+#
+# WHAT NEITHER GETS: a database credential, the Supabase network, a volume of
+# this repository beyond its own config file, or a public port. Both run on
+# their own compose network, every published port is bound to 127.0.0.1, the
+# root filesystems are read-only and every Linux capability is dropped.
+#
+# NOT REQUIRED: the worker, the app and every test run without this stack.
+# The Company OS screens read PostgreSQL, never Prometheus.
+
+name: company-os-observability
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector:0.160.0@sha256:e495787f07dbe432ce763ebaf5bc3d113850e9eee2250ade7a3da6a882d0d69a
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # OTLP/HTTP, for a worker on this host. Loopback only.
+      - "127.0.0.1:4318:4318"
+    networks: [observability]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+  prometheus:
+    image: prom/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=2d"
+      - "--web.listen-address=:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      # The Prometheus UI and API. Loopback only.
+      - "127.0.0.1:9090:9090"
+    # On Docker Desktop, host.docker.internal reaches the worker's metrics
+    # listener on host loopback (127.0.0.1, the default). On Linux it resolves
+    # to the docker bridge gateway, which a loopback listener does not answer:
+    # bind METRICS_HOST to that bridge address there, never 0.0.0.0.
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [observability]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+
+networks:
+  # Its own network: never the Supabase (clinical database) network.
+  observability: {}
+
+volumes:
+  prometheus-data: {}

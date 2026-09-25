@@ -65,6 +65,10 @@ import {
 import type { LeasedJob } from "./job.ts";
 import { silentLogger, type WorkerLogger } from "./log.ts";
 import type { WorkerDatabase } from "../db/types.ts";
+import {
+  NOOP_WORKER_TELEMETRY,
+  type WorkerTelemetry,
+} from "../telemetry/workerTelemetry.ts";
 
 export type { JobOutcome, RunOneJobResult } from "./attempt.ts";
 export {
@@ -99,6 +103,11 @@ export interface RunOneJobOptions {
    * here behaves like the process dying: nothing settles.
    */
   onCallFinished?: (job: LeasedJob) => Promise<void>;
+  /**
+   * Phase 2E.1: what this attempt reports to telemetry. Observation only, and
+   * the no-op default records nothing: no outcome below depends on it.
+   */
+  telemetry?: WorkerTelemetry;
 }
 
 const DEFAULT_LEASE_SECONDS = 60;
@@ -114,6 +123,7 @@ export async function runOneJob(
     signal,
     leaseSafetyMarginMs = DEFAULT_LEASE_SAFETY_MARGIN_MS,
     onCallFinished,
+    telemetry = NOOP_WORKER_TELEMETRY,
   }: RunOneJobOptions,
 ): Promise<RunOneJobResult> {
   if (!workerId.trim()) {
@@ -167,19 +177,40 @@ export async function runOneJob(
     log,
     job,
     startedAt: Date.now(),
+    trace: telemetry.startJob(job),
   };
 
-  // The leased row's kind picks WHICH transaction sequence runs, and nothing
-  // more. Each sequence resolves the handler again from the row it resumes,
-  // after the tenant check, exactly as TX2 always has. An unknown kind takes
-  // the transactional path, which is where it has always failed closed.
-  const leasedHandler = resolveHandler(registry, job.kind);
-  if (leasedHandler && isExternalCallHandler(leasedHandler)) {
-    return runExternalCall(scope, {
+  // Telemetry sees the outcome after it is decided and never changes it. An
+  // attempt that throws out of here (the crash seams, a process losing its
+  // job) ends its trace as interrupted: its lease expires and the reaper
+  // recovers the job, which is not an outcome this attempt recorded.
+  let result: RunOneJobResult;
+  try {
+    result = await executeAttempt(scope, {
       leaseSafetyMarginMs,
       signal,
       onCallFinished,
     });
+  } catch (error) {
+    scope.trace.end({ outcome: "interrupted" });
+    throw error;
+  }
+  scope.trace.end(result);
+  return result;
+}
+
+/** Picks the attempt's transaction sequence and runs it to an outcome. */
+async function executeAttempt(
+  scope: AttemptScope,
+  options: Parameters<typeof runExternalCall>[1],
+): Promise<RunOneJobResult> {
+  // The leased row's kind picks WHICH transaction sequence runs, and nothing
+  // more. Each sequence resolves the handler again from the row it resumes,
+  // after the tenant check, exactly as TX2 always has. An unknown kind takes
+  // the transactional path, which is where it has always failed closed.
+  const leasedHandler = resolveHandler(scope.registry, scope.job.kind);
+  if (leasedHandler && isExternalCallHandler(leasedHandler)) {
+    return runExternalCall(scope, options);
   }
 
   // --- TX2: resume, execute, settle success. -------------------------------

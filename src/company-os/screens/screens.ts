@@ -1,6 +1,7 @@
 import {
   Activity,
   Bot,
+  HeartPulse,
   Inbox,
   LayoutDashboard,
   ListChecks,
@@ -16,6 +17,7 @@ import { ActivityScreen } from "./activity/ActivityScreen";
 import { AgentsScreen } from "./agents/AgentsScreen";
 import { CommunicationsScreen } from "./communications/CommunicationsScreen";
 import { CostsScreen } from "./costs/CostsScreen";
+import { HealthScreen } from "./health/HealthScreen";
 import { OverviewScreen } from "./overview/OverviewScreen";
 import { AgentRunsScreen } from "./runs/RunsScreen";
 import { ReviewsScreen } from "./reviews/ReviewsScreen";
@@ -23,12 +25,14 @@ import { ExecutionStopsScreen } from "./stops/ExecutionStopsScreen";
 import { TasksScreen } from "./tasks/TasksScreen";
 
 // The screens of docs/PHASE_2C_BRIEF.md §12, in navigation order: the eight
-// core screens, then the optional, narrow Communications status view. Every
-// one is read-only: no screen renders a decision, a stop, a send, a draft or
-// any configuration change, and each one's h1 is its label.
+// core screens, the optional, narrow Communications status view, and Phase
+// 2E.2's Saúde operacional (read from the overview). Every one is read-only
+// apart from the two acts of Decisões and Pausas: no screen renders a send, a
+// draft or any configuration change, and each one's h1 is its label.
 
 export type ScreenId =
   | "overview"
+  | "health"
   | "activity"
   | "tasks"
   | "agents"
@@ -56,6 +60,13 @@ export const SCREENS: readonly ScreenDefinition[] = [
     path: "",
     group: "Operação",
     icon: LayoutDashboard,
+  },
+  {
+    id: "health",
+    label: "Saúde operacional",
+    path: "health",
+    group: "Operação",
+    icon: HeartPulse,
   },
   {
     id: "activity",
@@ -126,6 +137,7 @@ export type ScreenComponents = Readonly<Record<ScreenId, ComponentType>>;
 
 export const DEFAULT_SCREENS: ScreenComponents = {
   overview: OverviewScreen,
+  health: HealthScreen,
   activity: ActivityScreen,
   tasks: TasksScreen,
   agents: AgentsScreen,

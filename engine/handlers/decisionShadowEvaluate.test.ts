@@ -17,6 +17,7 @@ import {
   SecurityError,
   TransientError,
 } from "../worker/failures.ts";
+import { settlementDetail } from "../worker/handlerRegistry.ts";
 import type { LeasedJob } from "../worker/job.ts";
 import {
   DECISION_SHADOW_EVALUATE_KIND,
@@ -113,8 +114,8 @@ async function runOnce(
   } catch (error) {
     outcome = { ok: false as const, error, durationMs: 1 };
   }
-  const detail = await handler.settle(prepared.state, outcome, caps.settle);
-  return { prepared, caps, detail };
+  const settled = await handler.settle(prepared.state, outcome, caps.settle);
+  return { prepared, caps, detail: settlementDetail(settled), settled };
 }
 
 const fake = createFakeDecisionProvider({

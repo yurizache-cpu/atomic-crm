@@ -288,6 +288,9 @@ begin
     ('ops_worker',   'ops.request_shadow_decision_for_settled_job(text, uuid)'::regprocedure),
     ('ops_worker',   'ops.start_shadow_decision(text, text, text)'::regprocedure),
     ('ops_worker',   'ops.settle_shadow_decision(text, jsonb, text)'::regprocedure),
+    -- Phase 2E.1: one argument-free count for the metrics gauge; no tenant,
+    -- job or content, and nothing reads it back to decide.
+    ('ops_worker',   'ops.worker_queue_depth()'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -352,7 +355,10 @@ begin
   --     shadow decision's three: a runtime step bound to a job the calling
   --     worker completed (like open_review_for_settled_job), and two capabilities
   --     bound to the live lease's job. They record advice; they decide nothing
-  --     (supabase/tests/decision_shadow.sql).
+  --     (supabase/tests/decision_shadow.sql). Phase 2E.1 adds worker_queue_depth:
+  --     argument-free and STABLE, it answers one deployment-wide count of ready
+  --     jobs for the worker's metrics gauge, the same queue ops.lease_job
+  --     already reaches, and grants nothing.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -363,7 +369,7 @@ begin
                            'complete_agent_run', 'fail_agent_run', 'settle_stale_agent_runs',
                            'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
                            'open_review_for_settled_job', 'request_shadow_decision_for_settled_job',
-                           'start_shadow_decision', 'settle_shadow_decision',
+                           'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

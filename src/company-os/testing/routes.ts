@@ -38,6 +38,11 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     markers: ["Decisões pendentes"],
   },
   {
+    hash: "#/company-os/health",
+    heading: "Saúde operacional",
+    markers: ["Modelo de IA (execuções de agente)", "Precisa de atenção"],
+  },
+  {
     hash: "#/company-os/activity",
     heading: "Atividade",
     markers: ["Envio falhou", "Synthetic pause of the follow-up desk"],

@@ -48,7 +48,14 @@ export type WorkerLogEvent =
   | "agent_run.stale_settled"
   // The global daily spend ceiling tripped a global execution stop on the
   // reaper tick. `detail` is the stop id.
-  | "spend_ceiling.tripped";
+  | "spend_ceiling.tripped"
+  // Phase 2E.1 observability, which never changes what the worker does.
+  // `detail` is fixed text naming a variable, a port and whether the address
+  // is loopback: never a configured value.
+  | "telemetry.metrics_listening"
+  | "telemetry.disabled"
+  | "telemetry.tracing_enabled"
+  | "telemetry.tracing_unavailable";
 
 export interface WorkerLogFields {
   workerId?: string;

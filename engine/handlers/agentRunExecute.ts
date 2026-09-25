@@ -73,6 +73,7 @@ import type {
   CallOutcome,
   ExternalCallContext,
   ExternalCallHandlerDefinition,
+  ObservedSettlement,
   PrepareOutcome,
 } from "../worker/handlerRegistry.ts";
 import { payloadObject } from "../worker/job.ts";
@@ -304,6 +305,19 @@ const failureToRecord = (
   };
 };
 
+/**
+ * The settlement's job detail and, for telemetry only (Phase 2E.1), the status
+ * THIS attempt recorded: requireOwnSettlement has already refused any other.
+ */
+const observed = (
+  state: { readonly runId: string },
+  status: string,
+  detail: string,
+): ObservedSettlement => ({
+  detail,
+  observation: { subject: "agent_run", status, runId: state.runId },
+});
+
 export function createAgentRunExecuteHandler(
   dependencies: AgentRunExecuteDependencies,
 ): AgentRunExecuteHandler {
@@ -450,6 +464,7 @@ export function createAgentRunExecuteHandler(
 
       return {
         kind: "call",
+        providerKind: route.provider,
         state: Object.freeze({
           runId: claim.agent_run_id,
           route,
@@ -493,7 +508,11 @@ export function createAgentRunExecuteHandler(
           latencyMs: response.latencyMs,
         });
         requireOwnSettlement(status, COMPLETION_STATUSES);
-        return describeSettlement(state, status, response.usage, null);
+        return observed(
+          state,
+          status,
+          describeSettlement(state, status, response.usage, null),
+        );
       }
 
       const failure = failureToRecord(outcome.error);
@@ -508,11 +527,15 @@ export function createAgentRunExecuteHandler(
           failure.error.latencyMs ?? normalizeLatencyMs(outcome.durationMs),
       });
       requireOwnSettlement(status, FAILURE_STATUSES);
-      return describeSettlement(
+      return observed(
         state,
         status,
-        failure.error.usage,
-        failure.category,
+        describeSettlement(
+          state,
+          status,
+          failure.error.usage,
+          failure.category,
+        ),
       );
     },
   };

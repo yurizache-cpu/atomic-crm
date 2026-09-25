@@ -28,6 +28,7 @@ import type {
   AgentRunFailure,
   AgentRunStart,
 } from "../worker/capabilities.ts";
+import { settlementDetail } from "../worker/handlerRegistry.ts";
 import {
   PermanentError,
   SecurityError,
@@ -230,8 +231,14 @@ const runCycle = async (
   } catch (error) {
     outcome = { ok: false, error, durationMs: Date.now() - startedAt };
   }
-  const detail = await handler.settle(prepared.state, outcome, caps.settle);
-  return { prepared, detail, called: true, outcome };
+  const settled = await handler.settle(prepared.state, outcome, caps.settle);
+  return {
+    prepared,
+    detail: settlementDetail(settled),
+    settled,
+    called: true,
+    outcome,
+  };
 };
 
 /** The one failure the handler recorded. */

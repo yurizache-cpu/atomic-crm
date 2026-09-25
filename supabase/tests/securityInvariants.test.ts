@@ -2918,6 +2918,12 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/tests/company_os_api.sql",
         marker: /N2: an excluded value reached an output/,
       },
+      // Phase 2E.2: the overview's operationalHealth is the tenant's own,
+      // exact and free of any identifier.
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /T1b: operationalHealth carries an identifier/,
+      },
       {
         file: "supabase/tests/company_os_api.sql",
         marker: /N5: a marked_by key left the database/,
@@ -3178,6 +3184,114 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The scanner looks for credential classes and exact server-only names in the built artifacts; it is not entropy detection, and a secret that has neither a known shape nor a known name next to it is not found. A privileged VITE_ name survives into a build only through the published source maps or an import.meta.env read as a whole object (measured: 2 findings with sourcemap: true, 0 without), so a source-level test holds every build input to the same rule; turning source maps off would leave that test as the only check of the name class. Browser memory is not storage: the in-memory query cache holds Company OS projections until logout or reload.",
+  },
+  {
+    id: "SI-60",
+    statement:
+      "Telemetry carries no content: every span name, span attribute, metric and metric label the Company OS emits is declared in one allowlist (engine/telemetry/catalog.ts) and passes one boundary (guardTelemetry) before any adapter sees it; each value is a closed enum, a fixed pattern or a lowercase uuid, internal ids are span-only and never a Prometheus label, an undeclared key is dropped, and a rejected label value becomes other.",
+    provenBy: ["unit test", "static guard"],
+    enforcedBy: [
+      {
+        file: "engine/telemetry/catalog.test.ts",
+        marker:
+          /accepts no content under ANY allowed key: every sentinel is dropped/,
+      },
+      {
+        file: "engine/telemetry/catalog.test.ts",
+        marker:
+          /has no identifier label: no tenant, job, run, review, contact or message/,
+      },
+      {
+        file: "engine/telemetry/catalog.test.ts",
+        marker: /name only declared span attributes/,
+      },
+      {
+        file: "engine/telemetry/workerTelemetry.test.ts",
+        marker:
+          /a guarded port drops undeclared spans and metrics and sanitises before the adapter sees anything/,
+      },
+      {
+        file: "engine/telemetry/prometheusRegistry.test.ts",
+        marker:
+          /keeps the series bounded: sentinels, ids and unknown values all fold into one 'other' series/,
+      },
+      {
+        file: "engine/telemetry/runtimeTelemetry.dbtest.ts",
+        marker: /exports nothing the prompt was built from/,
+      },
+      // The OTLP adapter: what actually leaves the process over the wire.
+      {
+        file: "engine/telemetry/openTelemetry.test.ts",
+        marker:
+          /sends the batched spans as OTLP JSON to the traces URL, and nothing but the catalogue's content/,
+      },
+      {
+        file: "engine/telemetry/catalog.test.ts",
+        marker:
+          /import OpenTelemetry in exactly one adapter file, and no vendor SDK anywhere/,
+      },
+    ],
+    caveat:
+      "The allowlist bounds what telemetry CAN carry, not what an operator does with it: the span-only ids are internal operational identifiers (ADR 0015 addendum), and a trace backend that joins them with the database learns what the database already holds. Two things leave the process, each only when configured: the Prometheus text (METRICS_ENABLED) and OTLP spans to OTEL_EXPORTER_OTLP_ENDPOINT, through the one adapter that imports OpenTelemetry (engine/telemetry/openTelemetry.ts), with no resource detection, so the resource is service.name alone.",
+  },
+  {
+    id: "SI-61",
+    statement:
+      "Telemetry has no authority and stays private: the no-op is the default; a telemetry failure never changes a job's outcome, its statements, its transactions, a retry or a provider call; a settlement is counted only after it commits, and a replay counts nothing; the worker's metrics listener exists only when METRICS_ENABLED is true, binds 127.0.0.1 unless told otherwise, serves GET /metrics and nothing else, and is no part of the browser application; and neither Prometheus nor the Collector holds a database credential, the database network or a public port.",
+    provenBy: ["unit test", "static guard", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "engine/worker/runtimeTelemetry.test.ts",
+        marker:
+          /runs the same statements, in the same transactions, to the same outcome with no, recording or throwing telemetry/,
+      },
+      {
+        file: "engine/worker/runtimeTelemetry.test.ts",
+        marker:
+          /counts nothing for a later attempt that finds the run already settled: a replay is not a settlement/,
+      },
+      {
+        file: "engine/telemetry/runtimeTelemetry.dbtest.ts",
+        marker:
+          /counts no second settlement and makes no second call when a crashed attempt's run is settled on replay/,
+      },
+      {
+        file: "engine/telemetry/metricsServer.test.ts",
+        marker:
+          /serves GET \/metrics on loopback as Prometheus text, and nothing else/,
+      },
+      {
+        file: "engine/telemetry/metricsServer.test.ts",
+        marker:
+          /is the no-op, opening nothing and starting no tracer, when nothing is configured/,
+      },
+      {
+        file: "engine/telemetry/openTelemetry.test.ts",
+        marker:
+          /changes nothing the worker does when the Collector is down, and stops within its bound/,
+      },
+      {
+        file: "engine/telemetry/observabilityDeployment.test.ts",
+        marker: /publishes every port on loopback only/,
+      },
+      {
+        file: "engine/telemetry/observabilityDeployment.test.ts",
+        marker:
+          /gives neither service a credential, the database network or anything to write/,
+      },
+      {
+        file: "engine/telemetry/observabilityDeployment.test.ts",
+        marker:
+          /is never part of the browser application or its build configuration/,
+      },
+      {
+        file: "supabase/migrations/20260927120000_worker_queue_depth.sql",
+        marker:
+          /a role other than ops_worker can execute ops\.worker_queue_depth\(\)/,
+      },
+    ],
+    caveat:
+      "Whoever can set the worker's environment can bind the listener to another address, which a container deployment does to reach its private network; the static guard covers the committed stack, not a hand-written deployment. The queue-depth gauge is the one telemetry read of the database: one argument-free, STABLE count the worker takes on its reaper tick only when metrics are on, in its own contained transaction.",
   },
 ];
 

@@ -92,8 +92,46 @@ export type PrepareOutcome<TState> =
    * attempt is given back, and the job waits until the stop is cleared.
    */
   | { readonly kind: "held" }
-  /** Commit the prepare transaction, then make the call with `state`. */
-  | { readonly kind: "call"; readonly state: TState };
+  /**
+   * Commit the prepare transaction, then make the call with `state`.
+   * `providerKind` names who is called, for telemetry only (Phase 2E.1): a
+   * label from catalog.ts's closed set, never an address or a key.
+   */
+  | {
+      readonly kind: "call";
+      readonly state: TState;
+      readonly providerKind?: string;
+    };
+
+/**
+ * What a settlement recorded, for telemetry only (Phase 2E.1), from a closed
+ * vocabulary. The runtime records it only AFTER the transaction that recorded
+ * the settlement has committed, so a settlement that rolled back, or a later
+ * attempt that finds the record already settled, counts nothing. It carries no
+ * content, and nothing reads it back to decide anything.
+ */
+export type SettlementObservation =
+  | {
+      readonly subject: "agent_run";
+      readonly status: string;
+      readonly runId?: string;
+    }
+  | {
+      readonly subject: "decision_evaluation";
+      readonly status: string;
+      readonly policyVersion?: string;
+    };
+
+/** A settlement's job detail, with what it recorded for telemetry. */
+export interface ObservedSettlement {
+  readonly detail: string;
+  readonly observation: SettlementObservation;
+}
+
+/** The job detail of a settlement, with or without an observation. */
+export const settlementDetail = (
+  settled: string | ObservedSettlement,
+): string => (typeof settled === "string" ? settled : settled.detail);
 
 /**
  * The call's result, as DATA. A failed call is an outcome to record, not an
@@ -138,11 +176,12 @@ export interface ExternalCallHandlerDefinition<
     budget: PrepareBudget,
   ): Promise<PrepareOutcome<TState>>;
   call(state: TState, context: ExternalCallContext): Promise<TResult>;
+  /** The job's detail, optionally with a telemetry observation. */
   settle(
     state: TState,
     outcome: CallOutcome<TResult>,
     capabilities: Pick<Capabilities, KS>,
-  ): Promise<string>;
+  ): Promise<string | ObservedSettlement>;
 }
 
 /** Erased form, for storage in the registry. */

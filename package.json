@@ -37,6 +37,7 @@
     "ops": "node engine/cli/operator.ts",
     "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts",
     "lead-triage:demo": "node engine/cli/leadTriageDemo.ts",
+    "observability:demo": "node engine/cli/observabilityDemo.ts",
     "gateway:provision": "node scripts/provision-gateway-role.mjs",
     "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
     "messaging": "node engine/cli/messaging.ts"
@@ -45,6 +46,9 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@hello-pangea/dnd": "^18.0.1",
     "@nivo/bar": "^0.99.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/sdk-node": "0.222.0",
     "@radix-ui/react-accordion": "^1.2.13",
     "@radix-ui/react-avatar": "^1.1.12",
     "@radix-ui/react-checkbox": "^1.3.4",

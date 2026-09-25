@@ -82,9 +82,11 @@ import {
 import { PermanentError, SecurityError, TransientError } from "./failures.ts";
 import {
   isExternalCallHandler,
+  settlementDetail,
   type CallOutcome,
   type ExternalCallContext,
   type ExternalCallHandlerDefinition,
+  type ObservedSettlement,
   type PrepareBudget,
 } from "./handlerRegistry.ts";
 import type { LeasedJob } from "./job.ts";
@@ -135,6 +137,8 @@ interface PreparedCall {
   readonly handler: ExternalCallHandlerDefinition;
   readonly state: unknown;
   readonly deadline: number;
+  /** Who is called, for telemetry only. */
+  readonly providerKind: string | undefined;
 }
 
 type Prepared =
@@ -233,7 +237,9 @@ export async function runExternalCall(
   // --- TX2a: resume, prepare, commit without completing. -------------------
   let prepared: PreparedCall;
   try {
-    const outcome = await prepareExternalCall(scope, leaseSafetyMarginMs);
+    const outcome = await scope.trace.phase("company_os.governance.check", () =>
+      prepareExternalCall(scope, leaseSafetyMarginMs),
+    );
     if (outcome.kind === "settled") return succeeded(scope, outcome.detail);
     if (outcome.kind === "deferred") return deferred(scope, outcome.stopId);
     prepared = outcome;
@@ -242,7 +248,10 @@ export async function runExternalCall(
   }
 
   // --- CALL: no transaction. It cannot throw; a failed call is an outcome. --
-  const callOutcome = await performCall(scope, prepared, signal);
+  const callOutcome = await scope.trace.providerCall(
+    prepared.providerKind,
+    () => performCall(scope, prepared, signal),
+  );
 
   // The crash seam for the window a paid call makes dangerous. Deliberately
   // outside every try: a throw here must look like the process dying, which
@@ -250,16 +259,20 @@ export async function runExternalCall(
   if (onCallFinished) await onCallFinished(scope.job);
 
   // --- TX2b: resume, settle, complete. -------------------------------------
-  let detail: string;
+  let settled: string | ObservedSettlement;
   try {
-    detail = await settleExternalCall(scope, prepared, callOutcome);
+    settled = await scope.trace.phase("company_os.settlement", () =>
+      settleExternalCall(scope, prepared, callOutcome),
+    );
   } catch (error) {
     return failed(scope, error);
   }
+  // Committed: only now does telemetry count what the settlement recorded.
+  if (typeof settled !== "string") scope.trace.settled(settled.observation);
 
   // --- AFTER: the settlement is committed; nothing below can undo it. ------
   await runAfterSettlement(scope, prepared.handler.afterSettlement ?? []);
-  return succeeded(scope, detail);
+  return succeeded(scope, settlementDetail(settled));
 }
 
 /**
@@ -338,7 +351,13 @@ async function prepareExternalCall(
 
     const stopId = await holdForExecutionStop(tx);
     if (stopId !== null) return { kind: "deferred", stopId };
-    return { kind: "call", handler, state: outcome.state, deadline };
+    return {
+      kind: "call",
+      handler,
+      state: outcome.state,
+      deadline,
+      providerKind: outcome.providerKind,
+    };
   });
 }
 
@@ -465,20 +484,20 @@ async function settleExternalCall(
   scope: AttemptScope,
   prepared: PreparedCall,
   outcome: CallOutcome<unknown>,
-): Promise<string> {
+): Promise<string | ObservedSettlement> {
   return scope.db.withTransaction(async (tx) => {
     await assumeWorkerRole(tx);
     const trusted = await resumeTrustedLease<LeasedJob>(tx, scope, RESUME_SQL);
 
     const { handler, state } = prepared;
-    const detail = await withScopedCapabilities(
+    const settled = await withScopedCapabilities(
       tx,
       handler.settleCapabilities,
       (capabilities) => handler.settle(state, outcome, capabilities),
     );
 
-    await completeJob(tx, trusted.id, detail);
-    return detail;
+    await completeJob(tx, trusted.id, settlementDetail(settled));
+    return settled;
   });
 }
 
