@@ -622,3 +622,38 @@ CREATE OR REPLACE FUNCTION "public"."synchronize_deal_pipeline"() RETURNS trigge
       return new;
     end;
     $$;
+
+CREATE OR REPLACE FUNCTION "public"."record_deal_stage_transition"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    begin
+      -- changed_at is when the write was applied, read AFTER the row lock was
+      -- taken. Concurrent changes of one deal are serialised by that lock, so
+      -- a deal's observations follow the order the lock granted. The deal's
+      -- stage_entered_at is its transaction's start, which can be earlier.
+      if tg_op = 'INSERT' then
+        insert into public.deal_stage_transitions (deal_id, from_stage, to_stage, changed_at)
+        values (new.id, null, new.pipeline_stage, pg_catalog.clock_timestamp());
+      elsif new.pipeline_stage is distinct from old.pipeline_stage then
+        insert into public.deal_stage_transitions (deal_id, from_stage, to_stage, changed_at)
+        values (new.id, old.pipeline_stage, new.pipeline_stage, pg_catalog.clock_timestamp());
+      end if;
+      return null;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."deal_stage_transitions_append_only"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+    begin
+      -- The cascade from a deal's own deletion runs inside that delete's
+      -- referential trigger, one level deeper than any direct statement.
+      if tg_op = 'DELETE' and pg_trigger_depth() > 1 then
+        return old;
+      end if;
+      raise exception 'public.deal_stage_transitions is append-only: % refused', lower(tg_op)
+        using errcode = '42501';
+    end;
+    $$;

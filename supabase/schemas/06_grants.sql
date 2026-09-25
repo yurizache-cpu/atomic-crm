@@ -71,6 +71,15 @@ revoke all on table public.owner_provisioning_log from anon, authenticated, serv
 revoke all on sequence public.owner_provisioning_log_id_seq from anon, authenticated, service_role;
 revoke all on function public.bootstrap_owner(uuid, text, text) from public, anon, authenticated, service_role;
 
+-- Deal stage-transition ledger (Phase 3B.1): written only by its trigger,
+-- read only by the ops commercial adapter. Same position as above: after the
+-- blanket service_role grants. Matches
+-- 20260929120000_deal_stage_transition_ledger.sql.
+revoke all on table public.deal_stage_transitions from anon, authenticated, service_role;
+revoke all on sequence public.deal_stage_transitions_id_seq from anon, authenticated, service_role;
+revoke all on function public.record_deal_stage_transition() from public, anon, authenticated, service_role;
+revoke all on function public.deal_stage_transitions_append_only() from public, anon, authenticated, service_role;
+
 -- New objects are private by default. Add explicit grants above when a browser
 -- capability is intentionally introduced.
 alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;
