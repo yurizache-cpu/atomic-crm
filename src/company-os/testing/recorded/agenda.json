@@ -1,0 +1,425 @@
+{
+  "timezone": "America/Sao_Paulo",
+  "timezoneConfigured": true,
+  "today": "2030-03-04",
+  "bookings": {
+    "todayBooked": 3,
+    "next7DaysBooked": 3,
+    "cancelledInWindow": 1,
+    "rescheduledInWindow": 1,
+    "conflicts": 0,
+    "today": [
+      {
+        "id": "00000000-0000-4000-a000-000000000001",
+        "startAt": "2030-03-04T12:00:00.000000Z",
+        "endAt": "2030-03-04T12:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000015",
+          "label": "Agenda Profissional A"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "synced"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000002",
+        "startAt": "2030-03-04T14:00:00.000000Z",
+        "endAt": "2030-03-04T14:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000015",
+          "label": "Agenda Profissional A"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000003",
+        "startAt": "2030-03-04T17:00:00.000000Z",
+        "endAt": "2030-03-04T17:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000016",
+          "label": "Agenda Profissional B"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "indeterminate"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000004",
+        "startAt": "2030-03-04T18:00:00.000000Z",
+        "endAt": "2030-03-04T18:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "cancelled",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000015",
+          "label": "Agenda Profissional A"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": "patient_request",
+        "taskId": null,
+        "calendarSync": "pending"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000005",
+        "startAt": "2030-03-04T19:00:00.000000Z",
+        "endAt": "2030-03-04T19:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "rescheduled",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000016",
+          "label": "Agenda Profissional B"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": {
+          "id": "00000000-0000-4000-a000-000000000008",
+          "startAt": "2030-03-06T13:00:00.000000Z"
+        },
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      }
+    ],
+    "upcoming": [
+      {
+        "id": "00000000-0000-4000-a000-000000000006",
+        "startAt": "2030-03-05T12:00:00.000000Z",
+        "endAt": "2030-03-05T12:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000015",
+          "label": "Agenda Profissional A"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000008",
+        "startAt": "2030-03-06T13:00:00.000000Z",
+        "endAt": "2030-03-06T13:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000016",
+          "label": "Agenda Profissional B"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": "00000000-0000-4000-a000-000000000005",
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000007",
+        "startAt": "2030-03-07T17:00:00.000000Z",
+        "endAt": "2030-03-07T17:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "booked",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000016",
+          "label": "Agenda Profissional B"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      }
+    ],
+    "changes": [
+      {
+        "id": "00000000-0000-4000-a000-000000000004",
+        "startAt": "2030-03-04T18:00:00.000000Z",
+        "endAt": "2030-03-04T18:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "cancelled",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000015",
+          "label": "Agenda Profissional A"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": null,
+        "cancelReason": "patient_request",
+        "taskId": null,
+        "calendarSync": "pending"
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000005",
+        "startAt": "2030-03-04T19:00:00.000000Z",
+        "endAt": "2030-03-04T19:50:00.000000Z",
+        "timezone": "America/Sao_Paulo",
+        "status": "rescheduled",
+        "resource": {
+          "id": "00000000-0000-4000-a000-000000000016",
+          "label": "Agenda Profissional B"
+        },
+        "bookingType": {
+          "id": "00000000-0000-4000-a000-000000000018",
+          "label": "Atendimento inicial"
+        },
+        "rescheduledFromId": null,
+        "rescheduledTo": {
+          "id": "00000000-0000-4000-a000-000000000008",
+          "startAt": "2030-03-06T13:00:00.000000Z"
+        },
+        "cancelReason": null,
+        "taskId": null,
+        "calendarSync": "pending"
+      }
+    ]
+  },
+  "followUps": {
+    "due": 2,
+    "overdue": 1,
+    "dueToday": 2,
+    "awaitingProcessing": 1,
+    "scheduledNext7Days": 4,
+    "closedRecently": 2,
+    "needingAction": [
+      {
+        "id": "00000000-0000-4000-a000-000000000009",
+        "planId": "00000000-0000-4000-a000-000000000012",
+        "step": 1,
+        "stepCount": 3,
+        "dueAt": "2030-02-28T13:00:00.000000Z",
+        "status": "due",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      },
+      {
+        "id": "00000000-0000-4000-a000-00000000000a",
+        "planId": "00000000-0000-4000-a000-000000000012",
+        "step": 2,
+        "stepCount": 3,
+        "dueAt": "2030-03-04T13:00:00.000000Z",
+        "status": "due",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      }
+    ],
+    "scheduled": [
+      {
+        "id": "00000000-0000-4000-a000-00000000000f",
+        "planId": "00000000-0000-4000-a000-000000000014",
+        "step": 1,
+        "stepCount": 3,
+        "dueAt": "2030-03-04T10:00:00.000000Z",
+        "status": "scheduled",
+        "awaitingProcessing": true,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      },
+      {
+        "id": "00000000-0000-4000-a000-00000000000e",
+        "planId": "00000000-0000-4000-a000-000000000013",
+        "step": 3,
+        "stepCount": 3,
+        "dueAt": "2030-03-05T14:00:00.000000Z",
+        "status": "scheduled",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      },
+      {
+        "id": "00000000-0000-4000-a000-00000000000b",
+        "planId": "00000000-0000-4000-a000-000000000012",
+        "step": 3,
+        "stepCount": 3,
+        "dueAt": "2030-03-07T13:00:00.000000Z",
+        "status": "scheduled",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000010",
+        "planId": "00000000-0000-4000-a000-000000000014",
+        "step": 2,
+        "stepCount": 3,
+        "dueAt": "2030-03-08T10:00:00.000000Z",
+        "status": "scheduled",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      },
+      {
+        "id": "00000000-0000-4000-a000-000000000011",
+        "planId": "00000000-0000-4000-a000-000000000014",
+        "step": 3,
+        "stepCount": 3,
+        "dueAt": "2030-03-11T10:00:00.000000Z",
+        "status": "scheduled",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": null
+      }
+    ],
+    "recentlyClosed": [
+      {
+        "id": "00000000-0000-4000-a000-00000000000d",
+        "planId": "00000000-0000-4000-a000-000000000013",
+        "step": 2,
+        "stepCount": 3,
+        "dueAt": "2030-03-02T14:00:00.000000Z",
+        "status": "cancelled",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": "lead_replied"
+      },
+      {
+        "id": "00000000-0000-4000-a000-00000000000c",
+        "planId": "00000000-0000-4000-a000-000000000013",
+        "step": 1,
+        "stepCount": 3,
+        "dueAt": "2030-02-26T14:00:00.000000Z",
+        "status": "completed",
+        "awaitingProcessing": false,
+        "policy": { "key": "lead-cadence", "label": "Cadência de leads" },
+        "taskId": null,
+        "closeReason": "completed"
+      }
+    ]
+  },
+  "availability": [
+    {
+      "resource": {
+        "id": "00000000-0000-4000-a000-000000000015",
+        "label": "Agenda Profissional A"
+      },
+      "bookingType": {
+        "id": "00000000-0000-4000-a000-000000000018",
+        "label": "Atendimento inicial",
+        "durationMinutes": 50
+      },
+      "nextSlots": [
+        {
+          "startAt": "2030-03-04T17:00:00.000000Z",
+          "endAt": "2030-03-04T17:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T18:00:00.000000Z",
+          "endAt": "2030-03-04T18:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T19:00:00.000000Z",
+          "endAt": "2030-03-04T19:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T20:00:00.000000Z",
+          "endAt": "2030-03-04T20:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-05T13:00:00.000000Z",
+          "endAt": "2030-03-05T13:50:00.000000Z"
+        }
+      ]
+    },
+    {
+      "resource": {
+        "id": "00000000-0000-4000-a000-000000000016",
+        "label": "Agenda Profissional B"
+      },
+      "bookingType": {
+        "id": "00000000-0000-4000-a000-000000000018",
+        "label": "Atendimento inicial",
+        "durationMinutes": 50
+      },
+      "nextSlots": [
+        {
+          "startAt": "2030-03-04T14:00:00.000000Z",
+          "endAt": "2030-03-04T14:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T18:00:00.000000Z",
+          "endAt": "2030-03-04T18:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T19:00:00.000000Z",
+          "endAt": "2030-03-04T19:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-04T20:00:00.000000Z",
+          "endAt": "2030-03-04T20:50:00.000000Z"
+        },
+        {
+          "startAt": "2030-03-05T12:00:00.000000Z",
+          "endAt": "2030-03-05T12:50:00.000000Z"
+        }
+      ]
+    }
+  ],
+  "calendar": {
+    "state": "simulated",
+    "upcomingSyncs": {
+      "pending": 7,
+      "running": 0,
+      "synced": 1,
+      "failed": 0,
+      "indeterminate": 1,
+      "skipped": 0
+    }
+  }
+}

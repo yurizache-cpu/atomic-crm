@@ -134,6 +134,7 @@ export const sourceLabel = labelFrom({
   "company-os-ui": "Company OS",
   "lead-triage-demo": "Demonstração",
   "operator-cli": "Operador",
+  "scheduling-demo": "Demonstração de agenda",
   seed: "Configuração inicial",
   "whatsapp-gateway": "WhatsApp",
   other: "Outra origem",
@@ -228,6 +229,19 @@ export const eventSentence = labelFrom({
   "communication.outbound_failed": "Envio falhou",
   "communication.outbound_indeterminate": "Envio com resultado incerto",
   "communication.delivery_updated": "Situação da entrega atualizada",
+  "follow_up.scheduled": "Follow-up agendado",
+  "follow_up.due": "Follow-up precisa de ação",
+  "follow_up.completed": "Follow-up concluído",
+  "follow_up.cancelled": "Follow-up cancelado",
+  "follow_up.superseded": "Follow-up substituído por um novo plano",
+  "booking.created": "Atendimento agendado",
+  "booking.rescheduled": "Atendimento remarcado",
+  "booking.cancelled": "Atendimento cancelado",
+  "calendar.sync_requested": "Sincronização de calendário pedida",
+  "calendar.sync_completed": "Calendário sincronizado",
+  "calendar.sync_failed": "Sincronização de calendário falhou",
+  "calendar.sync_indeterminate": "Sincronização de calendário incerta",
+  "calendar.sync_skipped": "Sincronização de calendário sem evento",
 });
 
 export const yesNoLabel = (value: boolean): string => (value ? "Sim" : "Não");

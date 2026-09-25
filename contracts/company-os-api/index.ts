@@ -14,6 +14,7 @@
 // Function or import.meta. What the lint cannot see (a value that reaches such
 // an object through a parameter) stays a review rule.
 
+export * from "./agenda.ts";
 export * from "./agents.ts";
 export * from "./context.ts";
 export * from "./decisions.ts";

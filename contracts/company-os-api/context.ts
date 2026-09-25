@@ -5,9 +5,11 @@
 // field is `platform.globalAdmissionBlocked` (OD-7); its shadow calibration
 // section is aggregate agreement counts only (Phase 2D.3); its operational
 // health section is exact, tenant-scoped counts, times and micros from
-// authoritative rows, never telemetry (Phase 2E.2).
+// authoritative rows, never telemetry (Phase 2E.2); its agenda section is the
+// tenant's scheduling state, read only (Phase 3A).
 
 import { z } from "zod";
+import { AgendaSchema } from "./agenda.ts";
 import { DecisionIntelligenceSchema } from "./decisions.ts";
 import { OperationalHealthSchema } from "./health.ts";
 import {
@@ -81,6 +83,8 @@ export const OverviewSummarySchema = z.strictObject({
   decisionIntelligence: DecisionIntelligenceSchema,
   // Phase 2E.2: operational health (health.ts).
   operationalHealth: OperationalHealthSchema,
+  // Phase 3A: the agenda (agenda.ts).
+  agenda: AgendaSchema,
 });
 
 export type OperatorContext = z.infer<typeof OperatorContextSchema>;

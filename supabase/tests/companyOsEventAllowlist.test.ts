@@ -42,7 +42,13 @@ const EVENT_SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 // unit-test default in engine/domain/leadIntake.test.ts ever carried it.)
 // company-os-ui left this list in S7.1: the review decision writes it
 // (ops.decide_review_as_member, supabase/migrations/20260923120000_*).
-const UNWRITTEN_SOURCES: Readonly<Record<string, string>> = Object.freeze({});
+const UNWRITTEN_SOURCES: Readonly<Record<string, string>> = Object.freeze({
+  // Phase 3A: allowlisted with the agenda read model; its writer, the
+  // synthetic scheduling demo (engine/cli/schedulingDemo.ts), lands with the
+  // scheduling CLI, and this entry leaves then.
+  "scheduling-demo":
+    "the synthetic scheduling demo, added with the scheduling CLI",
+});
 
 const read = (path: string): string =>
   readFileSync(path, "utf8").replace(/\r\n/g, "\n");

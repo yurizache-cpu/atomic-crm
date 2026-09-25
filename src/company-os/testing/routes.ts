@@ -38,6 +38,16 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     markers: ["Decisões pendentes"],
   },
   {
+    hash: "#/company-os/agenda",
+    heading: "Agenda",
+    // The recorded tenant has no scheduling rows: its agenda is empty and
+    // local-only (the populated agenda is testing/recorded/agenda.json).
+    markers: [
+      "Nenhum atendimento hoje.",
+      "Nenhuma agenda com disponibilidade configurada.",
+    ],
+  },
+  {
     hash: "#/company-os/health",
     heading: "Saúde operacional",
     markers: ["Modelo de IA (execuções de agente)", "Precisa de atenção"],

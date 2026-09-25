@@ -1,7 +1,10 @@
 import {
+  AgendaSchema,
   withoutDefaultArguments,
+  type Agenda,
   type CompanyOsOperation,
   type OperationResult,
+  type OverviewSummary,
 } from "../../../contracts/company-os-api/index.ts";
 import {
   createFakeSession,
@@ -10,6 +13,7 @@ import {
   type FakeSession,
   type RecordedCall as PortCall,
 } from "./fakeSession";
+import agendaFile from "./recorded/agenda.json";
 import idsFile from "./recorded/ids.json";
 import platformStopFile from "./recorded/platform-stop.json";
 import taskManyRunsFile from "./recorded/task-many-runs.json";
@@ -57,6 +61,24 @@ const FILES: Readonly<Record<RecordedScenario, RecordedFile>> = {
 
 /** Every recorded row, by the stable label the recorder gave it. */
 export const RECORDED_IDS: Readonly<Record<string, string>> = idsFile.ids;
+
+/**
+ * The populated agenda (Phase 3A), recorded from the real ops.cos_agenda at a
+ * fixed instant (engine/domain/companyOsAgendaRecording.dbtest.ts): a
+ * fictional clinic's Monday, 2030-03-04 10:30 in São Paulo. The shared
+ * recordings hold an empty agenda, because their tenant has no scheduling
+ * rows and an agenda depends on the day.
+ */
+export const RECORDED_AGENDA_AS_OF = "2030-03-04T13:30:00.000000Z";
+
+export const recordedAgenda = (): Agenda => AgendaSchema.parse(agendaFile);
+
+/** The recorded tenant's overview, at the agenda's instant, carrying it. */
+export const overviewWithRecordedAgenda = (): OverviewSummary => ({
+  ...recorded("overview"),
+  asOf: RECORDED_AGENDA_AS_OF,
+  agenda: recordedAgenda(),
+});
 
 /** The recorded id of a fixture row (`agent:lead-triage`, `run:held`). */
 export const rid = (label: string): string => {
