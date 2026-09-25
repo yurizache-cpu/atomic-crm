@@ -3,7 +3,8 @@
 -- WHAT THIS MIGRATION ADDS (docs/PHASE_3A_REPORT.md):
 --
 --   1. ops.calendar_connections: whether a company's bookings are mirrored to
---      an external calendar, and with which provider. The only provider kind
+--      an external calendar, with which provider and under which generic event
+--      title (the owner's data). The only provider kind
 --      that can be configured is `fake`, the deterministic provider of the
 --      tests and the synthetic demo (the Company OS shows it as "Simulado").
 --      REAL GOOGLE CALENDAR IS NOT CONNECTED: no authentication model, token
@@ -27,8 +28,8 @@
 --      calling again (AT MOST ONCE); ops.settle_calendar_sync stores the
 --      outcome. A provider event id is stored only on an unambiguous success.
 --      Nothing retries an ambiguous call.
---   5. The minimised request: a generic title the owner configured (default
---      "Atendimento"), the start and end instants, the zone and an opaque
+--   5. The minimised request: a generic title the owner configured (the demo
+--      uses "Atendimento"), the start and end instants, the zone and an opaque
 --      reference. Never a name, phone, email, note, message, model output,
 --      triage text, resource or booking-type label.
 
@@ -41,7 +42,7 @@ create table ops.calendar_connections (
   tenant_id     uuid not null references ops.tenants (id) on delete restrict,
   company_id    uuid not null,
   provider_kind text not null,
-  event_title   text not null default 'Atendimento',
+  event_title   text not null,
   active        boolean not null default true,
   configured_by text not null,
   configured_at timestamptz not null default now(),
@@ -91,6 +92,7 @@ create table ops.calendar_syncs (
                                                     or (external_event_id is not null) = (status = 'synced')),
   constraint calendar_syncs_changed_event    check (operation = 'create'
                                                     or status in ('pending', 'skipped')
+                                                    or (status = 'failed' and started_at is null)
                                                     or external_event_id is not null),
   constraint calendar_syncs_event_format     check (external_event_id is null
                                                     or external_event_id ~ '^[A-Za-z0-9._:@-]{1,255}$'),
@@ -349,8 +351,9 @@ $$;
 --                              no confirmed event to change);
 --   {action: stopped}          a covering stop: nothing recorded, the runtime
 --                              defers the job;
---   {action: wait}             an update or cancel whose chain's create is
---                              still unsettled: nothing recorded, retry later;
+--   {action: wait}             an earlier sync of the booking's chain is
+--                              still unsettled: nothing recorded, retry later
+--                              (on the job's last attempt: failed instead);
 --   {action: start, ...}       running is recorded; call exactly once with
 --                              exactly this minimised request.
 create function ops.start_calendar_sync(p_provider_kind text)
@@ -360,7 +363,8 @@ declare
   v_job        ops.jobs := ops.leased_job();
   v_sync       ops.calendar_syncs;
   v_connection ops.calendar_connections;
-  v_booking    ops.bookings;
+  v_head       ops.bookings;
+  v_chain      uuid[];
   v_root       uuid;
   v_create     ops.calendar_syncs;
   v_event      text;
@@ -407,23 +411,57 @@ begin
       'status', ops.settle_calendar_sync_without_call(v_sync, 'failed', 'provider_not_configured'));
   end if;
 
-  select b.* into v_booking from ops.bookings b where b.tenant_id = v_sync.tenant_id and b.id = v_sync.booking_id;
+  -- The booking's chain: its root (walking back through reschedules) and every
+  -- booking chained from it. A chain never forks, so it has one HEAD: the
+  -- booking as it is now.
+  with recursive back as (
+    select b.id, b.rescheduled_from_id from ops.bookings b
+     where b.tenant_id = v_sync.tenant_id and b.id = v_sync.booking_id
+    union all
+    select p.id, p.rescheduled_from_id from ops.bookings p
+      join back c on p.id = c.rescheduled_from_id
+     where p.tenant_id = v_sync.tenant_id
+  )
+  select c.id into v_root from back c where c.rescheduled_from_id is null;
+  with recursive fwd as (
+    select b.id from ops.bookings b where b.tenant_id = v_sync.tenant_id and b.id = v_root
+    union all
+    select s.id from ops.bookings s join fwd f on s.rescheduled_from_id = f.id
+     where s.tenant_id = v_sync.tenant_id
+  )
+  select array_agg(f.id) into v_chain from fwd f;
+  select b.* into v_head from ops.bookings b
+   where b.tenant_id = v_sync.tenant_id and b.id = any (v_chain)
+     and not exists (select 1 from ops.bookings s where s.tenant_id = b.tenant_id and s.rescheduled_from_id = b.id);
+
+  -- A chain's syncs run in the order they were requested: this one waits
+  -- (nothing recorded, the job retries) while an earlier one is unsettled, so
+  -- two changes of one booking never reach the provider out of order. On its
+  -- job's last attempt it stops waiting and fails, calling nothing: never left
+  -- pending with no job to settle it, and shown to the owner as failed.
+  if exists (select 1 from ops.calendar_syncs s
+              where s.tenant_id = v_sync.tenant_id and s.booking_id = any (v_chain) and s.id <> v_sync.id
+                and s.status in ('pending', 'running')
+                and (s.requested_at, s.id) < (v_sync.requested_at, v_sync.id)) then
+    if v_job.attempts >= v_job.max_attempts then
+      return jsonb_build_object('action', 'settled', 'calendarSyncId', v_sync.id,
+        'status', ops.settle_calendar_sync_without_call(v_sync, 'failed', 'earlier_sync_not_settled'));
+    end if;
+    return jsonb_build_object('action', 'wait', 'calendarSyncId', v_sync.id);
+  end if;
+
+  -- A create or an update carries the HEAD's current times, so the mirror
+  -- converges on the booking as it is now, whatever happened while this sync
+  -- waited; a head that is no longer booked is not mirrored (its cancel sync
+  -- cancels the event, if there is one).
+  if v_sync.operation <> 'cancel' and v_head.status <> 'booked' then
+    return jsonb_build_object('action', 'settled', 'calendarSyncId', v_sync.id,
+      'status', ops.settle_calendar_sync_without_call(v_sync, 'skipped', 'booking_not_booked'));
+  end if;
   if v_sync.operation <> 'create' then
     -- The chain's event: the root booking's create, when it succeeded.
-    with recursive chain as (
-      select b.id, b.rescheduled_from_id from ops.bookings b
-       where b.tenant_id = v_sync.tenant_id and b.id = v_sync.booking_id
-      union all
-      select p.id, p.rescheduled_from_id from ops.bookings p
-        join chain c on p.id = c.rescheduled_from_id
-       where p.tenant_id = v_sync.tenant_id
-    )
-    select c.id into v_root from chain c where c.rescheduled_from_id is null;
     select s.* into v_create from ops.calendar_syncs s
      where s.tenant_id = v_sync.tenant_id and s.booking_id = v_root and s.operation = 'create';
-    if found and v_create.status in ('pending', 'running') then
-      return jsonb_build_object('action', 'wait', 'calendarSyncId', v_sync.id);
-    end if;
     if not found or v_create.status <> 'synced' then
       return jsonb_build_object('action', 'settled', 'calendarSyncId', v_sync.id,
         'status', ops.settle_calendar_sync_without_call(v_sync, 'skipped', 'no_confirmed_event'));
@@ -442,9 +480,9 @@ begin
     'request', case when v_sync.operation = 'cancel' then null
                     else jsonb_build_object(
                       'title', v_connection.event_title,
-                      'startAt', ops.cos_ts(v_booking.start_at),
-                      'endAt', ops.cos_ts(v_booking.end_at),
-                      'timeZone', v_booking.timezone,
+                      'startAt', ops.cos_ts(v_head.start_at),
+                      'endAt', ops.cos_ts(v_head.end_at),
+                      'timeZone', v_head.timezone,
                       'reference', v_sync.id) end);
 end
 $$;
@@ -524,8 +562,11 @@ declare
   v_id uuid;
 begin
   perform ops.require_scheduling_actor(p_actor, 'ops.configure_calendar_connection');
+  if p_event_title is null then
+    raise exception using errcode = 'OS400', message = 'ops.configure_calendar_connection: a connection names the generic title its events carry';
+  end if;
   insert into ops.calendar_connections (tenant_id, company_id, provider_kind, event_title, active, configured_by)
-  values (p_tenant_id, p_company_id, p_provider_kind, coalesce(p_event_title, 'Atendimento'), coalesce(p_active, true), p_actor)
+  values (p_tenant_id, p_company_id, p_provider_kind, p_event_title, coalesce(p_active, true), p_actor)
   on conflict (tenant_id, company_id) do update
      set provider_kind = excluded.provider_kind, event_title = excluded.event_title, active = excluded.active,
          configured_by = excluded.configured_by, configured_at = now()

@@ -132,7 +132,7 @@ async function createOffice(
     }
     if (connected) {
       await tx.query(
-        "select ops.configure_calendar_connection($1, $2, 'fake', null, true, 'dbtest')",
+        "select ops.configure_calendar_connection($1, $2, 'fake', 'Atendimento', true, 'dbtest')",
         [tenantId, companyId],
       );
     }
@@ -439,6 +439,172 @@ describe("calendar jobs obey the one kill switch and their chain", () => {
     expect(fake.calls.map((c) => c.operation)).toEqual(["create", "update"]);
   });
 
+  it("stops waiting on its job's last attempt: the update fails, calling nothing, never left pending", async () => {
+    // Arrange: the create is not due; the update's job has one attempt.
+    const fake = fakeWith();
+    const booked = await book("last-attempt", saoPaulo(5, "11:00"));
+    await asOwner((tx) =>
+      rescheduleBooking(
+        tx,
+        context(TENANT_A),
+        booked.bookingId,
+        saoPaulo(6, "11:00"),
+        "mv-last",
+      ),
+    );
+    const [create, update] = await syncs();
+    await admin.query(
+      "update ops.jobs set available_at = now() + interval '1 hour' where id = $1",
+      [create.job_id],
+    );
+    await admin.query("update ops.jobs set max_attempts = 1 where id = $1", [
+      update.job_id,
+    ]);
+
+    // Act
+    const outcome = await run(fake);
+
+    // Assert
+    expect(outcome.detail).toContain("status=failed");
+    expect((await syncs())[1]).toMatchObject({
+      status: "failed",
+      error_code: "earlier_sync_not_settled",
+    });
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("creates the event at the booking's current time when it was moved while the create waited", async () => {
+    // Arrange: the booking is moved before its create has run.
+    const fake = fakeWith();
+    const booked = await book("moved-early", saoPaulo(6, "09:00"));
+    await asOwner((tx) =>
+      rescheduleBooking(
+        tx,
+        context(TENANT_A),
+        booked.bookingId,
+        saoPaulo(6, "11:00"),
+        "mv-early",
+      ),
+    );
+    // Act: the create, then the update behind it.
+    await run(fake);
+    await run(fake);
+
+    // Assert: both calls carry the booking as it is now.
+    const now = saoPaulo(6, "11:00").toISOString().replace("Z", "000Z");
+    expect(fake.calls.map((c) => [c.operation, c.request?.startAt])).toEqual([
+      ["create", now],
+      ["update", now],
+    ]);
+    expect((await syncs()).map((r) => r.status)).toEqual(["synced", "synced"]);
+  });
+
+  it("creates no event for a booking cancelled before its create ran", async () => {
+    const fake = fakeWith();
+    const booked = await book("cancelled-early", saoPaulo(6, "10:00"));
+    await asOwner((tx) =>
+      cancelBooking(tx, context(TENANT_A), booked.bookingId, "patient_request"),
+    );
+    await run(fake);
+    await run(fake);
+    expect(
+      (await syncs()).map((r) => [r.operation, r.status, r.error_code]),
+    ).toEqual([
+      ["create", "skipped", "booking_not_booked"],
+      ["cancel", "skipped", "no_confirmed_event"],
+    ]);
+    expect(fake.calls).toHaveLength(0);
+  });
+
+  it("runs a chain's syncs in the order they were requested: a later update waits for an earlier one", async () => {
+    // Arrange: created and mirrored, then moved twice; the first move's job
+    // is not due yet, the second's is.
+    const fake = fakeWith();
+    const booked = await book("moved-twice", saoPaulo(7, "09:00"));
+    await run(fake);
+    const first = await asOwner((tx) =>
+      rescheduleBooking(
+        tx,
+        context(TENANT_A),
+        booked.bookingId,
+        saoPaulo(7, "10:00"),
+        "mv-1st",
+      ),
+    );
+    await asOwner((tx) =>
+      rescheduleBooking(
+        tx,
+        context(TENANT_A),
+        first.bookingId,
+        saoPaulo(7, "11:00"),
+        "mv-2nd",
+      ),
+    );
+    const [, earlier, later] = await syncs();
+    await admin.query(
+      "update ops.jobs set available_at = now() + interval '1 hour' where id = $1",
+      [earlier.job_id],
+    );
+
+    // Act
+    const waited = await run(fake);
+    await makeJobDue(admin, earlier.job_id);
+    await run(fake);
+    await makeJobDue(admin, later.job_id);
+    await run(fake);
+
+    // Assert: the later update waited, then both reached the provider in
+    // order, each carrying the booking's current time.
+    expect(waited.outcome).toBe("retry");
+    const latest = saoPaulo(7, "11:00").toISOString().replace("Z", "000Z");
+    expect(fake.calls.map((c) => [c.operation, c.request?.startAt])).toEqual([
+      ["create", saoPaulo(7, "09:00").toISOString().replace("Z", "000Z")],
+      ["update", latest],
+      ["update", latest],
+    ]);
+    expect((await syncs()).map((r) => r.status)).toEqual([
+      "synced",
+      "synced",
+      "synced",
+    ]);
+  });
+
+  it("settles an update and a cancel as failed without a call on a worker with no calendar provider", async () => {
+    // Arrange: mirrored once, then moved and cancelled.
+    const booked = await book("no-provider", saoPaulo(8, "09:00"));
+    await run(fakeWith());
+    const moved = await asOwner((tx) =>
+      rescheduleBooking(
+        tx,
+        context(TENANT_A),
+        booked.bookingId,
+        saoPaulo(8, "10:00"),
+        "mv-np",
+      ),
+    );
+    await asOwner((tx) =>
+      cancelBooking(tx, context(TENANT_A), moved.bookingId, "patient_request"),
+    );
+
+    // Act: a worker with no provider takes both.
+    const update = await run(UNCONFIGURED_CALENDAR_PORT);
+    const cancel = await run(UNCONFIGURED_CALENDAR_PORT);
+
+    // Assert: each job completed, each sync settled, nothing left pending.
+    expect([update.outcome, cancel.outcome]).toEqual([
+      "succeeded",
+      "succeeded",
+    ]);
+    expect(
+      (await syncs())
+        .slice(1)
+        .map((r) => [r.operation, r.status, r.error_code]),
+    ).toEqual([
+      ["update", "failed", "provider_not_configured"],
+      ["cancel", "failed", "provider_not_configured"],
+    ]);
+  });
+
   it("skips an update whose chain has no confirmed event, calling nothing", async () => {
     const fake = fakeWith({ create: "rejected" });
     const booked = await book("no-event", saoPaulo(5, "11:00"));
@@ -466,7 +632,7 @@ describe("the calendar gate", () => {
   it("refuses a real provider kind: only the deterministic fake can be connected", async () => {
     const error = await asOwner((tx) =>
       tx.query(
-        "select ops.configure_calendar_connection($1, $2, 'google', null, true, 'dbtest')",
+        "select ops.configure_calendar_connection($1, $2, 'google', 'Atendimento', true, 'dbtest')",
         [TENANT_B, officeB.companyId],
       ),
     ).catch((e: unknown) => e);

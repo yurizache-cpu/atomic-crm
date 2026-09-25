@@ -139,7 +139,7 @@ async function build(client: PoolClient): Promise<Built> {
   }
   // A simulated calendar: every booking below requests a sync.
   await client.query(
-    "select ops.configure_calendar_connection($1, $2, 'fake', null, true, $3)",
+    "select ops.configure_calendar_connection($1, $2, 'fake', 'Atendimento', true, $3)",
     [tenantId, companyId, ACTOR],
   );
 

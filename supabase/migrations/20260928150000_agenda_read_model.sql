@@ -90,7 +90,7 @@ declare
   v_tomorrow_start pg_catalog.timestamptz := ((v_today + 1)::pg_catalog.timestamp) at time zone v_zone;
   -- Today and the next seven days.
   v_horizon        pg_catalog.timestamptz := ((v_today + 8)::pg_catalog.timestamp) at time zone v_zone;
-  v_week_before    pg_catalog.timestamptz := p_as_of - interval '7 days';
+  v_week_before    pg_catalog.timestamptz := p_as_of - interval '168 hours';
 begin
   return pg_catalog.jsonb_build_object(
     'timezone', v_zone,
@@ -170,7 +170,7 @@ begin
                                                                                      'endAt', ops.cos_ts(s.end_at))
                                                        order by s.start_at)
                                                 from ops.available_slots(p_tenant_id, r.id, t.id, p_as_of,
-                                                                         p_as_of + interval '14 days', 5) s),
+                                                                         p_as_of + interval '336 hours', 5) s),
                                              '[]'::pg_catalog.jsonb)) as pair
                 from ops.booking_resources r
                 join ops.booking_types t on t.tenant_id = r.tenant_id and t.company_id = r.company_id

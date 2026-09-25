@@ -3310,6 +3310,206 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "Whoever can set the worker's environment can bind the listener to another address, which a container deployment does to reach its private network; the static guard covers the committed stack, not a hand-written deployment. The queue-depth gauge is the one telemetry read of the database: one argument-free, STABLE count the worker takes on its reaper tick only when metrics are on, in its own contained transaction.",
   },
+  {
+    id: "SI-62",
+    statement:
+      "A follow-up is scheduled operator work, never a permission to contact: a cadence is tenant data in an immutable version, a plan is bound to the version it was scheduled with and to one subject that has at most one active plan, and each (plan, step) is one occurrence whose due time the database derives as the anchor plus a fixed number of minutes, independent of any session time zone; creating a plan is idempotent per tenant-scoped key; an occurrence moves only along scheduled, due, completed, cancelled and superseded, becomes due only through its own governed follow_up.due job on the existing queue, whose replay changes nothing and which the one kill switch holds, and a closed occurrence never changes; open work is never deleted; and no follow-up function sends, calls a model or a provider, writes the CRM or acts on a review.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260928120000_follow_up_engine.sql",
+        marker: /A DUE FOLLOW-UP IS WORK, NOT A SEND/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /derives each due time as the anchor plus its offset, identical under any session time zone and across a daylight-saving change/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /returns the same plan for the same request under one key and creates nothing twice/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /leaves a future follow-up unrunnable, marks it due at its time, once, and contacts nobody/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker: /changes nothing when a due job is replayed/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /marks each follow-up due exactly once when several workers race the queue/,
+      },
+      {
+        file: "engine/handlers/followUpDue.test.ts",
+        marker:
+          /declares exactly the one capability that marks the leased follow-up due/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S3 scheduled -> completed/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S3 deleting open work/,
+      },
+    ],
+    caveat:
+      "The owner can DISABLE TRIGGER, as for SI-22 and SI-23, and may delete CLOSED history (retention and erasure); open work is never deleted. A follow_up.due job exhausted by repeated failures leaves its occurrence scheduled and past due, which the Agenda shows as awaiting processing rather than hiding it.",
+  },
+  {
+    id: "SI-63",
+    statement:
+      "No two booked bookings of one resource ever overlap: each booking occupies its span plus its type's buffers, derived by the database and snapshotted on the row, and a GiST exclusion constraint over booked bookings refuses an overlap under every isolation level and for every writer, the owner included, so racing bookings of one time leave exactly one; an authoritative booking instant is a timestamptz, and a local clock time exists only in an availability rule with its IANA zone; a booking's resource, type, time and subject are fixed, a reschedule closes the booking and chains one successor in one statement, so a refused new time leaves the original booked, and it is idempotent per key and safe under concurrent reschedules; cancellation is idempotent, frees the time and deletes nothing; a booked booking is never deleted; offered slots are deterministic and bounded to 31 days and 500 slots; and every scheduling row is tenant-structural, so no booking can name another tenant's resource or type.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260928130000_booking_foundation.sql",
+        marker:
+          /THE conflict rule\. Booked bookings of one resource never overlap/,
+      },
+      {
+        file: "engine/domain/bookingFoundation.dbtest.ts",
+        marker: /lets exactly one of many owners racing for one time commit/,
+      },
+      {
+        file: "engine/domain/bookingFoundation.dbtest.ts",
+        marker:
+          /leaves the original booked, and nothing else, when the new time is taken/,
+      },
+      {
+        file: "engine/domain/bookingFoundation.dbtest.ts",
+        marker:
+          /leaves exactly one booked successor when two reschedules of one booking race/,
+      },
+      {
+        file: "engine/domain/bookingFoundation.dbtest.ts",
+        marker:
+          /resolves local windows in their own zone across daylight-saving changes, as PostgreSQL does/,
+      },
+      {
+        file: "engine/domain/bookingFoundation.dbtest.ts",
+        marker: /refuses an unbounded range or limit/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S5 an overlapping booked booking, raw/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /X1: the break did not take/,
+      },
+    ],
+    caveat:
+      "The conflict rule is per resource: a person who works across two resources is two resources. It is core PostgreSQL only (no btree_gist): the resource is compared as a single-point int8range of an internal slot key. A daylight-saving gap moves a window's local start forward and a repeated hour resolves to its later occurrence, PostgreSQL's rule, and slots step in absolute minutes from the window's start. The insert derivation (the slot key, the end, the buffers and the occupied range) and the foreign keys are ORIGIN-mode checks, as for SI-22: an owner session in replica mode bypasses them, while the exclusion constraint itself holds in every mode.",
+  },
+  {
+    id: "SI-64",
+    statement:
+      "The external calendar mirrors bookings and is never their authority: only the deterministic fake provider can be connected (the provider gate), no credential or token column exists, and a sync never changes a booking; each booking change of a connected company requests at most one sync per (booking, operation), run as an external job the one kill switch holds; running is recorded before the one call, an earlier attempt's running is settled indeterminate and never called again, a timeout, a server error or an unreadable answer is indeterminate and never retried, and a provider event id is stored only on an unambiguous success; and the request is exactly a generic title, the start and end instants, the zone and an opaque reference.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20260928140000_calendar_sync.sql",
+        marker:
+          /The real-provider gate: only the deterministic fake can be configured/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker:
+          /settles a call a crashed worker never recorded as indeterminate, without calling again/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker:
+          /records an ambiguous server error as indeterminate, stores no event id, and never calls again/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker:
+          /mirrors a create, a reschedule and a cancel, in order, with exactly the minimised request/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker: /is held by a job_kind stop on calendar\.create/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker:
+          /runs a chain's syncs in the order they were requested: a later update waits for an earlier one/,
+      },
+      {
+        file: "engine/domain/calendarSync.dbtest.ts",
+        marker:
+          /settles an update and a cancel as failed without a call on a worker with no calendar provider/,
+      },
+      {
+        file: "engine/calendar/calendarPort.test.ts",
+        marker: /refuses any other field a provider could carry content in/,
+      },
+      {
+        file: "engine/calendar/calendarPort.test.ts",
+        marker:
+          /fails every call as not reached, before any network or credential/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S6 a real calendar provider/,
+      },
+    ],
+    caveat:
+      "Real Google Calendar is not connected: it needs an approved authentication model, credential storage and a data-processing decision, then a reviewed migration widening the gate. An uncertain or stuck sync has no resolution act yet; a person resolves it outside the Company OS.",
+  },
+  {
+    id: "SI-65",
+    statement:
+      "Scheduling state changes only through the owner: no application or capability role holds a privilege on a scheduling table or executes a scheduling service, the worker's only reach is its three lease-bound capabilities (mark a follow-up due; start and settle a calendar sync), and the browser reads the agenda through the existing overview and can book, reschedule, cancel or complete nothing; the scheduling tool is read-only by default, its reads run in a read-only transaction, and it changes state only through its explicit allowlist of acts (complete or cancel one follow-up; create, reschedule or cancel one booking), each recorded, with a reason code where it closes something, an instant only with its offset, and no act that sends, calls, configures or touches a stop; and the agenda projection carries no subject reference, actor label, key, conversation id or provider event id.",
+    provenBy: ["live database", "unit test"],
+    enforcedBy: [
+      {
+        file: "engine/cli/scheduling.test.ts",
+        marker:
+          /changes state only by completing or cancelling a follow-up and by creating, rescheduling or cancelling a booking/,
+      },
+      {
+        file: "engine/cli/scheduling.test.ts",
+        marker:
+          /runs a read inside a read-only transaction, before any other statement/,
+      },
+      {
+        file: "engine/cli/scheduling.test.ts",
+        marker:
+          /refuses a local time without its offset rather than guessing a zone/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S1: a role can execute a scheduling function it must not/,
+      },
+      {
+        file: "supabase/tests/follow_up_scheduling.sql",
+        marker: /S7: the agenda carries a subject/,
+      },
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker: /ops\.mark_follow_up_due\(\)/,
+      },
+      {
+        file: "src/company-os/screens/agenda/AgendaScreen.test.tsx",
+        marker:
+          /offers no control that books, moves, cancels or completes anything/,
+      },
+      {
+        file: "engine/domain/companyOsAgendaRecording.dbtest.ts",
+        marker: /parses with its contract, leaks nothing the fixture planted/,
+      },
+    ],
+    caveat:
+      "The browser's scheduling acts are a later, explicit authority decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser stays at exactly its two acts.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

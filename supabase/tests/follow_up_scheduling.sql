@@ -232,7 +232,7 @@ begin
     format('select * from ops.available_slots(%L, %L, %L, now(), now() + interval ''1 day'')',
            pg_temp.id('ta'), pg_temp.id('rb'), pg_temp.id('btb')));
   perform pg_temp.expect_refused('S4 a calendar connection for another tenant''s company', '23503',
-    format('select ops.configure_calendar_connection(%L, %L, %L, null, true, %L)', pg_temp.id('ta'), pg_temp.id('cb'), 'fake', 'x'));
+    format('select ops.configure_calendar_connection(%L, %L, %L, %L, true, %L)', pg_temp.id('ta'), pg_temp.id('cb'), 'fake', 'Atendimento', 'x'));
 end
 $$;
 
@@ -290,14 +290,14 @@ declare
   v_sync uuid;
 begin
   perform pg_temp.expect_refused('S6 a real calendar provider', '23514',
-    format('select ops.configure_calendar_connection(%L, %L, %L, null, true, %L)', pg_temp.id('ta'), pg_temp.id('ca'), 'google', 'x'));
+    format('select ops.configure_calendar_connection(%L, %L, %L, %L, true, %L)', pg_temp.id('ta'), pg_temp.id('ca'), 'google', 'Atendimento', 'x'));
   if exists (select 1 from pg_attribute a
               where a.attrelid in ('ops.calendar_connections'::regclass, 'ops.calendar_syncs'::regclass)
                 and a.attnum > 0 and not a.attisdropped
                 and a.attname ~* '(token|secret|password|credential|oauth|refresh|api_key)') then
     raise exception 'S6: a calendar table holds a credential-shaped column';
   end if;
-  perform ops.configure_calendar_connection(pg_temp.id('ta'), pg_temp.id('ca'), 'fake', null, true, 'fs-owner');
+  perform ops.configure_calendar_connection(pg_temp.id('ta'), pg_temp.id('ca'), 'fake', 'Atendimento', true, 'fs-owner');
   v_booking := (ops.create_booking(pg_temp.id('ta'), pg_temp.id('ra'), pg_temp.id('bta'),
                 ((((now() at time zone 'America/Sao_Paulo')::date + 3) + time '10:00') at time zone 'America/Sao_Paulo'),
                 null, null, 'lead:FS-SUBJECT-SENTINEL', 'fs-synced', 'fs-owner', 'seed') ->> 'booking_id')::uuid;

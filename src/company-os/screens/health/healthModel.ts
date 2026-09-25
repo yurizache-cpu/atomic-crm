@@ -161,15 +161,18 @@ export const attentionItems = (data: OverviewSummary): AttentionItem[] => {
       to: LIST_PATHS.stops,
     });
   }
-  // Phase 3A: an upcoming booking whose calendar mirror ended uncertain. It is
-  // never retried (the calendar may hold the event), so a person resolves it.
-  const calendarUncertain = data.agenda.calendar.upcomingSyncs.indeterminate;
-  if (calendarUncertain > 0) {
+  // Phase 3A: an upcoming booking whose calendar mirror ended uncertain or
+  // failed. Neither is retried (an uncertain call may have acted), so a person
+  // resolves it.
+  const calendarAttention =
+    data.agenda.calendar.upcomingSyncs.indeterminate +
+    data.agenda.calendar.upcomingSyncs.failed;
+  if (calendarAttention > 0) {
     items.push({
       id: "calendar-uncertain",
       icon: CalendarX2,
       tone: "amber",
-      text: `${plural(calendarUncertain, "sincronização de calendário incerta", "sincronizações de calendário incertas")} em atendimentos futuros`,
+      text: `${plural(calendarAttention, "sincronização de calendário incerta ou com falha", "sincronizações de calendário incertas ou com falha")} em atendimentos futuros`,
       to: LIST_PATHS.agenda,
     });
   }

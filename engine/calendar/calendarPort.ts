@@ -9,7 +9,7 @@
 // outcome after checking it again.
 //
 // MINIMISED BY CONSTRUCTION. A request carries exactly a generic title the
-// owner configured (by default "Atendimento"), the start and end instants, the
+// owner configured (the demo uses "Atendimento"), the start and end instants, the
 // IANA zone and an opaque reference (the sync's id). There is no field for a
 // description, an attendee, a location, a name, a phone, an email, a note, a
 // message, model output, triage text, a resource or a booking-type label:

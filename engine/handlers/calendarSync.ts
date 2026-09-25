@@ -7,10 +7,11 @@
 //   prepare  (TX2a, committed) start the sync the LEASE is bound to: the
 //            database re-checks the stops and the connection, records
 //            `running` BEFORE anything is called, and hands back the minimised
-//            request. `stopped` holds the job; `wait` (an update or cancel whose
-//            chain's create is not settled yet) retries later with nothing
-//            recorded; anything else that is not a start settles the job
-//            without calling anyone.
+//            request, carrying the booking chain's CURRENT times. `stopped`
+//            holds the job; `wait` (an earlier sync of the same booking chain
+//            is not settled yet, so a chain's calls never overtake each other)
+//            retries later with nothing recorded; anything else that is not a
+//            start settles the job without calling anyone.
 //   call     (no transaction, no capabilities) one call to the provider.
 //   settle   (TX2b) store the outcome. A provider that was never reached, or
 //            that refused and did not act, is `failed`. Every other failure (a
