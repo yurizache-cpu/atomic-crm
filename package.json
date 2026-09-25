@@ -40,6 +40,7 @@
     "observability:demo": "node engine/cli/observabilityDemo.ts",
     "scheduling": "node engine/cli/scheduling.ts",
     "scheduling:demo": "node engine/cli/schedulingDemo.ts",
+    "funnel:demo": "node engine/cli/funnelDemo.ts",
     "gateway:provision": "node scripts/provision-gateway-role.mjs",
     "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
     "messaging": "node engine/cli/messaging.ts"
