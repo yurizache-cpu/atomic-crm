@@ -1,0 +1,481 @@
+{
+  "status": "available",
+  "timezone": "America/Sao_Paulo",
+  "timezoneConfigured": true,
+  "today": "2030-03-04",
+  "currency": "BRL",
+  "perStageCap": 25,
+  "stages": [
+    {
+      "code": "new_lead",
+      "label": "Novo lead",
+      "position": 1,
+      "converted": false,
+      "total": 2,
+      "amountTotal": null,
+      "amountCount": 0,
+      "cards": [
+        {
+          "dealRef": 102,
+          "stage": "new_lead",
+          "stageEnteredAt": "2030-03-03T13:30:00.000000Z",
+          "stageAgeDays": 1,
+          "nextActionAt": "2030-03-04T14:00:00.000000Z",
+          "nextAction": "today",
+          "amount": null,
+          "origin": { "kind": "recorded", "label": "Orgânico" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 101,
+          "stage": "new_lead",
+          "stageEnteredAt": "2030-03-04T13:30:00.000000Z",
+          "stageAgeDays": 0,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": null,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "contact_started",
+      "label": "Contato iniciado",
+      "position": 2,
+      "converted": false,
+      "total": 2,
+      "amountTotal": 250,
+      "amountCount": 1,
+      "cards": [
+        {
+          "dealRef": 103,
+          "stage": "contact_started",
+          "stageEnteredAt": "2030-03-01T13:30:00.000000Z",
+          "stageAgeDays": 3,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 104,
+          "stage": "contact_started",
+          "stageEnteredAt": "2030-03-02T13:30:00.000000Z",
+          "stageAgeDays": 2,
+          "nextActionAt": "2030-03-06T13:30:00.000000Z",
+          "nextAction": "future",
+          "amount": null,
+          "origin": { "kind": "unknown" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "conversation_active",
+      "label": "Conversa ativa",
+      "position": 3,
+      "converted": false,
+      "total": 2,
+      "amountTotal": null,
+      "amountCount": 0,
+      "cards": [
+        {
+          "dealRef": 105,
+          "stage": "conversation_active",
+          "stageEnteredAt": "2030-02-27T13:30:00.000000Z",
+          "stageAgeDays": 5,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": null,
+          "origin": { "kind": "recorded", "label": "Indicação" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 106,
+          "stage": "conversation_active",
+          "stageEnteredAt": "2030-03-03T13:30:00.000000Z",
+          "stageAgeDays": 1,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": null,
+          "origin": { "kind": "multiple" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "initial_session_scheduled",
+      "label": "Sessão inicial agendada",
+      "position": 4,
+      "converted": false,
+      "total": 2,
+      "amountTotal": 500,
+      "amountCount": 2,
+      "cards": [
+        {
+          "dealRef": 108,
+          "stage": "initial_session_scheduled",
+          "stageEnteredAt": "2030-02-26T13:30:00.000000Z",
+          "stageAgeDays": 6,
+          "nextActionAt": "2030-03-04T14:00:00.000000Z",
+          "nextAction": "today",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Orgânico" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 107,
+          "stage": "initial_session_scheduled",
+          "stageEnteredAt": "2030-03-02T13:30:00.000000Z",
+          "stageAgeDays": 2,
+          "nextActionAt": "2030-03-06T13:30:00.000000Z",
+          "nextAction": "future",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "initial_session_paid",
+      "label": "Sessão inicial paga",
+      "position": 5,
+      "converted": false,
+      "total": 1,
+      "amountTotal": 250,
+      "amountCount": 1,
+      "cards": [
+        {
+          "dealRef": 109,
+          "stage": "initial_session_paid",
+          "stageEnteredAt": "2030-02-28T13:30:00.000000Z",
+          "stageAgeDays": 4,
+          "nextActionAt": "2030-03-06T13:30:00.000000Z",
+          "nextAction": "future",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "initial_session_attended",
+      "label": "Sessão inicial realizada",
+      "position": 6,
+      "converted": false,
+      "total": 1,
+      "amountTotal": 250,
+      "amountCount": 1,
+      "cards": [
+        {
+          "dealRef": 110,
+          "stage": "initial_session_attended",
+          "stageEnteredAt": "2030-02-24T13:30:00.000000Z",
+          "stageAgeDays": 8,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Indicação" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "continuity_offered",
+      "label": "Continuidade oferecida",
+      "position": 7,
+      "converted": false,
+      "total": 1,
+      "amountTotal": 1200,
+      "amountCount": 1,
+      "cards": [
+        {
+          "dealRef": 111,
+          "stage": "continuity_offered",
+          "stageEnteredAt": "2030-02-22T13:30:00.000000Z",
+          "stageAgeDays": 10,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "continuity_accepted",
+      "label": "Continuidade aceita",
+      "position": 8,
+      "converted": false,
+      "total": 1,
+      "amountTotal": 1200,
+      "amountCount": 1,
+      "cards": [
+        {
+          "dealRef": 112,
+          "stage": "continuity_accepted",
+          "stageEnteredAt": "2030-03-01T13:30:00.000000Z",
+          "stageAgeDays": 3,
+          "nextActionAt": "2030-03-06T13:30:00.000000Z",
+          "nextAction": "future",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Orgânico" },
+          "outcome": "open"
+        }
+      ]
+    },
+    {
+      "code": "continuity_converted",
+      "label": "Continuidade convertida",
+      "position": 9,
+      "converted": true,
+      "total": 2,
+      "amountTotal": 2400,
+      "amountCount": 2,
+      "cards": [
+        {
+          "dealRef": 113,
+          "stage": "continuity_converted",
+          "stageEnteredAt": "2030-03-02T13:30:00.000000Z",
+          "stageAgeDays": 2,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "converted"
+        },
+        {
+          "dealRef": 114,
+          "stage": "continuity_converted",
+          "stageEnteredAt": "2030-02-20T13:30:00.000000Z",
+          "stageAgeDays": 12,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Indicação" },
+          "outcome": "converted"
+        }
+      ]
+    }
+  ],
+  "unconfigured": { "total": 0, "cards": [] },
+  "summary": {
+    "active": 12,
+    "overdue": 3,
+    "dueToday": 2,
+    "noNextAction": 3,
+    "convertedUndated": 0,
+    "windowDays": 30,
+    "newDeals": 15,
+    "converted": 2,
+    "lost": 3,
+    "conflicting": 0
+  },
+  "attention": {
+    "cap": 10,
+    "overdue": {
+      "total": 3,
+      "items": [
+        {
+          "dealRef": 103,
+          "stage": "contact_started",
+          "stageEnteredAt": "2030-03-01T13:30:00.000000Z",
+          "stageAgeDays": 3,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 105,
+          "stage": "conversation_active",
+          "stageEnteredAt": "2030-02-27T13:30:00.000000Z",
+          "stageAgeDays": 5,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": null,
+          "origin": { "kind": "recorded", "label": "Indicação" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 110,
+          "stage": "initial_session_attended",
+          "stageEnteredAt": "2030-02-24T13:30:00.000000Z",
+          "stageAgeDays": 8,
+          "nextActionAt": "2030-03-02T13:30:00.000000Z",
+          "nextAction": "overdue",
+          "amount": 250,
+          "origin": { "kind": "recorded", "label": "Indicação" },
+          "outcome": "open"
+        }
+      ]
+    },
+    "noNextAction": {
+      "total": 3,
+      "items": [
+        {
+          "dealRef": 111,
+          "stage": "continuity_offered",
+          "stageEnteredAt": "2030-02-22T13:30:00.000000Z",
+          "stageAgeDays": 10,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 106,
+          "stage": "conversation_active",
+          "stageEnteredAt": "2030-03-03T13:30:00.000000Z",
+          "stageAgeDays": 1,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": null,
+          "origin": { "kind": "multiple" },
+          "outcome": "open"
+        },
+        {
+          "dealRef": 101,
+          "stage": "new_lead",
+          "stageEnteredAt": "2030-03-04T13:30:00.000000Z",
+          "stageAgeDays": 0,
+          "nextActionAt": null,
+          "nextAction": "none",
+          "amount": null,
+          "origin": { "kind": "recorded", "label": "Google Ads" },
+          "outcome": "open"
+        }
+      ]
+    }
+  },
+  "movements": {
+    "coverageStart": "2030-02-24T13:30:00.000000Z",
+    "windowDays": 30,
+    "totalInWindow": 9,
+    "items": [
+      {
+        "dealRef": 101,
+        "entered": true,
+        "fromStage": null,
+        "toStage": "new_lead",
+        "at": "2030-03-04T11:30:00.000000Z"
+      },
+      {
+        "dealRef": 102,
+        "entered": true,
+        "fromStage": null,
+        "toStage": "new_lead",
+        "at": "2030-03-03T13:30:00.000000Z"
+      },
+      {
+        "dealRef": 113,
+        "entered": false,
+        "fromStage": "continuity_accepted",
+        "toStage": "continuity_converted",
+        "at": "2030-03-02T13:30:00.000000Z"
+      },
+      {
+        "dealRef": 107,
+        "entered": false,
+        "fromStage": "conversation_active",
+        "toStage": "initial_session_scheduled",
+        "at": "2030-03-02T12:30:00.000000Z"
+      },
+      {
+        "dealRef": 112,
+        "entered": false,
+        "fromStage": "continuity_offered",
+        "toStage": "continuity_accepted",
+        "at": "2030-03-01T13:30:00.000000Z"
+      },
+      {
+        "dealRef": 103,
+        "entered": false,
+        "fromStage": "new_lead",
+        "toStage": "contact_started",
+        "at": "2030-03-01T12:30:00.000000Z"
+      },
+      {
+        "dealRef": 109,
+        "entered": false,
+        "fromStage": "initial_session_scheduled",
+        "toStage": "initial_session_paid",
+        "at": "2030-02-28T13:30:00.000000Z"
+      },
+      {
+        "dealRef": 105,
+        "entered": false,
+        "fromStage": "contact_started",
+        "toStage": "conversation_active",
+        "at": "2030-02-27T13:30:00.000000Z"
+      },
+      {
+        "dealRef": 110,
+        "entered": false,
+        "fromStage": "initial_session_paid",
+        "toStage": "initial_session_attended",
+        "at": "2030-02-24T13:30:00.000000Z"
+      }
+    ]
+  },
+  "origins": {
+    "windowDays": 90,
+    "total": 17,
+    "items": [
+      { "kind": "recorded", "label": "Google Ads", "count": 7 },
+      { "kind": "recorded", "label": "Orgânico", "count": 4 },
+      { "kind": "recorded", "label": "Indicação", "count": 3 },
+      { "kind": "unknown", "label": null, "count": 2 },
+      { "kind": "multiple", "label": null, "count": 1 }
+    ]
+  },
+  "outcomes": {
+    "windowDays": 30,
+    "cap": 10,
+    "converted": {
+      "items": [
+        {
+          "dealRef": 113,
+          "at": "2030-03-02T13:30:00.000000Z",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Google Ads" }
+        },
+        {
+          "dealRef": 114,
+          "at": "2030-02-20T13:30:00.000000Z",
+          "amount": 1200,
+          "origin": { "kind": "recorded", "label": "Indicação" }
+        }
+      ]
+    },
+    "lost": {
+      "items": [
+        {
+          "dealRef": 115,
+          "at": "2030-03-03T13:30:00.000000Z",
+          "stage": "conversation_active",
+          "reason": "Sem resposta",
+          "origin": { "kind": "recorded", "label": "Google Ads" }
+        },
+        {
+          "dealRef": 116,
+          "at": "2030-02-26T13:30:00.000000Z",
+          "stage": "contact_started",
+          "reason": "Preço",
+          "origin": { "kind": "unknown" }
+        },
+        {
+          "dealRef": 117,
+          "at": "2030-02-12T13:30:00.000000Z",
+          "stage": "initial_session_scheduled",
+          "reason": "Adiado",
+          "origin": { "kind": "recorded", "label": "Orgânico" }
+        }
+      ]
+    }
+  }
+}

@@ -1643,6 +1643,11 @@ begin
       '.agenda.timezone', '.agenda.timezoneConfigured', '.agenda.today',
       '.agents', '.agents.held', '.agents.inactive',
       '.agents.queued', '.agents.stale', '.agents.stopped', '.agents.total', '.agents.working', '.asOf',
+      -- Phase 3B.1: the commercial funnel. The fixture tenant owns the local
+      -- CRM, whose configuration stores no stages here, so it reads
+      -- stages_not_configured; commercial_funnel.sql and engine/domain/
+      -- companyOsFunnelRecording.dbtest.ts read a populated one.
+      '.funnel', '.funnel.reason', '.funnel.status',
       -- Phase 2D.3: the group key paths are pinned exactly by decision_shadow.sql D15.
       '.decisionIntelligence', '.decisionIntelligence.currentPolicyVersion', '.decisionIntelligence.groups',
       '.decisionIntelligence.mode',
@@ -2918,12 +2923,14 @@ begin
   if v_bad is distinct from 'ops.grant_membership(uuid,uuid,text,text,text), ops.operator_scope()' then
     raise exception 'M2: ops.membership_tenant_eligible is called by % instead of exactly the grant and the resolver', v_bad;
   end if;
-  -- owns_local_crm: the predicate, and the two readers that predate Phase 2C.
+  -- owns_local_crm: the predicate, the two readers that predate Phase 2C, and
+  -- Phase 3B.1's commercial funnel CRM adapter, which serves only the tenant
+  -- that owns the local CRM (as crm_contact_by_phone does).
   select string_agg(p.proname, ', ' order by p.proname) into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('ops', 'company_os_api') and p.prosrc ~ 'owns_local_crm';
-  if v_bad is distinct from 'crm_contact_by_phone, membership_tenant_eligible, purge_inbound_email_ledger' then
-    raise exception 'M2: owns_local_crm is read by % (expected the predicate and the two pre-Phase-2C readers)', v_bad;
+  if v_bad is distinct from 'crm_commercial_funnel, crm_contact_by_phone, membership_tenant_eligible, purge_inbound_email_ledger' then
+    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers and the funnel''s CRM adapter)', v_bad;
   end if;
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -3119,7 +3126,11 @@ insert into cos_internal values
   -- Phase 3A: the overview's agenda and its two row summaries, read only.
   ('ops.cos_agenda(uuid, timestamp with time zone)', 's'),
   ('ops.cos_booking_summary(uuid, ops.bookings)', 's'),
-  ('ops.cos_follow_up_summary(uuid, ops.follow_ups, timestamp with time zone)', 's');
+  ('ops.cos_follow_up_summary(uuid, ops.follow_ups, timestamp with time zone)', 's'),
+  -- Phase 3B.1: the overview's commercial funnel, the provider-neutral entry.
+  -- Its one CRM adapter (ops.crm_commercial_funnel and helpers) is not a
+  -- Company OS body; commercial_funnel.sql pins it.
+  ('ops.cos_commercial_funnel(uuid, timestamp with time zone)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3430,7 +3441,14 @@ begin
                               'current_shadow_policy_version',
                               -- Phase 3A: the agenda's next free slots, a STABLE,
                               -- bounded and deterministic read.
-                              'available_slots'))
+                              'available_slots',
+                              -- Phase 3B.1 (owner brief, 2026-09-25): the
+                              -- commercial funnel's ONE read-only CRM adapter.
+                              -- It serves only the tenant that owns the local
+                              -- CRM, reads only the five CRM tables the funnel
+                              -- needs and writes nothing (commercial_funnel.sql
+                              -- F1 pins it). No other CRM service is callable.
+                              'crm_commercial_funnel'))
       or m.callee in ('crm_contact_by_phone', 'whatsapp_send_eligibility')
       or (m.callee !~ '^(gate_|read_|cos_)' and m.callee <> 'spend_window_start'
           and m.callee ~ '(^|_)(send|mark|clear|request|start|trip|grant|revoke|admit|receive|configure|record|enforce|settle|lease|claim|defer|reap|assign|transition)(_|$)')
