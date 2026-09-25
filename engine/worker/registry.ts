@@ -16,6 +16,7 @@ import {
   DECISION_SHADOW_EVALUATE_KIND,
   createDecisionShadowEvaluateHandler,
 } from "../handlers/decisionShadowEvaluate.ts";
+import { FOLLOW_UP_DUE_KIND, followUpDue } from "../handlers/followUpDue.ts";
 import {
   POSTMARK_LEDGER_RETENTION_KIND,
   postmarkLedgerRetention,
@@ -50,9 +51,11 @@ export function createHandlerRegistry(
     createDecisionShadowEvaluateHandler({
       decisionPort: dependencies.decisionPort ?? UNCONFIGURED_DECISION_PORT,
     }),
+    followUpDue,
   ]);
-  // Every kind here is external or internal, with the matching shape (ADR 0017
-  // §6): the kill switch holds exactly the external ones.
+  // Every kind here is external, governed or internal, with the matching shape
+  // (ADR 0017 §6, Phase 3A.1): the kill switch holds the external and the
+  // governed ones, and never the internal ones.
   assertRegistryClassified(registry);
   return registry;
 }
@@ -67,4 +70,5 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   POSTMARK_LEDGER_RETENTION_KIND,
   AGENT_RUN_EXECUTE_KIND,
   DECISION_SHADOW_EVALUATE_KIND,
+  FOLLOW_UP_DUE_KIND,
 ]);

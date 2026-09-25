@@ -366,6 +366,7 @@ describe("the capability list", () => {
       "failAgentRun",
       "startShadowDecision",
       "settleShadowDecision",
+      "markFollowUpDue",
     ]);
   });
 });

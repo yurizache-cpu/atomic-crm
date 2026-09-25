@@ -132,6 +132,12 @@ export interface Capabilities {
   startShadowDecision(provider: ShadowDecisionProvider): Promise<unknown>;
   /** Stores the settlement. `not_running` means it is not this attempt's to settle. */
   settleShadowDecision(settlement: ShadowDecisionSettlement): Promise<string>;
+  /**
+   * Phase 3A.1. Moves the follow-up bound to the leased job from scheduled to
+   * due, once: `due`, or on a replay `already_due`, `completed`,
+   * `cancelled` or `superseded`, changing nothing. It contacts nobody.
+   */
+  markFollowUpDue(): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -145,6 +151,7 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "failAgentRun",
   "startShadowDecision",
   "settleShadowDecision",
+  "markFollowUpDue",
 ]);
 
 /**
@@ -268,6 +275,13 @@ function allCapabilities(tx: TxClient): Capabilities {
         ],
       );
       return statusOf(rows, "ops.settle_shadow_decision");
+    },
+
+    async markFollowUpDue() {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.mark_follow_up_due() as status",
+      );
+      return statusOf(rows, "ops.mark_follow_up_due");
     },
   };
 }

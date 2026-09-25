@@ -1748,7 +1748,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-37",
     statement:
-      "There is one execution stop evaluator, and it holds work at the lease as well as before every external call: every job kind is classified external or internal and the worker refuses a registry that disagrees; no queued job whose kind is not internal is leased while an active stop covers it, and holding it consumes no attempt; a stop may name one external kind and never any other kind; organisational coordinates come only from facts fixed when the job was requested, and an unknown one fails closed within its tenant; and a stop found after the lease, by the runtime's pre-call check or by the handler's own start, returns the job to the queue with its attempt restored, keeps no durable start and calls nothing.",
+      "There is one execution stop evaluator, and it holds work at the lease, before every external call and before every governed handler runs: every job kind is classified external, governed or internal and the worker refuses a registry that disagrees; no queued job whose kind is not internal is leased while an active stop covers it, and holding it consumes no attempt; a stop may name one external kind and never any other kind; organisational coordinates come only from facts fixed when the job was requested, and an unknown one fails closed within its tenant; and a stop found after the lease, by the runtime's pre-call or pre-handler check or by the handler's own start, returns the job to the queue with its attempt restored, keeps no durable start and calls nothing.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -1820,7 +1820,24 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/runtimeGovernanceMirrors.dbtest.ts",
         marker:
-          /has the database's external and internal job kinds equal to EXTERNAL_JOB_KINDS and INTERNAL_JOB_KINDS/,
+          /has the database's external, governed and internal job kinds equal to EXTERNAL_JOB_KINDS, GOVERNED_JOB_KINDS and INTERNAL_JOB_KINDS/,
+      },
+      {
+        // Phase 3A.1: a governed kind (a follow-up becoming due) is held at the
+        // lease and deferred by the runtime's pre-handler check.
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /holds the due job at the lease under a covering stop, consuming no attempt, and lets it become due once cleared/,
+      },
+      {
+        file: "engine/domain/followUpEngine.dbtest.ts",
+        marker:
+          /defers a job a stop covered after its lease committed, with the attempt given back and nothing run/,
+      },
+      {
+        file: "engine/worker/jobKinds.test.ts",
+        marker:
+          /refuses a governed kind registered as an external_call handler, which would open a call path for work that calls nothing/,
       },
       {
         // The ORDER, lock before read, needs two sessions.

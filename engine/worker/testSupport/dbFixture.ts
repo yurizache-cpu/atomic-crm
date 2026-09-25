@@ -169,6 +169,21 @@ export async function deleteCompanyOsRows(
   tenantIds: readonly string[],
 ): Promise<void> {
   for (const statement of [
+    // Phase 3A.1: open follow-up work is cancelled, never deleted (an ENABLE
+    // ALWAYS trigger refuses it), so what a test left open is closed first, the
+    // way an owner cancels it; the closed rows are then history the owner may
+    // delete. Occurrences go before their plans, and both before the tasks,
+    // conversations and jobs they reference.
+    `select ops.cancel_follow_up_plan(p.tenant_id, p.id, 'dbtest_cleanup', 'dbtest', 'seed')
+       from ops.follow_up_plans p
+      where p.tenant_id = any($1::uuid[]) and p.status = 'active'`,
+    `select ops.cancel_follow_up(f.tenant_id, f.id, 'dbtest_cleanup', 'dbtest', 'seed')
+       from ops.follow_ups f
+      where f.tenant_id = any($1::uuid[]) and f.status in ('scheduled', 'due')`,
+    "delete from ops.follow_ups where tenant_id = any($1::uuid[])",
+    "delete from ops.follow_up_plans where tenant_id = any($1::uuid[])",
+    "delete from ops.follow_up_policy_versions where tenant_id = any($1::uuid[])",
+    "delete from ops.follow_up_policies where tenant_id = any($1::uuid[])",
     // Phase 2B's sends reference reviews, conversations and channels, and
     // Phase 2A's two tables reference companies and tasks, all with ON DELETE
     // RESTRICT, so they go before the runs whose settlement derived them.

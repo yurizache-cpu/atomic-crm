@@ -150,8 +150,8 @@ type Prepared =
 /** Taken before prepare, so a covering stop can discard what prepare wrote. */
 const PREPARE_SAVEPOINT = "external_call_prepare";
 
-const STOP_CHECK_SQL = "select ops.job_execution_stop() as stop_id";
-const DEFER_SQL = "select ops.defer_job() as stop_id";
+export const STOP_CHECK_SQL = "select ops.job_execution_stop() as stop_id";
+export const DEFER_SQL = "select ops.defer_job() as stop_id";
 
 /** How Postgres prints a uuid. Anything else is not an answer this runtime trusts. */
 export const STOP_ID_PATTERN =
@@ -162,7 +162,7 @@ export const STOP_ID_PATTERN =
  * holding `stop_id` as null or a lowercase uuid: any other answer means the
  * runtime cannot tell whether the job is held, and it does not guess.
  */
-async function readStopAnswer(
+export async function readStopAnswer(
   tx: TxClient,
   sql: string,
   fn: string,
@@ -366,7 +366,7 @@ async function prepareExternalCall(
  * attempt was consumed, nothing was called, and TX3 must not run, because the
  * lease this worker held is already released.
  */
-function deferred(
+export function deferred(
   { workerId, job, log, startedAt }: AttemptScope,
   stopId: string,
 ): RunOneJobResult {

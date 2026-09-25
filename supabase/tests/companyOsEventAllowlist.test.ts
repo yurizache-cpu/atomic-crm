@@ -9,6 +9,10 @@
 //     events.source is caller-supplied, so a label outside the list leaves as
 //     "other"; a label nobody writes is an allowance nobody reviewed.
 //
+// Both are read from their LAST definition across the migrations: a later
+// migration that emits new types (Phase 3A's follow-up and booking facts)
+// extends the list in the same migration.
+//
 // This file keeps both lists equal to what the repository actually writes. It
 // reads the migrations (every emission site: the v_type assignments of the
 // emitting triggers, the type argument of every ops.record_event call, and the
@@ -154,7 +158,7 @@ const readSurfaceBody = (name: string): string => {
 };
 
 const knownTypes = (): string[] => {
-  const body = readSurfaceBody("cos_event_known");
+  const body = lastDefinition("cos_event_known");
   const list = /p_type in \(([^)]*)\)/.exec(body);
   if (!list)
     throw new Error("ops.cos_event_known has no `p_type in (...)` list");
@@ -162,7 +166,7 @@ const knownTypes = (): string[] => {
 };
 
 const allowedSources = (): string[] => {
-  const body = readSurfaceBody("cos_event_source");
+  const body = lastDefinition("cos_event_source");
   const list = /p_source in \(([^)]*)\)/.exec(body);
   if (!list)
     throw new Error("ops.cos_event_source has no `p_source in (...)` list");
@@ -479,13 +483,25 @@ const engineSourceLabels = (): Map<string, string[]> => {
 };
 
 describe("the event type allowlist equals what the migrations emit", () => {
-  it("reads both lists from the read-surface migration", () => {
+  it("reads both lists from their latest definition, which only ever extends the read-surface migration's", () => {
     expect(
       readSurface,
       `missing: supabase/migrations/${READ_SURFACE}`,
     ).toBeDefined();
     expect(knownTypes().length).toBeGreaterThan(20);
     expect(allowedSources().length).toBeGreaterThan(3);
+    // A later definition may add types and labels; it never drops one.
+    const original = (name: string, pattern: RegExp) =>
+      literalsIn(pattern.exec(readSurfaceBody(name))?.[1] ?? "");
+    const known = new Set(knownTypes());
+    const sources = new Set(allowedSources());
+    for (const type of original("cos_event_known", /p_type in \(([^)]*)\)/))
+      expect(known).toContain(type);
+    for (const source of original(
+      "cos_event_source",
+      /p_source in \(([^)]*)\)/,
+    ))
+      expect(sources).toContain(source);
   });
 
   it("finds every emission site, and every one resolves to known types", () => {
