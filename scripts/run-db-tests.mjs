@@ -19,6 +19,12 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
+import {
+  MEASURED_SUPABASE_CLI,
+  SUPABASE_CLI_PACKAGE,
+  pinnedSupabaseArgs,
+  pinnedSupabaseCommand,
+} from "./supabase-cli.mjs";
 
 const TESTS_DIR = resolve(process.cwd(), "supabase", "tests");
 const CONTAINER =
@@ -58,7 +64,7 @@ if (!isContainerRunning()) {
     `No running database container named "${CONTAINER}".`,
     "",
     "Start the isolated stack first:",
-    "  npx supabase start --workdir .supabase-e2e",
+    `  ${pinnedSupabaseCommand(["start", "--workdir", ".supabase-e2e"])}`,
     "",
     "Or point this at another one:",
     "  SUPABASE_DB_CONTAINER=<name> npm run test:db",
@@ -122,17 +128,19 @@ const exposureWarning = (() => {
 // versions: the CLI decides how a migration is applied (as whom, one
 // transaction per file) and the server decides what those statements may do.
 // Any other version fails here instead of passing on mechanics nobody measured;
-// re-measure them before bumping either constant.
-const MEASURED_SUPABASE_CLI = "2.117.0";
+// re-measure them before bumping either constant. MEASURED_SUPABASE_CLI lives in
+// scripts/supabase-cli.mjs, the one pin every database-gate and deploy path
+// shares.
 const MEASURED_POSTGRES_MAJOR = 15;
 
 const versionMismatches = (() => {
   const found = [];
-  // On Windows npx is a .cmd shim, which needs a shell; the arguments are
-  // constants.
+  // The probe runs the pinned package, exactly as every gate path does, and
+  // still checks the version it reports. On Windows npx is a .cmd shim, which
+  // needs a shell; the arguments are constants.
   let cli;
   try {
-    cli = execFileSync("npx", ["supabase", "--version"], {
+    cli = execFileSync("npx", pinnedSupabaseArgs(["--version"]), {
       encoding: "utf8",
       stdio: "pipe",
       shell: process.platform === "win32",
@@ -141,7 +149,9 @@ const versionMismatches = (() => {
     cli = `unreadable (${error.message.split("\n")[0]})`;
   }
   if (cli !== MEASURED_SUPABASE_CLI) {
-    found.push(`the Supabase CLI reports ${cli}, not ${MEASURED_SUPABASE_CLI}`);
+    found.push(
+      `the Supabase CLI ${SUPABASE_CLI_PACKAGE} reports ${cli}, not ${MEASURED_SUPABASE_CLI}`,
+    );
   }
   const server = run("docker", [
     "exec",
@@ -180,11 +190,13 @@ if (versionMismatches.length > 0) {
       "     that a failed migration rolls all of it back; and what the schema owner can",
       "     still do to a transferred function once the window is closed.",
       "  2. Only if they are unchanged, update the pinned constants",
-      "     MEASURED_SUPABASE_CLI and MEASURED_POSTGRES_MAJOR in scripts/run-db-tests.mjs",
+      "     MEASURED_SUPABASE_CLI in scripts/supabase-cli.mjs (and the version it pins",
+      "     in .github/workflows/database.yml and deploy.yml) and",
+      "     MEASURED_POSTGRES_MAJOR in scripts/run-db-tests.mjs",
       "     (and docs/PHASE_2C_REPORT.md §3.2).",
-      "In CI, .github/workflows/database.yml runs an unpinned `npx supabase`, so the",
-      "first stable CLI release after the pinned one fails here with no repository",
-      "change; pinning the CLI there is an owner decision.",
+      `Every database-gate and deploy path runs exactly ${SUPABASE_CLI_PACKAGE}`,
+      "(scripts/supabase-cli.mjs), so a newer upstream release cannot reach this",
+      "check on its own: the probe above ran that pinned package.",
       "This is a failure, not a skip.",
     ].join("\n"),
   );

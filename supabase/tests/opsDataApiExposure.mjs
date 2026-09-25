@@ -46,6 +46,7 @@
 // (default: the isolated e2e stack); SUPABASE_WORKDIR overrides the CLI workdir.
 
 import { execFileSync, execSync } from "node:child_process";
+import { pinnedSupabaseCommand } from "../../scripts/supabase-cli.mjs";
 
 const CONTAINER =
   process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_atomic-crm-e2e";
@@ -109,10 +110,16 @@ function apiOrigin() {
  *
  * `execSync` goes through a shell on purpose: on win32 `npx` is a .cmd shim that
  * `execFile` cannot start. The only interpolated value is WORKDIR, which is a
- * fixed literal or an environment variable the caller controls.
+ * fixed literal or an environment variable the caller controls. The CLI is the
+ * measured one (scripts/supabase-cli.mjs), never the latest release.
  */
 function readKeys() {
-  const command = `npx supabase status -o env${WORKDIR ? ` --workdir ${WORKDIR}` : ""}`;
+  const command = pinnedSupabaseCommand([
+    "status",
+    "-o",
+    "env",
+    ...(WORKDIR ? ["--workdir", WORKDIR] : []),
+  ]);
   const env = execSync(command, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "ignore"],

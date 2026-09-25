@@ -41,6 +41,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { pinnedSupabaseArgs, pinnedSupabaseCommand } from "./supabase-cli.mjs";
 
 /** The last migration before 20260911232039_pending_delta.sql. */
 export const BASE_VERSION = "20260911130000";
@@ -208,14 +209,23 @@ const isContainerRunning = (container) => {
 };
 
 /**
- * The Supabase CLI through npx. On Windows npx is a .cmd, which needs a shell;
- * every argument here is a constant or the workdir, never outside input.
+ * How the replay runs the Supabase CLI: through npx, as exactly the measured
+ * package (scripts/supabase-cli.mjs), never the latest release. On Windows npx
+ * is a .cmd, which needs a shell; every argument here is a constant or the
+ * workdir, never outside input.
  */
+export const supabaseInvocation = (args, platform = process.platform) => ({
+  file: "npx",
+  args: pinnedSupabaseArgs(args),
+  shell: platform === "win32",
+});
+
 const runSupabase = (args) => {
-  const result = spawnSync("npx", ["supabase", ...args], {
+  const { file, args: argv, shell } = supabaseInvocation(args);
+  const result = spawnSync(file, argv, {
     encoding: "utf8",
     stdio: "pipe",
-    shell: process.platform === "win32",
+    shell,
   });
   return {
     status: result.status,
@@ -274,7 +284,7 @@ const main = () => {
   if (problems.length > 0) fail(problems.join("\n"));
   if (!isContainerRunning(container)) {
     fail(
-      `no running database container named "${container}". Start the stack: npx supabase start --workdir ${workdir}`,
+      `no running database container named "${container}". Start the stack: ${pinnedSupabaseCommand(["start", "--workdir", workdir])}`,
     );
   }
 

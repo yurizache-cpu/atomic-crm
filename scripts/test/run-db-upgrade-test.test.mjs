@@ -27,6 +27,7 @@ import {
   parseProjectId,
   parseWorkdir,
   preflight,
+  supabaseInvocation,
 } from "../run-db-upgrade-test.mjs";
 
 // The upgrade replay resets a database, so everything that decides WHICH
@@ -182,6 +183,43 @@ describe("upgrade replay: which database it may reset", () => {
     expect(result.stderr).toMatch(/usage: run-db-upgrade-test\.mjs/);
     expect(result.stderr).toMatch(/not a skip/);
     expect(result.stdout).not.toMatch(/1\/7/);
+  });
+});
+
+describe("upgrade replay: the CLI it runs", () => {
+  it("runs exactly the measured Supabase CLI package, never the latest release", () => {
+    // Arrange / Act
+    const invocation = supabaseInvocation(
+      ["db", "reset", "--workdir", ".", "--local", "--no-seed"],
+      "linux",
+    );
+
+    // Assert: the version is spelled out, so the latest release (Check #72)
+    // can never be the one that resets and migrates the database.
+    expect(invocation).toEqual({
+      file: "npx",
+      args: [
+        "--yes",
+        "supabase@2.117.0",
+        "db",
+        "reset",
+        "--workdir",
+        ".",
+        "--local",
+        "--no-seed",
+      ],
+      shell: false,
+    });
+  });
+
+  it("goes through a shell on Windows only, where npx is a .cmd shim", () => {
+    const up = ["migration", "up", "--workdir", ".supabase-e2e", "--local"];
+    expect(supabaseInvocation(up, "win32").shell).toBe(true);
+    expect(supabaseInvocation(up, "linux").shell).toBe(false);
+    expect(supabaseInvocation(up, "win32").args.slice(0, 2)).toEqual([
+      "--yes",
+      "supabase@2.117.0",
+    ]);
   });
 });
 

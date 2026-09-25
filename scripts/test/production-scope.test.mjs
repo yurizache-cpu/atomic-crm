@@ -23,7 +23,11 @@ import {
 
 const DEPLOY_ALL = "npx supabase functions deploy";
 const EXPLICIT = `${DEPLOY_ALL} ${PRODUCTION_FUNCTIONS.join(" ")}`;
+/** deploy.yml's deploy: the binary supabase/setup-cli installed at the measured version. */
+const WORKFLOW_EXPLICIT = `supabase functions deploy ${PRODUCTION_FUNCTIONS.join(" ")}`;
 const WORKFLOW = ".github/workflows/deploy.yml";
+/** The reviewed deploy command as the real file spells it. */
+const explicitIn = (path) => (path === WORKFLOW ? WORKFLOW_EXPLICIT : EXPLICIT);
 const MAKEFILE = "makefile";
 const REMOTE_INIT = "scripts/supabase-remote-init.mjs";
 const SCOPE_RUN = "run: node scripts/production-scope.mjs";
@@ -47,10 +51,10 @@ describe("production scope: the committed repository", () => {
   it("deploys exactly the reviewed functions, after the scope check, from deploy.yml and the makefile", () => {
     for (const path of [WORKFLOW, MAKEFILE]) {
       const content = read(path);
-      expect(content).toContain(EXPLICIT);
+      expect(content).toContain(explicitIn(path));
       const scope = content.indexOf("node scripts/production-scope.mjs");
       expect(scope).toBeGreaterThan(-1);
-      expect(scope).toBeLessThan(content.indexOf(EXPLICIT));
+      expect(scope).toBeLessThan(content.indexOf(explicitIn(path)));
     }
   });
 });
@@ -90,7 +94,7 @@ describe("production scope: reading the Supabase CLI", () => {
       ],
       ["(supabase functions deploy)", "functions-deploy-all"],
     ]) {
-      expect(rulesOf(mutate(WORKFLOW, EXPLICIT, to))).toEqual([rule]);
+      expect(rulesOf(mutate(WORKFLOW, WORKFLOW_EXPLICIT, to))).toEqual([rule]);
     }
     expect(
       rulesOf(mutate(MAKEFILE, EXPLICIT, "@supabase functions deploy")),
@@ -179,7 +183,7 @@ describe("production scope: deploying functions", () => {
       ],
       [MAKEFILE, `${EXPLICIT} && ${DEPLOY_ALL}`, "functions-deploy-all"],
     ]) {
-      expect(rulesOf(mutate(path, EXPLICIT, to))).toEqual([rule]);
+      expect(rulesOf(mutate(path, explicitIn(path), to))).toEqual([rule]);
     }
   });
 
@@ -238,7 +242,7 @@ describe("production scope: deploying functions", () => {
       `SUPABASE_WORKDIR=staging ${EXPLICIT}`,
       `cd staging && ${EXPLICIT}`,
     ]) {
-      expect(rulesOf(mutate(WORKFLOW, EXPLICIT, to))).toEqual([
+      expect(rulesOf(mutate(WORKFLOW, WORKFLOW_EXPLICIT, to))).toEqual([
         "supabase-workdir-remote",
       ]);
     }
@@ -279,8 +283,8 @@ describe("production scope: deploying functions", () => {
       rulesOf(
         mutate(
           WORKFLOW,
-          EXPLICIT,
-          `${EXPLICIT} --import-map supabase/map.json`,
+          WORKFLOW_EXPLICIT,
+          `${WORKFLOW_EXPLICIT} --import-map supabase/map.json`,
         ),
       ),
     ).toEqual(["functions-deploy-import-map"]);
@@ -437,7 +441,7 @@ describe("production scope: deploying functions", () => {
       `echo DEPLOY=1 >> $GITHUB_ENV && ${EXPLICIT}`,
       `echo ./bin >> $GITHUB_PATH && ${EXPLICIT}`,
     ]) {
-      expect(rulesOf(mutate(WORKFLOW, EXPLICIT, to)), to).toEqual([
+      expect(rulesOf(mutate(WORKFLOW, WORKFLOW_EXPLICIT, to)), to).toEqual([
         "workflow-env-mutation",
       ]);
     }
@@ -445,7 +449,7 @@ describe("production scope: deploying functions", () => {
       rulesOf(
         mutate(
           WORKFLOW,
-          EXPLICIT,
+          WORKFLOW_EXPLICIT,
           `npx supabase functions list --workdir staging -o json && ${EXPLICIT}`,
         ),
       ),
@@ -539,21 +543,26 @@ describe("production scope: deploying functions", () => {
     ).toEqual(["deploy-before-remote-scope-check", "workflow-shell-override"]);
     for (const [from, to, rule] of [
       [
-        EXPLICIT,
-        EXPLICIT.replace(
+        WORKFLOW_EXPLICIT,
+        WORKFLOW_EXPLICIT.replace(
           " deploy ",
           " deploy --project-ref abcdefghijabcdefghij ",
         ),
         "deploy-target-mismatch",
       ],
       [
-        "npx supabase db push",
-        "npx supabase db push --project-ref abcdefghijabcdefghij",
+        "run: supabase db push",
+        "run: supabase db push --project-ref abcdefghijabcdefghij",
         "deploy-target-mismatch",
       ],
       [
-        "npx supabase link --project-ref $SUPABASE_PROJECT_ID",
-        "npx supabase link --project-ref abcdefghijabcdefghij",
+        "run: supabase link --project-ref $SUPABASE_PROJECT_ID",
+        "run: supabase link --project-ref abcdefghijabcdefghij",
+        "deploy-target-mismatch",
+      ],
+      [
+        "run: supabase link --project-ref $SUPABASE_PROJECT_ID",
+        "run: npx supabase link --project-ref $SUPABASE_PROJECT_ID",
         "deploy-target-mismatch",
       ],
       [
