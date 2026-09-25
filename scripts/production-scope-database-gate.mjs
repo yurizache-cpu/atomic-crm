@@ -21,7 +21,10 @@
 //      checkout, node, `npm ci`, every suite in order, each step a plain name
 //      and one command. Anything else changes this rule first: an added step
 //      can make every suite a no-op (`npm pkg set`, `.npmrc`, the env file),
-//      and a checkout input can test another commit;
+//      and a checkout input can test another commit. Every Supabase CLI call
+//      in it names exactly the measured version (scripts/supabase-cli.mjs): a
+//      bare `npx supabase` runs whatever release is latest (Check #72,
+//      2026-09-25);
 //   c) check.yml calls the same file, on the reviewed triggers and under the
 //      draft condition only, and runs no database suite of its own.
 //
@@ -44,6 +47,7 @@
 // branch protection. It checks that each suite runs, not what it proves.
 
 import { parseSupabaseCommands } from "./production-scope-commands.mjs";
+import { pinnedSupabaseCommand } from "./supabase-cli.mjs";
 import {
   isBlank,
   isComment,
@@ -67,15 +71,19 @@ export const CHECK_WORKFLOW = ".github/workflows/check.yml";
 /** How a job calls the gate: this repository's file, at the caller's commit. */
 export const GATE_USES = `./${DATABASE_WORKFLOW}`;
 
-/** The gate job's suites, in the order they must run. */
+/**
+ * The gate job's suites, in the order they must run. Each CLI step runs the
+ * measured CLI by its exact package spec, so a respelled or drifted version is
+ * a changed step like any other.
+ */
 export const GATE_RUNS = Object.freeze([
-  "npx supabase start",
+  pinnedSupabaseCommand(["start"]),
   "npm run test:db",
   "npm run test:db:engine",
   "npm run test:db:upgrade -- --workdir .",
-  "npx supabase db reset --local --no-seed",
+  pinnedSupabaseCommand(["db", "reset", "--local", "--no-seed"]),
   "node supabase/tests/referenceData.mjs --without-seed",
-  "npx supabase db reset --local",
+  pinnedSupabaseCommand(["db", "reset", "--local"]),
   "npm run test:db",
 ]);
 /** database.yml's steps, all of them, in order: a plain name and exactly these keys. */

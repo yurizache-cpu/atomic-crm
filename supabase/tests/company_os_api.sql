@@ -1625,7 +1625,23 @@ begin
       '.allowedActions.viewAdvice', '.asOf', '.dataPolicy', '.principal', '.principal.id', '.role',
       '.serverTime', '.tenant', '.tenant.id', '.tenant.name', '.v']),
     ('overview', array[
-      '.admission', '.admission.tenantAdmission', '.agents', '.agents.held', '.agents.inactive',
+      '.admission', '.admission.tenantAdmission',
+      -- Phase 3A: the agenda, read only. The fixture tenant has no scheduling
+      -- rows, so its lists are empty here; engine/domain/
+      -- companyOsAgendaRecording.dbtest.ts parses a populated one with its
+      -- strict contract (no subject, actor, key or provider id).
+      '.agenda', '.agenda.availability', '.agenda.bookings', '.agenda.bookings.cancelledInWindow',
+      '.agenda.bookings.changes', '.agenda.bookings.conflicts', '.agenda.bookings.next7DaysBooked',
+      '.agenda.bookings.rescheduledInWindow', '.agenda.bookings.today', '.agenda.bookings.todayBooked',
+      '.agenda.bookings.upcoming', '.agenda.calendar', '.agenda.calendar.state', '.agenda.calendar.upcomingSyncs',
+      '.agenda.calendar.upcomingSyncs.failed', '.agenda.calendar.upcomingSyncs.indeterminate',
+      '.agenda.calendar.upcomingSyncs.pending', '.agenda.calendar.upcomingSyncs.running',
+      '.agenda.calendar.upcomingSyncs.skipped', '.agenda.calendar.upcomingSyncs.synced', '.agenda.followUps',
+      '.agenda.followUps.awaitingProcessing', '.agenda.followUps.closedRecently', '.agenda.followUps.due',
+      '.agenda.followUps.dueToday', '.agenda.followUps.needingAction', '.agenda.followUps.overdue',
+      '.agenda.followUps.recentlyClosed', '.agenda.followUps.scheduled', '.agenda.followUps.scheduledNext7Days',
+      '.agenda.timezone', '.agenda.timezoneConfigured', '.agenda.today',
+      '.agents', '.agents.held', '.agents.inactive',
       '.agents.queued', '.agents.stale', '.agents.stopped', '.agents.total', '.agents.working', '.asOf',
       -- Phase 2D.3: the group key paths are pinned exactly by decision_shadow.sql D15.
       '.decisionIntelligence', '.decisionIntelligence.currentPolicyVersion', '.decisionIntelligence.groups',
@@ -3099,7 +3115,11 @@ insert into cos_internal values
   -- Phase 2D.3: the overview's shadow calibration counts, read only.
   ('ops.cos_decision_intelligence(uuid)', 's'),
   -- Phase 2E.2: the overview's operational health, read only.
-  ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's');
+  ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's'),
+  -- Phase 3A: the overview's agenda and its two row summaries, read only.
+  ('ops.cos_agenda(uuid, timestamp with time zone)', 's'),
+  ('ops.cos_booking_summary(uuid, ops.bookings)', 's'),
+  ('ops.cos_follow_up_summary(uuid, ops.follow_ups, timestamp with time zone)', 's');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3407,7 +3427,10 @@ begin
                               'execution_stop_covers', 'job_covering_stop', 'spend_status', 'spend_window_start',
                               'agent_run_result_valid',
                               -- Phase 2D.2: reads the policy registry's one current version.
-                              'current_shadow_policy_version'))
+                              'current_shadow_policy_version',
+                              -- Phase 3A: the agenda's next free slots, a STABLE,
+                              -- bounded and deterministic read.
+                              'available_slots'))
       or m.callee in ('crm_contact_by_phone', 'whatsapp_send_eligibility')
       or (m.callee !~ '^(gate_|read_|cos_)' and m.callee <> 'spend_window_start'
           and m.callee ~ '(^|_)(send|mark|clear|request|start|trip|grant|revoke|admit|receive|configure|record|enforce|settle|lease|claim|defer|reap|assign|transition)(_|$)')
@@ -3418,7 +3441,11 @@ begin
   end if;
   select string_agg(pg_temp.sig(g.fid), ', ') into v_bad
     from pg_temp.graph_bodies() g join pg_proc f on f.oid = g.fid
-   where f.prosrc ~* '\mpublic\.' or f.prosrc ~* 'email' or f.prosrc ~* '\m(insert|update|delete|truncate|merge|copy)\M'
+   where f.prosrc ~* '\mpublic\.' or f.prosrc ~* 'email'
+      -- A write verb in the CODE. String literals are data (Phase 3A's
+      -- calendar operation 'update' is one); a literal can only become SQL
+      -- through EXECUTE, which the next rule refuses on the raw source.
+      or regexp_replace(f.prosrc, '''([^'']|'''')*''', '''''', 'g') ~* '\m(insert|update|delete|truncate|merge|copy)\M'
       -- A PL/pgSQL EXECUTE statement (the job kind 'agent_run.execute' is data).
       or f.prosrc ~* '(^|[\s;])execute\s'
       or f.prosrc ~* 'crm_contact_by_phone|whatsapp_send_eligibility|clear_execution_stop';

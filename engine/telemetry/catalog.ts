@@ -22,7 +22,11 @@
 // Identifiers (tenant, job, run) are span-only and must be lowercase UUIDs;
 // they are never a metric label, so a Prometheus series never names a tenant.
 
-import { EXTERNAL_JOB_KINDS, INTERNAL_JOB_KINDS } from "../worker/jobKinds.ts";
+import {
+  EXTERNAL_JOB_KINDS,
+  GOVERNED_JOB_KINDS,
+  INTERNAL_JOB_KINDS,
+} from "../worker/jobKinds.ts";
 
 /** What a label value becomes when it fails its rule. */
 export const OTHER = "other";
@@ -39,7 +43,11 @@ const oneOf = (...values: string[]): Rule =>
   Object.freeze({ kind: "enum", values: Object.freeze(values) });
 
 /** Every job kind the worker classifies; anything else is "other". */
-const JOB_KIND = oneOf(...EXTERNAL_JOB_KINDS, ...INTERNAL_JOB_KINDS);
+const JOB_KIND = oneOf(
+  ...EXTERNAL_JOB_KINDS,
+  ...GOVERNED_JOB_KINDS,
+  ...INTERNAL_JOB_KINDS,
+);
 // "interrupted": the attempt stopped without an outcome of its own (the
 // process lost the job); its lease expires and the reaper recovers it.
 const JOB_OUTCOME = oneOf(

@@ -17,6 +17,17 @@ import {
   createDecisionShadowEvaluateHandler,
 } from "../handlers/decisionShadowEvaluate.ts";
 import {
+  CALENDAR_CANCEL_KIND,
+  CALENDAR_CREATE_KIND,
+  CALENDAR_UPDATE_KIND,
+  createCalendarSyncHandlers,
+} from "../handlers/calendarSync.ts";
+import { FOLLOW_UP_DUE_KIND, followUpDue } from "../handlers/followUpDue.ts";
+import {
+  UNCONFIGURED_CALENDAR_PORT,
+  type CalendarPort,
+} from "../calendar/calendarPort.ts";
+import {
   POSTMARK_LEDGER_RETENTION_KIND,
   postmarkLedgerRetention,
 } from "../handlers/postmarkLedgerRetention.ts";
@@ -36,6 +47,11 @@ export interface HandlerRegistryDependencies {
    */
   readonly decisionPort?: DecisionPort;
   readonly requestsShadowDecisions?: boolean;
+  /**
+   * Phase 3A.2: the calendar a connected company's bookings are mirrored to.
+   * Absent: none, and a calendar job settles failed without calling anything.
+   */
+  readonly calendarPort?: CalendarPort;
 }
 
 export function createHandlerRegistry(
@@ -50,9 +66,14 @@ export function createHandlerRegistry(
     createDecisionShadowEvaluateHandler({
       decisionPort: dependencies.decisionPort ?? UNCONFIGURED_DECISION_PORT,
     }),
+    followUpDue,
+    ...createCalendarSyncHandlers({
+      calendarPort: dependencies.calendarPort ?? UNCONFIGURED_CALENDAR_PORT,
+    }),
   ]);
-  // Every kind here is external or internal, with the matching shape (ADR 0017
-  // §6): the kill switch holds exactly the external ones.
+  // Every kind here is external, governed or internal, with the matching shape
+  // (ADR 0017 §6, Phase 3A.1): the kill switch holds the external and the
+  // governed ones, and never the internal ones.
   assertRegistryClassified(registry);
   return registry;
 }
@@ -67,4 +88,8 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   POSTMARK_LEDGER_RETENTION_KIND,
   AGENT_RUN_EXECUTE_KIND,
   DECISION_SHADOW_EVALUATE_KIND,
+  FOLLOW_UP_DUE_KIND,
+  CALENDAR_CREATE_KIND,
+  CALENDAR_UPDATE_KIND,
+  CALENDAR_CANCEL_KIND,
 ]);

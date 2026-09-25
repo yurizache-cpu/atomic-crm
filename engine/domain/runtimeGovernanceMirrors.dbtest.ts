@@ -7,7 +7,7 @@
 //
 //   * that ops.agent_run_route_policies() and the job kind classification are
 //     the same values the worker's code holds (MODEL_ROUTE_POLICIES,
-//     EXTERNAL_JOB_KINDS, INTERNAL_JOB_KINDS);
+//     EXTERNAL_JOB_KINDS, GOVERNED_JOB_KINDS, INTERNAL_JOB_KINDS);
 //   * that the request the handler REALLY sends, for agent and task text at
 //     every column limit and full of characters that JSON escaping grows, is
 //     never larger in UTF-8 bytes than the input ceiling the database computed
@@ -36,7 +36,11 @@ import {
   TRUNCATION_MARKER,
 } from "../models/taskAssessment.ts";
 import { MODEL_ROUTE_NAMES, type ModelRequest } from "../models/types.ts";
-import { EXTERNAL_JOB_KINDS, INTERNAL_JOB_KINDS } from "../worker/jobKinds.ts";
+import {
+  EXTERNAL_JOB_KINDS,
+  GOVERNED_JOB_KINDS,
+  INTERNAL_JOB_KINDS,
+} from "../worker/jobKinds.ts";
 import { REGISTERED_HANDLER_KINDS } from "../worker/registry.ts";
 import { runOneJob } from "../worker/runOneJob.ts";
 import {
@@ -109,20 +113,22 @@ describe("the vocabulary the worker and the database share", () => {
     expect(database).toEqual(engine);
   });
 
-  it("has the database's external and internal job kinds equal to EXTERNAL_JOB_KINDS and INTERNAL_JOB_KINDS, together exactly the registered kinds", async () => {
+  it("has the database's external, governed and internal job kinds equal to EXTERNAL_JOB_KINDS, GOVERNED_JOB_KINDS and INTERNAL_JOB_KINDS, together exactly the registered kinds", async () => {
     const { rows } = await admin.query<{
       external: string[];
+      governed: string[];
       internal: string[];
     }>(
-      "select ops.external_job_kinds() as external, ops.internal_job_kinds() as internal",
+      "select ops.external_job_kinds() as external, ops.governed_job_kinds() as governed, ops.internal_job_kinds() as internal",
     );
 
     const sorted = (kinds: readonly string[]) => [...kinds].sort();
     expect(sorted(rows[0].external)).toEqual(sorted(EXTERNAL_JOB_KINDS));
+    expect(sorted(rows[0].governed)).toEqual(sorted(GOVERNED_JOB_KINDS));
     expect(sorted(rows[0].internal)).toEqual(sorted(INTERNAL_JOB_KINDS));
-    expect(sorted([...rows[0].external, ...rows[0].internal])).toEqual(
-      sorted(REGISTERED_HANDLER_KINDS),
-    );
+    expect(
+      sorted([...rows[0].external, ...rows[0].governed, ...rows[0].internal]),
+    ).toEqual(sorted(REGISTERED_HANDLER_KINDS));
   });
 
   // The database decides which capabilities may be requested; this worker

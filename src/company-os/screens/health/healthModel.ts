@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  CalendarX2,
   Hourglass,
   PauseCircle,
   Scale,
@@ -160,6 +161,21 @@ export const attentionItems = (data: OverviewSummary): AttentionItem[] => {
       to: LIST_PATHS.stops,
     });
   }
+  // Phase 3A: an upcoming booking whose calendar mirror ended uncertain or
+  // failed. Neither is retried (an uncertain call may have acted), so a person
+  // resolves it.
+  const calendarAttention =
+    data.agenda.calendar.upcomingSyncs.indeterminate +
+    data.agenda.calendar.upcomingSyncs.failed;
+  if (calendarAttention > 0) {
+    items.push({
+      id: "calendar-uncertain",
+      icon: CalendarX2,
+      tone: "amber",
+      text: `${plural(calendarAttention, "sincronização de calendário incerta ou com falha", "sincronizações de calendário incertas ou com falha")} em atendimentos futuros`,
+      to: LIST_PATHS.agenda,
+    });
+  }
   const failures = failuresInWindow(health);
   if (failures.total > 0) {
     items.push({
@@ -178,5 +194,9 @@ export const jobKindLabel = (kind: string): string =>
   ({
     "agent_run.execute": "Execução de agente",
     "decision.shadow_evaluate": "Decisão em sombra",
+    "follow_up.due": "Follow-up vencendo",
+    "calendar.create": "Calendário: criar evento",
+    "calendar.update": "Calendário: mover evento",
+    "calendar.cancel": "Calendário: cancelar evento",
     "postmark.ledger_retention": "Manutenção do registro de e-mails",
   })[kind] ?? "Outro trabalho";

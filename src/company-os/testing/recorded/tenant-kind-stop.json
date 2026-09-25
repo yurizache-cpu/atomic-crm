@@ -389,6 +389,44 @@
           "needingAttention": 2
         },
         "stops": { "tenantScopedActive": 1 },
+        "agenda": {
+          "today": "2026-09-22",
+          "bookings": {
+            "today": [],
+            "changes": [],
+            "upcoming": [],
+            "conflicts": 0,
+            "todayBooked": 0,
+            "next7DaysBooked": 0,
+            "cancelledInWindow": 0,
+            "rescheduledInWindow": 0
+          },
+          "calendar": {
+            "state": "local_only",
+            "upcomingSyncs": {
+              "failed": 0,
+              "synced": 0,
+              "pending": 0,
+              "running": 0,
+              "skipped": 0,
+              "indeterminate": 0
+            }
+          },
+          "timezone": "UTC",
+          "followUps": {
+            "due": 0,
+            "overdue": 0,
+            "dueToday": 0,
+            "scheduled": [],
+            "needingAction": [],
+            "closedRecently": 0,
+            "recentlyClosed": [],
+            "awaitingProcessing": 0,
+            "scheduledNext7Days": 0
+          },
+          "availability": [],
+          "timezoneConfigured": false
+        },
         "agents": {
           "held": 2,
           "stale": 1,

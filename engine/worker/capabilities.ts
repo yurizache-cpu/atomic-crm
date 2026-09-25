@@ -97,6 +97,14 @@ export interface ShadowDecisionSettlement {
   readonly errorCode: string | null;
 }
 
+/** A calendar sync's settlement (Phase 3A.2): what this attempt's one call did. */
+export interface CalendarSyncSettlement {
+  readonly outcome: "synced" | "failed" | "indeterminate";
+  /** A created event's id, on success only; null otherwise and for update or cancel. */
+  readonly externalEventId: string | null;
+  readonly errorCode: string | null;
+}
+
 /** The complete set of capabilities that exist. Adding one is a review event. */
 export interface Capabilities {
   /**
@@ -132,6 +140,22 @@ export interface Capabilities {
   startShadowDecision(provider: ShadowDecisionProvider): Promise<unknown>;
   /** Stores the settlement. `not_running` means it is not this attempt's to settle. */
   settleShadowDecision(settlement: ShadowDecisionSettlement): Promise<string>;
+  /**
+   * Phase 3A.1. Moves the follow-up bound to the leased job from scheduled to
+   * due, once: `due`, or on a replay `already_due`, `completed`,
+   * `cancelled` or `superseded`, changing nothing. It contacts nobody.
+   */
+  markFollowUpDue(): Promise<string>;
+  /**
+   * Phase 3A.2. Starts the calendar sync bound to the leased job for a worker
+   * whose calendar provider is `providerKind`: records `running` BEFORE the
+   * provider is called and answers the minimised request, or settles it
+   * without a call, or answers `stopped` or `wait` recording nothing. An
+   * earlier attempt's `running` is settled indeterminate, never called again.
+   */
+  startCalendarSync(providerKind: string): Promise<unknown>;
+  /** Stores this attempt's call outcome. `not_running` means it is not this attempt's to settle. */
+  settleCalendarSync(settlement: CalendarSyncSettlement): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -145,6 +169,9 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "failAgentRun",
   "startShadowDecision",
   "settleShadowDecision",
+  "markFollowUpDue",
+  "startCalendarSync",
+  "settleCalendarSync",
 ]);
 
 /**
@@ -268,6 +295,29 @@ function allCapabilities(tx: TxClient): Capabilities {
         ],
       );
       return statusOf(rows, "ops.settle_shadow_decision");
+    },
+
+    async markFollowUpDue() {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.mark_follow_up_due() as status",
+      );
+      return statusOf(rows, "ops.mark_follow_up_due");
+    },
+
+    async startCalendarSync(providerKind) {
+      const { rows } = await tx.query<{ start: unknown }>(
+        "select ops.start_calendar_sync($1) as start",
+        [providerKind],
+      );
+      return rows[0]?.start;
+    },
+
+    async settleCalendarSync(settlement) {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.settle_calendar_sync($1, $2, $3) as status",
+        [settlement.outcome, settlement.externalEventId, settlement.errorCode],
+      );
+      return statusOf(rows, "ops.settle_calendar_sync");
     },
   };
 }

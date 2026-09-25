@@ -291,6 +291,14 @@ begin
     -- Phase 2E.1: one argument-free count for the metrics gauge; no tenant,
     -- job or content, and nothing reads it back to decide.
     ('ops_worker',   'ops.worker_queue_depth()'::regprocedure),
+    -- Phase 3A.1: one lease-bound capability that moves the follow-up bound to
+    -- the leased job from scheduled to due; no argument, no send
+    -- (supabase/tests/follow_up_scheduling.sql).
+    ('ops_worker',   'ops.mark_follow_up_due()'::regprocedure),
+    -- Phase 3A.2: the calendar sync's two lease-bound capabilities; neither
+    -- takes a tenant, booking or sync, and neither writes a booking.
+    ('ops_worker',   'ops.start_calendar_sync(text)'::regprocedure),
+    ('ops_worker',   'ops.settle_calendar_sync(text, text, text)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -358,7 +366,13 @@ begin
   --     (supabase/tests/decision_shadow.sql). Phase 2E.1 adds worker_queue_depth:
   --     argument-free and STABLE, it answers one deployment-wide count of ready
   --     jobs for the worker's metrics gauge, the same queue ops.lease_job
-  --     already reaches, and grants nothing.
+  --     already reaches, and grants nothing. Phase 3A.1 adds mark_follow_up_due:
+  --     argument-free and lease-bound, it moves the one follow-up bound to the
+  --     live lease's job from scheduled to due and refuses under a covering
+  --     stop; it sends nothing and calls nothing. Phase 3A.2 adds the calendar
+  --     sync's start and settle, bound to the live lease's job exactly like the
+  --     shadow decision's: running is recorded before a call, an earlier
+  --     attempt's running is settled indeterminate, and neither writes a booking.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -370,6 +384,7 @@ begin
                            'job_execution_stop', 'defer_job', 'enforce_spend_ceiling',
                            'open_review_for_settled_job', 'request_shadow_decision_for_settled_job',
                            'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
+                           'mark_follow_up_due', 'start_calendar_sync', 'settle_calendar_sync',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

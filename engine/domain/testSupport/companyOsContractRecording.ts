@@ -357,13 +357,21 @@ const MINUTE_MS = 60_000;
 const timeAt = (base: string, minutes: number): string =>
   `${new Date(Date.parse(base) + minutes * MINUTE_MS).toISOString().slice(0, 19)}.000000Z`;
 
-/** Every envelope's asOf and the context's serverTime, fixed. */
+/**
+ * Every envelope's asOf and the context's serverTime, fixed; and the overview
+ * agenda's local date (Phase 3A), which is the date of asOf in the tenant's
+ * scheduling zone, becomes AS_OF's date. The recorded tenant has no scheduling
+ * rows, so nothing else in its agenda depends on the day it was recorded.
+ */
 const fixEnvelopeTimes = (value: Json): Json => {
   const body = asObject(value, "a response");
+  const agenda =
+    "agenda" in body ? asObject(body.agenda, "an overview agenda") : null;
   return {
     ...body,
     ...("asOf" in body ? { asOf: AS_OF } : {}),
     ...("serverTime" in body ? { serverTime: AS_OF } : {}),
+    ...(agenda ? { agenda: { ...agenda, today: AS_OF.slice(0, 10) } } : {}),
   };
 };
 

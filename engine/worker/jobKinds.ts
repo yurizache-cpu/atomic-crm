@@ -1,17 +1,23 @@
-// Every job kind is classified, and the classification is total (ADR 0017 §6).
+// Every job kind is classified, and the classification is total (ADR 0017 §6;
+// Phase 3A.1 adds the third class).
 //
 //   * EXTERNAL kinds act outside the database. The kill switch holds them, at
 //     the lease and again immediately before their call, so each must be an
 //     external_call handler: that is the only shape whose call phase the
 //     runtime checks against the stops first.
+//   * GOVERNED kinds are database-only work a company unit owns (Phase 3A.1: a
+//     follow-up becoming due). The kill switch holds them at the lease and
+//     again at the start of their transaction, before the handler runs, and
+//     each must be a transactional handler: a kind that calls nothing never
+//     needs the external_call shape.
 //   * INTERNAL kinds are database maintenance. The kill switch never holds
 //     them, so administration stays up during a stop, and each must be a
 //     transactional handler: a kind that is never held must never call out.
 //
-// These lists mirror ops.external_job_kinds() and ops.internal_job_kinds(); a
-// driver-backed test asserts equality. The worker refuses to build a registry
-// that disagrees with them, so a new kind is a reviewed change here, in the
-// registry and in the database together.
+// These lists mirror ops.external_job_kinds(), ops.governed_job_kinds() and
+// ops.internal_job_kinds(); a driver-backed test asserts equality. The worker
+// refuses to build a registry that disagrees with them, so a new kind is a
+// reviewed change here, in the registry and in the database together.
 
 import {
   isExternalCallHandler,
@@ -21,11 +27,22 @@ import {
 export const EXTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "agent_run.execute",
   "decision.shadow_evaluate",
+  "calendar.create",
+  "calendar.update",
+  "calendar.cancel",
+]);
+
+export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([
+  "follow_up.due",
 ]);
 
 export const INTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "postmark.ledger_retention",
 ]);
+
+/** Whether the kill switch re-checks this kind before its transactional handler runs. */
+export const isGovernedJobKind = (kind: string): boolean =>
+  GOVERNED_JOB_KINDS.includes(kind);
 
 /**
  * Refuses a registry holding a kind that is unclassified, classified twice, or
@@ -35,15 +52,21 @@ export const INTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
 export function assertRegistryClassified(registry: HandlerRegistry): void {
   for (const [kind, handler] of registry) {
     const external = EXTERNAL_JOB_KINDS.includes(kind);
+    const governed = GOVERNED_JOB_KINDS.includes(kind);
     const internal = INTERNAL_JOB_KINDS.includes(kind);
-    if (external === internal) {
+    if ([external, governed, internal].filter(Boolean).length !== 1) {
       throw new Error(
-        `job kind "${kind}" must be classified as exactly one of external or internal`,
+        `job kind "${kind}" must be classified as exactly one of external, governed or internal`,
       );
     }
     if (external && !isExternalCallHandler(handler)) {
       throw new Error(
         `job kind "${kind}" is external, so its handler must be an external_call handler`,
+      );
+    }
+    if (governed && isExternalCallHandler(handler)) {
+      throw new Error(
+        `job kind "${kind}" is governed, so its handler must be a transactional handler`,
       );
     }
     if (internal && isExternalCallHandler(handler)) {

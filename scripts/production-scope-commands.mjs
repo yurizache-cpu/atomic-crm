@@ -413,8 +413,9 @@ const isPlainMakePush = (text) =>
   text
     .split(SEGMENTS)
     .every((segment) => MAKE_PUSH_SEGMENT.test(segment.trim()));
+/** deploy.yml's link, run by the binary supabase/setup-cli installed at the measured version. */
 const LINK_RUN =
-  /^\s*(?:-\s+)?run:\s*npx supabase link --project-ref "?\$SUPABASE_PROJECT_ID"?\s*$/;
+  /^\s*(?:-\s+)?run:\s*supabase link --project-ref "?\$SUPABASE_PROJECT_ID"?\s*$/;
 const IF_KEY = /^\s*(?:-\s+)?["']?if["']?\s*:/;
 const NAME_KEY = /^\s*(?:-\s+)?name:/;
 /** Step keys that change what a check's command runs against, or how it exits. */

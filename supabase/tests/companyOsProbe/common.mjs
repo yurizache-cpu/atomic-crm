@@ -8,6 +8,7 @@
 
 import { randomBytes } from "node:crypto";
 import { execFileSync, execSync } from "node:child_process";
+import { pinnedSupabaseCommand } from "../../../scripts/supabase-cli.mjs";
 
 export const CONTAINER =
   process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_atomic-crm-e2e";
@@ -216,10 +217,16 @@ export function apiOrigin() {
 /**
  * The Data API credentials of the running stack. Values stay in memory;
  * nothing logs them. `execSync` goes through a shell on purpose: on win32
- * `npx` is a .cmd shim that `execFile` cannot start.
+ * `npx` is a .cmd shim that `execFile` cannot start. The CLI is the measured
+ * one (scripts/supabase-cli.mjs), never the latest release.
  */
 export function readKeys() {
-  const command = `npx supabase status -o json${WORKDIR ? ` --workdir ${WORKDIR}` : ""}`;
+  const command = pinnedSupabaseCommand([
+    "status",
+    "-o",
+    "json",
+    ...(WORKDIR ? ["--workdir", WORKDIR] : []),
+  ]);
   const status = JSON.parse(
     execSync(command, {
       encoding: "utf8",

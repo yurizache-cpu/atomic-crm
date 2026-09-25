@@ -46,8 +46,14 @@ jobs:
             - name: 📥 Download deps
               run: npm ci
 
+            # Every CLI call below names the exact version the Phase 2C
+            # ownership mechanics were measured on (scripts/supabase-cli.mjs). A
+            # bare `npx supabase` ran whatever release was latest: on 2026-09-25
+            # it picked up 2.118.0 minutes after its release (Check #72).
+            # scripts/production-scope-database-gate.mjs refuses any other
+            # spelling, and the runner scripts pin the same package.
             - name: 🐘 Start Supabase
-              run: npx supabase start
+              run: npx --yes supabase@2.117.0 start
 
             # Runs the hand-written security migrations' own assertions as a
             # side effect: each raises if its end state is wrong.
@@ -82,7 +88,7 @@ jobs:
             # prove the global reference data a production database needs is
             # there without it, while nothing tenant-specific is.
             - name: 🌱 Production-like replay (migrations only)
-              run: npx supabase db reset --local --no-seed
+              run: npx --yes supabase@2.117.0 db reset --local --no-seed
 
             - name: 🔎 Reference data without the development data
               run: node supabase/tests/referenceData.mjs --without-seed
@@ -91,7 +97,7 @@ jobs:
             # seed once inserted into a table no migration created, so a clean
             # reconstruction was impossible and nothing caught it.
             - name: ♻️ Clean reconstruction from scratch
-              run: npx supabase db reset --local
+              run: npx --yes supabase@2.117.0 db reset --local
 
             - name: 🔒 Same guarantees after the reset
               run: npm run test:db

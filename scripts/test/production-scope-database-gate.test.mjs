@@ -40,13 +40,13 @@ const NEL = String.fromCharCode(0x85);
 const LINE_SEPARATOR = String.fromCharCode(0x2028);
 /** The suites the gate must run, in order: the spec, independent of the guard's own list. */
 const SUITES = [
-  "npx supabase start",
+  "npx --yes supabase@2.117.0 start",
   "npm run test:db",
   "npm run test:db:engine",
   "npm run test:db:upgrade -- --workdir .",
-  "npx supabase db reset --local --no-seed",
+  "npx --yes supabase@2.117.0 db reset --local --no-seed",
   "node supabase/tests/referenceData.mjs --without-seed",
-  "npx supabase db reset --local",
+  "npx --yes supabase@2.117.0 db reset --local",
   "npm run test:db",
 ];
 
@@ -516,6 +516,13 @@ describe("production scope: the live database gates every hosted deploy (Phase 1
         gateEdit((lines, suites) => (lines[suites[k]] += " || true")),
         gateEdit((lines, suites) => (lines[suites[k]] += "; exit 0")),
       ]),
+      // A CLI step running another CLI than the measured one: unpinned (the
+      // latest release, as Check #72 did), another version, a moving tag, or
+      // whatever binary happens to be installed.
+      gateEdit((lines, suites) => (lines[suites[0]] = lines[suites[0]].replace("npx --yes supabase@2.117.0", "npx supabase"))),
+      gateEdit((lines, suites) => (lines[suites[0]] = lines[suites[0]].replace("supabase@2.117.0", "supabase@2.118.0"))),
+      gateEdit((lines, suites) => (lines[suites[4]] = lines[suites[4]].replace("supabase@2.117.0", "supabase@latest"))),
+      gateEdit((lines, suites) => (lines[suites[6]] = lines[suites[6]].replace("npx --yes supabase@2.117.0", "supabase"))),
       // A suite that is not what the step runs: an input of another action,
       // a folded name, a quoted name left open, a block running something
       // else, a name turned into a condition.
@@ -703,6 +710,7 @@ describe("production scope: the live database gates every hosted deploy (Phase 1
         "production-scope-remote.mjs",
         "dev-signing-key.mjs",
         "source-facts.mjs",
+        "supabase-cli.mjs",
       ]) {
         copyFileSync(join(ROOT, "scripts", name), join(dir, "scripts", name));
       }

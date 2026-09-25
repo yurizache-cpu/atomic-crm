@@ -54,17 +54,22 @@ import {
 import { grantCapabilities } from "./capabilities.ts";
 import {
   DEFAULT_LEASE_SAFETY_MARGIN_MS,
+  DEFER_SQL,
+  deferred,
+  readStopAnswer,
   runExternalCall,
+  STOP_CHECK_SQL,
 } from "./externalCall.ts";
-import { SecurityError } from "./failures.ts";
+import { SecurityError, TransientError } from "./failures.ts";
 import {
   isExternalCallHandler,
   resolveHandler,
   type HandlerRegistry,
 } from "./handlerRegistry.ts";
 import type { LeasedJob } from "./job.ts";
+import { isGovernedJobKind } from "./jobKinds.ts";
 import { silentLogger, type WorkerLogger } from "./log.ts";
-import type { WorkerDatabase } from "../db/types.ts";
+import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import {
   NOOP_WORKER_TELEMETRY,
   type WorkerTelemetry,
@@ -215,16 +220,54 @@ async function executeAttempt(
 
   // --- TX2: resume, execute, settle success. -------------------------------
   try {
-    return succeeded(scope, await executeTransactional(scope));
+    const outcome = await executeTransactional(scope);
+    return outcome.kind === "deferred"
+      ? deferred(scope, outcome.stopId)
+      : succeeded(scope, outcome.detail);
   } catch (error) {
     return failed(scope, error);
   }
 }
 
-/** TX2 for a transactional handler. Unchanged in what it runs and in what order. */
+/** What TX2 committed: the handler's work and the job's completion, or a deferral. */
+type TransactionalOutcome =
+  | { readonly kind: "done"; readonly detail: string | undefined }
+  | { readonly kind: "deferred"; readonly stopId: string };
+
+/**
+ * The kill switch for a GOVERNED kind (jobKinds.ts), inside TX2 before its
+ * handler runs. `ops.job_execution_stop()` takes the kill-switch lock shared
+ * and this transaction keeps it, so a trip that returns after this check
+ * waits for TX2 to commit, and one that returned before it is seen here. A
+ * covering stop defers the job exactly as it defers an external call: back to
+ * the queue, its attempt given back, nothing run. Runtime SQL, like completing
+ * a job, never a handler capability.
+ */
+async function holdGovernedJob(tx: TxClient): Promise<string | null> {
+  const covering = await readStopAnswer(
+    tx,
+    STOP_CHECK_SQL,
+    "ops.job_execution_stop",
+  );
+  if (covering === null) return null;
+  const deferredBy = await readStopAnswer(tx, DEFER_SQL, "ops.defer_job");
+  if (deferredBy === null) {
+    // The two readings disagree under one lock: roll TX2 back and let the
+    // failure path retry the job on a fresh attempt, rather than guess.
+    throw new TransientError(
+      "an execution stop covered the job but not when it was deferred; nothing ran",
+    );
+  }
+  return deferredBy;
+}
+
+/**
+ * TX2 for a transactional handler. Unchanged in what it runs and in what
+ * order, except that a governed kind first asks the kill switch.
+ */
 async function executeTransactional(
   scope: AttemptScope,
-): Promise<string | undefined> {
+): Promise<TransactionalOutcome> {
   return scope.db.withTransaction(async (tx) => {
     await assumeWorkerRole(tx);
     const trusted = await resumeTrustedLease<LeasedJob>(tx, scope, RESUME_SQL);
@@ -239,10 +282,15 @@ async function executeTransactional(
     }
     logAttemptStarted(scope, trusted);
 
+    if (isGovernedJobKind(trusted.kind)) {
+      const stopId = await holdGovernedJob(tx);
+      if (stopId !== null) return { kind: "deferred", stopId };
+    }
+
     const capabilities = grantCapabilities(tx, handler.capabilities);
     const handlerDetail = await handler.run(trusted, capabilities);
 
     await completeJob(tx, trusted.id, handlerDetail ?? null);
-    return handlerDetail ?? undefined;
+    return { kind: "done", detail: handlerDetail ?? undefined };
   });
 }

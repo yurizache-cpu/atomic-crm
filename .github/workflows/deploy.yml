@@ -186,8 +186,14 @@ jobs:
                   git config --global user.email support+actions@github.com
                   git config --global user.name github-actions-bot
 
+            # The CLI that deploys is the one the database gate measured and ran
+            # (scripts/supabase-cli.mjs): the action installs exactly that
+            # version, and every command below runs its binary. `npx` would
+            # fetch whatever release is latest instead (Check #72, 2026-09-25).
             - name: ⚙️ Setup supabase
               uses: supabase/setup-cli@v1
+              with:
+                  version: 2.117.0
 
             - name: 📥 Download deps
               run: npm ci
@@ -226,27 +232,27 @@ jobs:
 
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 🔗 Supabase Link
-              run: npx supabase link --project-ref $SUPABASE_PROJECT_ID
+              run: supabase link --project-ref $SUPABASE_PROJECT_ID
 
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 📡 Push supabase migrations
-              run: npx supabase db push
+              run: supabase db push
 
             - if: ${{ env.IS_SUPABASE_CONFIGURED && env.POSTMARK_WEBHOOK_USER && env.POSTMARK_WEBHOOK_PASSWORD && env.POSTMARK_WEBHOOK_AUTHORIZED_IPS }}
               name: 📡 Push supabase postmark webhook user secret
               run: |
-                  npx supabase secrets set POSTMARK_WEBHOOK_USER=${{ env.POSTMARK_WEBHOOK_USER }}
-                  npx supabase secrets set POSTMARK_WEBHOOK_PASSWORD=${{ env.POSTMARK_WEBHOOK_PASSWORD }}
-                  npx supabase secrets set POSTMARK_WEBHOOK_AUTHORIZED_IPS=${{ env.POSTMARK_WEBHOOK_AUTHORIZED_IPS }}
-                  npx supabase secrets set VITE_INBOUND_EMAIL=${{ env.VITE_INBOUND_EMAIL }}
-                  npx supabase secrets set VITE_ATTACHMENTS_BUCKET=${{ env.VITE_ATTACHMENTS_BUCKET }}
+                  supabase secrets set POSTMARK_WEBHOOK_USER=${{ env.POSTMARK_WEBHOOK_USER }}
+                  supabase secrets set POSTMARK_WEBHOOK_PASSWORD=${{ env.POSTMARK_WEBHOOK_PASSWORD }}
+                  supabase secrets set POSTMARK_WEBHOOK_AUTHORIZED_IPS=${{ env.POSTMARK_WEBHOOK_AUTHORIZED_IPS }}
+                  supabase secrets set VITE_INBOUND_EMAIL=${{ env.VITE_INBOUND_EMAIL }}
+                  supabase secrets set VITE_ATTACHMENTS_BUCKET=${{ env.VITE_ATTACHMENTS_BUCKET }}
 
             # Named, never bare: a bare deploy publishes every directory under
             # supabase/functions. Every name must be in PRODUCTION_FUNCTIONS
             # (scripts/production-scope.mjs), or the gate fails.
             - if: ${{ env.IS_SUPABASE_CONFIGURED }}
               name: 📡 Deploy supabase functions
-              run: npx supabase functions deploy delete_note_attachments merge_contacts postmark update_password users
+              run: supabase functions deploy delete_note_attachments merge_contacts postmark update_password users
 
             - if: ${{ !env.SUPABASE_ACCESS_TOKEN }}
               name: Check SUPABASE_ACCESS_TOKEN secret
