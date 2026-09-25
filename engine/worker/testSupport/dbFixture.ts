@@ -184,6 +184,17 @@ export async function deleteCompanyOsRows(
     "delete from ops.follow_up_plans where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policy_versions where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policies where tenant_id = any($1::uuid[])",
+    // Phase 3A.2: a booked booking is cancelled, never deleted, the same way;
+    // then the closed chain goes in one statement (a successor references its
+    // predecessor), before the configuration and the units it references.
+    `select ops.cancel_booking(b.tenant_id, b.id, 'dbtest_cleanup', 'dbtest', 'seed')
+       from ops.bookings b
+      where b.tenant_id = any($1::uuid[]) and b.status = 'booked'`,
+    "delete from ops.bookings where tenant_id = any($1::uuid[])",
+    "delete from ops.availability_rules where tenant_id = any($1::uuid[])",
+    "delete from ops.booking_types where tenant_id = any($1::uuid[])",
+    "delete from ops.booking_resources where tenant_id = any($1::uuid[])",
+    "delete from ops.scheduling_settings where tenant_id = any($1::uuid[])",
     // Phase 2B's sends reference reviews, conversations and channels, and
     // Phase 2A's two tables reference companies and tasks, all with ON DELETE
     // RESTRICT, so they go before the runs whose settlement derived them.

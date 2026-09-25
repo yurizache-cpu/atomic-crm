@@ -712,13 +712,14 @@ describe("one tenant reaches nothing of another's follow-ups", () => {
 
     // Act / Assert
     for (const attempt of [
-      asOwner((tx) => completeFollowUp(tx, ctxB, step1.id)),
-      asOwner((tx) => cancelFollowUp(tx, ctxB, step1.id, "lead_replied")),
-      asOwner((tx) =>
-        cancelFollowUpPlan(tx, ctxB, plan.planId, "lead_replied"),
-      ),
+      () => asOwner((tx) => completeFollowUp(tx, ctxB, step1.id)),
+      () => asOwner((tx) => cancelFollowUp(tx, ctxB, step1.id, "lead_replied")),
+      () =>
+        asOwner((tx) =>
+          cancelFollowUpPlan(tx, ctxB, plan.planId, "lead_replied"),
+        ),
     ]) {
-      expect(await rejection(attempt)).toMatchObject({ code: "not_found" });
+      expect(await rejection(attempt())).toMatchObject({ code: "not_found" });
     }
     // Tenant B naming tenant A's company and department: the composite keys
     // make the row unstorable.
