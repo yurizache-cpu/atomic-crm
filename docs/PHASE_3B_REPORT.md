@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **IMPLEMENTED LOCALLY. OWNER VISUAL REVIEW REQUIRED BEFORE THE SINGLE REMOTE INTEGRATION CYCLE.** Local commits on `feature/phase-3b-commercial-funnel`, not pushed, no PR. |
+| **Status** | **OWNER VISUAL REVIEW PASS (2026-09-25); READY FOR THE SINGLE REMOTE INTEGRATION CYCLE.** Six implementation and documentation commits on `feature/phase-3b-commercial-funnel` (`0c780f49`, `fa0480a5`, `aab43c15`, `aead9c3d`, `0bea7c49`, `42da3c79`), plus this reconciliation. *(Superseded wording: "implemented locally; owner visual review required".)* |
 | **Base** | `feature/clinical-phase-1` at `7c72e226c715a1a4b3f97396c548d1af55ac2724`, the PR #13 merge that integrated Phase 3A. Post-merge CI Check #75 (run 36160591321): Build, Test, Typecheck, ESLint and Database security & reproducibility passed. Only the historical e2e baseline (9 failed, 1 skipped) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red, so the overall workflow is red, not green. `main` is unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-3b-commercial-funnel` |
 | **Governing records** | The Phase 3B.1 brief (controlled batch, 2026-09-25); owner decision Q (the commercial funnel before RAG, sequencing only; [DECISIONS.md](DECISIONS.md)); [ADR 0013](adr/0013-pipeline-stages-are-configuration.md); CLAUDE.md's five rules. |
@@ -260,10 +260,10 @@ It refuses a CRM that already holds deals, a local CRM owned by another tenant, 
 **Proposed, not made:**
 
 1. **Commercial authority in Company OS** (move a stage, mark won or lost, set a next action). This needs a separate, explicit decision: an OD-8a migration, a catalogued function and an SI-58 extension. The board is deliberately read-only.
-2. **Which next action is canonical** for commercial follow-up: the deal's or the contact's (§4).
+2. **Canonical next action** (owner question, carried forward 2026-09-25). The funnel uses the deal's `next_action_at`; `lead_profiles.next_action_at` also exists. They are not merged, silently or otherwise, and future workflow work must decide the canonical semantics (§4).
 3. **A link from a card to the CRM deal,** supplied by the adapter.
 4. **An acquisition category mapping** (e.g. grouping "Google Ads" spellings). It would be tenant configuration, never code, and would also replace the three-contact threshold with a vocabulary.
-5. **Funnel visibility inside the tenant:** whether every Company OS member should see every salesperson's opportunities, which is the current tenant-wide membership model, or only a CRM administrator.
+5. **Sales visibility** (owner question, carried forward 2026-09-25, not changed now). A Company OS member sees every salesperson's opportunities of the tenant. A future phase decides whether commercial visibility becomes tenant-wide (today), department-scoped, salesperson-scoped or role-configurable.
 
 ## 15. Carried forward (not done here)
 
@@ -273,6 +273,10 @@ It refuses a CRM that already holds deals, a local CRM owned by another tenant, 
 - **Growth and marketing:** Google Ads, Umami, CPL, CAC and ROAS (a later growth phase), and generic `pipelines` tables (ADR 0013) when a tenant's CRM is not the local one.
 - **The overview payload** now carries the funnel; at larger scale the funnel may want its own read.
 - **Phase 3A UX backlog, unchanged:** "Follow-ups hoje" may read "Com vencimento hoje", and "Aguardando processamento" may leave "Agendados".
+- **Phase 3B.1 UX backlog (owner visual review, 2026-09-25; non-blocking, not changed now):**
+  1. "Movimentações recentes" is too long for daily use: show the latest 5 to 8 and a "Ver todas".
+  2. Separate "ações atrasadas" from "ações que vencem hoje", instead of showing today's count below the overdue card.
+  3. Make the board's horizontal-scroll affordance clearer when there are many stages.
 
 ## 16. What this batch does not do
 
