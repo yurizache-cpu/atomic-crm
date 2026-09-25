@@ -3219,9 +3219,20 @@ const INVARIANTS: Invariant[] = [
         file: "engine/telemetry/runtimeTelemetry.dbtest.ts",
         marker: /exports nothing the prompt was built from/,
       },
+      // The OTLP adapter: what actually leaves the process over the wire.
+      {
+        file: "engine/telemetry/openTelemetry.test.ts",
+        marker:
+          /sends the batched spans as OTLP JSON to the traces URL, and nothing but the catalogue's content/,
+      },
+      {
+        file: "engine/telemetry/catalog.test.ts",
+        marker:
+          /import OpenTelemetry in exactly one adapter file, and no vendor SDK anywhere/,
+      },
     ],
     caveat:
-      "The allowlist bounds what telemetry CAN carry, not what an operator does with it: the span-only ids are internal operational identifiers (ADR 0015 addendum), and a trace backend that joins them with the database learns what the database already holds. OTLP export is not in this build (the OpenTelemetry SDK was authorised but not installed, docs/PHASE_2E_REPORT.md §3), so today only the Prometheus text leaves the process, and only when metrics are enabled.",
+      "The allowlist bounds what telemetry CAN carry, not what an operator does with it: the span-only ids are internal operational identifiers (ADR 0015 addendum), and a trace backend that joins them with the database learns what the database already holds. Two things leave the process, each only when configured: the Prometheus text (METRICS_ENABLED) and OTLP spans to OTEL_EXPORTER_OTLP_ENDPOINT, through the one adapter that imports OpenTelemetry (engine/telemetry/openTelemetry.ts), with no resource detection, so the resource is service.name alone.",
   },
   {
     id: "SI-61",
@@ -3248,6 +3259,16 @@ const INVARIANTS: Invariant[] = [
         file: "engine/telemetry/metricsServer.test.ts",
         marker:
           /serves GET \/metrics on loopback as Prometheus text, and nothing else/,
+      },
+      {
+        file: "engine/telemetry/metricsServer.test.ts",
+        marker:
+          /is the no-op, opening nothing and starting no tracer, when nothing is configured/,
+      },
+      {
+        file: "engine/telemetry/openTelemetry.test.ts",
+        marker:
+          /changes nothing the worker does when the Collector is down, and stops within its bound/,
       },
       {
         file: "engine/telemetry/observabilityDeployment.test.ts",

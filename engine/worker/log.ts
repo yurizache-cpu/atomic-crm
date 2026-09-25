@@ -54,6 +54,7 @@ export type WorkerLogEvent =
   // is loopback: never a configured value.
   | "telemetry.metrics_listening"
   | "telemetry.disabled"
+  | "telemetry.tracing_enabled"
   | "telemetry.tracing_unavailable";
 
 export interface WorkerLogFields {

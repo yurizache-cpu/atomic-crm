@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **READY FOR OWNER VISUAL REVIEW (2026-09-24).** Local commits on `feature/phase-2e-observability`, not pushed, no PR. The single remote integration cycle (push, PR, merge into `feature/clinical-phase-1`) follows the owner's visual review. |
+| **Status** | **IMPLEMENTED; OWNER VISUAL REVIEW PASS (2026-09-24); OTLP WORKER EXPORT VERIFIED.** Local commits on `feature/phase-2e-observability`, not pushed, no PR. The owner approved Saúde operacional and then the three OpenTelemetry pins; the real worker's spans reach the local Collector (§7). Next: the owner's final confirmation and the single remote integration cycle (push, PR, merge into `feature/clinical-phase-1`). |
 | **Base** | `feature/clinical-phase-1` at `b3d67c8fa0e0f4d7810accc9c82306d302c65c4a`, the PR #11 merge that integrated 2D.2 + 2D.3. Post-merge CI Check #68 (run 36051184957): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red, so the overall workflow is red. `main` unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-2e-observability` |
 | **Governing records** | Decisions I–O (2026-09-17: OpenTelemetry and Prometheus "integrate soon"), decision P (2026-09-22: observability in Phase 2E), [ARCHITECTURE_ACCELERATION_REVIEW.md](ARCHITECTURE_ACCELERATION_REVIEW.md) §15 (reuse policy), the Phase 2E brief (2026-09-24). |
@@ -15,7 +15,7 @@
 | Phase 2D decision-engine core | **INTEGRATED** (PR #10, PR #11) |
 | Real Jev | **PENDING A VERIFIED PROVIDER CONTRACT.** There is no approved or verified Jev API, SDK, auth, pricing or data-processing contract; DecisionPort stays the boundary for a future provider. This does not block 2E, and nothing here touches it. |
 | Phase 2E | **STARTED**: 2E.1 observability foundation, 2E.2 operational intelligence |
-| OpenTelemetry | **Collector: adopted** (official image, local stack). **SDK: BLOCKED**, authorised and verified but not installed (§3); traces are instrumented against TelemetryPort, and no span leaves the process in this build. |
+| OpenTelemetry | **Collector: adopted** (official image, local stack). **SDK: INSTALLED** (api 1.9.1, sdk-node and exporter-trace-otlp-http 0.222.0, owner-installed). **OTLP worker export: VERIFIED**: the real worker's spans reached the Collector (§7). |
 | Prometheus | **Adopted** (official image, local stack). The worker serves `GET /metrics` with our own exposition writer, validated by `promtool`. |
 | Authoritative system | Company Engine / PostgreSQL |
 | Telemetry authority | **NONE** |
@@ -37,21 +37,17 @@ The owner can now answer from the Company OS: whether the engine is working (wor
 - **`engine/telemetry/catalog.ts`**: the allowlist (SI-60). 5 span names, 13 span attributes, 9 metrics with their labels. Every value is a closed enum (job kind, outcome, operation, provider kind, failure class), a fixed pattern (`decision_shadow.vN`) or a lowercase uuid. The tenant, job and run ids are **span-only** and are never a Prometheus label. An undeclared attribute is dropped, and a rejected label value becomes `other`, so a series count is bounded by the catalogue. The "structured operational event" of the brief is the existing worker log (`engine/worker/log.ts`: one JSON line per event, fixed fields); it gains three `telemetry.*` events with fixed text.
 - **Settlement observations.** Handlers do not import telemetry. An external-call handler's `settle` may return `{ detail, observation }`, where the observation is a closed-vocabulary fact (`agent_run` status and run id; `decision_evaluation` status and policy version). The runtime records it only AFTER the settle transaction commits, so a settlement that rolled back counts nothing, and neither does a replay that finds the run already settled. A `call` prepare may name its provider kind.
 
-## 3. OSS adoption, and the exact OpenTelemetry SDK blocker
+## 3. OSS adoption, and how the OpenTelemetry SDK was installed
 
 - **Adopted** (reuse mode B, external services; [OSS_PROVENANCE.md](OSS_PROVENANCE.md), created by this phase as the first real adoption):
   - `otel/opentelemetry-collector:0.160.0@sha256:e495787f…` (Apache-2.0; 0.161.0 was younger than 21 days);
   - `prom/prometheus:v3.14.0@sha256:5ce7540c…` (Apache-2.0).
-- **Authorised, verified, NOT installed.** On 2026-09-24 the brief's packages checked out as official (`open-telemetry/opentelemetry-js`), Apache-2.0 and Node >=20.6-compatible (Node here: 22.23.1): `@opentelemetry/api` 1.9.1 (published 2026-03-25), `@opentelemetry/sdk-node`, `exporter-trace-otlp-http` and `exporter-prometheus`, all 0.222.0 (published 2026-08-31, 24 days old). The install was **refused by this repository's own dependency guard** (`.claude/rules/dependency-safety.md`, the `npm install *` deny in `.claude/settings.json`). Routing around a permission guard is not an agent's decision, so no package was added and `package.json` gained no dependency.
-  - **Consequence:** OTLP trace export is not in this build. If `OTEL_EXPORTER_OTLP_ENDPOINT` is set, the worker logs `telemetry.tracing_unavailable` rather than ignoring it silently.
-  - **What remains once the owner installs the pins:** one adapter behind `startWorkerObservability`. Every span is already emitted through TelemetryPort and tested.
-  - **Owner command** (it needs only `api`, `sdk-node` and `exporter-trace-otlp-http`; the Prometheus exporter is no longer needed):
+- **SDK: authorised, verified, then INSTALLED by the owner.** On 2026-09-24 the brief's packages checked out as official (`open-telemetry/opentelemetry-js`), Apache-2.0 and Node >=20.6-compatible (Node here: 22.23.1): `@opentelemetry/api` 1.9.1 (published 2026-03-25), `@opentelemetry/sdk-node`, `exporter-trace-otlp-http` and `exporter-prometheus`, all 0.222.0 (published 2026-08-31, 24 days old). The install was **refused by this repository's own dependency guard** (`.claude/rules/dependency-safety.md`, the `npm install *` deny in `.claude/settings.json`). Routing around a permission guard is not an agent's decision, so the first milestone shipped without it.
+  - **Then (owner approval, 2026-09-24):** the owner approved exactly `@opentelemetry/api@1.9.1`, `@opentelemetry/sdk-node@0.222.0` and `@opentelemetry/exporter-trace-otlp-http@0.222.0`, as a repository change: the three pins were written to `package.json`, and the owner ran the plain install (`npm.cmd install`) because the guard also refuses an agent's argument-free `npm install`. The guard and `.claude/settings.json` are unchanged. The lockfile added 50 packages (Apache-2.0, MIT, BSD-3-Clause; one benign install script), recorded in [OSS_PROVENANCE.md](OSS_PROVENANCE.md) §3.
+  - **The adapter:** `engine/telemetry/openTelemetry.ts`, the only file that imports OpenTelemetry (pinned by `catalog.test.ts`). It builds its own tracer provider with no resource detection (the resource is `service.name: company-os-worker` alone), no auto-instrumentation, no global registration and no context manager. A span's parent is passed explicitly. Spans go through a bounded batch processor (at most 2,048 queued, 5 s export timeout) to `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/traces` over OTLP/HTTP JSON. Shutdown flushes within 3 s and never throws.
+  - **Opt-in:** without the variable the adapter is not even loaded (no network traffic, no error). An endpoint that is not a plain http(s) URL, or carries credentials, is refused with fixed text. An SDK that fails to start degrades to the no-op. Spans and the Prometheus registry are fed through `combineTelemetry`, each adapter contained on its own.
 
-    ```bash
-    npm install --save-exact @opentelemetry/api@1.9.1 @opentelemetry/sdk-node@0.222.0 @opentelemetry/exporter-trace-otlp-http@0.222.0
-    ```
-
-- **Prometheus without the SDK.** The acceleration review planned the worker endpoint as "about 30 lines". It is `engine/telemetry/prometheusRegistry.ts`, an in-memory registry rendering text format 0.0.4. It is not a metrics database, and `promtool check metrics` (from the pinned image) accepts its output.
+- **Prometheus without the SDK's exporter.** The acceleration review planned the worker endpoint as "about 30 lines". It is `engine/telemetry/prometheusRegistry.ts`, an in-memory registry rendering text format 0.0.4. It is not a metrics database, and `promtool check metrics` (from the pinned image) accepts its output.
 
 ## 4. Instrumentation
 
@@ -123,7 +119,9 @@ The owner can now answer from the Company OS: whether the engine is working (wor
 | typecheck, ESLint (every changed file), Prettier (every changed file), build, `scan:build`, production scope, signing key, script guards (166) | green |
 | `promtool check metrics` (prom/prometheus v3.14.0) on the worker's exposition | exit 0, no lint finding |
 | Stack: Prometheus scraping the real worker | during `npm run observability:demo`: `up` 1; `company_os_jobs_total` 6 agent runs + 5 decisions succeeded; `company_os_agent_runs_total` succeeded 5, indeterminate 1; `company_os_decision_evaluations_total{completed,decision_shadow.v2}` 5; queue depth peaked at 5. Every figure equals PostgreSQL's, and no series carries a tenant, job or run id. |
-| Stack: the Collector | a synthetic OTLP/HTTP span (`company_os.job.execute`, allowlisted attributes) answered 200 and appears in the Collector's debug log. The worker itself exports no span in this build (§3). |
+| **Stack: REAL WORKER SPANS RECEIVED (primary proof)** | `npm run observability:demo` with `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` ran the real worker loop. The Collector received **44 worker-produced spans**, 11 each of `company_os.job.execute`, `company_os.governance.check`, `company_os.provider.call` and `company_os.settlement`, one trace per job with the children parented to `job.execute`. The attribute keys were exactly the allowlisted `company_os.*` set, and the resource was `service.name: company-os-worker` alone. The uncertain run read `provider.call` Error and `agent_run.outcome: indeterminate`. The demo's synthetic message, advice, contact and draft text, and any SQL or password text, appear nowhere in the Collector's output. Prometheus scraped the same run (`up` 1, counters equal to PostgreSQL). |
+| Stack: the Collector, historical manual probe | before the SDK was installed, a hand-sent OTLP/HTTP span answered 200 and appeared in the Collector's log. It proved the Collector's pipeline, not the worker, and is superseded by the row above. |
+| OTLP adapter tests (`engine/telemetry/openTelemetry.test.ts`) | 4: the span tree, the allowlisted attributes and a `service.name`-only resource, with no sentinel content; the OTLP JSON body on the wire, captured by a local fake Collector, carries no sentinel and no host or process attribute; with a Collector that is down, the same job runs to the same outcome, through the same statements, with one provider call; a Collector that never answers still leaves shutdown within its bound |
 
 ## 8. Review (one focused pass)
 
@@ -155,7 +153,7 @@ Telemetry decides nothing: the no-op is the default, a throwing exporter changes
 
 ## 10. Carried forward (not fixed here)
 
-- OTLP trace export: install the authorised SDK pins (§3), then one adapter.
+- P3 copy (owner review, not changed): "Concluídos nas últimas 24 h" in Fila e execuções could become "Trabalhos concluídos nas últimas 24 h", to tell jobs from agent runs.
 - Decision-calibration recomputation cost at future scale (2D.3); the same applies to `cos_operational_health`, which is recomputed on every overview read. It is indexed by tenant and bounded by the 24 h and 7-day windows, but at scale it may want a materialised summary.
 - S7.1 `communication_status` refresh; the already-recorded review copy; the stop projection's partial-read issue; the 500-agent stop-target cap; old-worker deployment coordination (stop 2D.1 workers before the 2D.2 migration).
 - `company_os_agent_runs_total` counts only settlements this worker recorded after a provider call. Runs settled by the reaper or at a later attempt's claim (a crashed attempt's run) are counted by the database (Saúde operacional), not by the metric. Splitting `ops.settle_stale_agent_runs()`'s answer by outcome would let the metric count them too.
@@ -166,7 +164,7 @@ Telemetry decides nothing: the no-op is the default, a throwing exporter changes
 Local and synthetic only.
 
 1. `docker compose -f deploy/observability/docker-compose.yml up -d`
-2. `COMPANY_OS_SYNTHETIC_INGRESS=enabled METRICS_ENABLED=true METRICS_PORT=9464 npm run observability:demo` with `ADMIN_DATABASE_URL` and `OPS_WORKER_DATABASE_URL` on the e2e stack.
+2. `COMPANY_OS_SYNTHETIC_INGRESS=enabled METRICS_ENABLED=true METRICS_PORT=9464 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 npm run observability:demo` with `ADMIN_DATABASE_URL` and `OPS_WORKER_DATABASE_URL` on the e2e stack. The worker's spans appear in `docker logs company-os-observability-otel-collector-1`.
 3. The demo admits six fictitious leads and runs them through the real worker loop, the fake providers and the real metrics listener:
    - five succeed, each opening a pending review and one shadow evaluation;
    - one meets a scripted provider 5xx and is recorded **indeterminate**, and nothing retries it.

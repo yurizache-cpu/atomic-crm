@@ -1,8 +1,8 @@
 # Open-source provenance ledger
 
-The ledger that [ARCHITECTURE_ACCELERATION_REVIEW.md](ARCHITECTURE_ACCELERATION_REVIEW.md) §15.3 requires from the first real adoption onwards. One entry per adopted component, with the twelve fields of §15.3 and, for each, what it holds, what it is sent, what credential it has and how it is removed (Phase 2E brief, stage 7). Created by Phase 2E.1 (2026-09-24), whose two official container images are the first adoption.
+The ledger that [ARCHITECTURE_ACCELERATION_REVIEW.md](ARCHITECTURE_ACCELERATION_REVIEW.md) §15.3 requires from the first real adoption onwards. One entry per adopted component, with the twelve fields of §15.3 and, for each, what it holds, what it is sent, what credential it has and how it is removed (Phase 2E brief, stage 7). Created by Phase 2E.1 (2026-09-24), whose two official container images are the first adoption; the OpenTelemetry JS SDK followed the same day (§3).
 
-Nothing here is copied source: both components run unmodified as external services behind our own boundary (reuse mode B). The Company OS owns every piece of state; an adopted component observes, it does not decide (§15.5).
+Nothing here is copied source: the two images run unmodified as external services behind our own boundary (reuse mode B), and the SDK is used as unmodified packages behind TelemetryPort (reuse mode A). The Company OS owns every piece of state; an adopted component observes, it does not decide (§15.5).
 
 ## 1. Prometheus
 
@@ -47,25 +47,30 @@ Nothing here is copied source: both components run unmodified as external servic
 | **Files and config we own** | `deploy/observability/docker-compose.yml` (its service), `deploy/observability/otel-collector.yaml` |
 | **State held externally** | None persisted: it prints what it receives to its own log and forwards nothing |
 | **Credentials held** | None |
-| **Data sent to it** | OTLP/HTTP spans, once the worker exports them (not in this build, §3): span names and the allowlisted attributes of `engine/telemetry/catalog.ts` only (kinds, outcomes, policy version, and the internal tenant, job and run ids), never content (SI-60) |
+| **Data sent to it** | OTLP/HTTP spans from the worker (§3), only when `OTEL_EXPORTER_OTLP_ENDPOINT` is set: span names and the allowlisted attributes of `engine/telemetry/catalog.ts` only (kinds, outcomes, policy version, and the internal tenant, job and run ids), never content (SI-60) |
 | **Removal path** | Remove its service from the compose file and unset `OTEL_EXPORTER_OTLP_ENDPOINT`. It is the single egress: swapping the backend is a change to its exporter, here and nowhere else. |
 
-## 3. Authorised, verified, NOT adopted: the OpenTelemetry JS SDK
+## 3. OpenTelemetry JS SDK
 
-The Phase 2E brief authorised exactly five packages from https://github.com/open-telemetry/opentelemetry-js, subject to verification. The verification passed on 2026-09-24 (npm registry metadata):
+| Field | Value |
+| --- | --- |
+| **Project** | OpenTelemetry JavaScript (CNCF): the API, the Node SDK and the OTLP/HTTP trace exporter |
+| **Repository** | https://github.com/open-telemetry/opentelemetry-js |
+| **License** | Apache-2.0 for the repository and for each of the three packages (npm metadata). The 50 packages the lockfile added are all Apache-2.0 (34), MIT (6) or BSD-3-Clause (10); none is copyleft or source-available. |
+| **Upstream release/tag** | `api/v1.9.1` (2026-03-25); `experimental/v0.222.0` with the stable `v2.11.0` it pins (2026-08-31, 24 days old on adoption) |
+| **Exact commit SHA** | `api/v1.9.1` → `7e74509a4d848e94b2970bb5262dd3e8efeed0a2`; `experimental/v0.222.0` and `v2.11.0` → `0b72a81636fa476e8f1f1afd2ae0c90a1362194c` |
+| **Reuse mode** | A, package |
+| **Files/packages reused** | Exactly three direct dependencies, pinned without a range in `package.json`: `@opentelemetry/api` 1.9.1, `@opentelemetry/sdk-node` 0.222.0, `@opentelemetry/exporter-trace-otlp-http` 0.222.0. The lockfile records each with its sha512 integrity. `sdk-node` brings its transitive tree, among it the gRPC, protobuf and Zipkin exporters and the instrumentation loader hooks, none of which is imported or enabled. |
+| **Local modifications** | None |
+| **Required notices** | None shipped: the packages are installed from the registry, not redistributed or bundled into the browser build |
+| **Upstream remote** | Not a fork; no remote |
+| **Update strategy** | Move the three pins together (the `experimental/` line pins its stable `v2.x`), after the release has aged 21 days, by editing `package.json` and a plain `npm install` run by the owner (the repository's dependency guard refuses an agent's install). Then re-run `engine/telemetry/openTelemetry.test.ts` and the stack check (docs/PHASE_2E_REPORT.md §7). |
+| **Owner decision** | I–O (2026-09-17), decision P (2026-09-22), the Phase 2E brief (2026-09-24) authorising the packages subject to verification, and the owner's approval of 2026-09-24 of exactly these three pins, installed by the owner with a plain `npm install` |
+| **Files and config we own** | `engine/telemetry/openTelemetry.ts` (the ONLY file that imports OpenTelemetry, pinned by `catalog.test.ts`), `engine/telemetry/fromEnv.ts` (`OTEL_EXPORTER_OTLP_ENDPOINT`) |
+| **State held externally** | None: spans are batched in memory (at most 2,048) and exported; nothing persists |
+| **Credentials held** | None by default. An operator may pass OTLP headers through the SDK's standard `OTEL_EXPORTER_OTLP_HEADERS`; nothing in this repository sets one, and an endpoint URL carrying a user or password is refused. |
+| **Data sent** | OTLP/HTTP JSON spans to `OTEL_EXPORTER_OTLP_ENDPOINT` + `/v1/traces`, only when that variable is set: the catalogue's span names and allowlisted attributes, after `guardTelemetry` (SI-60). The resource is `service.name` alone: no resource detection, so no host, process, user or environment attribute. |
+| **Install scripts** | One in the added tree: `protobufjs` 7.6.6 `postinstall` (`scripts/postinstall.js`), which only compares version schemes in the parent `package.json` and warns; it makes no network call and writes nothing. |
+| **Removal path** | Unset `OTEL_EXPORTER_OTLP_ENDPOINT` (the adapter is not even loaded without it); to remove the code, delete `openTelemetry.ts` and its branch in `fromEnv.ts`, then remove the three dependencies. TelemetryPort, the metrics and every caller stay unchanged. |
 
-| Package | Version | License | Published | Node engines |
-| --- | --- | --- | --- | --- |
-| `@opentelemetry/api` | 1.9.1 | Apache-2.0 | 2026-03-25 | >=8.0.0 |
-| `@opentelemetry/sdk-node` | 0.222.0 | Apache-2.0 | 2026-08-31 | ^18.19.0 \|\| >=20.6.0 |
-| `@opentelemetry/exporter-trace-otlp-http` | 0.222.0 | Apache-2.0 | 2026-08-31 | ^18.19.0 \|\| >=20.6.0 |
-| `@opentelemetry/exporter-prometheus` | 0.222.0 | Apache-2.0 | 2026-08-31 | ^18.19.0 \|\| >=20.6.0 |
-| `@opentelemetry/semantic-conventions` | 1.43.0 | Apache-2.0 | (not needed directly; transitive) | >=14 |
-
-**They were not installed.** The install was refused by this repository's own dependency guard (`.claude/rules/dependency-safety.md`, the `npm install *` deny in `.claude/settings.json`), and routing around a permission guard is not an agent's call. The owner installs them, with the exact pins, when the OTLP adapter is written:
-
-```bash
-npm install --save-exact @opentelemetry/api@1.9.1 @opentelemetry/sdk-node@0.222.0 @opentelemetry/exporter-trace-otlp-http@0.222.0
-```
-
-`@opentelemetry/exporter-prometheus` is no longer needed: the worker's `/metrics` is our own ~150-line writer, validated by `promtool`. `@opentelemetry/sdk-node` pulls a large transitive tree (gRPC and protobuf exporters among it); an entry for the SDK is added here, with that tree recorded, at the moment it is adopted.
+Not adopted: `@opentelemetry/exporter-prometheus` (the worker's `/metrics` is our own ~150-line writer, validated by `promtool`) and `@opentelemetry/semantic-conventions` as a direct dependency (only the string `service.name` is needed).

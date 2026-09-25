@@ -77,6 +77,52 @@ export const NOOP_TELEMETRY: TelemetryPort = Object.freeze({
 });
 
 /**
+ * One port feeding several adapters (the Prometheus registry and the OTLP
+ * tracer), each call contained per adapter, so one that throws still leaves
+ * the others recording. A child span reaches each adapter with that adapter's
+ * own parent span.
+ */
+export function combineTelemetry(
+  ports: readonly TelemetryPort[],
+): TelemetryPort {
+  const live = ports.filter((port) => port !== NOOP_TELEMETRY);
+  if (live.length === 0) return NOOP_TELEMETRY;
+  if (live.length === 1) return live[0];
+  const each = (fn: (port: TelemetryPort, index: number) => void) =>
+    live.forEach((port, index) => {
+      try {
+        fn(port, index);
+      } catch {
+        // Contained: the other adapters still record.
+      }
+    });
+  const parts = new WeakMap<TelemetrySpan, (TelemetrySpan | undefined)[]>();
+  const combined: TelemetryPort = {
+    startSpan(name, attributes, parent) {
+      const parents = parent ? parts.get(parent) : undefined;
+      const children: (TelemetrySpan | undefined)[] = [];
+      each((port, index) => {
+        children[index] = port.startSpan(name, attributes, parents?.[index]);
+      });
+      const span: TelemetrySpan = {
+        setAttributes: (more) =>
+          each((_port, index) => children[index]?.setAttributes(more)),
+        end: (status) => each((_port, index) => children[index]?.end(status)),
+      };
+      parts.set(span, children);
+      return span;
+    },
+    count: (metric, labels, by) =>
+      each((port) => port.count(metric, labels, by)),
+    observe: (metric, value, labels) =>
+      each((port) => port.observe(metric, value, labels)),
+    setGauge: (metric, value, labels) =>
+      each((port) => port.setGauge(metric, value, labels)),
+  };
+  return Object.freeze(combined);
+}
+
+/**
  * The boundary between the Company OS and any telemetry adapter:
  *   * sanitisation: a span or metric the catalogue does not declare is
  *     dropped, span attributes keep only allowlisted keys with values their

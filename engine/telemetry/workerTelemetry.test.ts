@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { createPrometheusRegistry } from "./prometheusRegistry.ts";
-import { guardTelemetry, NOOP_TELEMETRY } from "./telemetryPort.ts";
+import {
+  combineTelemetry,
+  guardTelemetry,
+  NOOP_TELEMETRY,
+} from "./telemetryPort.ts";
 import {
   createRecordingTelemetry,
   TELEMETRY_SENTINELS,
@@ -317,5 +321,33 @@ describe("classifying how a call ended", () => {
         outcome: "error",
       }),
     ).toBe(1);
+  });
+});
+
+describe("one port feeding several adapters", () => {
+  it("gives each adapter its own parent, and keeps recording when another adapter throws", async () => {
+    const first = createRecordingTelemetry();
+    const second = createRecordingTelemetry();
+    const port = guardTelemetry(
+      combineTelemetry([first, THROWING_TELEMETRY, second]),
+    );
+    const trace = createWorkerTelemetry(port).startJob(JOB);
+    await trace.phase("company_os.settlement", async () => "settled");
+    trace.end({ outcome: "succeeded" });
+    for (const recording of [first, second]) {
+      expect(
+        recording.spans.map((span) => [span.name, span.parent?.name]),
+      ).toEqual([
+        ["company_os.job.execute", undefined],
+        ["company_os.settlement", "company_os.job.execute"],
+      ]);
+      expect(recording.counted("company_os_jobs_total")).toBe(1);
+    }
+  });
+
+  it("is the no-op when no adapter records", () => {
+    expect(combineTelemetry([NOOP_TELEMETRY, NOOP_TELEMETRY])).toBe(
+      NOOP_TELEMETRY,
+    );
   });
 });

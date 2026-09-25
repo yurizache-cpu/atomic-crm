@@ -2,7 +2,8 @@ import { createServer } from "node:net";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 
-import { startWorkerObservability } from "./fromEnv.ts";
+import { startWorkerObservability, tracesUrlFromEndpoint } from "./fromEnv.ts";
+import { createRecordingTelemetry } from "./testSupport/recordingTelemetry.ts";
 import { metricsConfigFromEnv, startMetricsListener } from "./metricsServer.ts";
 import { createPrometheusRegistry } from "./prometheusRegistry.ts";
 import type { WorkerLogEvent, WorkerLogFields } from "../worker/log.ts";
@@ -106,15 +107,25 @@ describe("the metrics listener", () => {
 });
 
 describe("the worker's observability from its environment", () => {
-  it("is the no-op, opening nothing, when nothing is configured", async () => {
+  const unreachable = async (): Promise<never> => {
+    throw new Error("unreachable");
+  };
+
+  it("is the no-op, opening nothing and starting no tracer, when nothing is configured", async () => {
     const { lines, log } = captureLog();
-    let listened = false;
-    const observability = await startWorkerObservability({}, log, async () => {
-      listened = true;
-      throw new Error("unreachable");
+    let started = false;
+    const observability = await startWorkerObservability({}, log, {
+      listen: async () => {
+        started = true;
+        return unreachable();
+      },
+      startTracing: async () => {
+        started = true;
+        return unreachable();
+      },
     });
     expect(observability.telemetry).toBe(NOOP_WORKER_TELEMETRY);
-    expect(listened).toBe(false);
+    expect(started).toBe(false);
     expect(lines).toEqual([]);
     await observability.close();
   });
@@ -124,8 +135,10 @@ describe("the worker's observability from its environment", () => {
     const observability = await startWorkerObservability(
       { METRICS_ENABLED: "true", METRICS_PORT: "9464" },
       log,
-      async () => {
-        throw new Error("EADDRINUSE sk-SENTINEL");
+      {
+        listen: async () => {
+          throw new Error("EADDRINUSE sk-SENTINEL");
+        },
       },
     );
     expect(observability.telemetry).toBe(NOOP_WORKER_TELEMETRY);
@@ -133,17 +146,87 @@ describe("the worker's observability from its environment", () => {
     expect(JSON.stringify(lines)).not.toContain("SENTINEL");
   });
 
-  it("says OTLP export is unavailable in this build instead of ignoring the variable", async () => {
+  it("derives the OTLP traces URL from the endpoint, and refuses anything but a plain http(s) URL", () => {
+    expect(tracesUrlFromEndpoint("http://127.0.0.1:4318")).toBe(
+      "http://127.0.0.1:4318/v1/traces",
+    );
+    expect(tracesUrlFromEndpoint("https://collector.internal:4318/")).toBe(
+      "https://collector.internal:4318/v1/traces",
+    );
+    for (const bad of [
+      "collector:4318",
+      "ftp://collector",
+      "http://user:secret@collector:4318",
+      "not a url",
+    ]) {
+      expect(tracesUrlFromEndpoint(bad)).toBeNull();
+    }
+  });
+
+  it("refuses an endpoint it cannot use, naming the variable and never its value", async () => {
     const { lines, log } = captureLog();
     const observability = await startWorkerObservability(
-      { OTEL_EXPORTER_OTLP_ENDPOINT: "http://collector.internal:4318" },
+      {
+        OTEL_EXPORTER_OTLP_ENDPOINT:
+          "http://user:sk-SENTINEL@collector.internal:4318",
+      },
       log,
+      { startTracing: unreachable },
     );
     expect(observability.telemetry).toBe(NOOP_WORKER_TELEMETRY);
     expect(lines.map((line) => line.event)).toEqual([
       "telemetry.tracing_unavailable",
     ]);
-    expect(JSON.stringify(lines)).not.toContain("collector.internal");
+    expect(JSON.stringify(lines)).not.toMatch(/SENTINEL|collector\.internal/);
+  });
+
+  it("degrades to the no-op when the tracer cannot start, and never fails the worker", async () => {
+    const { lines, log } = captureLog();
+    const observability = await startWorkerObservability(
+      { OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
+      log,
+      {
+        startTracing: async () => {
+          throw new Error("sdk exploded sk-SENTINEL");
+        },
+      },
+    );
+    expect(observability.telemetry).toBe(NOOP_WORKER_TELEMETRY);
+    expect(lines.map((line) => line.event)).toEqual([
+      "telemetry.tracing_unavailable",
+    ]);
+    expect(JSON.stringify(lines)).not.toContain("SENTINEL");
+  });
+
+  it("starts the tracer for the traces URL only, reports it without the address, and flushes it on close", async () => {
+    const { lines, log } = captureLog();
+    const urls: string[] = [];
+    let shutdowns = 0;
+    const observability = await startWorkerObservability(
+      { OTEL_EXPORTER_OTLP_ENDPOINT: "http://127.0.0.1:4318" },
+      log,
+      {
+        startTracing: async (url) => {
+          urls.push(url);
+          return {
+            telemetry: createRecordingTelemetry(),
+            shutdown: async () => {
+              shutdowns += 1;
+            },
+          };
+        },
+      },
+    );
+    expect(urls).toEqual(["http://127.0.0.1:4318/v1/traces"]);
+    expect(lines.map((line) => line.event)).toEqual([
+      "telemetry.tracing_enabled",
+    ]);
+    expect(JSON.stringify(lines)).not.toContain("127.0.0.1");
+    // Spans only: without metrics served, no queue depth is read.
+    expect(observability.telemetry).not.toBe(NOOP_WORKER_TELEMETRY);
+    expect(observability.telemetry.readsQueueDepth).toBe(false);
+    await observability.close();
+    expect(shutdowns).toBe(1);
   });
 
   it("listens, reports the port and whether it is loopback, and serves the worker's metrics", async () => {
@@ -151,7 +234,10 @@ describe("the worker's observability from its environment", () => {
     const observability = await startWorkerObservability(
       { METRICS_ENABLED: "true", METRICS_PORT: "9464" },
       log,
-      (config, render) => startMetricsListener({ ...config, port: 0 }, render),
+      {
+        listen: (config, render) =>
+          startMetricsListener({ ...config, port: 0 }, render),
+      },
     );
     try {
       expect(observability.telemetry.readsQueueDepth).toBe(true);

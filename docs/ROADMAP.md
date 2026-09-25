@@ -508,12 +508,12 @@ Q8 must be resolved before real patient message content is sent to a real LLM.
 
 **Classification: PHASE 2C ARCHITECTURE INTEGRATED — IMPLEMENTATION NOT STARTED.** The owner's final confirmation is recorded and the architecture is merged into `feature/clinical-phase-1` by PR #6 (merge commit `fe7976c5`, reviewed head `95bf2faa`, branch retained); the post-merge run 35767741221 concluded failure with only the accepted baseline reds, so it is not green and no new regression was identified. The implementation stage has not started: it begins from `feature/clinical-phase-1` at the integration record, the planning spikes S0.1 to S0.6 come first, and the S7 user-management prerequisite stays binding before any mutable browser act. Q8 is OPEN, the production WhatsApp gate is CLOSED, no real patient data is permitted, and no production deployment is approved.
 
-### Phase 2E.1 + 2E.2 — observability foundation and operational intelligence (2026-09-24) — READY FOR OWNER VISUAL REVIEW
+### Phase 2E.1 + 2E.2 — observability foundation and operational intelligence (2026-09-24) — IMPLEMENTED, OWNER VISUAL REVIEW PASS, OTLP WORKER EXPORT VERIFIED
 
 Built on `feature/phase-2e-observability` from `feature/clinical-phase-1` at `b3d67c8f` (the PR #11 merge that integrated 2D.2 + 2D.3); local commits, not pushed. Read [PHASE_2E_REPORT.md](PHASE_2E_REPORT.md).
 
 - **2E.1:** a provider-neutral TelemetryPort (no-op default, one sanitising, failure-isolating boundary, an allowlist catalogue: SI-60), the governed runtime traced and counted without any authority (SI-61), a private worker `GET /metrics`, and a local Collector + Prometheus stack from official, digest-pinned images ([OSS_PROVENANCE.md](OSS_PROVENANCE.md)).
 - **2E.2:** `ops.cos_operational_health`, exact and tenant-scoped, in the existing overview read, and the read-only screen Saúde operacional.
-- **Blocked:** the OpenTelemetry SDK (authorised and verified, install refused by the repository's dependency guard), so OTLP trace export awaits the owner's install.
+- **OpenTelemetry SDK:** first refused by the repository's dependency guard, then approved by the owner as exactly three pins and installed by the owner (2026-09-24). The real worker's spans reach the local Collector over OTLP/HTTP (report §3, §7).
 - **Unchanged:** the Company Engine / PostgreSQL is authoritative; telemetry has no authority; browser mutable RPCs 2; Q8 OPEN; real Jev pending a verified provider contract.
-- **Next:** the owner's visual review, then the single remote integration cycle. Later in 2E (not started): the OTLP adapter once the SDK is installed, and whatever intelligence the owner asks for next.
+- **Next:** the owner's final confirmation, then the single remote integration cycle. Later in 2E (not started): whatever intelligence the owner asks for next.

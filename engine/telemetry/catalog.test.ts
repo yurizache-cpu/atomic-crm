@@ -194,12 +194,17 @@ describe("telemetry call sites in the engine", () => {
     }
   });
 
-  it("never import an OpenTelemetry or vendor SDK outside engine/telemetry", () => {
+  it("import OpenTelemetry in exactly one adapter file, and no vendor SDK anywhere", () => {
+    const importers: string[] = [];
     for (const file of sources("engine")) {
-      if (file.replace(/\\/g, "/").startsWith("engine/telemetry/")) continue;
-      expect(readFileSync(file, "utf8")).not.toMatch(
-        /from "(@opentelemetry\/|prom-client|dd-trace|@sentry\/|newrelic)/,
+      const text = readFileSync(file, "utf8");
+      expect(text, file).not.toMatch(
+        /from "(prom-client|dd-trace|@sentry\/|newrelic|@datadog\/)/,
       );
+      if (/from "@opentelemetry\//.test(text)) {
+        importers.push(file.replace(/\\/g, "/"));
+      }
     }
+    expect(importers).toEqual(["engine/telemetry/openTelemetry.ts"]);
   });
 });
