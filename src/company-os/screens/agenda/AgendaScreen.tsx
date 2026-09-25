@@ -199,7 +199,9 @@ const UpcomingSection = ({ agenda }: { agenda: Agenda }) => (
     ) : (
       byLocalDay(agenda.bookings.upcoming).map((group) => (
         <div key={group.day} className="flex flex-col gap-1">
-          <h3 className="text-sm font-medium capitalize">{group.day}</h3>
+          <h3 className="text-sm font-medium first-letter:uppercase">
+            {group.day}
+          </h3>
           <ul aria-label={`Atendimentos de ${group.day}`}>
             {group.items.map((booking) => (
               <BookingRow key={booking.id} booking={booking} />

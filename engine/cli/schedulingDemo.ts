@@ -20,10 +20,11 @@
 //      cancels one and reschedules another;
 //   3. schedules four follow-up plans whose first steps are already past due;
 //   4. runs the worker loop until the queue drains: the governed follow-up
-//      jobs mark those follow-ups due, and the calendar jobs mirror each
-//      booking change to the fake calendar, whose third create answers a
-//      scripted server error, so that sync is recorded "incerta" and nothing
-//      retries it;
+//      jobs mark those follow-ups due, and the calendar jobs mirror the
+//      bookings to the fake calendar at their CURRENT times. The cancelled
+//      booking is never mirrored. The moved booking's create is the fake's
+//      third, which answers a scripted server error, so that sync is recorded
+//      "incerta", nothing retries it, and its update is skipped;
 //   5. completes one due follow-up and cancels another, as an operator would,
 //      and schedules one more that is already due but, with the worker
 //      stopped, waits for processing.

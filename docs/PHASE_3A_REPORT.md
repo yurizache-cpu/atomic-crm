@@ -153,7 +153,15 @@ The final broad run found two defects that the focused runs had missed, both fix
 
 ## 11. Owner demo
 
-Local and synthetic only. On a freshly reset e2e stack: `npm run scheduling:demo` with `ADMIN_DATABASE_URL` and `OPS_WORKER_DATABASE_URL` on the same local database. It configures the development seed's tenant (zone America/Sao_Paulo, two fictional agendas, "Atendimento inicial" 50 min + 10 min after, every day 07:00–21:00, a SIMULATED calendar, the 3/7/10-day demo cadence), books today's and the week's free slots through the real services, cancels one and moves one, schedules four follow-up plans already past their first step, runs the real worker loop (follow-ups become due; each booking change is mirrored to the fake calendar, whose third create answers a scripted server error, so that sync is uncertain and never retried), then completes one follow-up, cancels another and leaves one waiting for the worker. Nothing is sent. Then open the Agenda. Note: the demo leaves queued future follow-up jobs in the seed tenant; run the driver-backed suites before it, or reset the stack after it.
+Local and synthetic only. On a freshly reset e2e stack: `npm run scheduling:demo` with `ADMIN_DATABASE_URL` and `OPS_WORKER_DATABASE_URL` on the same local database. It configures the development seed's tenant (zone America/Sao_Paulo, two fictional agendas, "Atendimento inicial" 50 min + 10 min after, every day 07:00–21:00, a SIMULATED calendar, the 3/7/10-day demo cadence), books today's and the week's free slots through the real services, cancels one and moves one, schedules four follow-up plans already past their first step, runs the real worker loop (follow-ups become due; the booking changes are mirrored to the fake calendar), then completes one follow-up, cancels another and leaves one waiting for the worker. Nothing is sent. Then open the Agenda.
+
+Measured on 2026-09-25: 7 bookings (6 booked, 1 cancelled, 1 rescheduled), 4 plans, 6 calendar calls. The demo cancels and moves a booking BEFORE the worker runs, so the calendar outcome shows the §4 rules at work:
+- the cancelled booking is never mirrored (create `skipped` `booking_not_booked`, cancel `skipped` `no_confirmed_event`);
+- the moved booking's create carries its NEW time and is the fake's third create, which answers a scripted server error, so it is `indeterminate` and never retried;
+- that booking's update is then `skipped` (`no_confirmed_event`);
+- the other five creates are `synced`.
+
+The Agenda reads: Hoje 2, Próximos 7 dias 4, Follow-ups vencidos 1 (2 need action), 1 awaiting processing, Sincronização "Simulado" with 1 uncertain sync, and "Google Agenda: não conectado". The Activity feed shows the follow-up, booking and calendar events (commit 7), and Saúde operacional raises "1 sincronização de calendário incerta ou com falha em atendimentos futuros". Note: the demo leaves queued future follow-up jobs in the seed tenant; run the driver-backed suites before it, or reset the stack after it.
 
 ## 12. Review
 
@@ -181,6 +189,7 @@ The final broad run (§10) then found the two gaps fixed in commit 7.
 - No unavailable periods (holidays) in availability; no scheduling configuration commands in the CLI (the demo configures through the services).
 - A follow-up plan is scheduled through the service (the demo, the tests); no CLI act schedules one, and nothing schedules one automatically from a triage.
 - `ops.cos_agenda` computes up to ten resource/type pairs of slots on every overview read; at scale it may want a summary.
+- Saúde operacional's "Chamadas externas" table (`ops.cos_operational_health`, Phase 2E) has no calendar row. Calendar outcomes are counted on the Agenda, and an uncertain or failed sync is a Saúde operacional attention item. A calendar row would redefine that projection, so it is left for an owner request.
 - The demo leaves queued future follow-up jobs in the seed tenant, which a later driver-backed suite's worker could lease; reset before the suites.
 
 ## 15. What this batch does not do
