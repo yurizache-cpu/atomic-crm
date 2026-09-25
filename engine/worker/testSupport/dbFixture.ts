@@ -184,12 +184,22 @@ export async function deleteCompanyOsRows(
     "delete from ops.follow_up_plans where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policy_versions where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policies where tenant_id = any($1::uuid[])",
-    // Phase 3A.2: a booked booking is cancelled, never deleted, the same way;
-    // then the closed chain goes in one statement (a successor references its
-    // predecessor), before the configuration and the units it references.
+    // Phase 3A.2: disconnect first, so the cleanup's own cancellations request
+    // no calendar sync; then a booked booking is cancelled, never deleted, the
+    // same way. An open sync is settled (pending -> skipped, running ->
+    // indeterminate) before it may go. The closed booking chain goes in one
+    // statement (a successor references its predecessor), before the
+    // configuration and the units it references.
+    "update ops.calendar_connections set active = false where tenant_id = any($1::uuid[])",
     `select ops.cancel_booking(b.tenant_id, b.id, 'dbtest_cleanup', 'dbtest', 'seed')
        from ops.bookings b
       where b.tenant_id = any($1::uuid[]) and b.status = 'booked'`,
+    `update ops.calendar_syncs
+        set status = case status when 'pending' then 'skipped' else 'indeterminate' end,
+            error_code = 'dbtest_cleanup'
+      where tenant_id = any($1::uuid[]) and status in ('pending', 'running')`,
+    "delete from ops.calendar_syncs where tenant_id = any($1::uuid[])",
+    "delete from ops.calendar_connections where tenant_id = any($1::uuid[])",
     "delete from ops.bookings where tenant_id = any($1::uuid[])",
     "delete from ops.availability_rules where tenant_id = any($1::uuid[])",
     "delete from ops.booking_types where tenant_id = any($1::uuid[])",

@@ -504,8 +504,10 @@ begin
   end if;
 
   -- G4. And no new job kind at all. (Phase 2D.1 adds one external kind, the
-  --     shadow decision, which no task can request: G3 above.)
-  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate']::text[]
+  --     shadow decision, and Phase 3A the follow-up's governed kind and the
+  --     three calendar kinds, none of which a task can request: G3 above.)
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel']::text[]
+     or ops.governed_job_kinds() is distinct from array['follow_up.due']::text[]
      or ops.internal_job_kinds() is distinct from array['postmark.ledger_retention']::text[] then
     raise exception 'G4: the job kinds changed';
   end if;

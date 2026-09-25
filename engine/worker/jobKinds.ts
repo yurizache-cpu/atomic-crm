@@ -27,6 +27,9 @@ import {
 export const EXTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "agent_run.execute",
   "decision.shadow_evaluate",
+  "calendar.create",
+  "calendar.update",
+  "calendar.cancel",
 ]);
 
 export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([

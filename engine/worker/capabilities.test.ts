@@ -367,6 +367,8 @@ describe("the capability list", () => {
       "startShadowDecision",
       "settleShadowDecision",
       "markFollowUpDue",
+      "startCalendarSync",
+      "settleCalendarSync",
     ]);
   });
 });

@@ -1,6 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { AGENT_RUN_EXECUTE_KIND } from "../handlers/agentRunExecute.ts";
+import {
+  CALENDAR_CANCEL_KIND,
+  CALENDAR_CREATE_KIND,
+  CALENDAR_UPDATE_KIND,
+} from "../handlers/calendarSync.ts";
 import { DECISION_SHADOW_EVALUATE_KIND } from "../handlers/decisionShadowEvaluate.ts";
 import { FOLLOW_UP_DUE_KIND } from "../handlers/followUpDue.ts";
 import { POSTMARK_LEDGER_RETENTION_KIND } from "../handlers/postmarkLedgerRetention.ts";
@@ -72,6 +77,9 @@ describe("the worker's registry classifies every job kind for the kill switch", 
     expect([...EXTERNAL_JOB_KINDS]).toEqual([
       AGENT_RUN_EXECUTE_KIND,
       DECISION_SHADOW_EVALUATE_KIND,
+      CALENDAR_CREATE_KIND,
+      CALENDAR_UPDATE_KIND,
+      CALENDAR_CANCEL_KIND,
     ]);
     expect([...GOVERNED_JOB_KINDS]).toEqual([FOLLOW_UP_DUE_KIND]);
     expect([...INTERNAL_JOB_KINDS]).toEqual([POSTMARK_LEDGER_RETENTION_KIND]);
