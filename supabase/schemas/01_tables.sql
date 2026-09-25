@@ -341,11 +341,11 @@ create index lead_profiles_contact_id_idx on public.lead_profiles using btree (c
 create index lead_profiles_next_action_at_idx on public.lead_profiles using btree (next_action_at) where do_not_contact = false;
 create index acquisition_attributions_contact_id_idx on public.acquisition_attributions using btree (contact_id);
 
--- The commercial funnel's reads (Phase 3B.1): the open board by stage and age,
--- next actions, outcomes and new deals by date, and recent stage movement.
+-- The commercial funnel's reads (Phase 3B.1): next actions, outcomes and new
+-- deals by date, and recent stage movement (the open board by stage uses
+-- deals_pipeline_stage_idx above).
 create index deal_stage_transitions_changed_at_idx on public.deal_stage_transitions using btree (changed_at, id);
 create index deal_stage_transitions_deal_id_idx on public.deal_stage_transitions using btree (deal_id, changed_at, id);
-create index deals_open_stage_entered_at_idx on public.deals using btree (pipeline_stage, stage_entered_at) where lost_at is null and archived_at is null;
 create index deals_open_next_action_at_idx on public.deals using btree (next_action_at) where lost_at is null and archived_at is null;
 create index deals_converted_at_idx on public.deals using btree (converted_at) where converted_at is not null;
 create index deals_lost_at_idx on public.deals using btree (lost_at) where lost_at is not null;

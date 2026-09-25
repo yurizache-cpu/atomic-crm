@@ -10,6 +10,9 @@
 --
 --   F1  the CRM adapter, pinned: INVOKER, owned by postgres, reachable by no
 --       role, read only, and reading exactly the five CRM tables it needs;
+--   R   robustness: a date the CRM accepts but a browser cannot hold (a
+--       five-digit year, an infinity) and an id outside the browser's number
+--       range never break the funnel or the overview;
 --   L1  ledger access: no application or capability role holds a privilege,
 --       RLS is on with no policy, and the triggers are enabled;
 --   L2  ledger semantics: entry, A -> B, B -> C, no row for C -> C or another
@@ -26,7 +29,8 @@
 --   N   minimisation: no title, name, contact id, click id, campaign or note;
 --   T   tenancy: only the tenant that owns the local CRM reads it; another
 --       reads not_configured, byte for byte, whatever the CRM holds;
---   X   deliberate breaks, each caught by its own check.
+--   X   deliberate breaks, each caught by its own check, and a failing
+--       adapter that leaves the overview whole.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data only.
 
@@ -100,7 +104,7 @@ begin
            case when p.proconfig is distinct from '{"search_path=\"\""}'::text[] then 'config' end,
            case when p.provolatile not in ('s', 'i') then 'volatile' end) || ')', ', ') into v_bad
     from pg_proc p
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
      and (p.prosecdef or p.proowner <> 'postgres'::regrole
           or p.proacl is distinct from '{postgres=X/postgres}'::aclitem[]
           or p.proconfig is distinct from '{"search_path=\"\""}'::text[] or p.provolatile not in ('s', 'i'));
@@ -108,15 +112,15 @@ begin
     raise exception 'F1: a CRM adapter function is DEFINER, reachable, unpinned or volatile: %', v_bad;
   end if;
   if (select count(*) from pg_proc p where p.pronamespace = 'ops'::regnamespace
-       and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount)$') <> 5 then
-    raise exception 'F1: the CRM adapter is not exactly its five functions';
+       and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$') <> 6 then
+    raise exception 'F1: the CRM adapter is not exactly its six functions';
   end if;
   -- Read only: no write verb and no dynamic SQL in the code (string literals
   -- are data and emptied first).
   select string_agg(p.proname, ', ') into v_bad
     from pg_proc p,
          lateral (select regexp_replace(regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g'), '''([^'']|'''')*''', '''''', 'g') as code) c
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
      and (c.code ~* '\m(insert|update|delete|truncate|merge|copy|execute|perform)\M');
   if v_bad is not null then
     raise exception 'F1: a CRM adapter function writes or runs dynamic SQL: %', v_bad;
@@ -124,7 +128,7 @@ begin
   -- Exactly the five CRM tables, and nothing else of schema public.
   select string_agg(distinct m[1], ', ') into v_bad
     from pg_proc p, lateral regexp_matches(p.prosrc, 'public\.([a-z_]+)', 'g') m
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
      and m[1] not in ('deals', 'configuration', 'acquisition_attributions', 'loss_reasons', 'deal_stage_transitions');
   if v_bad is not null then
     raise exception 'F1: the CRM adapter reads % beyond its five tables', v_bad;
@@ -132,8 +136,8 @@ begin
   -- It calls only its own helpers and the timestamp formatter in ops.
   select string_agg(distinct m[1], ', ') into v_bad
     from pg_proc p, lateral regexp_matches(p.prosrc, 'ops\.([a-z_0-9]+)\s*\(', 'g') m
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount)$'
-     and m[1] !~ '^crm_(deal_card|deal_origin|text_ok|safe_amount)$' and m[1] <> 'cos_ts';
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
+     and m[1] !~ '^crm_(deal_card|deal_origin|text_ok|safe_amount|instant)$' and m[1] <> 'cos_ts';
   if v_bad is not null then
     raise exception 'F1: the CRM adapter calls %', v_bad;
   end if;
@@ -305,7 +309,7 @@ declare
   c bigint;
   v_name text;
 begin
-  foreach v_name in array array['c1', 'c2', 'c3', 'c4', 'c6'] loop
+  foreach v_name in array array['c1', 'c2', 'c3', 'c4', 'c6', 'c7', 'c8'] loop
     insert into public.contacts (first_name, last_name) values ('CF-SENTINEL', v_name) returning id into c;
     insert into cf_ids (name, id) values (v_name, c);
   end loop;
@@ -316,7 +320,9 @@ begin
     (pg_temp.id('c2'), 'Orgânico', null, null, null),
     (pg_temp.id('c3'), 'Orgânico', null, null, null),
     (pg_temp.id('c4'), '5511999998888', null, null, null),
-    (pg_temp.id('c6'), 'Indicação', null, null, null);
+    (pg_temp.id('c6'), 'Indicação', null, null, null),
+    (pg_temp.id('c7'), 'Google Ads', null, null, null),
+    (pg_temp.id('c8'), 'Google Ads', null, null, null);
 end
 $$;
 
@@ -355,7 +361,8 @@ begin
   perform pg_temp.deal('d4', 'alpha', '1 day', '1 day', p_archived => true);
   -- Lost 3 days ago with a reason.
   perform pg_temp.deal('d5', 'mid', '1 day', '4 days', p_lost => '3 days');
-  -- Converted 5 days ago, in the converted stage; one recorded origin (c6).
+  -- Converted 5 days ago, in the converted stage; its one contact's source is
+  -- carried by no other contact, so it is withheld (c6).
   perform pg_temp.deal('d6', 'won', '20 days', '5 days', null, array[pg_temp.id('c6')], 900, p_converted => '5 days');
   -- In the converted stage with no converted_at: converted by configuration only.
   perform pg_temp.deal('d7', 'won', '1 day', '1 day');
@@ -462,7 +469,8 @@ $f$;
 select pg_temp.check_funnel();
 
 -- A. Origin: recorded once (whitespace aside), several sources, several
--- contacts, none, and a value shaped like an identifier.
+-- contacts, none, a value shaped like an identifier, and a label fewer than
+-- three contacts carry.
 do $$
 declare
   f jsonb := pg_temp.funnel('ta');
@@ -472,13 +480,16 @@ begin
                     ' ' order by pg_temp.named(c ->> 'dealRef'))
     into v
     from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c;
-  if v <> 'd1=recorded:Google Ads d10=unknown d12=withheld d2=multiple d3=multiple d6=recorded:Indicação d7=unknown d8=unknown' then
+  if v <> 'd1=recorded:Google Ads d10=unknown d12=withheld d2=multiple d3=multiple d6=withheld d7=unknown d8=unknown' then
     raise exception 'A: a deal''s origin drifted: %', v;
+  end if;
+  if f::text ~ 'Indicação' then
+    raise exception 'A: a recorded source fewer than three contacts carry must be withheld';
   end if;
   -- The 90-day breakdown: recorded labels by count, then unknown, multiple, withheld.
   select string_agg((i ->> 'kind') || coalesce(':' || (i ->> 'label'), '') || '=' || (i ->> 'count'), ' ' order by o)
     into v from jsonb_array_elements(f -> 'origins' -> 'items') with ordinality as x (i, o);
-  if v <> 'recorded:Google Ads=1 recorded:Indicação=1 unknown=7 multiple=2 withheld=1'
+  if v <> 'recorded:Google Ads=1 unknown=7 multiple=2 withheld=2'
      or (f -> 'origins' ->> 'total')::int <> 12 or (f -> 'origins' ->> 'windowDays')::int <> 90 then
     raise exception 'A: the origin breakdown drifted: % (total %)', v, f -> 'origins' ->> 'total';
   end if;
@@ -566,6 +577,68 @@ begin
     end if;
   end loop;
   update public.configuration set config = v_saved where id = 1;
+end
+$$;
+
+-- ===========================================================================
+-- R. Robustness: what the CRM accepts never breaks the funnel or the overview.
+-- ===========================================================================
+
+do $$
+declare
+  f   jsonb;
+  bad text;
+begin
+  begin
+    insert into public.deals (name, stage, pipeline_stage, next_action_at) values
+      ('CF-SENTINEL inf', 'zeta', 'zeta', 'infinity'),
+      ('CF-SENTINEL ninf', 'zeta', 'zeta', '-infinity'),
+      ('CF-SENTINEL year', 'zeta', 'zeta', '20260-01-01 00:00:00+00');
+    insert into public.deals (name, stage, pipeline_stage, stage_entered_at)
+    values ('CF-SENTINEL entered', 'zeta', 'zeta', 'infinity');
+    update public.deals set stage_entered_at = 'infinity' where name = 'CF-SENTINEL entered';
+    insert into public.deals (id, name, stage, pipeline_stage) values
+      (-5, 'CF-SENTINEL negative id', 'zeta', 'zeta'),
+      (9007199254740993, 'CF-SENTINEL huge id', 'zeta', 'zeta');
+
+    f := pg_temp.funnel('ta');
+    if f ->> 'status' <> 'available' then
+      raise exception 'R: the funnel must stay available: %', f;
+    end if;
+    -- Every instant has a four-digit year and no sign.
+    select string_agg(v #>> '{}', ', ') into bad
+      from jsonb_path_query(f, 'strict $.**') v
+     where jsonb_typeof(v) = 'string' and (v #>> '{}') ~ '^[-+]?[0-9]{5,}-|^-[0-9]{4}-';
+    if bad is not null then
+      raise exception 'R: an instant a browser cannot hold: %', bad;
+    end if;
+    -- A card has a next-action instant exactly when its state is not none,
+    -- and an infinite or distant one keeps its raw classification.
+    select string_agg(c::text, ', ') into bad
+      from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c
+     where (c ->> 'nextActionAt' is null) <> (c ->> 'nextAction' = 'none');
+    if bad is not null then
+      raise exception 'R: a card''s next action and its instant disagree: %', bad;
+    end if;
+    if (select string_agg(c ->> 'nextAction' || '@' || (c ->> 'nextActionAt'), ' ' order by c ->> 'nextActionAt')
+          from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c
+         where c ->> 'nextActionAt' like '0001-%' or c ->> 'nextActionAt' like '9999-%')
+       is distinct from 'overdue@0001-01-01T00:00:00.000000Z future@9999-12-31T23:59:59.999999Z future@9999-12-31T23:59:59.999999Z' then
+      raise exception 'R: an infinite or distant next action must be clamped and keep its state';
+    end if;
+    -- A deal a browser number cannot hold is counted, never listed.
+    if (select (e ->> 'total')::int from jsonb_array_elements(f -> 'stages') e where e ->> 'code' = 'zeta') <> 8
+       or exists (select 1 from jsonb_path_query(f, 'strict $.**.dealRef') r
+                   where (r #>> '{}')::numeric not between 1 and 9007199254740991) then
+      raise exception 'R: an out-of-range deal id must be counted but not listed';
+    end if;
+    if (ops.read_overview(pg_temp.uid('ta')) -> 'funnel' ->> 'status') <> 'available' then
+      raise exception 'R: the overview must stay readable';
+    end if;
+    raise exception using errcode = 'P0002', message = 'cf-undo-robustness';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
 end
 $$;
 
@@ -673,6 +746,32 @@ select pg_temp.expect_caught('X5',
   $x$update public.configuration set config = jsonb_set(config, '{dealStages}',
        (select jsonb_agg(e order by e ->> 'value') from jsonb_array_elements(config -> 'dealStages') e)) where id = 1$x$,
   'select pg_temp.check_funnel()', '^M:');
+
+-- X6. An adapter that fails leaves the overview whole: the funnel reads
+-- unavailable, and every other section is still answered.
+do $$
+declare
+  o jsonb;
+begin
+  begin
+    alter function ops.crm_commercial_funnel(uuid, text, timestamptz) rename to crm_commercial_funnel_real;
+    create function ops.crm_commercial_funnel(p_tenant_id uuid, p_zone text, p_as_of timestamptz) returns jsonb
+    language plpgsql stable set search_path = '' as $b$
+    begin
+      raise exception 'cf-simulated CRM fault';
+    end
+    $b$;
+    o := ops.read_overview(pg_temp.uid('ta'));
+    if o -> 'funnel' is distinct from '{"status": "unavailable"}'::jsonb
+       or o -> 'agenda' is null or o -> 'operationalHealth' is null then
+      raise exception 'X6: a failing adapter must leave the overview whole: %', o -> 'funnel';
+    end if;
+    raise exception using errcode = 'P0002', message = 'cf-undo-x6';
+  exception when sqlstate 'P0002' then
+    null;
+  end;
+end
+$$;
 
 do $$ begin raise notice 'commercial funnel: every check held, every deliberate break was caught'; end $$;
 

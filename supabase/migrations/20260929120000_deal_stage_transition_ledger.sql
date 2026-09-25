@@ -48,9 +48,8 @@ alter table public.deal_stage_transitions
 create index deal_stage_transitions_changed_at_idx on public.deal_stage_transitions using btree (changed_at, id);
 create index deal_stage_transitions_deal_id_idx on public.deal_stage_transitions using btree (deal_id, changed_at, id);
 
--- The funnel's reads: the open board by stage and age, next actions, outcomes
--- by date, and new deals by date.
-create index deals_open_stage_entered_at_idx on public.deals using btree (pipeline_stage, stage_entered_at) where lost_at is null and archived_at is null;
+-- The funnel's reads: next actions, outcomes by date and new deals by date.
+-- The open board by stage uses the existing deals_pipeline_stage_idx.
 create index deals_open_next_action_at_idx on public.deals using btree (next_action_at) where lost_at is null and archived_at is null;
 create index deals_converted_at_idx on public.deals using btree (converted_at) where converted_at is not null;
 create index deals_lost_at_idx on public.deals using btree (lost_at) where lost_at is not null;

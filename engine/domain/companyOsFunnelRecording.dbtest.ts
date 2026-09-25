@@ -33,7 +33,10 @@ import { fileURLToPath } from "node:url";
 import type { Pool, PoolClient } from "pg";
 import { format, resolveConfig } from "prettier";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AvailableFunnelSchema } from "../../contracts/company-os-api/index.ts";
+import {
+  AvailableFunnelSchema,
+  OverviewSummarySchema,
+} from "../../contracts/company-os-api/index.ts";
 import {
   FUNNEL_DEMO_CONVERTED,
   FUNNEL_DEMO_DEALS,
@@ -225,7 +228,84 @@ async function record(): Promise<unknown> {
   }
 }
 
+/**
+ * The funnel with values the CRM accepts but a browser cannot hold: an
+ * infinite or five-digit-year next action, an infinite stage entry, and ids
+ * outside the browser's number range. Read at AS_OF, and through the whole
+ * overview of the owning tenant, in the same rolled-back transaction.
+ */
+async function recordHostile(): Promise<{
+  funnel: unknown;
+  overview: unknown;
+}> {
+  const client = await admin.connect();
+  try {
+    await client.query("begin");
+    const built = await build(client);
+    await client.query(
+      `insert into public.deals (name, stage, pipeline_stage, next_action_at, stage_entered_at) values
+         ('${SENTINEL} inf', 'new_lead', 'new_lead', 'infinity', $1),
+         ('${SENTINEL} ninf', 'new_lead', 'new_lead', '-infinity', $1),
+         ('${SENTINEL} year', 'new_lead', 'new_lead', '20260-01-01 00:00:00+00', $1),
+         ('${SENTINEL} entered', 'new_lead', 'new_lead', null, 'infinity')`,
+      [AS_OF],
+    );
+    await client.query(
+      `insert into public.deals (id, name, stage, pipeline_stage) values
+         (-5, '${SENTINEL} negative', 'new_lead', 'new_lead'),
+         (9007199254740993, '${SENTINEL} huge', 'new_lead', 'new_lead')`,
+    );
+    const funnel = await one<unknown>(
+      client,
+      "select ops.cos_commercial_funnel($1, $2) as result",
+      [built.tenantId, AS_OF],
+    );
+    const overview = await one<unknown>(
+      client,
+      "select ops.read_overview($1) as result",
+      [built.tenantId],
+    );
+    return { funnel, overview };
+  } finally {
+    await client.query("rollback");
+    client.release();
+  }
+}
+
 describe("the recorded funnel is the real projection at a fixed instant", () => {
+  it("parses strictly even when the CRM holds dates and ids a browser cannot hold", async () => {
+    // Arrange / Act
+    const { funnel, overview } = await recordHostile();
+
+    // Assert: the funnel parses; distant instants are clamped, a next action
+    // keeps its state, out-of-range ids are counted but not listed; and the
+    // whole overview, which every screen reads, still parses.
+    const parsed = AvailableFunnelSchema.parse(funnel);
+    const newLead = parsed.stages.find((s) => s.code === "new_lead");
+    expect(newLead?.total).toBe(8);
+    const clamped = newLead?.cards
+      .filter((c) => /^(0001|9999)-/.test(c.nextActionAt ?? ""))
+      .map((c) => `${c.nextAction}@${c.nextActionAt}`)
+      .sort();
+    expect(clamped).toEqual([
+      "future@9999-12-31T23:59:59.999999Z",
+      "future@9999-12-31T23:59:59.999999Z",
+      "overdue@0001-01-01T00:00:00.000000Z",
+    ]);
+    expect(
+      newLead?.cards.some((c) => c.stageEnteredAt.startsWith("9999-")),
+    ).toBe(true);
+    expect(
+      JSON.stringify(parsed)
+        .match(/"dealRef":(-?\d+)/g)
+        ?.every((m) => {
+          const ref = Number(m.split(":")[1]);
+          return ref >= 1 && ref <= Number.MAX_SAFE_INTEGER;
+        }),
+    ).toBe(true);
+    expect(OverviewSummarySchema.safeParse(overview).success).toBe(true);
+  });
+
   it("parses with its contract, leaks nothing the fixture planted, and equals the committed recording", async () => {
     // Arrange / Act
     const funnel = await record();

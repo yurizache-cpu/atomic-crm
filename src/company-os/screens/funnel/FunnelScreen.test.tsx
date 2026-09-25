@@ -322,6 +322,19 @@ describe("the Funil comercial screen", () => {
     await expect
       .element(invalid.getByText(/incompleta ou inválida/))
       .toBeVisible();
+    await invalid.unmount();
+
+    // A CRM fault: the funnel says so, and the overview still answered.
+    const unavailable = await renderCompanyOs(
+      withFunnel({ status: "unavailable" } as never),
+      HASH,
+    );
+    await expect
+      .element(unavailable.getByText("Funil indisponível agora"))
+      .toBeVisible();
+    await expect
+      .element(unavailable.getByText(/As outras telas não são afetadas/))
+      .toBeVisible();
   });
 
   it("says it is loading until the overview answers, and offers only a retry when it cannot be read", async () => {

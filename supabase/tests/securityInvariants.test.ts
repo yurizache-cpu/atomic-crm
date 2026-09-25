@@ -3510,6 +3510,100 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "The browser's scheduling acts are a later, explicit authority decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser stays at exactly its two acts.",
   },
+  // Phase 3B.1: the commercial funnel.
+  {
+    id: "SI-66",
+    statement:
+      "A deal's stage history is observed, never fabricated and never a second authority: public.deals.pipeline_stage stays the one current stage, and public.deal_stage_transitions records, inside the deal write's own transaction, exactly one row for a deal's entry and one for each change of its stage, and nothing for a same-stage or other-column update, a refused write or a rolled-back one; concurrent changes of one deal are serialised by its row lock, so its rows form one chain ending at its current stage; nothing is backfilled for a deal that existed before the ledger; the ledger holds two stage codes and an instant, is append-only (no update, and no delete but the cascade from its deal's deletion), and no application or capability role can read or write it: its one writer is a SECURITY DEFINER trigger function nobody may execute, so a CRM user's own deal writes are still observed.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /L2: A -> B -> C must record one row each/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /L2: a same-stage or other-column update must record nothing/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker:
+          /L2: a rolled-back change must roll back both the stage and its observation/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /L1: % holds a privilege on the deal stage-transition ledger/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /L3: a CRM user''s own writes must be observed/,
+      },
+      {
+        file: "engine/domain/commercialFunnelLedger.dbtest.ts",
+        marker:
+          /keeps one coherent chain when eight connections change one deal at once/,
+      },
+      {
+        file: "supabase/migrations/20260929120000_deal_stage_transition_ledger.sql",
+        marker:
+          /public\.deal_stage_transitions must start empty: no history is fabricated/,
+      },
+      {
+        file: "supabase/tests/upgrade/upgrade_assertions.sql",
+        marker: /the stage-transition ledger holds history for a legacy deal/,
+      },
+    ],
+    caveat:
+      "The ledger observes writes from the moment its migration applies: stage movement before that is unknown, and the demo's opportunities are observed when the demo wrote them. The database owner's credential can still disable the trigger, as it can every trigger.",
+  },
+  {
+    id: "SI-67",
+    statement:
+      "Company OS reads the commercial funnel and never writes it: the CRM's public.deals stays the one commercial source of truth, Company OS stores no opportunity or stage, and the funnel reaches the browser through the existing overview with no new function or act; the only functions that read the CRM's tables for it are the crm_ adapter (ops.crm_commercial_funnel and its helpers), which reads only deals, the configuration, acquisition attributions, loss reasons and the stage-transition ledger, writes nothing, and serves only the tenant that owns the local CRM, deciding that before it reads anything of the CRM, so any other tenant reads not_configured whatever the CRM holds; the Company OS read graph calls that one adapter and no other CRM service; stage codes, labels and converted stages come from the CRM's stored configuration and are never guessed; and the funnel carries no title, name, contact, contact id, email, phone, note, click id, campaign, keyword or actor, and a deal's origin only as its one linked contact's recorded source.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /F1: the CRM adapter reads % beyond its five tables/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /F1: a CRM adapter function writes or runs dynamic SQL/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /T: a tenant without the local CRM must read not_configured/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /N: the funnel carries a personal or free-text key/,
+      },
+      {
+        file: "supabase/tests/commercial_funnel.sql",
+        marker: /M: a malformed stage configuration must read invalid/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /'crm_commercial_funnel'\)\)/,
+      },
+      {
+        file: "supabase/migrations/20260929130000_commercial_funnel_read_model.sql",
+        marker:
+          /Nothing of the CRM is read before the tenant is known to own it/,
+      },
+      {
+        file: "src/company-os/screens/funnel/FunnelScreen.test.tsx",
+        marker:
+          /offers no control that creates, moves, wins or loses an opportunity/,
+      },
+      {
+        file: "engine/domain/companyOsFunnelRecording.dbtest.ts",
+        marker: /parses with its contract, leaks nothing the fixture planted/,
+      },
+    ],
+    caveat:
+      "Commercial authority in Company OS (moving a stage, marking won or lost, changing a next action) is a later, explicit owner decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser stays at exactly its two acts. A deal's origin is the CRM's free-text source as recorded: identifier-shaped values are withheld by shape, and a label fewer than three contacts carry is withheld, but neither rule can recognise every personal value a person might type there. Every Company OS member sees every salesperson's opportunities (the tenant-wide membership model), an owner question recorded in PHASE_3B_REPORT.md.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

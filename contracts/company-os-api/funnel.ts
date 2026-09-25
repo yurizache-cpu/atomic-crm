@@ -37,6 +37,8 @@ export const FUNNEL_STATUSES = [
   "available",
   "stages_not_configured",
   "not_configured",
+  // The CRM could not be read right now; the rest of the overview stands.
+  "unavailable",
 ] as const;
 export const FUNNEL_CONFIGURATION_PROBLEMS = ["missing", "invalid"] as const;
 export const NEXT_ACTION_STATES = [
@@ -233,6 +235,7 @@ export const CommercialFunnelSchema = z.union([
     reason: z.enum(FUNNEL_CONFIGURATION_PROBLEMS),
   }),
   z.strictObject({ status: z.literal("not_configured") }),
+  z.strictObject({ status: z.literal("unavailable") }),
 ]);
 
 export type CommercialFunnel = z.infer<typeof CommercialFunnelSchema>;

@@ -48,6 +48,14 @@
 -- and none reads "unknown". A value shaped like an identifier (a long run of
 -- digits, symbols, more than 40 characters) is withheld.
 --
+-- ROBUST TO WHAT THE CRM ACCEPTS. The CRM lets a person type a five-digit
+-- year or 'infinity' into a date, and insert a deal with any id. Every instant
+-- the funnel emits is clamped to the years 0001 to 9999 (an infinity to its
+-- bound), while a next action is still classified from its raw value; a deal
+-- whose id a browser number cannot hold is counted but never listed. And the
+-- provider-neutral entry isolates the adapter: an unexpected CRM fault makes
+-- the funnel read "unavailable", never the whole overview fail.
+--
 -- BOUNDED. At most 25 cards per stage, each stage with its exact total; 10
 -- items per attention and outcome list; 15 recent movements; the top 8
 -- origins. The windows are 30 days for new deals, outcomes and movements, and
@@ -64,6 +72,20 @@ language sql immutable security invoker set search_path = '' as $$
      and p_text !~ '[[:cntrl:]]';
 $$;
 
+-- A CRM instant the browser can hold: clamped to the years 0001 to 9999, an
+-- infinity to its bound.
+create function ops.crm_instant(p_at pg_catalog.timestamptz) returns pg_catalog.timestamptz
+language sql immutable security invoker set search_path = '' as $$
+  select case
+    when p_at is null then null
+    when p_at > '9999-12-31 23:59:59.999999+00'::pg_catalog.timestamptz
+      then '9999-12-31 23:59:59.999999+00'::pg_catalog.timestamptz
+    when p_at < '0001-01-01 00:00:00+00'::pg_catalog.timestamptz
+      then '0001-01-01 00:00:00+00'::pg_catalog.timestamptz
+    else p_at
+  end;
+$$;
+
 -- An amount the browser can hold exactly as a JSON number, else null.
 create function ops.crm_safe_amount(p_amount pg_catalog.numeric) returns pg_catalog.numeric
 language sql immutable security invoker set search_path = '' as $$
@@ -71,7 +93,9 @@ language sql immutable security invoker set search_path = '' as $$
 $$;
 
 -- A deal's origin from its linked contacts: unknown, multiple, withheld or
--- the one recorded source.
+-- the one recorded source. A recorded label is shown only when it has an
+-- identifier-free shape AND at least three distinct contacts carry it: a
+-- free-text source that names one person (a referrer, say) stays withheld.
 create function ops.crm_deal_origin(p_contact_ids pg_catalog.int8[]) returns pg_catalog.jsonb
 language sql stable security invoker set search_path = '' as $$
   with contacts as (
@@ -90,6 +114,8 @@ language sql stable security invoker set search_path = '' as $$
     when (select count(*) from sources) > 1 then '{"kind": "multiple"}'::pg_catalog.jsonb
     when (select s.label from sources s) ~ '^[[:alpha:][:digit:] ._&/+()-]{1,40}$'
      and (select s.label from sources s) !~ '([0-9][^0-9]*){5}'
+     and (select count(distinct a.contact_id) from public.acquisition_attributions a
+           where pg_catalog.btrim(pg_catalog.regexp_replace(a.source, '\s+', ' ', 'g')) = (select s.label from sources s)) >= 3
       then pg_catalog.jsonb_build_object('kind', 'recorded', 'label', (select s.label from sources s))
     else '{"kind": "withheld"}'::pg_catalog.jsonb
   end;
@@ -104,10 +130,11 @@ language sql stable security invoker set search_path = '' as $$
   select pg_catalog.jsonb_build_object(
     'dealRef', d.id,
     'stage', case when d.pipeline_stage = any (p_codes) then d.pipeline_stage end,
-    'stageEnteredAt', ops.cos_ts(d.stage_entered_at),
+    'stageEnteredAt', ops.cos_ts(ops.crm_instant(d.stage_entered_at)),
     'stageAgeDays', pg_catalog.int4larger(0,
-        (p_as_of at time zone p_zone)::pg_catalog.date - (d.stage_entered_at at time zone p_zone)::pg_catalog.date),
-    'nextActionAt', ops.cos_ts(d.next_action_at),
+        (p_as_of at time zone p_zone)::pg_catalog.date
+        - (ops.crm_instant(d.stage_entered_at) at time zone p_zone)::pg_catalog.date),
+    'nextActionAt', ops.cos_ts(ops.crm_instant(d.next_action_at)),
     'nextAction', case when d.next_action_at is null then 'none'
                        when d.next_action_at < p_as_of then 'overdue'
                        when d.next_action_at < p_tomorrow then 'today'
@@ -207,6 +234,7 @@ begin
                                   d.id
                              from public.deals d
                             where d.pipeline_stage = s.code and d.archived_at is null and d.lost_at is null
+                              and d.id between 1 and 9007199254740991
                             order by 2, d.id
                             limit c_card_cap) x), '[]'::pg_catalog.jsonb))
              order by s.n)
@@ -223,6 +251,7 @@ begin
                          d.stage_entered_at as k, d.id
                     from public.deals d
                    where d.archived_at is null and d.lost_at is null and d.pipeline_stage <> all (v_codes)
+                     and d.id between 1 and 9007199254740991
                    order by d.stage_entered_at, d.id
                    limit c_card_cap) x), '[]'::pg_catalog.jsonb)),
     'summary', pg_catalog.jsonb_build_object(
@@ -268,6 +297,7 @@ begin
                       from public.deals d
                      where d.archived_at is null and d.lost_at is null and d.converted_at is null
                        and d.pipeline_stage <> all (v_converted) and d.next_action_at < p_as_of
+                       and d.id between 1 and 9007199254740991
                      order by d.next_action_at, d.id
                      limit c_list_cap) x), '[]'::pg_catalog.jsonb)),
       'noNextAction', pg_catalog.jsonb_build_object(
@@ -281,6 +311,7 @@ begin
                       from public.deals d
                      where d.archived_at is null and d.lost_at is null and d.converted_at is null
                        and d.pipeline_stage <> all (v_converted) and d.next_action_at is null
+                       and d.id between 1 and 9007199254740991
                      order by d.stage_entered_at, d.id
                      limit c_list_cap) x), '[]'::pg_catalog.jsonb))),
     -- Observed movement only, from the ledger's first observation on.
@@ -300,6 +331,7 @@ begin
                          t.changed_at, t.id
                     from public.deal_stage_transitions t
                    where t.changed_at > v_window and t.changed_at <= p_as_of
+                     and t.deal_id between 1 and 9007199254740991
                    order by t.changed_at desc, t.id desc
                    limit c_movement_cap) x), '[]'::pg_catalog.jsonb)),
     -- Where the deals created in the last 90 days came from.
@@ -344,6 +376,7 @@ begin
                            d.converted_at as at, d.id
                       from public.deals d
                      where d.converted_at > v_window and d.converted_at <= p_as_of and d.lost_at is null
+                       and d.id between 1 and 9007199254740991
                      order by d.converted_at desc, d.id desc
                      limit c_list_cap) x), '[]'::pg_catalog.jsonb)),
       'lost', pg_catalog.jsonb_build_object(
@@ -358,6 +391,7 @@ begin
                       from public.deals d
                       left join public.loss_reasons lr on lr.id = d.loss_reason_id
                      where d.lost_at > v_window and d.lost_at <= p_as_of and d.converted_at is null
+                       and d.id between 1 and 9007199254740991
                      order by d.lost_at desc, d.id desc
                      limit c_list_cap) x), '[]'::pg_catalog.jsonb))));
 end
@@ -374,7 +408,14 @@ declare
                                          where s.tenant_id = p_tenant_id), 'UTC');
   v_result pg_catalog.jsonb;
 begin
-  v_result := ops.crm_commercial_funnel(p_tenant_id, v_zone, p_as_of);
+  begin
+    v_result := ops.crm_commercial_funnel(p_tenant_id, v_zone, p_as_of);
+  exception when others then
+    -- A CRM fault never takes the rest of the overview down. The warning
+    -- carries the SQLSTATE only, never data.
+    raise warning 'the commercial funnel could not be read (SQLSTATE %)', sqlstate;
+    return '{"status": "unavailable"}'::pg_catalog.jsonb;
+  end;
   if v_result ->> 'status' = 'available' then
     v_result := v_result || pg_catalog.jsonb_build_object(
       'timezone', v_zone,
@@ -453,6 +494,7 @@ $$;
 revoke all on function
   ops.crm_text_ok(pg_catalog.text, pg_catalog.int4),
   ops.crm_safe_amount(pg_catalog.numeric),
+  ops.crm_instant(pg_catalog.timestamptz),
   ops.crm_deal_origin(pg_catalog.int8[]),
   ops.crm_deal_card(public.deals, pg_catalog.timestamptz, pg_catalog.text, pg_catalog.timestamptz,
                                pg_catalog.text[], pg_catalog.text[]),
@@ -464,7 +506,7 @@ do $end_state$
 declare
   v_bad    pg_catalog.text;
   v_funnel pg_catalog.jsonb;
-  c_names  constant pg_catalog.text[] := array['crm_text_ok', 'crm_safe_amount', 'crm_deal_origin',
+  c_names  constant pg_catalog.text[] := array['crm_text_ok', 'crm_safe_amount', 'crm_instant', 'crm_deal_origin',
                                                 'crm_deal_card', 'crm_commercial_funnel',
                                                 'cos_commercial_funnel'];
 begin

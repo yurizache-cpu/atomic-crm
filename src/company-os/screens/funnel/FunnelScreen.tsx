@@ -498,6 +498,16 @@ const NOT_AVAILABLE: Readonly<
     "Esta empresa não tem um CRM local ligado ao Company OS, por isso não há funil para mostrar.",
   stages_not_configured:
     "As etapas do funil ainda não foram salvas no CRM. Abra as Configurações do CRM e salve as etapas para que o funil apareça aqui.",
+  unavailable:
+    "Os dados do CRM não puderam ser lidos agora. As outras telas não são afetadas; a leitura é tentada de novo automaticamente.",
+};
+
+const NOT_AVAILABLE_TITLE: Readonly<
+  Record<Exclude<CommercialFunnel["status"], "available">, string>
+> = {
+  not_configured: "Funil comercial não configurado",
+  stages_not_configured: "Etapas do funil não configuradas",
+  unavailable: "Funil indisponível agora",
 };
 
 const Unavailable = ({ funnel }: { funnel: CommercialFunnel }) => {
@@ -507,11 +517,7 @@ const Unavailable = ({ funnel }: { funnel: CommercialFunnel }) => {
   return (
     <EmptyState
       icon={Filter}
-      title={
-        funnel.status === "not_configured"
-          ? "Funil comercial não configurado"
-          : "Etapas do funil não configuradas"
-      }
+      title={NOT_AVAILABLE_TITLE[funnel.status]}
       text={
         invalid
           ? "A configuração de etapas salva no CRM está incompleta ou inválida. Revise e salve as etapas nas Configurações do CRM."

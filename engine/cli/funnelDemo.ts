@@ -4,8 +4,9 @@
 //   npm run funnel:demo
 //
 // with ADMIN_DATABASE_URL naming a database on this machine. LOCAL AND MANUAL
-// ONLY; no CI job runs it. It refuses a CRM that already holds any deal, and a
-// local CRM that another tenant owns.
+// ONLY; no CI job runs it. It refuses a CRM that already holds any deal or
+// contact, and a local CRM that another tenant owns. Steps 1 to 3 are one
+// transaction: a refusal or a failure leaves nothing behind.
 //
 // WHAT IT DOES, all synthetic (engine/cli/funnelDemoData.ts; no real name,
 // phone, email or message):
@@ -69,13 +70,13 @@ const refuse = (code: string, message: string): never => {
 };
 
 async function claimLocalCrm(tx: TxClient, tenantId: string): Promise<void> {
-  const { rows: deals } = await tx.query<{ n: string }>(
-    "select count(*) as n from public.deals",
+  const { rows: held } = await tx.query<{ n: string }>(
+    "select (select count(*) from public.deals) + (select count(*) from public.contacts) as n",
   );
-  if (Number(deals[0].n) > 0) {
+  if (Number(held[0].n) > 0) {
     refuse(
       "crm_not_empty",
-      "this CRM already holds deals; the demonstration runs only on an empty local CRM",
+      "this CRM already holds deals or contacts; the demonstration runs only on an empty local CRM",
     );
   }
   const { rows: owners } = await tx.query<{ id: string }>(
@@ -196,16 +197,13 @@ export async function runFunnelDemo(
   const owner = openDatabase(adminUrl);
   try {
     const placement = await owner.withTransaction(readPlacement);
-    await owner.withTransaction(async (tx) => {
-      await claimLocalCrm(tx, placement.tenantId);
-      await saveStages(tx);
-    });
-    stdout(jsonLine({ step: "configured", stages: FUNNEL_DEMO_STAGES.length }));
-
     const asOf = new Date();
     const moved = new Map(MOVED_NOW);
     const ids = new Map<string, string>();
+    // Ownership, stages and opportunities commit together, or not at all.
     await owner.withTransaction(async (tx) => {
+      await claimLocalCrm(tx, placement.tenantId);
+      await saveStages(tx);
       for (const spec of FUNNEL_DEMO_DEALS) {
         ids.set(
           spec.label,
@@ -213,6 +211,7 @@ export async function runFunnelDemo(
         );
       }
     });
+    stdout(jsonLine({ step: "configured", stages: FUNNEL_DEMO_STAGES.length }));
     stdout(jsonLine({ step: "opportunities", created: ids.size }));
 
     // Real stage changes, each its own write, observed by the ledger now.

@@ -58,6 +58,14 @@ begin;
 -- stack) fails it instead of hanging it.
 set local lock_timeout = '20s';
 
+-- The local CRM's own stage configuration is not this suite's fixture: a
+-- Settings save or `npm run funnel:demo` would otherwise change the
+-- overview's funnel keys (N1). Inside this rolled-back transaction the CRM
+-- stores no stages, so the fixture tenant reads stages_not_configured.
+update public.configuration
+   set config = config - 'dealStages' - 'dealPipelineStatuses'
+ where id = 1;
+
 -- Membership is needed to `set role ops_worker` for the worker capabilities
 -- that build the fixtures. `grant <role> to current_user` crashes this server
 -- build (owner decision S0-F): interpolate, and only inside this transaction.
