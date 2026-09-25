@@ -2,6 +2,7 @@ import {
   Activity,
   Bot,
   CalendarDays,
+  Filter,
   HeartPulse,
   Inbox,
   LayoutDashboard,
@@ -16,6 +17,7 @@ import type { ComponentType } from "react";
 
 import { ActivityScreen } from "./activity/ActivityScreen";
 import { AgendaScreen } from "./agenda/AgendaScreen";
+import { FunnelScreen } from "./funnel/FunnelScreen";
 import { AgentsScreen } from "./agents/AgentsScreen";
 import { CommunicationsScreen } from "./communications/CommunicationsScreen";
 import { CostsScreen } from "./costs/CostsScreen";
@@ -28,14 +30,15 @@ import { TasksScreen } from "./tasks/TasksScreen";
 
 // The screens of docs/PHASE_2C_BRIEF.md §12, in navigation order: the eight
 // core screens, the optional, narrow Communications status view, Phase
-// 2E.2's Saúde operacional and Phase 3A's Agenda (both read from the
-// overview). Every one is read-only
+// 2E.2's Saúde operacional, Phase 3A's Agenda and Phase 3B.1's Funil comercial
+// (all read from the overview). Every one is read-only
 // apart from the two acts of Decisões and Pausas: no screen renders a send, a
 // draft or any configuration change, and each one's h1 is its label.
 
 export type ScreenId =
   | "overview"
   | "agenda"
+  | "funnel"
   | "health"
   | "activity"
   | "tasks"
@@ -71,6 +74,13 @@ export const SCREENS: readonly ScreenDefinition[] = [
     path: "agenda",
     group: "Operação",
     icon: CalendarDays,
+  },
+  {
+    id: "funnel",
+    label: "Funil comercial",
+    path: "funnel",
+    group: "Operação",
+    icon: Filter,
   },
   {
     id: "health",
@@ -149,6 +159,7 @@ export type ScreenComponents = Readonly<Record<ScreenId, ComponentType>>;
 export const DEFAULT_SCREENS: ScreenComponents = {
   overview: OverviewScreen,
   agenda: AgendaScreen,
+  funnel: FunnelScreen,
   health: HealthScreen,
   activity: ActivityScreen,
   tasks: TasksScreen,

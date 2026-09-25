@@ -48,6 +48,13 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     ],
   },
   {
+    hash: "#/company-os/funnel",
+    heading: "Funil comercial",
+    // The recorded tenant owns the local CRM but stores no stage
+    // configuration (the populated funnel is testing/recorded/funnel.json).
+    markers: ["Etapas do funil não configuradas"],
+  },
+  {
     hash: "#/company-os/health",
     heading: "Saúde operacional",
     markers: ["Modelo de IA (execuções de agente)", "Precisa de atenção"],
