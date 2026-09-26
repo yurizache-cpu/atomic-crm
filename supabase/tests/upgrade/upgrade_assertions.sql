@@ -352,4 +352,27 @@ begin
 end
 $$;
 
+-- ===========================================================================
+-- Phase 3B.1: the deal stage-transition ledger fabricates no history.
+-- ===========================================================================
+
+do $$
+begin
+  -- No legacy deal has an observation: none was backfilled, and the two the
+  -- operator renamed in 1d kept their stage, which records nothing.
+  if exists (select 1 from public.deal_stage_transitions t
+               join public.deals d on d.id = t.deal_id
+              where d.name like 'Legacy deal [%') then
+    raise exception 'the stage-transition ledger holds history for a legacy deal';
+  end if;
+  -- The two deals the operator created in 1e, as the browser, each recorded
+  -- exactly their entry: the ledger's writer works for a CRM user's write.
+  if (select string_agg(d.name || '=' || coalesce(t.from_stage, '()') || '>' || t.to_stage, '; ' order by d.name)
+        from public.deal_stage_transitions t join public.deals d on d.id = t.deal_id)
+     is distinct from 'New deal [contact_started]=()>contact_started; New deal [default]=()>new_lead' then
+    raise exception 'the ledger did not record exactly the two new deals'' entries';
+  end if;
+end
+$$;
+
 rollback;

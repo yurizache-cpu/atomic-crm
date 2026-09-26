@@ -24,6 +24,16 @@ create or replace trigger synchronize_deal_pipeline_trigger
     before insert or update on public.deals
     for each row execute function public.synchronize_deal_pipeline();
 
+-- Phase 3B.1: each observed stage entry or change, in the deal write's own
+-- transaction (AFTER, so only a write that happens is observed).
+create or replace trigger record_deal_stage_transition_trigger
+    after insert or update on public.deals
+    for each row execute function public.record_deal_stage_transition();
+
+create or replace trigger deal_stage_transitions_append_only_trigger
+    before update or delete on public.deal_stage_transitions
+    for each row execute function public.deal_stage_transitions_append_only();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();

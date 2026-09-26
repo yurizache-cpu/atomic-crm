@@ -34,5 +34,6 @@ export const LIST_PATHS = {
   activity: `${COMPANY_OS_ROOT}/activity`,
   health: `${COMPANY_OS_ROOT}/health`,
   agenda: `${COMPANY_OS_ROOT}/agenda`,
+  funnel: `${COMPANY_OS_ROOT}/funnel`,
   communications: `${COMPANY_OS_ROOT}/communications`,
 } as const;

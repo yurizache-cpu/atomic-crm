@@ -15,6 +15,7 @@
 // an object through a parameter) stays a review rule.
 
 export * from "./agenda.ts";
+export * from "./funnel.ts";
 export * from "./agents.ts";
 export * from "./context.ts";
 export * from "./decisions.ts";

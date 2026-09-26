@@ -436,6 +436,7 @@
           "working": 1,
           "inactive": 3
         },
+        "funnel": { "reason": "missing", "status": "stages_not_configured" },
         "reviews": {
           "pending": 3,
           "oldestPendingAt": "2026-09-22T10:00:00.000000Z"

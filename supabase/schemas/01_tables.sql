@@ -254,6 +254,20 @@ create table public.loss_reasons (
     sort_order integer not null default 0
 );
 
+-- Observed deal stage entries and changes, from Phase 3B.1 on: an observation
+-- log, never the current stage (deals.pipeline_stage is). Written only by the
+-- record_deal_stage_transition trigger; append-only; backend-only (no policy,
+-- no grant). Matches 20260929120000_deal_stage_transition_ledger.sql.
+create table public.deal_stage_transitions (
+    id bigint generated always as identity primary key,
+    deal_id bigint not null,
+    from_stage text,
+    to_stage text not null,
+    changed_at timestamp with time zone not null,
+    -- An entry has no previous stage; a change always has a different one.
+    constraint deal_stage_transitions_changes_stage check (from_stage is distinct from to_stage)
+);
+
 --
 -- Foreign keys
 --
@@ -303,6 +317,9 @@ alter table public.lead_profiles
 alter table public.acquisition_attributions
     add constraint acquisition_attributions_contact_id_fkey foreign key (contact_id) references public.contacts(id) on update cascade on delete cascade;
 
+alter table public.deal_stage_transitions
+    add constraint deal_stage_transitions_deal_id_fkey foreign key (deal_id) references public.deals(id) on delete cascade;
+
 -- Legacy primary key constraint names (from before snake_case rename)
 alter table only public.contact_notes
     add constraint "contactNotes_pkey" primary key (id);
@@ -323,3 +340,13 @@ create index deals_loss_reason_id_idx on public.deals using btree (loss_reason_i
 create index lead_profiles_contact_id_idx on public.lead_profiles using btree (contact_id);
 create index lead_profiles_next_action_at_idx on public.lead_profiles using btree (next_action_at) where do_not_contact = false;
 create index acquisition_attributions_contact_id_idx on public.acquisition_attributions using btree (contact_id);
+
+-- The commercial funnel's reads (Phase 3B.1): next actions, outcomes and new
+-- deals by date, and recent stage movement (the open board by stage uses
+-- deals_pipeline_stage_idx above).
+create index deal_stage_transitions_changed_at_idx on public.deal_stage_transitions using btree (changed_at, id);
+create index deal_stage_transitions_deal_id_idx on public.deal_stage_transitions using btree (deal_id, changed_at, id);
+create index deals_open_next_action_at_idx on public.deals using btree (next_action_at) where lost_at is null and archived_at is null;
+create index deals_converted_at_idx on public.deals using btree (converted_at) where converted_at is not null;
+create index deals_lost_at_idx on public.deals using btree (lost_at) where lost_at is not null;
+create index deals_created_at_idx on public.deals using btree (created_at);

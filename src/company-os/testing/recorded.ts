@@ -1,7 +1,9 @@
 import {
   AgendaSchema,
+  AvailableFunnelSchema,
   withoutDefaultArguments,
   type Agenda,
+  type AvailableFunnel,
   type CompanyOsOperation,
   type OperationResult,
   type OverviewSummary,
@@ -14,6 +16,7 @@ import {
   type RecordedCall as PortCall,
 } from "./fakeSession";
 import agendaFile from "./recorded/agenda.json";
+import funnelFile from "./recorded/funnel.json";
 import idsFile from "./recorded/ids.json";
 import platformStopFile from "./recorded/platform-stop.json";
 import taskManyRunsFile from "./recorded/task-many-runs.json";
@@ -78,6 +81,28 @@ export const overviewWithRecordedAgenda = (): OverviewSummary => ({
   ...recorded("overview"),
   asOf: RECORDED_AGENDA_AS_OF,
   agenda: recordedAgenda(),
+});
+
+/**
+ * The populated commercial funnel (Phase 3B.1), recorded from the real
+ * ops.cos_commercial_funnel at a fixed instant
+ * (engine/domain/companyOsFunnelRecording.dbtest.ts): a fictional clinic's
+ * opportunities on Monday 2030-03-04, 10:30 in São Paulo. The shared
+ * recordings' tenant owns the local CRM but stores no stage configuration, so
+ * its funnel is stages_not_configured.
+ */
+export const RECORDED_FUNNEL_AS_OF = "2030-03-04T13:30:00.000000Z";
+
+export const recordedFunnel = (): AvailableFunnel =>
+  AvailableFunnelSchema.parse(funnelFile);
+
+/** The recorded tenant's overview, at the funnel's instant, carrying it. */
+export const overviewWithRecordedFunnel = (
+  funnel: OverviewSummary["funnel"] = recordedFunnel(),
+): OverviewSummary => ({
+  ...recorded("overview"),
+  asOf: RECORDED_FUNNEL_AS_OF,
+  funnel,
 });
 
 /** The recorded id of a fixture row (`agent:lead-triage`, `run:held`). */

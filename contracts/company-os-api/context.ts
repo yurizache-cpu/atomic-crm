@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 import { AgendaSchema } from "./agenda.ts";
+import { CommercialFunnelSchema } from "./funnel.ts";
 import { DecisionIntelligenceSchema } from "./decisions.ts";
 import { OperationalHealthSchema } from "./health.ts";
 import {
@@ -85,6 +86,8 @@ export const OverviewSummarySchema = z.strictObject({
   operationalHealth: OperationalHealthSchema,
   // Phase 3A: the agenda (agenda.ts).
   agenda: AgendaSchema,
+  // Phase 3B.1: the commercial funnel, read from the local CRM (funnel.ts).
+  funnel: CommercialFunnelSchema,
 });
 
 export type OperatorContext = z.infer<typeof OperatorContextSchema>;

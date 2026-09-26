@@ -332,6 +332,9 @@ export const CONTRACT_SAMPLES: {
           },
         },
       },
+      // Phase 3B.1: a tenant that does not own the local CRM reads no funnel
+      // (the populated one is src/company-os/testing/recorded/funnel.json).
+      funnel: { status: "not_configured" },
     },
   ],
   list_agents: [{ ...ENVELOPE, items: [AGENT_SUMMARY] }],
