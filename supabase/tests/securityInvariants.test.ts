@@ -3609,7 +3609,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "src/company-os/screens/funnel/FunnelScreen.test.tsx",
         marker:
-          /offers no control that creates, moves, wins or loses an opportunity/,
+          /offers no drag and drop and no control that creates, deletes or reopens an opportunity/,
       },
       {
         file: "engine/domain/companyOsFunnelRecording.dbtest.ts",

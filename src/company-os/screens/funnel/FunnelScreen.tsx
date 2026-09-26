@@ -1,5 +1,7 @@
+import { useState, type ReactNode } from "react";
 import {
   AlarmClock,
+  CalendarClock,
   CircleSlash,
   Filter,
   Sparkles,
@@ -8,6 +10,8 @@ import {
   UserX,
   Users,
 } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
 
 import type {
   AvailableFunnel,
@@ -28,7 +32,12 @@ import {
 import { QueryView } from "../../components/queryStates";
 import { STATE_UNKNOWN_NOTE } from "../../copy";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
+import {
+  useCommercialAct,
+  type CommercialRequest,
+} from "../../query/useCommercialAct";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
+import { useOperatorScope } from "../../session/runtime";
 import {
   amountText,
   closingRate,
@@ -37,23 +46,32 @@ import {
   localDateTime,
   movementText,
   nextActionText,
+  offeredActs,
   opportunityLabel,
   originCountLabel,
   originText,
   shownOf,
   stageAgeText,
   stageLabeller,
+  type ActKind,
 } from "./funnelModel";
+import {
+  CommercialOutcomeMessage,
+  OpportunityActionButtons,
+  OpportunityActionPanel,
+} from "./OpportunityActions";
 
 // Funil comercial (Phase 3B.1): where the opportunities are, which need a
 // commercial action, what closed recently and where leads come from. Every
 // value is the overview's funnel, which the database reads from the local CRM
-// (the commercial source of truth) through one adapter. READ ONLY: nothing here
-// creates, moves, wins or loses an opportunity. The cards are articles, not
-// controls, and nothing can be dragged. An opportunity is its CRM reference,
-// never a name. The overview is read every 15 s while the tab is visible, and
-// an answer older than two polling intervals shows every value as
-// "Desconhecido".
+// (the commercial source of truth) through one adapter. Since Phase 3B.2 a
+// card also offers the four narrow commercial acts the server allows on it
+// (OpportunityActions.tsx), each behind its own confirmation; nothing is
+// dragged, nothing is created, deleted or reopened, and the board changes only
+// once the server has answered and the funnel was read again. An opportunity
+// is its CRM reference, never a name. The overview is read every 15 s while
+// the tab is visible, and an answer older than two polling intervals shows
+// every value as "Desconhecido" and no board.
 
 const SummaryCards = ({
   funnel,
@@ -108,9 +126,15 @@ const SummaryCards = ({
         label="Próxima ação atrasada"
         value={summary.overdue}
         tone={summary.overdue > 0 ? "red" : "gray"}
-        hint={
-          summary.dueToday > 0 ? `${summary.dueToday} para hoje` : undefined
-        }
+        hint="Prevista para antes de agora"
+        current={current}
+      />
+      <StatCard
+        icon={CalendarClock}
+        label="Vence hoje"
+        value={summary.dueToday}
+        tone={summary.dueToday > 0 ? "amber" : "gray"}
+        hint="Próximas ações previstas para hoje"
         current={current}
       />
       <StatCard
@@ -128,9 +152,11 @@ const SummaryCards = ({
 const OpportunityTile = ({
   card,
   funnel,
+  controls,
 }: {
   card: OpportunityCard;
   funnel: AvailableFunnel;
+  controls?: ReactNode;
 }) => {
   const next = nextActionText(card, funnel.timezone);
   return (
@@ -159,6 +185,7 @@ const OpportunityTile = ({
             Valor informado: {amountText(card.amount, funnel.currency)}
           </p>
         )}
+        {controls}
       </div>
     </OwnerCard>
   );
@@ -171,6 +198,7 @@ const StageColumn = ({
   funnel,
   amountTotal,
   amountCount,
+  controlsFor,
 }: {
   title: string;
   total: number;
@@ -178,6 +206,7 @@ const StageColumn = ({
   funnel: AvailableFunnel;
   amountTotal: number | null;
   amountCount: number;
+  controlsFor: (card: OpportunityCard) => ReactNode;
 }) => {
   const more = shownOf(cards.length, total);
   return (
@@ -205,7 +234,11 @@ const StageColumn = ({
         >
           {cards.map((card) => (
             <li key={card.dealRef}>
-              <OpportunityTile card={card} funnel={funnel} />
+              <OpportunityTile
+                card={card}
+                funnel={funnel}
+                controls={controlsFor(card)}
+              />
             </li>
           ))}
         </ul>
@@ -217,41 +250,95 @@ const StageColumn = ({
   );
 };
 
-const Board = ({ funnel }: { funnel: AvailableFunnel }) => (
-  <Section title="Etapas do funil">
-    <div
-      role="group"
-      aria-label="Quadro do funil"
-      className="flex gap-3 overflow-x-auto pb-2"
-    >
-      {funnel.stages.map((stage: FunnelStage) => (
-        <StageColumn
-          key={stage.code}
-          title={stage.label}
-          total={stage.total}
-          cards={stage.cards}
-          funnel={funnel}
-          amountTotal={stage.amountTotal}
-          amountCount={stage.amountCount}
+/** How many columns the board holds before it asks to be scrolled sideways. */
+const COLUMNS_IN_VIEW = 4;
+
+const Board = ({ funnel }: { funnel: AvailableFunnel }) => {
+  const { context } = useOperatorScope();
+  const act = useCommercialAct();
+  const [open, setOpen] = useState<{ dealRef: number; kind: ActKind } | null>(
+    null,
+  );
+  const submit = (request: CommercialRequest) => {
+    if (act.isPending) return;
+    act.mutate(request, { onSettled: () => setOpen(null) });
+  };
+  const controlsFor = (card: OpportunityCard) => {
+    const acts = offeredActs(card, context.allowedActions);
+    const kind = open?.dealRef === card.dealRef ? open.kind : null;
+    return acts.length === 0 ? null : (
+      <>
+        <OpportunityActionButtons
+          card={card}
+          acts={acts}
+          open={kind}
+          pending={act.isPending}
+          onOpen={(next) => setOpen({ dealRef: card.dealRef, kind: next })}
         />
-      ))}
-      {funnel.unconfigured.total > 0 ? (
-        <StageColumn
-          title="Etapa não configurada"
-          total={funnel.unconfigured.total}
-          cards={funnel.unconfigured.cards}
-          funnel={funnel}
-          amountTotal={null}
-          amountCount={0}
-        />
+        {kind === null ? null : (
+          <OpportunityActionPanel
+            key={kind}
+            kind={kind}
+            card={card}
+            funnel={funnel}
+            pending={act.isPending}
+            onSubmit={submit}
+            onCancel={() => setOpen(null)}
+          />
+        )}
+      </>
+    );
+  };
+  const columns =
+    funnel.stages.length + (funnel.unconfigured.total > 0 ? 1 : 0);
+  return (
+    <Section title="Etapas do funil">
+      {act.data === undefined ? null : (
+        <CommercialOutcomeMessage outcome={act.data} funnel={funnel} />
+      )}
+      {columns > COLUMNS_IN_VIEW ? (
+        <p className="text-xs text-muted-foreground">
+          {columns} etapas: role o quadro para o lado para ver todas →
+        </p>
       ) : null}
-    </div>
-    <Note>
-      Somente leitura: criar, mover, converter ou perder oportunidades acontece
-      no CRM. O tempo na etapa conta desde a entrada na etapa atual.
-    </Note>
-  </Section>
-);
+      <div
+        role="group"
+        aria-label="Quadro do funil"
+        className="flex gap-3 overflow-x-auto pb-2"
+      >
+        {funnel.stages.map((stage: FunnelStage) => (
+          <StageColumn
+            key={stage.code}
+            title={stage.label}
+            total={stage.total}
+            cards={stage.cards}
+            funnel={funnel}
+            amountTotal={stage.amountTotal}
+            amountCount={stage.amountCount}
+            controlsFor={controlsFor}
+          />
+        ))}
+        {funnel.unconfigured.total > 0 ? (
+          <StageColumn
+            title="Etapa não configurada"
+            total={funnel.unconfigured.total}
+            cards={funnel.unconfigured.cards}
+            funnel={funnel}
+            amountTotal={null}
+            amountCount={0}
+            controlsFor={controlsFor}
+          />
+        ) : null}
+      </div>
+      <Note>
+        Mover, definir a próxima ação, converter ou marcar como perdida grava no
+        CRM, que continua sendo a fonte da verdade. Criar, editar ou excluir
+        oportunidades continua no CRM. O tempo na etapa conta desde a entrada na
+        etapa atual.
+      </Note>
+    </Section>
+  );
+};
 
 const AttentionList = ({
   title,
@@ -324,9 +411,16 @@ const Attention = ({ funnel }: { funnel: AvailableFunnel }) => (
   </Section>
 );
 
+/** How many movements show before "Ver todas". */
+const MOVEMENTS_SHOWN = 8;
+
 const Movements = ({ funnel }: { funnel: AvailableFunnel }) => {
   const label = stageLabeller(funnel);
   const { movements } = funnel;
+  const [all, setAll] = useState(false);
+  const items = all
+    ? movements.items
+    : movements.items.slice(0, MOVEMENTS_SHOWN);
   return (
     <Section title="Movimentações recentes">
       <Note>{coverageText(movements, funnel.timezone)}</Note>
@@ -340,7 +434,7 @@ const Movements = ({ funnel }: { funnel: AvailableFunnel }) => {
             className="flex flex-col gap-1 text-sm"
             aria-label="Movimentações recentes"
           >
-            {movements.items.map((m, index) => (
+            {items.map((m, index) => (
               <li key={`${m.dealRef}-${m.at}-${index}`}>
                 <span className="font-medium">
                   {opportunityLabel(m.dealRef)}
@@ -352,6 +446,17 @@ const Movements = ({ funnel }: { funnel: AvailableFunnel }) => {
               </li>
             ))}
           </ul>
+          {movements.items.length > MOVEMENTS_SHOWN ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="self-start px-0 text-xs"
+              aria-expanded={all}
+              onClick={() => setAll(!all)}
+            >
+              {all ? "Mostrar menos" : `Ver todas (${movements.items.length})`}
+            </Button>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             {movements.totalInWindow} movimentaç
             {movements.totalInWindow === 1 ? "ão" : "ões"} nos últimos{" "}
@@ -571,7 +676,7 @@ const FunnelBody = ({
         </>
       ) : null}
       <p className="text-xs text-muted-foreground">
-        Dados do CRM local, lidos pelo Company OS. Somente leitura. Atualizado{" "}
+        Dados do CRM local, lidos pelo Company OS. Atualizado{" "}
         <RelativeTime value={data.asOf} />
       </p>
     </>
