@@ -3676,6 +3676,21 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/tests/company_os_api.sql",
         marker: /commercial acts'' lock and hint/,
       },
+      {
+        file: "engine/domain/commercialOpportunityActs.dbtest.ts",
+        marker:
+          /exactly one of two moves from one revision commits; the other is refused as stale/,
+      },
+      {
+        file: "engine/domain/commercialOpportunityActs.dbtest.ts",
+        marker:
+          /a conversion and a loss from one revision never leave both outcomes, in either order/,
+      },
+      {
+        file: "engine/domain/commercialOpportunityActs.dbtest.ts",
+        marker:
+          /answers the one retryable OS429 while another writer holds the deal past the 2 s bound/,
+      },
     ],
     caveat:
       "The CRM's own form still lets a person set converted_at and lost_at independently, and the funnel counts such a deal as conflicting: only the acts are held to one outcome, and no table constraint is added. A revision tells states apart across transactions; two changes inside one transaction share the database clock, which no browser request can do. Which member may act on which salesperson's deal is tenant-wide today, an owner question.",
@@ -3707,6 +3722,11 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/migrations/20260930120000_commercial_opportunity_acts.sql",
         marker:
           /the bridge itself created \(ops\.commercial_follow_up_plans\) are ever/,
+      },
+      {
+        file: "engine/domain/commercialOpportunityActs.dbtest.ts",
+        marker:
+          /commits the deal's next action and its planned follow-up together, and a rolled-back act leaves neither/,
       },
     ],
     caveat:

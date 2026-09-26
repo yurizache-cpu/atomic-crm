@@ -182,6 +182,12 @@ export async function deleteCompanyOsRows(
       where f.tenant_id = any($1::uuid[]) and f.status in ('scheduled', 'due')`,
     "delete from ops.follow_ups where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_plans where tenant_id = any($1::uuid[])",
+    // Phase 3B.2: the bridge's provenance goes with its plans (a cascade);
+    // the bridge versions name units and a policy version, and the act log
+    // names only the tenant.
+    "delete from ops.commercial_follow_up_plans where tenant_id = any($1::uuid[])",
+    "delete from ops.commercial_follow_up_bridges where tenant_id = any($1::uuid[])",
+    "delete from ops.commercial_acts where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policy_versions where tenant_id = any($1::uuid[])",
     "delete from ops.follow_up_policies where tenant_id = any($1::uuid[])",
     // Phase 3A.2: disconnect first, so the cleanup's own cancellations request
