@@ -87,6 +87,7 @@ const Panel = ({
   onConfirm,
   onCancel,
   extra,
+  stale,
 }: {
   id: string;
   title: string;
@@ -98,6 +99,7 @@ const Panel = ({
   onConfirm: () => void;
   onCancel: () => void;
   extra?: ReactNode;
+  stale: boolean;
 }) => {
   const cancel = useRef<HTMLButtonElement>(null);
   useEffect(() => cancel.current?.focus(), [id]);
@@ -111,12 +113,13 @@ const Panel = ({
         {title}
       </p>
       {children}
+      {stale ? <p role="alert">{CHANGED_WHILE_OPEN_TEXT}</p> : null}
       <div className="flex flex-wrap gap-1">
         <Button
           size="sm"
           className="h-7 px-2 text-xs"
           variant={destructive ? "destructive" : "default"}
-          disabled={pending || !canConfirm}
+          disabled={pending || stale || !canConfirm}
           onClick={onConfirm}
         >
           {pending ? "Salvando…" : confirmLabel}
@@ -171,18 +174,29 @@ const Choices = ({
 interface PanelProps {
   card: OpportunityCard;
   funnel: AvailableFunnel;
+  /**
+   * The revision the card showed when the panel opened: what the act names,
+   * so a change made meanwhile is refused as stale instead of overwritten.
+   */
+  revision: string;
   pending: boolean;
   onSubmit: (request: CommercialRequest) => void;
   onCancel: () => void;
 }
 
+/** Shown in an open panel once the card changed under it. */
+export const CHANGED_WHILE_OPEN_TEXT =
+  "A oportunidade mudou desde que este painel foi aberto. Cancele e abra de novo para agir sobre o estado atual.";
+
 const MovePanel = ({
   card,
   funnel,
+  revision,
   pending,
   onSubmit,
   onCancel,
 }: PanelProps) => {
+  const stale = card.revision !== revision;
   const [target, setTarget] = useState<string | null>(null);
   const targets = funnel.stages
     .filter((s) => !s.converted && s.code !== card.stage)
@@ -194,6 +208,7 @@ const MovePanel = ({
       confirmLabel="Mover"
       canConfirm={target !== null}
       pending={pending}
+      stale={stale}
       onCancel={onCancel}
       onConfirm={() =>
         target !== null &&
@@ -202,7 +217,7 @@ const MovePanel = ({
           input: {
             p_deal_ref: card.dealRef,
             p_target_stage: target,
-            p_expected_revision: card.revision,
+            p_expected_revision: revision,
           },
         })
       }
@@ -234,25 +249,30 @@ const BRIDGE_NOTE: Readonly<Record<AvailableFunnel["followUpBridge"], string>> =
 const NextActionPanel = ({
   card,
   funnel,
+  revision,
   pending,
   onSubmit,
   onCancel,
 }: PanelProps) => {
+  const stale = card.revision !== revision;
   const zone = funnel.timezone;
-  const initial =
-    card.nextActionAt === null
+  const [opened] = useState(() => ({
+    had: card.nextActionAt !== null,
+    ...(card.nextActionAt === null
       ? { date: funnel.today, time: "09:00" }
-      : instantToWallTime(card.nextActionAt, zone);
-  const [date, setDate] = useState(initial.date);
-  const [time, setTime] = useState(initial.time);
+      : instantToWallTime(card.nextActionAt, zone)),
+  }));
+  const [date, setDate] = useState(opened.date);
+  const [time, setTime] = useState(opened.time);
   const instant = wallTimeToInstant(date, time, zone);
+  const untouched = opened.had && date === opened.date && time === opened.time;
   const submit = (next: string | null) =>
     onSubmit({
       act: "set_opportunity_next_action",
       input: {
         p_deal_ref: card.dealRef,
         p_next_action_at: next,
-        p_expected_revision: card.revision,
+        p_expected_revision: revision,
       },
     });
   return (
@@ -260,17 +280,18 @@ const NextActionPanel = ({
       id={`next-${card.dealRef}`}
       title={`Próxima ação da ${opportunityLabel(card.dealRef)}`}
       confirmLabel="Salvar próxima ação"
-      canConfirm={instant !== null}
+      canConfirm={instant !== null && !untouched}
       pending={pending}
+      stale={stale}
       onCancel={onCancel}
       onConfirm={() => instant !== null && submit(instant)}
       extra={
-        card.nextActionAt === null ? null : (
+        !opened.had ? null : (
           <Button
             size="sm"
             variant="outline"
             className="h-7 px-2 text-xs"
-            disabled={pending}
+            disabled={pending || stale}
             onClick={() => submit(null)}
           >
             Remover próxima ação
@@ -313,10 +334,12 @@ const NextActionPanel = ({
 const ConvertPanel = ({
   card,
   funnel,
+  revision,
   pending,
   onSubmit,
   onCancel,
 }: PanelProps) => {
+  const stale = card.revision !== revision;
   const converted = funnel.stages
     .filter((s) => s.converted)
     .map((s) => ({ value: s.code, label: s.label }));
@@ -330,6 +353,7 @@ const ConvertPanel = ({
       confirmLabel="Converter"
       canConfirm={target !== null}
       pending={pending}
+      stale={stale}
       onCancel={onCancel}
       onConfirm={() =>
         target !== null &&
@@ -338,7 +362,7 @@ const ConvertPanel = ({
           input: {
             p_deal_ref: card.dealRef,
             p_target_stage: target,
-            p_expected_revision: card.revision,
+            p_expected_revision: revision,
           },
         })
       }
@@ -366,10 +390,12 @@ const ConvertPanel = ({
 const LosePanel = ({
   card,
   funnel,
+  revision,
   pending,
   onSubmit,
   onCancel,
 }: PanelProps) => {
+  const stale = card.revision !== revision;
   const [reason, setReason] = useState<string | null>(null);
   return (
     <Panel
@@ -379,6 +405,7 @@ const LosePanel = ({
       destructive
       canConfirm={reason !== null}
       pending={pending}
+      stale={stale}
       onCancel={onCancel}
       onConfirm={() =>
         reason !== null &&
@@ -387,7 +414,7 @@ const LosePanel = ({
           input: {
             p_deal_ref: card.dealRef,
             p_loss_reason: reason,
-            p_expected_revision: card.revision,
+            p_expected_revision: revision,
           },
         })
       }

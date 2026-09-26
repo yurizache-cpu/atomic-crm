@@ -256,16 +256,19 @@ const COLUMNS_IN_VIEW = 4;
 const Board = ({ funnel }: { funnel: AvailableFunnel }) => {
   const { context } = useOperatorScope();
   const act = useCommercialAct();
-  const [open, setOpen] = useState<{ dealRef: number; kind: ActKind } | null>(
-    null,
-  );
+  const [open, setOpen] = useState<{
+    dealRef: number;
+    kind: ActKind;
+    revision: string;
+  } | null>(null);
   const submit = (request: CommercialRequest) => {
     if (act.isPending) return;
     act.mutate(request, { onSettled: () => setOpen(null) });
   };
   const controlsFor = (card: OpportunityCard) => {
     const acts = offeredActs(card, context.allowedActions);
-    const kind = open?.dealRef === card.dealRef ? open.kind : null;
+    const opened = open?.dealRef === card.dealRef ? open : null;
+    const kind = opened?.kind ?? null;
     return acts.length === 0 ? null : (
       <>
         <OpportunityActionButtons
@@ -273,13 +276,20 @@ const Board = ({ funnel }: { funnel: AvailableFunnel }) => {
           acts={acts}
           open={kind}
           pending={act.isPending}
-          onOpen={(next) => setOpen({ dealRef: card.dealRef, kind: next })}
+          onOpen={(next) =>
+            setOpen({
+              dealRef: card.dealRef,
+              kind: next,
+              revision: card.revision,
+            })
+          }
         />
         {kind === null ? null : (
           <OpportunityActionPanel
             key={kind}
             kind={kind}
             card={card}
+            revision={opened?.revision ?? card.revision}
             funnel={funnel}
             pending={act.isPending}
             onSubmit={submit}
