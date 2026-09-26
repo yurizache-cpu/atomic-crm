@@ -37,16 +37,17 @@ describe("the Company OS surface and its OD-8a exception", () => {
     expect(findingsOf(lifecycle).map(formatFinding).join("\n\n")).toBe("");
   });
 
-  it("allowlists exactly the committed S2, S7.1 and S7.2 migrations, each carrying its whole lifecycle itself", () => {
+  it("allowlists exactly the committed S2, S7.1, S7.2 and Phase 3B.2 migrations, each carrying its whole lifecycle itself", () => {
     const { allowlistedMigrations, transfers, catalogue } =
       declaration.companyOsApi;
     expect(allowlistedMigrations).toEqual([
       "20260922120000_company_os_read_surface.sql",
       "20260923120000_company_os_review_decision.sql",
       "20260924120000_company_os_execution_stop.sql",
+      "20260930130000_company_os_commercial_acts.sql",
     ]);
     // The declaration's catalogue is pinned to the frozen trust root
-    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the three
+    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the four
     // files transfer every catalogued function, once.
     expect(Object.values(transfers).flat().sort()).toEqual(
       [...catalogue].sort(),
@@ -71,11 +72,11 @@ describe("the Company OS surface and its OD-8a exception", () => {
       );
     }
     // The read surface holds no act; each act is its own file's.
-    const [s2, s71, s72] = allowlistedMigrations.map(
+    const [s2, s71, s72, s3b2] = allowlistedMigrations.map(
       (file) => corpus.find((m) => m.file === file)!.sql,
     );
     const act =
-      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop)\b/;
+      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop|move_opportunity|set_opportunity_next_action|convert_opportunity|lose_opportunity)\b/;
     expect(s2).not.toMatch(act);
     expect(s71).toMatch(
       /^create function company_os_api\.decide_review\(p_review_id pg_catalog\.uuid, p_decision pg_catalog\.text\)/m,
@@ -89,6 +90,23 @@ describe("the Company OS surface and its OD-8a exception", () => {
     expect(s72).not.toMatch(
       /function\s+(company_os_api|ops)\.(gate_)?decide_review\b/,
     );
+    // Phase 3B.2 (owner decision R): exactly the four commercial acts, each
+    // with its own fixed arguments, and neither earlier act.
+    for (const signature of [
+      "move_opportunity\\(p_deal_ref pg_catalog\\.int8, p_target_stage pg_catalog\\.text,",
+      "set_opportunity_next_action\\(p_deal_ref pg_catalog\\.int8, p_next_action_at pg_catalog\\.timestamptz,",
+      "convert_opportunity\\(p_deal_ref pg_catalog\\.int8, p_target_stage pg_catalog\\.text,",
+      "lose_opportunity\\(p_deal_ref pg_catalog\\.int8, p_loss_reason pg_catalog\\.text,",
+    ]) {
+      expect(s3b2).toMatch(
+        new RegExp(`^create function company_os_api\\.${signature}$`, "m"),
+      );
+    }
+    expect(s3b2).not.toMatch(
+      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop)\b/,
+    );
+    // No generic dispatch: no act takes an operation name or a payload.
+    expect(s3b2).not.toMatch(/\bp_(operation|payload|table|column|sql)\b/);
   });
 
   const ALLOWLISTED_REJECTED: Array<[string, string, RegExp]> = [

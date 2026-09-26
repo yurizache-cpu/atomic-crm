@@ -17,6 +17,7 @@
 export * from "./agenda.ts";
 export * from "./funnel.ts";
 export * from "./agents.ts";
+export * from "./commercial.ts";
 export * from "./context.ts";
 export * from "./decisions.ts";
 export * from "./errors.ts";

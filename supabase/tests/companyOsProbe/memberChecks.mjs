@@ -33,8 +33,12 @@ export async function memberResolves(t) {
   );
   check(
     sdk.data?.allowedActions?.decideReview === true &&
-      sdk.data?.allowedActions?.tripStop === true,
-    "member: operator_context does not report the two acts as allowed",
+      sdk.data?.allowedActions?.tripStop === true &&
+      sdk.data?.allowedActions?.moveOpportunity === true &&
+      sdk.data?.allowedActions?.setOpportunityNextAction === true &&
+      sdk.data?.allowedActions?.convertOpportunity === true &&
+      sdk.data?.allowedActions?.loseOpportunity === true,
+    "member: operator_context does not report the six acts as allowed",
   );
 
   const answers = {};

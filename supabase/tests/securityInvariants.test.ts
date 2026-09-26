@@ -692,7 +692,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only except for the gated browser outputs below, and direct Company OS authority stays with the database owner: no application role (anon, authenticated, service_role, ops_worker, ops_gateway, and so no browser, PostgREST or runtime login acting as one of them) and no capability role (ops_operator_api) holds any privilege on a Company OS table, any grant on all tables, sequences or functions in ops or default-privilege grant there, or EXECUTE on a Company OS service, and every Company OS service is SECURITY INVOKER. Company OS tables and services are otherwise reached only through pinned SECURITY DEFINER capabilities, never a generic one: no ops function is executable by PUBLIC, the only SECURITY DEFINER functions in ops that ops_worker, ops_gateway or ops_operator_api can execute are, respectively, the worker's lease-bound capabilities and runtime functions, the gateway's two functions bound to a configured provider target, and exactly one identity-and-membership gate per catalogued company_os_api operation, and service_role's only one is ops.enqueue_job. ops_operator_api is a NOLOGIN capability role, not a human or application principal: it owns only the catalogued company_os_api functions, and at rest it has no members and is in no login role's membership closure. authenticated holds nothing in ops, executes in company_os_api only those catalogued functions, each of which runs with ops_operator_api's privileges and calls only its own gate, and never becomes ops_operator_api: it is not a member of it and cannot switch to it. Company OS data reaches the browser only through those gates and only as their pinned minimised outputs, and through them an authenticated Company OS member can at most read its own tenant's pinned projections, record a decision on one of its own tenant's reviews through ops.record_review_decision, and trip a stop at tenant, company, department or agent scope within its own tenant through the authoritative ops.trip_execution_stop; clearing a stop remains a recorded owner act through the owner CLI (SI-31), and no global, system or job_kind stop can be tripped from the browser.",
+      "Company OS data is backend-only except for the gated browser outputs below, and direct Company OS authority stays with the database owner: no application role (anon, authenticated, service_role, ops_worker, ops_gateway, and so no browser, PostgREST or runtime login acting as one of them) and no capability role (ops_operator_api) holds any privilege on a Company OS table, any grant on all tables, sequences or functions in ops or default-privilege grant there, or EXECUTE on a Company OS service, and every Company OS service is SECURITY INVOKER. Company OS tables and services are otherwise reached only through pinned SECURITY DEFINER capabilities, never a generic one: no ops function is executable by PUBLIC, the only SECURITY DEFINER functions in ops that ops_worker, ops_gateway or ops_operator_api can execute are, respectively, the worker's lease-bound capabilities and runtime functions, the gateway's two functions bound to a configured provider target, and exactly one identity-and-membership gate per catalogued company_os_api operation, and service_role's only one is ops.enqueue_job. ops_operator_api is a NOLOGIN capability role, not a human or application principal: it owns only the catalogued company_os_api functions, and at rest it has no members and is in no login role's membership closure. authenticated holds nothing in ops, executes in company_os_api only those catalogued functions, each of which runs with ops_operator_api's privileges and calls only its own gate, and never becomes ops_operator_api: it is not a member of it and cannot switch to it. Company OS data reaches the browser only through those gates and only as their pinned minimised outputs, and through them an authenticated Company OS member can at most read its own tenant's pinned projections, record a decision on one of its own tenant's reviews through ops.record_review_decision, trip a stop at tenant, company, department or agent scope within its own tenant through the authoritative ops.trip_execution_stop, and, only while its tenant owns the local CRM, make the four commercial acts of SI-68 on that CRM's deals; clearing a stop remains a recorded owner act through the owner CLI (SI-31), and no global, system or job_kind stop can be tripped from the browser.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -3004,14 +3004,14 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-58",
     statement:
-      "The browser can cause exactly two mutations, and only once their functions exist after the user-management prerequisite: a review decision through ops.record_review_decision (which decides the structured review only, approves no reply draft, authorises no send, and writes no outbound row and no job), and a trip at tenant, company, department or agent scope through ops.trip_execution_stop under its lock, with a bounded wait whose contention answer is generic, retryable and creates nothing. It cannot clear a stop, trip a global, system or job_kind stop, send, resend, retry or mark a send, configure or activate a channel, or change money, organisational-unit, CRM or governance state.",
+      "The browser can cause exactly six mutations, and only once their functions exist after the user-management prerequisite: a review decision through ops.record_review_decision (which decides the structured review only, approves no reply draft, authorises no send, and writes no outbound row and no job); a trip at tenant, company, department or agent scope through ops.trip_execution_stop under its lock, with a bounded wait whose contention answer is generic, retryable and creates nothing; and, by owner decision R, the four narrow commercial acts of SI-68 (move a deal to another configured stage, set or clear its next action, convert it, lose it). It cannot clear a stop, trip a global, system or job_kind stop, send, resend, retry or mark a send, configure or activate a channel, create, delete, reopen or otherwise edit a CRM record, or change money, organisational-unit or governance state.",
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
       {
-        // S7.1 and S7.2: the browser can cause exactly two mutations, the
-        // review decision and the trip; the read migration creates only the
-        // reads, each act migration exactly its own act, and the static guard
-        // refuses anything else.
+        // S7.1, S7.2 and Phase 3B.2: the browser can cause exactly six
+        // mutations, the review decision, the trip and the four commercial
+        // acts; the read migration creates only the reads, each act migration
+        // exactly its own acts, and the static guard refuses anything else.
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker: /company_os_api does not hold exactly the catalogue/,
       },
@@ -3036,8 +3036,23 @@ const INVARIANTS: Invariant[] = [
           /a browser-facing role can execute a clear, outbound or send function/,
       },
       {
+        file: "supabase/migrations/20260930130000_company_os_commercial_acts.sql",
+        marker:
+          /company_os_api function whose volatility contradicts the six acts/,
+      },
+      {
+        file: "supabase/migrations/20260930130000_company_os_commercial_acts.sql",
+        marker:
+          /a browser-facing role can execute a clear, outbound or send function/,
+      },
+      {
         file: "supabase/tests/companyOsMigrationGuard.test.ts",
         marker: /No browser clear exists in any of them \(SI-58\)\./,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker:
+          /No generic dispatch: no act takes an operation name or a payload\./,
       },
       {
         file: "supabase/tests/companyOsMigrationGuard.test.ts",
@@ -3508,7 +3523,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "The browser's scheduling acts are a later, explicit authority decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser stays at exactly its two acts.",
+      "The browser's scheduling acts are a later, explicit authority decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser has no scheduling act (its acts are the review decision, the trip and the four commercial acts of SI-68).",
   },
   // Phase 3B.1: the commercial funnel.
   {
@@ -3559,7 +3574,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-67",
     statement:
-      "Company OS reads the commercial funnel and never writes it: the CRM's public.deals stays the one commercial source of truth, Company OS stores no opportunity or stage, and the funnel reaches the browser through the existing overview with no new function or act; the only functions that read the CRM's tables for it are the crm_ adapter (ops.crm_commercial_funnel and its helpers), which reads only deals, the configuration, acquisition attributions, loss reasons and the stage-transition ledger, writes nothing, and serves only the tenant that owns the local CRM, deciding that before it reads anything of the CRM, so any other tenant reads not_configured whatever the CRM holds; the Company OS read graph calls that one adapter and no other CRM service; stage codes, labels and converted stages come from the CRM's stored configuration and are never guessed; and the funnel carries no title, name, contact, contact id, email, phone, note, click id, campaign, keyword or actor, and a deal's origin only as its one linked contact's recorded source.",
+      "Company OS reads the commercial funnel through one adapter and changes it only through the four acts of SI-68: the CRM's public.deals stays the one commercial source of truth, Company OS stores no opportunity or stage, and the funnel reaches the browser through the existing overview with no new read function; the only functions that read the CRM's tables for it are the crm_ read adapter (ops.crm_commercial_funnel and its helpers), which reads only deals, the configuration, acquisition attributions, loss reasons and the stage-transition ledger, writes nothing, and serves only the tenant that owns the local CRM, deciding that before it reads anything of the CRM, so any other tenant reads not_configured whatever the CRM holds; the Company OS read graph calls that one adapter and no other CRM service; stage codes, labels and converted stages come from the CRM's stored configuration and are never guessed; and the funnel carries no title, name, contact, contact id, email, phone, note, click id, campaign, keyword or actor, and a deal's origin only as its one linked contact's recorded source.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -3602,7 +3617,100 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "Commercial authority in Company OS (moving a stage, marking won or lost, changing a next action) is a later, explicit owner decision (an OD-8a migration, a catalogued company_os_api function and a reviewed extension of SI-58); until then the browser stays at exactly its two acts. A deal's origin is the CRM's free-text source as recorded: identifier-shaped values are withheld by shape, and a label fewer than three contacts carry is withheld, but neither rule can recognise every personal value a person might type there. Every Company OS member sees every salesperson's opportunities (the tenant-wide membership model), an owner question recorded in PHASE_3B_REPORT.md.",
+      "Commercial authority in Company OS is exactly the four acts of SI-68 (owner decision R, Phase 3B.2): an OD-8a migration, four catalogued company_os_api functions and a reviewed extension of SI-58. A deal's origin is the CRM's free-text source as recorded: identifier-shaped values are withheld by shape, and a label fewer than three contacts carry is withheld, but neither rule can recognise every personal value a person might type there. Every Company OS member sees every salesperson's opportunities (the tenant-wide membership model), an owner question recorded in PHASE_3B_REPORT.md.",
+  },
+  {
+    id: "SI-68",
+    statement:
+      "The browser changes the CRM only through four narrow commercial acts, each its own company_os_api function with fixed arguments (a deal reference, the revision the browser saw and the act's own input; never a tenant, actor, salesperson, table, column, SQL text or operation name), its own identity gate bounded like the trip, and its own path to one CRM adapter write: move an open deal to another configured, non-converted stage; set or clear its own next_action_at, never lead_profiles.next_action_at; convert it into a configured converted stage with converted_at from the database clock; lose it with an active configured loss reason and lost_at from the database clock. Each act refuses a tenant that does not own the local CRM before reading anything of the CRM, answers an id the browser was never shown and a missing one alike, locks the deal row and refuses a stale revision, validates against the CRM's stored stage configuration only (closed while it is missing or malformed), answers a repeat whose result already holds as unchanged, never leaves a deal both converted and lost, writes only the columns of public.deals it owns, records each change once in ops.commercial_acts (the principal, the database time and a minimised fact) and, where the stage changed, once in the stage ledger, and sends, runs and stops nothing.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "static guard",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /F2: a write-path function reaches beyond its pinned callees/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /F2: a write-path function writes beyond its own table/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /A: tenant B changed tenant A''s CRM/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /'M stale revision'/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /O: a deal is both converted and lost/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker:
+          /S: an act touched a send, a run, a task, a stop, a review, a lead profile/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /G: an act log row carries more than its minimised fact/,
+      },
+      {
+        file: "supabase/migrations/20260930120000_commercial_opportunity_acts.sql",
+        marker: /a commercial act reaches a send, a run, a stop or dynamic SQL/,
+      },
+      {
+        file: "supabase/migrations/20260930130000_company_os_commercial_acts.sql",
+        marker: /a bounded gate does not carry exactly the 2 s lock_timeout/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker:
+          /No generic dispatch: no act takes an operation name or a payload\./,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /commercial acts'' lock and hint/,
+      },
+    ],
+    caveat:
+      "The CRM's own form still lets a person set converted_at and lost_at independently, and the funnel counts such a deal as conflicting: only the acts are held to one outcome, and no table constraint is added. A revision tells states apart across transactions; two changes inside one transaction share the database clock, which no browser request can do. Which member may act on which salesperson's deal is tenant-wide today, an owner question.",
+  },
+  {
+    id: "SI-69",
+    statement:
+      "The commercial follow-up bridge acts only through owner configuration and only on the plans it created: with no enabled configuration (an append-only version naming a company, a department, an optional agent and one pinned follow-up policy version, recorded only with the owner's credential), setting a next action plans nothing; with one, it plans that cadence through the Phase 3A service so the first occurrence is due exactly at the next action, superseding the previous plan it created for the deal; a change it cannot plan (an invalid configuration, an anchor outside the service's window, or an active plan someone else created for the subject) cancels its own previous plan, plans nothing and says so; clearing, converting and losing cancel only the active plans recorded in ops.commercial_follow_up_plans for that deal; a plan anyone else created is never superseded or cancelled by it; and nothing it does sends, writes an outbound row or calls a model.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /B: the bridge cancelled a follow-up plan it did not create/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker:
+          /B: a plan someone else created was superseded, or the answer hid it/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /B: the planned cadence is wrong/,
+      },
+      {
+        file: "supabase/tests/commercial_opportunity_acts.sql",
+        marker: /B: an invalid bridge answered/,
+      },
+      {
+        file: "supabase/migrations/20260930120000_commercial_opportunity_acts.sql",
+        marker:
+          /the bridge itself created \(ops\.commercial_follow_up_plans\) are ever/,
+      },
+    ],
+    caveat:
+      "The bridge follows the four Company OS acts only: a next action, conversion or loss recorded in the CRM's own form moves no follow-up plan. A newer version of the pinned policy makes the bridge invalid until the owner pins it again, because the Phase 3A service plans a policy's latest version. No owner CLI command configures it yet: the owner's credential calls ops.configure_commercial_follow_up_bridge directly, as the synthetic demo does.",
   },
 ];
 

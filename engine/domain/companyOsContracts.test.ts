@@ -321,12 +321,19 @@ describe("the operation catalogue", () => {
     }
   });
 
-  it("lets either act hint be true or false in the operator context, and names no clear", () => {
+  it("lets every act hint be true or false in the operator context, and names no clear", () => {
     const [context] = CONTRACT_SAMPLES.operator_context;
     const allowed = context.allowedActions as Record<string, boolean>;
     const schema = COMPANY_OS_OPERATIONS.operator_context.response;
     expect(schema.safeParse(context).success).toBe(true);
-    for (const act of ["decideReview", "tripStop"]) {
+    for (const act of [
+      "decideReview",
+      "tripStop",
+      "moveOpportunity",
+      "setOpportunityNextAction",
+      "convertOpportunity",
+      "loseOpportunity",
+    ]) {
       for (const value of [true, false]) {
         expect(
           schema.safeParse({

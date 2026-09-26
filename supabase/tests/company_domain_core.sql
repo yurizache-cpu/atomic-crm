@@ -319,7 +319,12 @@ begin
     -- S7.1: the one act (supabase/tests/company_os_api.sql, section V).
     ('ops_operator_api', 'ops.gate_decide_review(uuid, text)'::regprocedure),
     -- S7.2: the trip (supabase/tests/company_os_api.sql, section W).
-    ('ops_operator_api', 'ops.gate_trip_stop(text, uuid)'::regprocedure)
+    ('ops_operator_api', 'ops.gate_trip_stop(text, uuid)'::regprocedure),
+    -- Phase 3B.2: the four commercial acts (commercial_opportunity_acts.sql).
+    ('ops_operator_api', 'ops.gate_move_opportunity(bigint, text, text)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_set_opportunity_next_action(bigint, timestamptz, text)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_convert_opportunity(bigint, text, text)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_lose_opportunity(bigint, text, text)'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -390,7 +395,9 @@ begin
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',
                            'gate_list_reviews', 'gate_get_review', 'gate_get_review_advice',
                            'gate_list_events', 'gate_list_stops', 'gate_spend_summary',
-                           'gate_communication_status', 'gate_decide_review', 'gate_trip_stop');
+                           'gate_communication_status', 'gate_decide_review', 'gate_trip_stop',
+                           'gate_move_opportunity', 'gate_set_opportunity_next_action',
+                           'gate_convert_opportunity', 'gate_lose_opportunity');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

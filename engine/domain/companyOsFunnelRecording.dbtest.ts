@@ -211,6 +211,32 @@ function mapRefs(value: unknown, deals: ReadonlyMap<string, number>): unknown {
   });
 }
 
+/**
+ * The same value with every opportunity's revision replaced by a stand-in
+ * fixed by its deal reference; `seen` collects each deal's real revision and
+ * refuses two for one deal.
+ */
+function withStableRevisions<T>(value: T, seen: Map<number, string>): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => withStableRevisions(item, seen)) as T;
+  }
+  if (value === null || typeof value !== "object") return value;
+  const copy: Record<string, unknown> = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => [
+      key,
+      withStableRevisions(item, seen),
+    ]),
+  );
+  if (typeof copy.revision === "string" && typeof copy.dealRef === "number") {
+    expect(copy.revision).toMatch(/^r1\.[0-9a-f]{32}$/);
+    const prior = seen.get(copy.dealRef);
+    expect(prior === undefined || prior === copy.revision).toBe(true);
+    seen.set(copy.dealRef, copy.revision);
+    copy.revision = `r1.${copy.dealRef.toString(16).padStart(32, "0")}`;
+  }
+  return copy as T;
+}
+
 async function record(): Promise<unknown> {
   const client = await admin.connect();
   try {
@@ -360,13 +386,23 @@ describe("the recorded funnel is the real projection at a fixed instant", () => 
       expect(text).not.toContain(planted);
     }
 
-    const formatted = await format(JSON.stringify(parsed), {
+    // A revision digests the row's database time, which the fixture cannot
+    // pin: every real one is well formed, one per deal and distinct across
+    // deals, and the recording keeps a stable stand-in fixed by the deal
+    // (the screen treats a revision as opaque).
+    const revisions = new Map<number, string>();
+    const recorded = withStableRevisions(parsed, revisions);
+    expect(revisions.size).toBeGreaterThan(10);
+    expect(new Set(revisions.values()).size).toBe(revisions.size);
+    expect(AvailableFunnelSchema.safeParse(recorded).success).toBe(true);
+
+    const formatted = await format(JSON.stringify(recorded), {
       ...(await resolveConfig(RECORDING)),
       parser: "json",
     });
     if (process.env.COMPANY_OS_RECORD === "1") {
       writeFileSync(RECORDING, formatted);
     }
-    expect(JSON.parse(readFileSync(RECORDING, "utf8"))).toEqual(parsed);
+    expect(JSON.parse(readFileSync(RECORDING, "utf8"))).toEqual(recorded);
   });
 });

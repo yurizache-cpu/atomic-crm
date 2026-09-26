@@ -168,7 +168,7 @@ export async function graphqlAndOpenApi(t, origin, rest) {
 }
 
 /**
- * The live catalogue equals the probe's EXPOSED list (the reads and the one act) exactly, both as PostgREST
+ * The live catalogue equals the probe's EXPOSED list (the reads and the acts) exactly, both as PostgREST
  * exposes it to a member and as the database defines it: a function added to
  * company_os_api fails the probe until it has an entry here, and so a matrix.
  * The member's document listing the catalogue is also the positive control of
