@@ -8,8 +8,10 @@
 -- never guessed; does the funnel carry anything personal; and can a tenant
 -- that does not own the local CRM read anything of it?
 --
---   F1  the CRM adapter, pinned: INVOKER, owned by postgres, reachable by no
---       role, read only, and reading exactly the five CRM tables it needs;
+--   F1  the read CRM adapter, pinned: INVOKER, owned by postgres, reachable by
+--       no role, read only, and reading exactly the five CRM tables it needs
+--       (Phase 3B.2 adds its stage-configuration, revision and allowed-act
+--       helpers; the write adapter is commercial_opportunity_acts.sql's);
 --   R   robustness: a date the CRM accepts but a browser cannot hold (a
 --       five-digit year, an infinity) and an id outside the browser's number
 --       range never break the funnel or the overview;
@@ -104,7 +106,7 @@ begin
            case when p.proconfig is distinct from '{"search_path=\"\""}'::text[] then 'config' end,
            case when p.provolatile not in ('s', 'i') then 'volatile' end) || ')', ', ') into v_bad
     from pg_proc p
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$'
      and (p.prosecdef or p.proowner <> 'postgres'::regrole
           or p.proacl is distinct from '{postgres=X/postgres}'::aclitem[]
           or p.proconfig is distinct from '{"search_path=\"\""}'::text[] or p.provolatile not in ('s', 'i'));
@@ -112,15 +114,15 @@ begin
     raise exception 'F1: a CRM adapter function is DEFINER, reachable, unpinned or volatile: %', v_bad;
   end if;
   if (select count(*) from pg_proc p where p.pronamespace = 'ops'::regnamespace
-       and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$') <> 6 then
-    raise exception 'F1: the CRM adapter is not exactly its six functions';
+       and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$') <> 13 then
+    raise exception 'F1: the read CRM adapter is not exactly its thirteen functions';
   end if;
   -- Read only: no write verb and no dynamic SQL in the code (string literals
   -- are data and emptied first).
   select string_agg(p.proname, ', ') into v_bad
     from pg_proc p,
          lateral (select regexp_replace(regexp_replace(p.prosrc, '--[^\n]*', ' ', 'g'), '''([^'']|'''')*''', '''''', 'g') as code) c
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$'
      and (c.code ~* '\m(insert|update|delete|truncate|merge|copy|execute|perform)\M');
   if v_bad is not null then
     raise exception 'F1: a CRM adapter function writes or runs dynamic SQL: %', v_bad;
@@ -128,7 +130,7 @@ begin
   -- Exactly the five CRM tables, and nothing else of schema public.
   select string_agg(distinct m[1], ', ') into v_bad
     from pg_proc p, lateral regexp_matches(p.prosrc, 'public\.([a-z_]+)', 'g') m
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$'
      and m[1] not in ('deals', 'configuration', 'acquisition_attributions', 'loss_reasons', 'deal_stage_transitions');
   if v_bad is not null then
     raise exception 'F1: the CRM adapter reads % beyond its five tables', v_bad;
@@ -136,8 +138,9 @@ begin
   -- It calls only its own helpers and the timestamp formatter in ops.
   select string_agg(distinct m[1], ', ') into v_bad
     from pg_proc p, lateral regexp_matches(p.prosrc, 'ops\.([a-z_0-9]+)\s*\(', 'g') m
-   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant)$'
-     and m[1] !~ '^crm_(deal_card|deal_origin|text_ok|safe_amount|instant)$' and m[1] <> 'cos_ts';
+   where p.pronamespace = 'ops'::regnamespace and p.proname ~ '^crm_(commercial_funnel|deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$'
+     and m[1] !~ '^crm_(deal_card|deal_origin|text_ok|safe_amount|instant|stage_configuration|stage_codes|converted_codes|deal_revision|loss_reason_ok|deal_is_open|deal_actions)$'
+     and m[1] <> 'cos_ts';
   if v_bad is not null then
     raise exception 'F1: the CRM adapter calls %', v_bad;
   end if;
@@ -462,6 +465,36 @@ begin
      or f -> 'outcomes' -> 'lost' -> 'items' -> 0 ->> 'reason' <> 'Preço'
      or f -> 'outcomes' -> 'lost' -> 'items' -> 0 ->> 'stage' <> 'mid' then
     raise exception 'M: the recent outcomes drifted: %', f -> 'outcomes';
+  end if;
+  -- Phase 3B.2: every card carries an opaque revision and the acts the server
+  -- would accept, by the acts' own rules: an open deal may move, set a next
+  -- action, convert and be lost; a converted one nothing; one in a converted
+  -- stage without a date may only be converted (dated).
+  select string_agg(format('%s:%s%s%s%s', pg_temp.named(c ->> 'dealRef'),
+                           (c -> 'actions' ->> 'move')::boolean::int, (c -> 'actions' ->> 'setNextAction')::boolean::int,
+                           (c -> 'actions' ->> 'convert')::boolean::int, (c -> 'actions' ->> 'lose')::boolean::int), ' '
+                    order by pg_temp.named(c ->> 'dealRef'))
+    into v
+    from (select c from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c
+          union all select c from jsonb_array_elements(f -> 'unconfigured' -> 'cards') c) x;
+  if v <> 'd1:1111 d10:0000 d12:1111 d2:1111 d3:1111 d6:0000 d7:0010 d8:0000 d9:1111' then
+    raise exception 'M: a card''s allowed acts drifted: %', v;
+  end if;
+  if exists (select 1 from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c
+              where c ->> 'revision' !~ '^r1\.[0-9a-f]{32}$')
+     or (select count(distinct c ->> 'revision') from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c)
+        <> (select count(*) from jsonb_array_elements(f -> 'stages') e, jsonb_array_elements(e -> 'cards') c) then
+    raise exception 'M: a card''s revision is malformed or shared';
+  end if;
+  -- The active loss reasons, code and label only, in their configured order.
+  if f -> 'lossReasons' is distinct from (
+       select coalesce(jsonb_agg(jsonb_build_object('code', r.code, 'label', btrim(r.label)) order by r.sort_order, r.id), '[]')
+         from public.loss_reasons r where r.active)
+     or jsonb_array_length(f -> 'lossReasons') = 0 then
+    raise exception 'M: the loss reasons drifted: %', f -> 'lossReasons';
+  end if;
+  if f ->> 'followUpBridge' is distinct from 'not_configured' then
+    raise exception 'M: with no bridge configured the funnel must say so: %', f ->> 'followUpBridge';
   end if;
 end
 $f$;

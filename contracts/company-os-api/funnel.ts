@@ -4,9 +4,11 @@
 // 20260929130000_commercial_funnel_read_model.sql).
 //
 // AUTHORITY. The CRM (today the Atomic CRM's public.deals) is the one
-// commercial source of truth. This is a projection of it that the browser can
-// read and never act on, and nothing here names the Atomic CRM: another CRM
-// replaces the adapter, not this contract.
+// commercial source of truth. This is a projection of it, and nothing here
+// names the Atomic CRM: another CRM replaces the adapter, not this contract.
+// Since Phase 3B.2 each card carries the revision and the allowed acts of the
+// four narrow commercial acts (commercial.ts); the projection itself is still
+// read only.
 //
 // DEFINITIONS, decided by the server and only formatted by the screen:
 //   - open: not archived, not lost and not converted;
@@ -83,6 +85,25 @@ export const OriginSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("withheld") }),
 ]);
 
+/**
+ * A deal's revision (Phase 3B.2): an opaque digest of the CRM row's state that
+ * every commercial act names, so an act made from a stale view is refused
+ * instead of silently overwriting a newer one. Never a timestamp.
+ */
+export const RevisionSchema = z.string().regex(/^r1\.[0-9a-f]{32}$/);
+
+/**
+ * The commercial acts the server would accept on a deal now, by the acts' own
+ * rules (Phase 3B.2). Hints for the screen: every refusal still comes from the
+ * act itself.
+ */
+export const OpportunityActionsSchema = z.strictObject({
+  move: z.boolean(),
+  setNextAction: z.boolean(),
+  convert: z.boolean(),
+  lose: z.boolean(),
+});
+
 export const OpportunityCardSchema = z
   .strictObject({
     dealRef: DealRefSchema,
@@ -95,10 +116,35 @@ export const OpportunityCardSchema = z
     amount: AmountSchema,
     origin: OriginSchema,
     outcome: OpportunityOutcomeSchema,
+    revision: RevisionSchema,
+    actions: OpportunityActionsSchema,
   })
   .refine((c) => (c.nextActionAt === null) === (c.nextAction === "none"), {
     message: "a next action is none exactly when it has no instant",
-  });
+  })
+  .refine(
+    (c) =>
+      c.outcome === "open" ||
+      (!c.actions.move && !c.actions.setNextAction && !c.actions.lose),
+    { message: "a converted opportunity is neither moved, scheduled nor lost" },
+  );
+
+/** A configured loss reason an act may name: its stable code and label. */
+export const LossReasonSchema = z.strictObject({
+  code: boundedTextSchema(64),
+  label: CrmLabelSchema,
+});
+
+/**
+ * Whether setting a next action adjusts follow-ups (Phase 3B.2): the owner's
+ * bridge configuration is absent or disabled, present and usable, or present
+ * but unusable (a unit inactive, or a newer version of its pinned cadence).
+ */
+export const FOLLOW_UP_BRIDGE_STATES = [
+  "not_configured",
+  "configured",
+  "invalid",
+] as const;
 
 export const FunnelStageSchema = z
   .strictObject({
@@ -175,6 +221,9 @@ export const AvailableFunnelSchema = z
       total: CountSchema,
       cards: z.array(OpportunityCardSchema),
     }),
+    // Phase 3B.2: what the commercial acts may name and do.
+    lossReasons: z.array(LossReasonSchema).max(50),
+    followUpBridge: z.enum(FOLLOW_UP_BRIDGE_STATES),
     summary: z.strictObject({
       active: CountSchema,
       overdue: CountSchema,
@@ -245,5 +294,8 @@ export type OpportunityCard = z.infer<typeof OpportunityCardSchema>;
 export type FunnelMovement = z.infer<typeof FunnelMovementSchema>;
 export type Origin = z.infer<typeof OriginSchema>;
 export type OriginCount = z.infer<typeof OriginCountSchema>;
+export type OpportunityActions = z.infer<typeof OpportunityActionsSchema>;
+export type LossReason = z.infer<typeof LossReasonSchema>;
+export type FollowUpBridgeState = (typeof FOLLOW_UP_BRIDGE_STATES)[number];
 export type ConvertedOutcome = z.infer<typeof ConvertedOutcomeSchema>;
 export type LostOutcome = z.infer<typeof LostOutcomeSchema>;

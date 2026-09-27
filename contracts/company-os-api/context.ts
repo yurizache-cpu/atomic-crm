@@ -34,13 +34,18 @@ export const OperatorContextSchema = z.strictObject({
   tenant: z.strictObject({ id: UuidSchema, name: z.string() }),
   role: z.literal("tenant_operator"),
   dataPolicy: z.literal("synthetic_or_test_only"),
-  // Hints only: every refusal comes from SQL. Both browser acts exist (S7.1
-  // the review decision, S7.2 the trip), so both are booleans; there is no
+  // Hints only: every refusal comes from SQL. Every browser act exists (S7.1
+  // the review decision, S7.2 the trip, and the four commercial acts of
+  // Phase 3B.2, true exactly when the tenant owns the local CRM); there is no
   // clear, and no key for one.
   allowedActions: z.strictObject({
     decideReview: z.boolean(),
     tripStop: z.boolean(),
     viewAdvice: z.boolean(),
+    moveOpportunity: z.boolean(),
+    setOpportunityNextAction: z.boolean(),
+    convertOpportunity: z.boolean(),
+    loseOpportunity: z.boolean(),
   }),
   serverTime: TimestampSchema,
 });

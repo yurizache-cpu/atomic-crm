@@ -400,12 +400,19 @@ describe("the contract vocabularies equal the database's", () => {
         ),
       ];
       // One fixed, data-free message per code (brief §7.3). Only the trip
-      // answers lock contention, with the one retryable code (owner S0-B).
+      // (owner S0-B) and the four commercial acts, bounded the same way
+      // (Phase 3B.2), answer lock contention, with the one retryable code.
       expect(
         raised.map((m) => m[1]),
         name,
       ).toEqual(
-        operation === "trip_stop"
+        [
+          "trip_stop",
+          "move_opportunity",
+          "set_opportunity_next_action",
+          "convert_opportunity",
+          "lose_opportunity",
+        ].includes(operation)
           ? ["OS400", "OS401", "OS403", "OS404", "OS409", "OS429", "OS500"]
           : ["OS400", "OS401", "OS403", "OS404", "OS409", "OS500"],
       );

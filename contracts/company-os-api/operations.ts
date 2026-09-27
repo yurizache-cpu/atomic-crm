@@ -1,8 +1,9 @@
 // The operation catalogue (docs/PHASE_2C_BRIEF.md §8): the 15 read RPCs of the
 // function-only schema company_os_api, each with its exact argument names,
 // PostgreSQL types and DEFAULTs, the input a client may send, and the response
-// contract; and, apart from them, the two browser acts (S7.1: decide_review,
-// brief §9 row 16; S7.2: trip_stop, row 17).
+// contract; and, apart from them, the six browser acts (S7.1: decide_review,
+// brief §9 row 16; S7.2: trip_stop, row 17; and the four commercial acts of
+// owner decision R, Phase 3B.2, commercial.ts).
 // engine/domain/companyOsContracts.dbtest.ts compares both with pg_proc.
 //
 // No operation takes a tenant, company, actor, reviewer, source or causation
@@ -17,6 +18,16 @@
 
 import { z } from "zod";
 import { AgentDetailSchema, AgentListSchema } from "./agents.ts";
+import {
+  ConvertOpportunityInputSchema,
+  ConvertOpportunityResultSchema,
+  LoseOpportunityInputSchema,
+  LoseOpportunityResultSchema,
+  MoveOpportunityInputSchema,
+  MoveOpportunityResultSchema,
+  SetOpportunityNextActionInputSchema,
+  SetOpportunityNextActionResultSchema,
+} from "./commercial.ts";
 import { OperatorContextSchema, OverviewSummarySchema } from "./context.ts";
 import {
   CompanyOsContractError,
@@ -59,7 +70,13 @@ import {
 export const COMPANY_OS_API_SCHEMA = "company_os_api";
 
 /** An argument's type as PostgreSQL's format_type() names it. */
-export type OperationArgumentType = "uuid" | "text" | "integer" | "boolean";
+export type OperationArgumentType =
+  | "uuid"
+  | "text"
+  | "integer"
+  | "boolean"
+  | "bigint"
+  | "timestamp with time zone";
 
 /** A DEFAULT as the function declares it. */
 export type OperationArgumentDefault = string | number | boolean | null;
@@ -233,11 +250,13 @@ export const COMPANY_OS_OPERATIONS = Object.freeze({
 });
 
 /**
- * The two browser acts. decide_review (S7.1): the browser names a review and a
+ * The six browser acts. decide_review (S7.1): the browser names a review and a
  * decision, and nothing else; the gate derives the tenant and the reviewer, and
  * recording a decision sends nothing (SI-45). trip_stop (S7.2): the browser
  * names a scope and a target, and nothing else; the gate derives the tenant,
- * the actor and a fixed reason, and a trip is never cleared from here.
+ * the actor and a fixed reason, and a trip is never cleared from here. The
+ * four commercial acts (Phase 3B.2, owner decision R; SI-68): the browser names
+ * a deal, the revision it saw and the act's own input, and nothing else.
  */
 export const COMPANY_OS_ACTS = Object.freeze({
   decide_review: operation(
@@ -252,6 +271,42 @@ export const COMPANY_OS_ACTS = Object.freeze({
     [required("p_scope", "text"), defaulted("p_target_id", "uuid", null)],
     TripStopInputSchema,
     StopTripResultSchema,
+  ),
+  move_opportunity: operation(
+    [
+      required("p_deal_ref", "bigint"),
+      required("p_target_stage", "text"),
+      required("p_expected_revision", "text"),
+    ],
+    MoveOpportunityInputSchema,
+    MoveOpportunityResultSchema,
+  ),
+  set_opportunity_next_action: operation(
+    [
+      required("p_deal_ref", "bigint"),
+      required("p_next_action_at", "timestamp with time zone"),
+      required("p_expected_revision", "text"),
+    ],
+    SetOpportunityNextActionInputSchema,
+    SetOpportunityNextActionResultSchema,
+  ),
+  convert_opportunity: operation(
+    [
+      required("p_deal_ref", "bigint"),
+      required("p_target_stage", "text"),
+      required("p_expected_revision", "text"),
+    ],
+    ConvertOpportunityInputSchema,
+    ConvertOpportunityResultSchema,
+  ),
+  lose_opportunity: operation(
+    [
+      required("p_deal_ref", "bigint"),
+      required("p_loss_reason", "text"),
+      required("p_expected_revision", "text"),
+    ],
+    LoseOpportunityInputSchema,
+    LoseOpportunityResultSchema,
   ),
 });
 

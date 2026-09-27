@@ -1629,7 +1629,9 @@ begin
       '.items[].pipeline.review.id', '.items[].pipeline.review.status', '.items[].priority', '.items[].type',
       '.nextCursor', '.v']),
     ('operator_context', array[
-      '.allowedActions', '.allowedActions.decideReview', '.allowedActions.tripStop',
+      '.allowedActions', '.allowedActions.convertOpportunity', '.allowedActions.decideReview',
+      '.allowedActions.loseOpportunity', '.allowedActions.moveOpportunity',
+      '.allowedActions.setOpportunityNextAction', '.allowedActions.tripStop',
       '.allowedActions.viewAdvice', '.asOf', '.dataPolicy', '.principal', '.principal.id', '.role',
       '.serverTime', '.tenant', '.tenant.id', '.tenant.name', '.v']),
     ('overview', array[
@@ -2663,7 +2665,18 @@ begin
     ('decide_review', format('company_os_api.decide_review(%L, %L)', pg_temp.id('a.review_ok'), 'bogus'), 'OS400'),
     ('trip_stop', format('company_os_api.trip_stop(%L, %L)', 'company', pg_temp.id('b.company')), 'OS404'),
     ('trip_stop', format('company_os_api.trip_stop(%L)', 'global'), 'OS403'),
-    ('trip_stop', format('company_os_api.trip_stop(%L)', 'bogus'), 'OS400');
+    ('trip_stop', format('company_os_api.trip_stop(%L)', 'bogus'), 'OS400'),
+    -- Phase 3B.2: the four commercial acts. A deal id no browser was shown,
+    -- one that does not exist, and a malformed revision.
+    ('move_opportunity', 'company_os_api.move_opportunity(0, ''stage'', ''r1.00000000000000000000000000000000'')', 'OS404'),
+    ('move_opportunity', 'company_os_api.move_opportunity(9007199254740990, ''stage'', ''r1.00000000000000000000000000000000'')', 'OS404'),
+    ('move_opportunity', 'company_os_api.move_opportunity(1, ''stage'', ''bogus'')', 'OS400'),
+    ('set_opportunity_next_action', 'company_os_api.set_opportunity_next_action(9007199254740990, null, ''r1.00000000000000000000000000000000'')', 'OS404'),
+    ('set_opportunity_next_action', 'company_os_api.set_opportunity_next_action(1, ''infinity'', ''r1.00000000000000000000000000000000'')', 'OS400'),
+    ('convert_opportunity', 'company_os_api.convert_opportunity(9007199254740990, ''stage'', ''r1.00000000000000000000000000000000'')', 'OS404'),
+    ('convert_opportunity', 'company_os_api.convert_opportunity(1, '''', ''r1.00000000000000000000000000000000'')', 'OS400'),
+    ('lose_opportunity', 'company_os_api.lose_opportunity(9007199254740990, ''reason'', ''r1.00000000000000000000000000000000'')', 'OS404'),
+    ('lose_opportunity', 'company_os_api.lose_opportunity(1, null, ''r1.00000000000000000000000000000000'')', 'OS400');
 
   -- Every exposed function has variants, and for the member each variant
   -- answers as intended: the bad ones are really bad.
@@ -2931,14 +2944,16 @@ begin
   if v_bad is distinct from 'ops.grant_membership(uuid,uuid,text,text,text), ops.operator_scope()' then
     raise exception 'M2: ops.membership_tenant_eligible is called by % instead of exactly the grant and the resolver', v_bad;
   end if;
-  -- owns_local_crm: the predicate, the two readers that predate Phase 2C, and
+  -- owns_local_crm: the predicate, the two readers that predate Phase 2C,
   -- Phase 3B.1's commercial funnel CRM adapter, which serves only the tenant
-  -- that owns the local CRM (as crm_contact_by_phone does).
+  -- that owns the local CRM (as crm_contact_by_phone does), and Phase 3B.2's
+  -- two: the one lock every commercial act takes on a deal, which refuses any
+  -- other tenant first, and the operator context's hint for those acts.
   select string_agg(p.proname, ', ' order by p.proname) into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('ops', 'company_os_api') and p.prosrc ~ 'owns_local_crm';
-  if v_bad is distinct from 'crm_commercial_funnel, crm_contact_by_phone, membership_tenant_eligible, purge_inbound_email_ledger' then
-    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers and the funnel''s CRM adapter)', v_bad;
+  if v_bad is distinct from 'cos_commercial_acts_available, crm_commercial_funnel, crm_contact_by_phone, crm_lock_deal, membership_tenant_eligible, purge_inbound_email_ledger' then
+    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers, the funnel''s CRM adapter and the commercial acts'' lock and hint)', v_bad;
   end if;
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -3096,6 +3111,21 @@ insert into cos_catalogue (op, args, callee, callee_args, act, gate_config, extr
   ('trip_stop', 'p_scope text, p_target_id uuid DEFAULT NULL::uuid', 'trip_stop_in_tenant',
    'v.tenant_id, v.actor, p_scope, p_target_id', true, '{"search_path=\"\"",lock_timeout=2s}',
    'when sqlstate ''55P03'' then raise exception using errcode = ''OS429'', message = ''company_os_api.trip_stop: could not be completed yet; retry''; ');
+-- The four commercial acts (Phase 3B.2, owner decision R): each gate bounded
+-- like the trip, its one callee the narrow commercial act.
+insert into cos_catalogue (op, args, callee, callee_args, act, gate_config, extra_handler)
+select x.op, x.args, x.op || '_as_member', 'v.tenant_id, v.actor, ' || x.callee_args, true,
+       '{"search_path=\"\"",lock_timeout=2s}',
+       format('when sqlstate ''55P03'' then raise exception using errcode = ''OS429'', message = ''company_os_api.%s: could not be completed yet; retry''; ', x.op)
+  from (values
+    ('move_opportunity', 'p_deal_ref bigint, p_target_stage text, p_expected_revision text',
+     'p_deal_ref, p_target_stage, p_expected_revision'),
+    ('set_opportunity_next_action', 'p_deal_ref bigint, p_next_action_at timestamp with time zone, p_expected_revision text',
+     'p_deal_ref, p_next_action_at, p_expected_revision'),
+    ('convert_opportunity', 'p_deal_ref bigint, p_target_stage text, p_expected_revision text',
+     'p_deal_ref, p_target_stage, p_expected_revision'),
+    ('lose_opportunity', 'p_deal_ref bigint, p_loss_reason text, p_expected_revision text',
+     'p_deal_ref, p_loss_reason, p_expected_revision')) as x (op, args, callee_args);
 
 -- The internal catalogue the read-surface migration adds to ops besides the
 -- gates, with each function's volatility and configuration: search_path = ''
@@ -3138,7 +3168,17 @@ insert into cos_internal values
   -- Phase 3B.1: the overview's commercial funnel, the provider-neutral entry.
   -- Its one CRM adapter (ops.crm_commercial_funnel and helpers) is not a
   -- Company OS body; commercial_funnel.sql pins it.
-  ('ops.cos_commercial_funnel(uuid, timestamp with time zone)', 's');
+  ('ops.cos_commercial_funnel(uuid, timestamp with time zone)', 's'),
+  -- Phase 3B.2: the funnel's follow-up bridge status and the operator
+  -- context's commercial hint, both read only; and the four narrow commercial
+  -- acts, the gates' callees (commercial_opportunity_acts.sql pins their
+  -- path, the CRM adapter writes and the bridge).
+  ('ops.cos_commercial_follow_up_bridge(uuid)', 's'),
+  ('ops.cos_commercial_acts_available(uuid)', 's'),
+  ('ops.move_opportunity_as_member(uuid, text, bigint, text, text)', 'v'),
+  ('ops.set_opportunity_next_action_as_member(uuid, text, bigint, timestamp with time zone, text)', 'v'),
+  ('ops.convert_opportunity_as_member(uuid, text, bigint, text, text)', 'v'),
+  ('ops.lose_opportunity_as_member(uuid, text, bigint, text, text)', 'v');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3150,8 +3190,9 @@ language sql stable as $$
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace where f.oid = p;
 $$;
 
--- P1. The catalogue: exactly the 17 exposed functions (15 reads and the two
---     acts, decide_review and trip_stop) with their full signatures, one gate
+-- P1. The catalogue: exactly the 21 exposed functions (15 reads and the six
+--     acts: decide_review, trip_stop and the four commercial acts of owner
+--     decision R) with their full signatures, one gate
 --     each with the same arguments, the internal set, no overload, no
 --     relation or type in the exposed schema, and no clear.
 create function pg_temp.pin_catalogue() returns void
@@ -3196,13 +3237,16 @@ begin
               or f.proname in ('guard_principal_change', 'guard_membership_change', 'refuse_identity_truncate',
                                'membership_tenant_eligible', 'grant_membership', 'revoke_membership',
                                'operator_scope', 'agent_operational_state', 'decide_review_as_member',
-                               'trip_stop_in_tenant'))) f
+                               'trip_stop_in_tenant', 'move_opportunity_as_member',
+                               'set_opportunity_next_action_as_member', 'convert_opportunity_as_member',
+                               'lose_opportunity_as_member'))) f
     full join cos_internal i on i.signature = pg_temp.sig(f.oid)
    where f.oid is null or i.signature is null;
   if v_bad is not null then
     raise exception 'P1: the internal catalogue drifted: %', v_bad;
   end if;
-  -- The two acts are the review decision (S7.1) and the trip (S7.2); nothing
+  -- The acts are the review decision (S7.1), the trip (S7.2) and the four
+  -- commercial acts (Phase 3B.2); nothing
   -- the browser reaches clears, resumes or untrips a stop, anywhere.
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad from pg_proc f
    where (f.pronamespace = 'company_os_api'::regnamespace and f.proname ~ '(clear|resume|untrip)')
@@ -3213,8 +3257,8 @@ begin
 end
 $f$;
 
--- An exposed function's pinned volatility: VOLATILE for the one act, STABLE
--- for every read.
+-- An exposed function's pinned volatility: VOLATILE for an act, STABLE for
+-- every read.
 create function pg_temp.volatility_of(p_op text) returns "char"
 language sql stable as $$
   select case when exists (select 1 from cos_catalogue c where c.op = p_op and c.act) then 'v' else 's' end::"char";
@@ -3364,7 +3408,11 @@ $f$;
 create function pg_temp.graph_bodies() returns table (fid oid)
 language sql stable as $$
   select f.oid from pg_proc f join pg_namespace n on n.oid = f.pronamespace
-   where f.proname not in ('decide_review', 'gate_decide_review', 'trip_stop', 'gate_trip_stop')
+   where f.proname not in ('decide_review', 'gate_decide_review', 'trip_stop', 'gate_trip_stop',
+                           'move_opportunity', 'gate_move_opportunity',
+                           'set_opportunity_next_action', 'gate_set_opportunity_next_action',
+                           'convert_opportunity', 'gate_convert_opportunity',
+                           'lose_opportunity', 'gate_lose_opportunity')
      and (n.nspname = 'company_os_api'
           or (n.nspname = 'ops' and (f.proname ~ '^(gate_|read_|cos_)'
               or f.proname in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state'))));
@@ -4543,7 +4591,10 @@ begin
     end if;
   end loop;
   v := pg_temp.member_body('W4', 'company_os_api.operator_context()');
-  if v -> 'allowedActions' is distinct from '{"decideReview": true, "tripStop": true, "viewAdvice": true}'::jsonb then
+  -- Tenant A owns the local CRM here, so the four commercial acts are allowed.
+  if v -> 'allowedActions' is distinct from
+     '{"decideReview": true, "tripStop": true, "viewAdvice": true, "moveOpportunity": true,
+       "setOpportunityNextAction": true, "convertOpportunity": true, "loseOpportunity": true}'::jsonb then
     raise exception 'W4: operator_context reports %', v -> 'allowedActions';
   end if;
 end

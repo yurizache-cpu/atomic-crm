@@ -65,12 +65,18 @@ const COMPANY_OS_READ_CATALOGUE = [
   "spend_summary()",
 ];
 
-/** The two browser acts, after the S7 user-management prerequisite: the
- *  review decision (S7.1, brief §9 row 16) and the trip (S7.2, row 17). No
- *  clear exists (SI-58). */
+/** The six browser acts: the review decision (S7.1, brief §9 row 16) and the
+ *  trip (S7.2, row 17), after the S7 user-management prerequisite, and the
+ *  four narrow commercial acts of owner decision R (Phase 3B.2): move a deal to
+ *  another configured stage, set or clear its next action, convert it and lose
+ *  it. No clear exists (SI-58), and no generic mutation (SI-68). */
 const COMPANY_OS_ACT_CATALOGUE = [
   "decide_review(uuid,text)",
   "trip_stop(text,uuid)",
+  "move_opportunity(bigint,text,text)",
+  "set_opportunity_next_action(bigint,timestamp with time zone,text)",
+  "convert_opportunity(bigint,text,text)",
+  "lose_opportunity(bigint,text,text)",
 ];
 
 const COMPANY_OS_CATALOGUE = [
@@ -136,6 +142,7 @@ const FROZEN = {
       "20260922120000_company_os_read_surface.sql",
       "20260923120000_company_os_review_decision.sql",
       "20260924120000_company_os_execution_stop.sql",
+      "20260930130000_company_os_commercial_acts.sql",
     ],
     transfers: {
       "20260922120000_company_os_read_surface.sql":
@@ -145,6 +152,12 @@ const FROZEN = {
       ],
       "20260924120000_company_os_execution_stop.sql": [
         "company_os_api.trip_stop(text,uuid)",
+      ],
+      "20260930130000_company_os_commercial_acts.sql": [
+        "company_os_api.move_opportunity(bigint,text,text)",
+        "company_os_api.set_opportunity_next_action(bigint,timestamp with time zone,text)",
+        "company_os_api.convert_opportunity(bigint,text,text)",
+        "company_os_api.lose_opportunity(bigint,text,text)",
       ],
     },
   },

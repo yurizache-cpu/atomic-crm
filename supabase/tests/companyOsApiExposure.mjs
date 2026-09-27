@@ -183,6 +183,10 @@ import {
   memberDecidesOnce,
   memberTripsOnce,
 } from "./companyOsProbe/actChecks.mjs";
+import {
+  COMMERCIAL_ACT_ARGUMENTS,
+  commercialActsRefuse,
+} from "./companyOsProbe/commercialActChecks.mjs";
 
 const CLIENT_OPTIONS = Object.freeze({
   auth: {
@@ -298,6 +302,7 @@ async function probe(origin, keys) {
           p_decision: "rejected",
         },
         trip_stop: { p_scope: "department", p_target_id: t.ids.department_a },
+        ...COMMERCIAL_ACT_ARGUMENTS,
       })[fn] ?? {};
     /** A member read that must succeed, kept for the final sweep. */
     t.read = async (fn, args, credential = t.member.credential) => {
@@ -323,6 +328,7 @@ async function probe(origin, keys) {
     await othersAreRefused(t, rpc);
     await memberDecidesOnce(t, rpc);
     await memberTripsOnce(t, rpc);
+    await commercialActsRefuse(t, rpc);
     await signOutTakesEffect(t, origin, keys, rpc);
     sweepMemberOutputs(t);
   } finally {

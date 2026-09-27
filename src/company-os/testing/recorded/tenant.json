@@ -10180,7 +10180,11 @@
         "allowedActions": {
           "tripStop": true,
           "viewAdvice": true,
-          "decideReview": true
+          "decideReview": true,
+          "loseOpportunity": true,
+          "moveOpportunity": true,
+          "convertOpportunity": true,
+          "setOpportunityNextAction": true
         }
       }
     },

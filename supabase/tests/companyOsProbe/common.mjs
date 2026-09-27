@@ -40,13 +40,22 @@ export const CATALOGUE = Object.freeze([
   "communication_status",
 ]);
 
-/** The two browser acts (S7.1, S7.2) and their arguments. */
+/** The six browser acts (S7.1, S7.2 and the four commercial acts of owner
+ * decision R, Phase 3B.2) and their arguments. */
 export const ACTS = Object.freeze({
   decide_review: ["p_review_id", "p_decision"],
   trip_stop: ["p_scope", "p_target_id"],
+  move_opportunity: ["p_deal_ref", "p_target_stage", "p_expected_revision"],
+  set_opportunity_next_action: [
+    "p_deal_ref",
+    "p_next_action_at",
+    "p_expected_revision",
+  ],
+  convert_opportunity: ["p_deal_ref", "p_target_stage", "p_expected_revision"],
+  lose_opportunity: ["p_deal_ref", "p_loss_reason", "p_expected_revision"],
 });
 
-/** Every exposed function: the reads and the one act. */
+/** Every exposed function: the reads and the acts. */
 export const EXPOSED = Object.freeze([...CATALOGUE, ...Object.keys(ACTS)]);
 
 /** A clear: the browser can never reach one, under any name. */

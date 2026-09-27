@@ -12,6 +12,28 @@ import type {
 // The one computation here is the closing rate's percentage, from the two
 // counts the server returns, and it is withheld when their sum is zero.
 
+// The four commercial acts a card may offer (Phase 3B.2).
+export type ActKind = "move" | "next" | "convert" | "lose";
+
+/** Which acts a card offers: the operator context's hint and the card's. */
+export const offeredActs = (
+  card: OpportunityCard,
+  allowed: {
+    readonly moveOpportunity: boolean;
+    readonly setOpportunityNextAction: boolean;
+    readonly convertOpportunity: boolean;
+    readonly loseOpportunity: boolean;
+  },
+): ActKind[] =>
+  [
+    allowed.moveOpportunity && card.actions.move ? "move" : null,
+    allowed.setOpportunityNextAction && card.actions.setNextAction
+      ? "next"
+      : null,
+    allowed.convertOpportunity && card.actions.convert ? "convert" : null,
+    allowed.loseOpportunity && card.actions.lose ? "lose" : null,
+  ].filter((kind): kind is ActKind => kind !== null);
+
 type Tone = "green" | "blue" | "amber" | "red" | "gray";
 
 /** "Oportunidade #123": the CRM's reference, never a title or a name. */
@@ -159,6 +181,96 @@ export const coverageText = (
   movements.coverageStart === null
     ? "Nenhuma movimentação registrada ainda. O histórico começa na primeira mudança de etapa observada; o que aconteceu antes não é conhecido."
     : `Histórico de movimentações disponível a partir de ${localDate(movements.coverageStart, timeZone)}. Antes disso, as mudanças de etapa não foram registradas.`;
+
+// ---------------------------------------------------------------------------
+// Wall-clock time in the funnel's zone (Phase 3B.2). The owner types a date
+// and a time as they read them in the tenant's IANA zone; the act sends the
+// absolute instant. No library: the zone's offset is read from Intl.
+// ---------------------------------------------------------------------------
+
+const DAY_MS = 86_400_000;
+
+const wallParts = (ms: number, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(ms));
+  const get = (type: string) =>
+    Number(parts.find((p) => p.type === type)?.value);
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+};
+
+/** The zone's offset from UTC at an instant, in ms (wall clock minus UTC). */
+const offsetAt = (ms: number, timeZone: string): number => {
+  const w = wallParts(ms, timeZone);
+  const wall = Date.UTC(w.year, w.month - 1, w.day, w.hour, w.minute, w.second);
+  return wall - Math.floor(ms / 1000) * 1000;
+};
+
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const TIME_PATTERN = /^(\d{2}):(\d{2})$/;
+
+/**
+ * The absolute instant (ISO, UTC) of a date ("2030-03-04") and a time
+ * ("09:30") on the wall clock of `timeZone`; null when either is malformed or
+ * when that local time does not exist there (a daylight-saving gap). A time
+ * that occurs twice (the hour repeated when clocks go back) is the earlier
+ * instant.
+ */
+export const wallTimeToInstant = (
+  date: string,
+  time: string,
+  timeZone: string,
+): string | null => {
+  const d = DATE_PATTERN.exec(date);
+  const t = TIME_PATTERN.exec(time);
+  if (d === null || t === null) return null;
+  const [year, month, day] = [Number(d[1]), Number(d[2]), Number(d[3])];
+  const [hour, minute] = [Number(t[1]), Number(t[2])];
+  if (hour > 23 || minute > 59) return null;
+  const wall = Date.UTC(year, month - 1, day, hour, minute);
+  const check = new Date(wall);
+  if (check.getUTCDate() !== day || check.getUTCMonth() !== month - 1) {
+    return null;
+  }
+  const candidates = [
+    ...new Set(
+      [
+        offsetAt(wall - DAY_MS, timeZone),
+        offsetAt(wall + DAY_MS, timeZone),
+      ].map((offset) => wall - offset),
+    ),
+  ]
+    .filter((ms) => offsetAt(ms, timeZone) === wall - ms)
+    .sort((a, b) => a - b);
+  return candidates.length === 0 ? null : new Date(candidates[0]).toISOString();
+};
+
+/** An instant as the date and time the owner reads in `timeZone`. */
+export const instantToWallTime = (
+  instant: string,
+  timeZone: string,
+): { date: string; time: string } => {
+  const w = wallParts(new Date(instant).getTime(), timeZone);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    date: `${w.year}-${pad(w.month)}-${pad(w.day)}`,
+    time: `${pad(w.hour)}:${pad(w.minute)}`,
+  };
+};
 
 /** "Mostrando 10 de 14" when a list holds fewer items than its total. */
 export const shownOf = (shown: number, total: number): string | null =>

@@ -105,8 +105,10 @@ describe("the Funil comercial screen", () => {
     expect(card("Taxa de fechamento — 30 dias")).toContain(
       "2 convertidas de 5 encerradas",
     );
+    // Overdue and due today are separate facts (Phase 3B.2).
     expect(card("Próxima ação atrasada")).toContain("3");
-    expect(card("Próxima ação atrasada")).toContain("2 para hoje");
+    expect(card("Vence hoje")).toContain("2");
+    expect(card("Vence hoje")).toContain("Próximas ações previstas para hoje");
     // "Sem próxima ação" is also a card chip: find its headline by its hint.
     expect(
       screen
@@ -208,7 +210,15 @@ describe("the Funil comercial screen", () => {
       .getByRole("listitem")
       .elements()
       .map((row) => row.textContent ?? "");
-    expect(rows).toHaveLength(9);
+    // The latest eight first; "Ver todas" shows every one, and "Mostrar
+    // menos" folds them again (Phase 3B.2).
+    expect(rows).toHaveLength(8);
+    await screen.getByRole("button", { name: "Ver todas (9)" }).click();
+    await expect.element(moves.getByRole("listitem").nth(8)).toBeVisible();
+    await screen.getByRole("button", { name: "Mostrar menos" }).click();
+    await expect
+      .element(screen.getByRole("button", { name: "Ver todas (9)" }))
+      .toBeVisible();
     expect(rows[0]).toContain("Oportunidade #101: Entrou em Novo lead");
     expect(rows[2]).toContain(
       "Oportunidade #113: Continuidade aceita → Continuidade convertida",
@@ -371,10 +381,10 @@ describe("the Funil comercial screen", () => {
     ).toBeNull();
     expect(
       screen.getByText("Desconhecido", { exact: true }).elements().length,
-    ).toBe(7);
+    ).toBe(8);
   });
 
-  it("offers no control that creates, moves, wins or loses an opportunity, nothing draggable, and no name, contact or identifier", async () => {
+  it("offers no drag and drop and no control that creates, deletes or reopens an opportunity, calls no act unasked, and shows no name, contact or identifier", async () => {
     const session = withFunnel();
     const screen = await renderCompanyOs(session, HASH);
     await expect
@@ -385,8 +395,25 @@ describe("the Funil comercial screen", () => {
       .element()
       .closest("div")?.parentElement;
 
+    // Only the four narrow acts (their buttons, on the cards the server
+    // allows) and the movements toggle; no field, form or dialog until an act
+    // is opened, and nothing that creates, deletes or reopens.
+    const buttons = [...(page?.querySelectorAll("button") ?? [])].map(
+      (b) => b.textContent ?? "",
+    );
+    expect(new Set(buttons.filter((b) => !b.startsWith("Ver todas")))).toEqual(
+      new Set([
+        "Mover etapa",
+        "Definir próxima ação",
+        "Converter",
+        "Marcar como perdida",
+      ]),
+    );
+    expect(buttons.join(" ")).not.toMatch(
+      /criar|nova|excluir|apagar|reabrir|desfazer/i,
+    );
     expect(
-      page?.querySelectorAll("button, input, select, textarea, form"),
+      page?.querySelectorAll("input, select, textarea, form"),
     ).toHaveLength(0);
     expect(page?.querySelectorAll("[draggable='true']")).toHaveLength(0);
     expect(page?.textContent).not.toMatch(
@@ -395,8 +422,8 @@ describe("the Funil comercial screen", () => {
     expect(page?.textContent).not.toMatch(
       /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/,
     );
-    // The screen only reads (the shell's operator context and the
-    // overview); it never calls either browser act.
+    // Until a person confirms an act the screen only reads (the shell's
+    // operator context and the overview).
     const operations = new Set(session.calls.map((c) => c.operation));
     expect(operations.has("overview")).toBe(true);
     expect(
@@ -404,7 +431,5 @@ describe("the Funil comercial screen", () => {
         (o) => o === "overview" || o === "operator_context",
       ),
     ).toBe(true);
-    expect(session.callsOf("decide_review")).toHaveLength(0);
-    expect(session.callsOf("trip_stop")).toHaveLength(0);
   });
 });

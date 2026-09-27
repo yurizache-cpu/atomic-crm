@@ -24,7 +24,14 @@
           "nextAction": "today",
           "amount": null,
           "origin": { "kind": "recorded", "label": "Orgânico" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000066",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 101,
@@ -35,7 +42,14 @@
           "nextAction": "none",
           "amount": null,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000065",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -57,7 +71,14 @@
           "nextAction": "overdue",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000067",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 104,
@@ -68,7 +89,14 @@
           "nextAction": "future",
           "amount": null,
           "origin": { "kind": "unknown" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000068",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -90,7 +118,14 @@
           "nextAction": "overdue",
           "amount": null,
           "origin": { "kind": "recorded", "label": "Indicação" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000069",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 106,
@@ -101,7 +136,14 @@
           "nextAction": "none",
           "amount": null,
           "origin": { "kind": "multiple" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006a",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -123,7 +165,14 @@
           "nextAction": "today",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Orgânico" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006c",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 107,
@@ -134,7 +183,14 @@
           "nextAction": "future",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006b",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -156,7 +212,14 @@
           "nextAction": "future",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006d",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -178,7 +241,14 @@
           "nextAction": "overdue",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Indicação" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006e",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -200,7 +270,14 @@
           "nextAction": "none",
           "amount": 1200,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006f",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -222,7 +299,14 @@
           "nextAction": "future",
           "amount": 1200,
           "origin": { "kind": "recorded", "label": "Orgânico" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000070",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -244,7 +328,14 @@
           "nextAction": "none",
           "amount": 1200,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "converted"
+          "outcome": "converted",
+          "revision": "r1.00000000000000000000000000000071",
+          "actions": {
+            "move": false,
+            "setNextAction": false,
+            "convert": false,
+            "lose": false
+          }
         },
         {
           "dealRef": 114,
@@ -255,12 +346,34 @@
           "nextAction": "none",
           "amount": 1200,
           "origin": { "kind": "recorded", "label": "Indicação" },
-          "outcome": "converted"
+          "outcome": "converted",
+          "revision": "r1.00000000000000000000000000000072",
+          "actions": {
+            "move": false,
+            "setNextAction": false,
+            "convert": false,
+            "lose": false
+          }
         }
       ]
     }
   ],
   "unconfigured": { "total": 0, "cards": [] },
+  "lossReasons": [
+    { "code": "financial_constraint", "label": "Restrição financeira" },
+    { "code": "price", "label": "Preço" },
+    { "code": "not_ready", "label": "Ainda não está pronto(a)" },
+    { "code": "no_response", "label": "Sem resposta" },
+    {
+      "code": "chose_other_professional",
+      "label": "Escolheu outro profissional"
+    },
+    { "code": "no_fit", "label": "Sem adequação" },
+    { "code": "postponed", "label": "Adiado" },
+    { "code": "other", "label": "Outro" },
+    { "code": "unknown", "label": "Não informado" }
+  ],
+  "followUpBridge": "not_configured",
   "summary": {
     "active": 12,
     "overdue": 3,
@@ -287,7 +400,14 @@
           "nextAction": "overdue",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000067",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 105,
@@ -298,7 +418,14 @@
           "nextAction": "overdue",
           "amount": null,
           "origin": { "kind": "recorded", "label": "Indicação" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000069",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 110,
@@ -309,7 +436,14 @@
           "nextAction": "overdue",
           "amount": 250,
           "origin": { "kind": "recorded", "label": "Indicação" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006e",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     },
@@ -325,7 +459,14 @@
           "nextAction": "none",
           "amount": 1200,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006f",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 106,
@@ -336,7 +477,14 @@
           "nextAction": "none",
           "amount": null,
           "origin": { "kind": "multiple" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.0000000000000000000000000000006a",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         },
         {
           "dealRef": 101,
@@ -347,7 +495,14 @@
           "nextAction": "none",
           "amount": null,
           "origin": { "kind": "recorded", "label": "Google Ads" },
-          "outcome": "open"
+          "outcome": "open",
+          "revision": "r1.00000000000000000000000000000065",
+          "actions": {
+            "move": true,
+            "setNextAction": true,
+            "convert": true,
+            "lose": true
+          }
         }
       ]
     }

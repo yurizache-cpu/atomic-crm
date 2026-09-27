@@ -143,7 +143,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe("the operation catalogue equals pg_proc", () => {
-  it("company_os_api holds exactly the 15 catalogued reads and the two acts, with their argument names, types and defaults", async () => {
+  it("company_os_api holds exactly the 15 catalogued reads and the six acts, with their argument names, types and defaults", async () => {
     const { rows } = await admin.query<{
       name: string;
       args: string;
@@ -208,6 +208,32 @@ describe("the operation catalogue equals pg_proc", () => {
       "ops.gate_decide_review(uuid,text)",
       "ops.gate_trip_stop(text,uuid)",
       "ops.trip_stop_in_tenant(uuid,text,text,uuid)",
+    ]);
+  });
+
+  it("the four commercial acts and their gates exist, each with its one narrow callee, and no generic mutation", async () => {
+    const { rows } = await admin.query<{ fn: string }>(
+      `select p.oid::regprocedure::text as fn
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname in ('ops', $1)
+          and (p.proname ~ '(move|set|convert|lose)_opportunity'
+               or p.proname ~ '(mutate|update|upsert|delete|create)_(opportunit|deal)')
+        order by 1`,
+      [COMPANY_OS_API_SCHEMA],
+    );
+    expect(rows.map((row) => row.fn)).toEqual([
+      "company_os_api.convert_opportunity(bigint,text,text)",
+      "company_os_api.lose_opportunity(bigint,text,text)",
+      "company_os_api.move_opportunity(bigint,text,text)",
+      "company_os_api.set_opportunity_next_action(bigint,timestamp with time zone,text)",
+      "ops.convert_opportunity_as_member(uuid,text,bigint,text,text)",
+      "ops.gate_convert_opportunity(bigint,text,text)",
+      "ops.gate_lose_opportunity(bigint,text,text)",
+      "ops.gate_move_opportunity(bigint,text,text)",
+      "ops.gate_set_opportunity_next_action(bigint,timestamp with time zone,text)",
+      "ops.lose_opportunity_as_member(uuid,text,bigint,text,text)",
+      "ops.move_opportunity_as_member(uuid,text,bigint,text,text)",
+      "ops.set_opportunity_next_action_as_member(uuid,text,bigint,timestamp with time zone,text)",
     ]);
   });
 });
