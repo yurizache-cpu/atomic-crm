@@ -553,3 +553,17 @@ Built on `feature/phase-3b2-operational-funnel` from `feature/clinical-phase-1` 
 - **Owner visual review (2026-09-27): PASS** (report §17). Carried without change: legacy outcome consistency, the canonical next action, commercial RBAC, follow-up bridge administration and the review's P3 residuals.
 - **Integration (2026-09-27):** the final review found no P0 or P1. Post-merge Check #81 (run 36349867884) passed Test, Build, Typecheck, ESLint and Database security & reproducibility. The workflow stays red only for the accepted historical baseline: e2e exactly 9 failed and 1 skipped, and Prettier exactly 2 historical errors. There is no new regression. Q8 is OPEN; no real patient data was used; no production deploy occurred.
 - **Next:** not decided here; the owner chooses the next milestone separately.
+
+### Q8 — real-data / model authorization (2026-09-27) — OWNER DECISION PACKET PROPOSED
+
+A decision milestone, not an implementation, on the local branch `feature/q8-real-data-authorization` from `feature/clinical-phase-1` at `156977dd`. Read [ADR 0020](adr/0020-real-data-model-authorization.md).
+
+- **Finding:** today Q8 is held at ingress and by convention. The model boundary itself (`ops.start_agent_run`) checks no data class.
+- **Proposed:**
+  - a closed classification assigned from provenance;
+  - the provider evidence to verify from current official sources;
+  - one fail-closed gate on the ADR 0017 pattern: versioned, tenant-scoped owner authorizations, checked where a run starts, where it is requested and where a shadow decision starts;
+  - absence denies everything but `synthetic` and `test`.
+- **Owner decisions D1–D10:** roles, the allowed classes, the free-text presumption, the lawful basis, the provider bar, retention, erasure, test channels, international transfer and who authorizes.
+- **Unchanged:** Q8 OPEN; no real patient data; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED and not superseded; no RAG.
+- **Next:** the owner answers D1–D10. Only then does the one implementation batch in ADR 0020 §G start.
