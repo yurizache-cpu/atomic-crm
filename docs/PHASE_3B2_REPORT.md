@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **IMPLEMENTED LOCALLY. OWNER VISUAL REVIEW REQUIRED BEFORE THE SINGLE REMOTE INTEGRATION CYCLE.** Local commits on `feature/phase-3b2-operational-funnel`, not pushed, no PR. |
+| **Status** | **OWNER VISUAL REVIEW PASS (2026-09-27); READY FOR THE SINGLE REMOTE INTEGRATION CYCLE.** Six implementation and documentation commits on `feature/phase-3b2-operational-funnel` (`62cebbd2`, `7c62fb39`, `4087595b`, `9e386c0d`, `d0babcbc`, `14fc0ab2`), plus this reconciliation (§17). *(Superseded wording: "implemented locally; owner visual review required".)* |
 | **Base** | `feature/clinical-phase-1` at `8aa65873247e34e1753f61e6f67b16ce93114e7e`, the PR #14 merge that integrated Phase 3B.1. Post-merge CI Check #78 (run 36204665177): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red. `main` is unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-3b2-operational-funnel` |
 | **Governing records** | The Phase 3B.2 brief (controlled batch, 2026-09-26); **owner decision R** (commercial browser authority; [DECISIONS.md](DECISIONS.md), [ADR 0019](adr/0019-company-os-operator-surface.md) "Owner decision R"); [ADR 0013](adr/0013-pipeline-stages-are-configuration.md); CLAUDE.md's five rules. |
@@ -174,13 +174,24 @@ It prints the funnel's counts before and after (active 12 → 10, converted 2 �
 1. **Canonical next action.** The commercial workflow writes `public.deals.next_action_at`; `lead_profiles.next_action_at` also exists and is not synced. Which is canonical for commercial follow-up stays open.
 2. **Sales visibility and RBAC.** Tenant-wide today. A future phase decides tenant-wide, department-scoped, salesperson-scoped or role-configurable visibility and authority.
 3. **Conversion wording in the CRM.** The CRM's own form says to record `converted_at` "only after manual confirmation of payment"; Company OS treats conversion as a commercial outcome only and never mentions payment. Whether the CRM's help text or the conversion semantics should change is the owner's.
+4. **Legacy outcome consistency** (accepted limitation, owner, 2026-09-27). The CRM's own form sets `lost_at` and `converted_at` independently, so a deal can hold both; no table constraint was added because it would break that form (§4). The four Company OS acts never create both. A future CRM cleanup may reconcile the model.
 
 ## 15. Backlog (not done here)
 
-- An owner CLI command to show and configure the follow-up bridge.
+- **Follow-up bridge administration** (owner, 2026-09-27): an owner CLI command to show and configure the follow-up bridge; today only the owner's credential calling the service (as the demo does) configures it.
 - The bridge follows Company OS acts only; CRM-form edits move no plan.
 - Superseding a plan keeps a due step open (Phase 3A semantics); whether a changed next action should also close a due step is a later decision.
 
 ## 16. What this batch does not do
 
 No opportunity creation, drag and drop, deletion, reopening, amount, title, contact or salesperson edit; no billing or payment; no Google Ads or real Google Calendar; no RAG or pgvector; no real Jev; no new LLM workflow or predictive scoring; no autonomous WhatsApp; no browser scheduling act from the Agenda; no new dependency.
+
+## 17. Owner visual review (2026-09-27): PASS
+
+The owner exercised the operational Funil comercial by hand on the local synthetic demo and found it usable. Confirmed visually: a stage move works; the board refreshes only after the server confirms; next-action dates update correctly; the converted, lost and active counts update coherently; "Próxima ação atrasada" and "Vence hoje" are separate; the horizontal-scroll hint is visible; the cards offer the intended commercial acts; there is no drag and drop; no personal data is needed to operate it.
+
+**Approved by the owner:** move opportunity; set, change and clear the next action; convert; lose; optimistic concurrency; the follow-up bridge (its first occurrence exactly at the deal's `next_action_at`; unrelated follow-ups untouched). The current stage's authority stays `public.deals.pipeline_stage`; the transition ledger stays history only.
+
+**Carried without change (not expanded in the integration cycle):** legacy outcome consistency (§14 item 4); the canonical next action (§14 item 1); commercial RBAC, tenant-wide today (§14 item 2); follow-up bridge administration (§15); the review's P3 residuals (§11). A final integration review changes them only for a real P0 or P1.
+
+**Before the push:** the dev server stopped, the synthetic owner signed out and the browser storage cleared, the e2e database reset to its seed (no auth user, deal, membership, follow-up plan, bridge, act row or job remains), the temporary `.claude/launch.json` entry reverted, and the scratch sign-in files removed; the committed demo tooling is kept. No implementation changed, so the §10 evidence stands.
