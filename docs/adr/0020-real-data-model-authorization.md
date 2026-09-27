@@ -1,7 +1,7 @@
 # ADR 0020 — Real data at the model boundary (BASELINE Q8): a closed data classification, recorded provider evidence and one fail-closed gate
 
-**Status:** Proposed — owner decision packet (2026-09-27). **Not accepted, not implemented.** BASELINE Q8 stays OPEN until the owner answers §E and accepts this record.
-**Implemented by:** nothing.
+**Status:** Proposed — owner decision packet (2026-09-27). **Owner decisions D1–D10 given 2026-09-27 (§H) and implemented as the enforcement batch; the record awaits the owner's acceptance at the review checkpoint.** BASELINE Q8 stays OPEN for real data: no authorization is recorded, and real patient model traffic is still disabled.
+**Implemented by:** `supabase/migrations/20261001120000_model_data_authorization.sql`, `npm run ops -- data-auth`, `engine/models/identifierRedaction.ts` and the minimised `lead_triage.v2` input (enforcement only; see [PHASE_Q8_ENFORCEMENT_REPORT.md](../PHASE_Q8_ENFORCEMENT_REPORT.md)). Content redaction and retention (D6, D7) are the next batch.
 **Relates to:**
 - [ADR 0016](0016-agent-runs-and-model-providers.md): agent runs and the provider boundary.
 - [ADR 0017](0017-runtime-governance.md): owner-recorded versioned governance data; the pattern reused in §D.
@@ -215,3 +215,21 @@ Q8 closes only when each is answered and this ADR is accepted. Legal choices are
 5. **Deferred to a following batch:** content redaction and retention per D6 and D7.
 
 Real use then needs, in order: the §C evidence verified; one owner `data-auth record`; and, for WhatsApp, the separate ADR and the live Meta probe.
+
+## H. Owner decisions (2026-09-27) and how the enforcement batch implements them
+
+The owner answered §E for this implementation. Legal and provider evidence stay the owner's, with counsel; the repository records references, never legal analysis.
+
+| # | Owner decision | Implemented as |
+| --- | --- | --- |
+| D1 | (a) for tenant one: the clinic is the controller operating Company OS for itself. No multi-tenant processor-contract machinery; reopen before a second external tenant. | Person content (`person_text`, `health`) can be authorized only for the tenant that owns the local CRM (`ops.model_data_controller_tenant`, checked at recording and at every match). |
+| D2 | The architecture may authorize `operational`, `person_text` and `health`, only for explicitly authorized purposes such as lead triage. Never direct identifiers as model input, never `clinical_record`. `synthetic` and `test` keep their rules. Technically authorizable health does NOT authorize real health traffic. | The authorization's class is closed to those three; the purpose is one capability; person content only for a capability whose input is minimised (`lead_triage`). No authorization is recorded. |
+| D3 | (a) free text a lead or patient wrote is presumed `health`; no semantic downgrade. | The admission derives `health` for any free text that is neither synthetic nor from a test channel; nothing inspects content. |
+| D4 | An explicit, versioned authorization reference compatible with specific consent; receiving a message is not consent; real health traffic stays denied until the lawful-basis evidence exists; another basis only by an explicit owner/legal decision. | `lawful_basis_ref` is required for person content, as an opaque reference; nothing records one. |
+| D5 | For health: the contract covers the processing, a DPA, API data not used for training, zero data retention enabled (or an owner-approved equivalent; `store:false` is not it), exact provider/project/model evidence, retention behaviour verified. No OpenAI production access in this batch. | Every one is a required reference or `training_excluded = true` on a person-content authorization, bound to one provider and exact model; no provider configuration changed. |
+| D6 | AI working content: 30 days after the review that completes the flow. Not clinical-record retention. Redaction is a later batch. | `content_retention_days` between 1 and 30 on every person-content authorization; enforcement is the next batch. |
+| D7 | (a) redact content in place, keep non-content audit evidence; never hard-delete audit history. | Next batch. This one deletes nothing and keeps every version and run row. |
+| D8 | Test channels must eventually require registered test senders; production WhatsApp unchanged; ADR 0018 stays an independent gate. | Not built (not needed for the gate); the admission classes a test channel's text `test`. ADR 0018 unchanged. |
+| D9 | A documented international-transfer mechanism for real sensitive data; until it exists, deny; the generic DPA is not assumed to satisfy it. | `transfer_mechanism_ref` is required for person content; none is recorded. |
+| D10 | (a) owner-only CLI act; every record and retire auditable; no browser authority. | `npm run ops -- data-auth` (`list`, `record`, `retire`); SI-39 extended; immutable versions retired once, on the record; no `company_os_api` function reaches the table. |
+
