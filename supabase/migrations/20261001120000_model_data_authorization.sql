@@ -9,10 +9,12 @@
 --
 --   1. A closed data classification. ops.tasks.data_class is set by the trusted
 --      creator from provenance and immutable afterwards (SI-71). The admission
---      derives synthetic or test from the source kind and the channel mode, and
---      presumes any other free text a lead or patient wrote is health (D3). A
---      direct ops.create_task names a class or is unclassified. Nothing inspects
---      content, and nothing reads a class from a payload or the browser.
+--      derives synthetic from the synthetic ingress, and test ONLY for a message
+--      on an owner-configured test channel from a sender the owner registered
+--      for it (D8: a test channel is not test data); any other free text a lead
+--      or patient wrote is presumed health (D3). A direct ops.create_task names
+--      a class or is unclassified. Nothing inspects content, and nothing reads a
+--      class from a payload or the browser.
 --   2. ops.model_data_authorizations: versioned, tenant-scoped owner data, the
 --      ADR 0017 pattern. Never a migration row; recorded and retired only by an
 --      owner act (npm run ops -- data-auth). Each version binds one tenant, one
@@ -113,17 +115,18 @@ alter table ops.tasks add constraint tasks_data_class_check check (
   data_class in ('synthetic', 'test', 'operational', 'identifier', 'person_text', 'health',
                  'clinical_record', 'derived', 'unclassified'));
 
--- An admitted task takes its admission's class, derived exactly as the decision
--- shadow derives its origin. A closed task is immutable (tasks_guard_update) and
--- can never be run again, so it keeps unclassified, which denies.
+-- An admitted task takes its admission's class. No test sender can have been
+-- registered before this migration (section 6b creates the registry), so every
+-- admitted WhatsApp message, on a test channel or not, is presumed health (D3,
+-- D8: a test channel is not test data). A closed task is immutable
+-- (tasks_guard_update) and can never be run again, so it keeps unclassified,
+-- which denies.
 update ops.tasks t
    set data_class = a.data_class
   from (select m.tenant_id, m.task_id,
                case when m.source_kind = 'synthetic' then 'synthetic'
-                    when m.source_kind = 'whatsapp' and ch.mode = 'test' then 'test'
                     else 'health' end as data_class
           from ops.inbound_messages m
-          left join ops.communication_channels ch on ch.tenant_id = m.tenant_id and ch.id = m.channel_id
          where m.task_id is not null) a
  where t.tenant_id = a.tenant_id and t.id = a.task_id
    and t.status not in ('completed', 'failed', 'cancelled')
@@ -811,6 +814,249 @@ create trigger tasks_data_class_immutable
 alter table ops.tasks enable always trigger tasks_data_class_immutable;
 
 -- ---------------------------------------------------------------------------
+-- 6b. Registered test senders (owner decision D8). A test channel is NOT test
+--     data: anyone may write to a test number. A person-originated message is
+--     test data only when it arrives on an owner-configured test channel FROM a
+--     sender the owner registered for that channel (a controlled test device).
+--     Owner data like the channel itself: never a migration row, never the
+--     browser; registered and retired only with the owner's credential.
+-- ---------------------------------------------------------------------------
+
+create table if not exists ops.communication_test_senders (
+  id            uuid primary key default gen_random_uuid(),
+  tenant_id     uuid not null references ops.tenants (id) on delete restrict,
+  company_id    uuid not null,
+  channel_id    uuid not null,
+  -- The sender as the provider attests it in its signed webhook (WhatsApp:
+  -- digits with the country code), never a value a payload body claims.
+  sender        text not null,
+  registered_by text not null,
+  registered_at timestamptz not null default now(),
+  retired_at    timestamptz,
+  retired_by    text,
+  retire_reason text,
+  constraint communication_test_senders_sender_format check (sender ~ '^[0-9]{6,20}$'),
+  constraint communication_test_senders_registered_by_format check (
+    registered_by ~ '^[a-z0-9][a-z0-9_.:@-]{0,127}$'),
+  constraint communication_test_senders_retired_whole check (
+    (retired_at is null) = (retired_by is null) and (retired_at is null) = (retire_reason is null)),
+  constraint communication_test_senders_retired_by_format check (
+    retired_by is null or retired_by ~ '^[a-z0-9][a-z0-9_.:@-]{0,127}$'),
+  constraint communication_test_senders_retire_reason_length check (
+    retire_reason is null or char_length(btrim(retire_reason)) between 1 and 500),
+  constraint communication_test_senders_channel_fkey
+    foreign key (tenant_id, company_id, channel_id)
+    references ops.communication_channels (tenant_id, company_id, id) on delete restrict
+);
+
+comment on table ops.communication_test_senders is
+  'BASELINE Q8, owner decision D8: the senders whose messages on one owner-configured test channel are test data. Any other person-originated message is presumed health. Registered and retired only by the owner; never shipped by a migration.';
+
+create unique index if not exists communication_test_senders_active_key
+  on ops.communication_test_senders (channel_id, sender)
+  where retired_at is null;
+
+alter table ops.communication_test_senders enable row level security;
+alter table ops.communication_test_senders force  row level security;
+
+create or replace function ops.guard_test_sender_insert()
+returns trigger
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+begin
+  if new.retired_at is not null or new.retired_by is not null or new.retire_reason is not null then
+    raise exception using
+      errcode = 'OS409',
+      message = 'ops.communication_test_senders: a registration is born in force; retiring it is a separate, recorded act';
+  end if;
+  if not exists (select 1 from ops.communication_channels c
+                  where c.tenant_id = new.tenant_id and c.company_id = new.company_id
+                    and c.id = new.channel_id and c.mode = 'test') then
+    raise exception using
+      errcode = 'OS409',
+      message = 'ops.communication_test_senders: a test sender is registered only on a test channel';
+  end if;
+  new.registered_at := now();
+  return new;
+end
+$function$;
+
+-- A registration changes in exactly one way: it is retired once, with who and why.
+create or replace function ops.guard_test_sender_update()
+returns trigger
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+begin
+  if old.retired_at is not null
+     or new.id is distinct from old.id
+     or new.tenant_id is distinct from old.tenant_id
+     or new.company_id is distinct from old.company_id
+     or new.channel_id is distinct from old.channel_id
+     or new.sender is distinct from old.sender
+     or new.registered_by is distinct from old.registered_by
+     or new.registered_at is distinct from old.registered_at
+     or new.retired_by is null then
+    raise exception using
+      errcode = 'OS409',
+      message = 'ops.communication_test_senders: a registration is never rewritten; it is only retired, once';
+  end if;
+  new.retired_at := now();
+  return new;
+end
+$function$;
+
+create or replace function ops.guard_test_sender_delete()
+returns trigger
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+begin
+  if old.retired_at is null then
+    raise exception using
+      errcode = 'OS409',
+      message = 'ops.communication_test_senders: a registration in force is retired, with who and why, before it can be deleted';
+  end if;
+  return old;
+end
+$function$;
+
+create or replace function ops.refuse_test_sender_truncate()
+returns trigger
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+begin
+  raise exception using
+    errcode = 'OS409',
+    message = 'ops.communication_test_senders is never truncated: a registration is removed only by retiring it';
+end
+$function$;
+
+drop trigger if exists communication_test_senders_guard_insert on ops.communication_test_senders;
+create trigger communication_test_senders_guard_insert
+  before insert on ops.communication_test_senders
+  for each row execute function ops.guard_test_sender_insert();
+alter table ops.communication_test_senders enable always trigger communication_test_senders_guard_insert;
+
+drop trigger if exists communication_test_senders_guard_update on ops.communication_test_senders;
+create trigger communication_test_senders_guard_update
+  before update on ops.communication_test_senders
+  for each row execute function ops.guard_test_sender_update();
+alter table ops.communication_test_senders enable always trigger communication_test_senders_guard_update;
+
+drop trigger if exists communication_test_senders_guard_delete on ops.communication_test_senders;
+create trigger communication_test_senders_guard_delete
+  before delete on ops.communication_test_senders
+  for each row execute function ops.guard_test_sender_delete();
+alter table ops.communication_test_senders enable always trigger communication_test_senders_guard_delete;
+
+drop trigger if exists communication_test_senders_refuse_truncate on ops.communication_test_senders;
+create trigger communication_test_senders_refuse_truncate
+  before truncate on ops.communication_test_senders
+  for each statement execute function ops.refuse_test_sender_truncate();
+alter table ops.communication_test_senders enable always trigger communication_test_senders_refuse_truncate;
+
+-- Whether this sender is registered, now, for this channel, and the channel is a
+-- test channel. The one predicate the admission asks.
+create or replace function ops.registered_test_sender(p_tenant_id uuid, p_channel_id uuid, p_sender text)
+returns boolean
+language sql
+stable
+security invoker
+set search_path to ''
+as $function$
+  select exists (
+    select 1
+      from ops.communication_test_senders s
+      join ops.communication_channels c
+        on c.tenant_id = s.tenant_id and c.company_id = s.company_id and c.id = s.channel_id
+     where s.tenant_id = p_tenant_id and s.channel_id = p_channel_id and s.sender = p_sender
+       and s.retired_at is null and c.mode = 'test');
+$function$;
+
+-- Register a controlled test device on one test channel. The same registration
+-- again returns it. SECURITY INVOKER, EXECUTE granted to no role.
+create or replace function ops.register_test_sender(
+  p_tenant_id  uuid,
+  p_channel_id uuid,
+  p_sender     text,
+  p_actor      text
+)
+returns uuid
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+declare
+  v_channel ops.communication_channels;
+  v_id      uuid;
+begin
+  if p_tenant_id is null then
+    raise exception using errcode = 'OS401', message = 'ops.register_test_sender: no tenant scope';
+  end if;
+  if p_sender is null or p_sender !~ '^[0-9]{6,20}$' then
+    raise exception using errcode = 'OS400', message = 'ops.register_test_sender: the sender is digits with the country code, 6 to 20 of them';
+  end if;
+  if p_actor is null or p_actor !~ '^[a-z0-9][a-z0-9_.:@-]{0,127}$' then
+    raise exception using errcode = 'OS400', message = 'ops.register_test_sender: the actor is missing or malformed';
+  end if;
+  select c.* into v_channel from ops.communication_channels c
+   where c.tenant_id = p_tenant_id and c.id = p_channel_id
+     for share;
+  if not found then
+    raise exception using errcode = 'OS404', message = 'ops.register_test_sender: channel not found in this tenant';
+  end if;
+  if v_channel.mode <> 'test' then
+    raise exception using errcode = 'OS409', message = 'ops.register_test_sender: a test sender is registered only on a test channel';
+  end if;
+  select s.id into v_id from ops.communication_test_senders s
+   where s.channel_id = p_channel_id and s.sender = p_sender and s.retired_at is null;
+  if found then
+    return v_id; -- already registered
+  end if;
+  insert into ops.communication_test_senders (tenant_id, company_id, channel_id, sender, registered_by)
+  values (p_tenant_id, v_channel.company_id, p_channel_id, p_sender, p_actor)
+  returning id into v_id;
+  return v_id;
+end
+$function$;
+
+-- Retire a registration: that sender's later messages are health again.
+create or replace function ops.retire_test_sender(
+  p_test_sender_id uuid,
+  p_reason         text,
+  p_actor          text
+)
+returns boolean
+language plpgsql
+security invoker
+set search_path to ''
+as $function$
+begin
+  if p_reason is null or char_length(btrim(p_reason)) not between 1 and 500 then
+    raise exception using errcode = 'OS400', message = 'ops.retire_test_sender: a reason is required, at most 500 characters';
+  end if;
+  if p_actor is null or p_actor !~ '^[a-z0-9][a-z0-9_.:@-]{0,127}$' then
+    raise exception using errcode = 'OS400', message = 'ops.retire_test_sender: the actor is missing or malformed';
+  end if;
+  perform 1 from ops.communication_test_senders s where s.id = p_test_sender_id;
+  if not found then
+    raise exception using errcode = 'OS404', message = 'ops.retire_test_sender: registration not found';
+  end if;
+  update ops.communication_test_senders
+     set retired_by = p_actor, retire_reason = p_reason
+   where id = p_test_sender_id and retired_at is null;
+  return found;
+end
+$function$;
+
+-- ---------------------------------------------------------------------------
 -- 7. Classification at creation.
 -- ---------------------------------------------------------------------------
 
@@ -935,9 +1181,10 @@ end
 $function$;
 
 -- The one admission (20260918150000, section 8), plus the class it derives from
--- provenance: synthetic from the synthetic ingress, test from an owner-configured
--- test channel, and health for any other free text a lead or patient wrote (D3).
--- A production channel cannot be active (SI-47), so today only the first two occur.
+-- provenance: synthetic from the synthetic ingress; test only for a message on an
+-- owner-configured test channel from a sender registered for it (D8: a test
+-- channel is not test data); and health for any other free text a lead or
+-- patient wrote (D3), an unknown sender on a test channel included.
 create or replace function ops.admit_inbound_core(
   p_tenant_id           uuid,
   p_company_id          uuid,
@@ -1006,9 +1253,8 @@ begin
   -- content, and nothing downgrades it.
   v_class := case
     when p_source_kind = 'synthetic' then 'synthetic'
-    when p_source_kind = 'whatsapp' and exists (
-      select 1 from ops.communication_channels ch
-       where ch.tenant_id = p_tenant_id and ch.id = p_channel_id and ch.mode = 'test') then 'test'
+    when p_source_kind = 'whatsapp'
+         and ops.registered_test_sender(p_tenant_id, p_channel_id, p_contact_ref) then 'test'
     else 'health'
   end;
 
@@ -1746,6 +1992,15 @@ revoke all on function ops.start_agent_run(text, text, text, text, integer) from
 revoke all on function ops.start_shadow_decision(text, text, text) from public;
 revoke all on function ops.record_model_data_authorization(uuid, text, text, text, text, timestamptz, timestamptz, text, timestamptz, boolean, text, text, text, text, text, text, integer, text) from public;
 revoke all on function ops.retire_model_data_authorization(uuid, text, text) from public;
+revoke all on table ops.communication_test_senders
+  from public, anon, authenticated, service_role, ops_worker;
+revoke all on function ops.guard_test_sender_insert() from public;
+revoke all on function ops.guard_test_sender_update() from public;
+revoke all on function ops.guard_test_sender_delete() from public;
+revoke all on function ops.refuse_test_sender_truncate() from public;
+revoke all on function ops.registered_test_sender(uuid, uuid, text) from public;
+revoke all on function ops.register_test_sender(uuid, uuid, text, text) from public;
+revoke all on function ops.retire_test_sender(uuid, text, text) from public;
 
 -- ---------------------------------------------------------------------------
 -- 11. Assertions.
@@ -1753,6 +2008,9 @@ revoke all on function ops.retire_model_data_authorization(uuid, text, text) fro
 
 do $assert$
 begin
+  if exists (select 1 from ops.communication_test_senders) then
+    raise exception 'Q8 enforcement shipped a registered test sender; registrations are owner data (D8)';
+  end if;
   if exists (select 1 from ops.model_data_authorizations) then
     raise exception 'Q8 enforcement shipped a data authorization; authorizations are owner data, recorded by an owner act';
   end if;

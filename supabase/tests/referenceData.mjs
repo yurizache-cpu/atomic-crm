@@ -153,12 +153,18 @@ try {
     // BASELINE Q8 (ADR 0020): a model-data authorization is owner data too. A
     // migration that shipped one would let protected data reach a model on a
     // grant nobody recorded.
-    const [[dataAuthorizations]] = psql(
-      "select count(*) from ops.model_data_authorizations;",
+    const [[dataAuthorizations, testSenders]] = psql(
+      "select (select count(*) from ops.model_data_authorizations), (select count(*) from ops.communication_test_senders);",
     );
     check(
       dataAuthorizations === "0",
       `no model-data authorization: one is recorded by an owner act, never shipped by a migration (found ${dataAuthorizations})`,
+    );
+    // Owner decision D8: a registered test sender makes a person's text test
+    // data, so it is an owner act too.
+    check(
+      testSenders === "0",
+      `no registered test sender: one is registered by an owner act, never shipped by a migration (found ${testSenders})`,
     );
 
     // The CRM owner is chosen by a person (public.bootstrap_owner, Phase 1D.2):

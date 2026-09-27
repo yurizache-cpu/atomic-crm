@@ -319,6 +319,57 @@ describe("the model boundary (SI-70)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
+  it("keeps a health task health: refused for a real-looking provider before any call, then run on the in-process fake relying on no authorization", async () => {
+    const real = openaiNamedFake();
+    const inProcess = createFakeModelProvider({
+      type: "respond",
+      content: ADVICE,
+    });
+    const lead = await buildLead("health");
+    // Some provider is authorized for the class, so the request is admitted;
+    // not the model this worker would call.
+    await authorize("another-model");
+
+    const refusedId = await request(lead, "dbtest-q8-real-looking");
+    await runAgentJob(real.registry);
+    expect(await readGate(refusedId)).toMatchObject({
+      status: "cancelled",
+      error_code: "data_not_authorized",
+      data_class: "health",
+    });
+    expect(real.provider.calls).toHaveLength(0);
+
+    // The SAME task, retried on the in-process fake: nothing leaves the process.
+    const retryId = await owner.withTransaction((tx) =>
+      requestAgentRun(
+        tx,
+        { tenantId: TENANT_A, source: SOURCE },
+        {
+          taskId: lead.taskId,
+          agentId: lead.agentId,
+          capability: LEAD_TRIAGE_CAPABILITY,
+          idempotencyKey: "dbtest-q8-in-process",
+          retryOfRunId: refusedId,
+        },
+      ),
+    );
+    await runAgentJob(registryServing(inProcess));
+
+    expect(await readGate(retryId)).toMatchObject({
+      status: "succeeded",
+      provider: "fake",
+      data_class: "health",
+      data_authorization_id: null,
+    });
+    const { rows } = await admin.query<{ data_class: string }>(
+      "select data_class from ops.tasks where id = $1",
+      [lead.taskId],
+    );
+    expect(rows[0].data_class).toBe("health");
+    expect(inProcess.calls).toHaveLength(1);
+    expect(real.provider.calls).toHaveLength(0);
+  });
+
   it("leaves synthetic data unaffected: it runs with no authorization and relies on none", async () => {
     const { provider, registry } = openaiNamedFake();
     const lead = await buildLead("synthetic");

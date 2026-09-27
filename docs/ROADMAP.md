@@ -573,7 +573,7 @@ A decision milestone, not an implementation, on the local branch `feature/q8-rea
 The owner answered D1–D10 (ADR 0020 §H) and the §G batch is built on the same branch. Read [PHASE_Q8_ENFORCEMENT_REPORT.md](PHASE_Q8_ENFORCEMENT_REPORT.md).
 
 - **The gate is at the model boundary.** `ops.start_agent_run` refuses, as `data_not_authorized` and before any call, a run whose task's class is neither synthetic nor test, unless an owner authorization is in force for exactly its tenant, class, capability, provider and model; the in-process fake is exempt. `ops.request_agent_run` refuses early with no job; the decision-shadow start runs the same check; the run guard enforces it on every write path (SI-70).
-- **Classification from provenance,** immutable (SI-71): synthetic, test, and `health` for any other lead or patient free text (D3); a direct task names a class or is `unclassified`.
+- **Classification from provenance,** immutable (SI-71): synthetic; `test` only from a sender the owner registered on a configured test channel (D8: a test channel is not test data); `health` for any other lead or patient free text (D3); a direct task names a class or is `unclassified`.
 - **Owner authorization,** versioned and tenant-scoped, recorded and retired only by `npm run ops -- data-auth` (D10). Person content needs every evidence reference, training excluded, at most 30 days of content retention, the CRM-owning tenant (D1) and a minimising capability (`lead_triage`).
 - **Minimisation** of the lead-triage input: a field allowlist and structured-identifier redaction, which is NOT anonymisation.
 - **Unchanged:** no authorization recorded; real patient model traffic STILL DISABLED; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED; no RAG.

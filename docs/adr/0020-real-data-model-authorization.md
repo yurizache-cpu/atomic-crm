@@ -55,7 +55,7 @@ The classes are a closed, tenant-neutral vocabulary about sensitivity and proven
 | Class | Examples here | External model (proposed) | Conditions | Content retention posture |
 | --- | --- | --- | --- | --- |
 | `synthetic` | fixtures, demos, the synthetic ingress | Allowed (today) | existing governance only | as today |
-| `test` | WhatsApp test-channel content | Allowed as today (D8) | owner's word that it is test data (ADR 0018) | as today |
+| `test` | a message on an owner-configured WhatsApp test channel FROM a sender the owner registered for it (D8) | Allowed as today | the owner's registration of a controlled test device; **a test channel is not test data** | as today |
 | `operational` | ids, stage codes, counts, instants, enums, capability names; no person's content | Allowed after an authorization (§D) | provider evidence recorded (§C) | metadata; normal retention |
 | `identifier` | name, phone / `contact_ref`, email, CRM contact id, WhatsApp id | **Never sent** (proposed) | removed by minimisation; the run id links the answer back, so no identifier is needed | stays in the CRM and ledger; not in prompts |
 | `person_text` | free text a lead or patient wrote (WhatsApp body, inbound email) | **Forbidden until D2 and D3** | if allowed: every §D condition, identifiers redacted, one capability, human review | content; limited retention (D6) |
@@ -89,7 +89,7 @@ Record each fact per provider, API product and model, from the provider's **curr
 ## D. Proposed runtime enforcement (the smallest fail-closed gate)
 
 1. **Classification at creation.** `ops.tasks.data_class` is a closed vocabulary set by the trusted creator and immutable afterwards:
-   - the admission path derives `synthetic` or `test` from the source kind and the channel mode, the derivation the decision shadow already uses;
+   - the admission path derives `synthetic` from the synthetic ingress, and `test` only for a message on a configured test channel from a registered test sender (D8, amended at the owner's review); every other person-originated text is `health` (D3);
    - a direct `ops.create_task` must name a class, and anything unnamed is `unclassified`;
    - existing rows are backfilled from their admission, and otherwise set `unclassified`.
 2. **Authorization as versioned owner data, the ADR 0017 pattern.** `ops.model_data_authorizations` is:
@@ -229,7 +229,7 @@ The owner answered §E for this implementation. Legal and provider evidence stay
 | D5 | For health: the contract covers the processing, a DPA, API data not used for training, zero data retention enabled (or an owner-approved equivalent; `store:false` is not it), exact provider/project/model evidence, retention behaviour verified. No OpenAI production access in this batch. | Every one is a required reference or `training_excluded = true` on a person-content authorization, bound to one provider and exact model; no provider configuration changed. |
 | D6 | AI working content: 30 days after the review that completes the flow. Not clinical-record retention. Redaction is a later batch. | `content_retention_days` between 1 and 30 on every person-content authorization; enforcement is the next batch. |
 | D7 | (a) redact content in place, keep non-content audit evidence; never hard-delete audit history. | Next batch. This one deletes nothing and keeps every version and run row. |
-| D8 | Test channels must eventually require registered test senders; production WhatsApp unchanged; ADR 0018 stays an independent gate. | Not built (not needed for the gate); the admission classes a test channel's text `test`. ADR 0018 unchanged. |
+| D8 | **A test channel is not test data** (made precise at the owner's review of the batch, 2026-09-27). Person-originated free text is `test` only when BOTH the ingress is an explicitly configured test channel AND the sender is an explicitly registered test sender; any other person-originated text, an unknown sender on a test channel included, is `health`. Trusted internal fixtures and the synthetic ingress keep producing `synthetic` or `test`. Production WhatsApp unchanged; ADR 0018 stays an independent gate. | `ops.communication_test_senders`: owner-only registrations of a sender on one test channel, retired once, never a migration row or the browser (`ops.register_test_sender`, `ops.retire_test_sender`). `ops.admit_inbound_core` classifies `test` only through `ops.registered_test_sender`; the sender is the provider's signed attestation, never the message. No content inspection. ADR 0018 unchanged. |
 | D9 | A documented international-transfer mechanism for real sensitive data; until it exists, deny; the generic DPA is not assumed to satisfy it. | `transfer_mechanism_ref` is required for person content; none is recorded. |
 | D10 | (a) owner-only CLI act; every record and retire auditable; no browser authority. | `npm run ops -- data-auth` (`list`, `record`, `retire`); SI-39 extended; immutable versions retired once, on the record; no `company_os_api` function reaches the table. |
 

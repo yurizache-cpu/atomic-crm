@@ -11,6 +11,7 @@ Q8 was held at ingress and by convention. `ops.start_agent_run` checked the kill
 ## 2. What was built
 
 - **Classification:** `ops.tasks.data_class` is a closed vocabulary: `synthetic`, `test`, `operational`, `identifier`, `person_text`, `health`, `clinical_record`, `derived` and `unclassified`. It is set from provenance and immutable (SI-71).
+- **Registered test senders (D8, owner review correction):** `ops.communication_test_senders`. **A test channel is not test data:** a person's message is `test` only from a sender the owner registered on a configured test channel.
 - **Authorization:** `ops.model_data_authorizations` holds versioned, tenant-scoped owner data. It is RLS-forced with no grant, immutable except for one retirement, and never written by a migration.
 - **The check:** `ops.model_data_authorized` is the one check, built on `ops.model_data_authorization_in_force`, with `ops.model_data_class_admissible` for the early refusal.
 - **Where the gate runs:** in `ops.start_agent_run` (the authority), in `ops.request_agent_run` (early, on the record, with no job) and in `ops.start_shadow_decision`.
@@ -76,15 +77,16 @@ A class comes **from provenance, assigned by trusted server code**, never from a
 | Source | Class |
 | --- | --- |
 | Synthetic ingress (`source_kind = 'synthetic'`) | `synthetic` |
-| WhatsApp message on an owner-configured **test** channel | `test` |
-| Any other free text a lead or patient wrote (D3; today unreachable, the production channel cannot be active) | `health` |
+| WhatsApp message on an owner-configured **test** channel **from a registered test sender** (D8) | `test` |
+| Any other free text a lead or patient wrote (D3), **an unknown sender on a test channel included** | `health` |
 | `ops.create_task` naming a class (owner credential, trusted server code) | that class |
 | `ops.create_task` naming none | `unclassified` (denied) |
 
+- **Test channel != test data (D8):** a test number can be written to by anyone, so the channel alone proves nothing. The registration is owner data (`ops.register_test_sender`, `ops.retire_test_sender`): tied to one test channel, retired once, never a migration row, unreachable from the browser. The sender is the provider's signed attestation in the webhook, never a value in the message. Nothing reads the content to downgrade it.
 - **Immutable:** an `ENABLE ALWAYS` trigger refuses any change of `ops.tasks.data_class`, the owner's included. The same idempotency key under another class is refused, never answered with a task of the wrong class.
 - **The run's class:** an agent run takes its class from its task in the insert guard (the caller's value is ignored) and keeps it for life.
 - **Backfill:**
-  - an open admitted task took its admission's class;
+  - an open admitted task took `synthetic` from the synthetic ingress, and `health` from WhatsApp, because no test sender can be registered before the migration;
   - a closed task is immutable, can never run again, and stays `unclassified`;
   - unfinished runs took their task's class;
   - finished runs recorded before this gate carry none.
@@ -145,6 +147,8 @@ All local, on the isolated e2e stack, with synthetic data and fake evidence refe
 | `scripts/production-scope.mjs`, `scripts/dev-signing-key.mjs` | OK |
 
 - **Not run:** the e2e suite and the `app` and `claude` projects (the batch touches neither `src/` nor `.claude/`). The historical baseline stays e2e 9 failed / 1 skipped and Prettier 2 errors.
+
+**D8 correction (owner review, focused and affected suites only):** the Q8 SQL suite gains section M (registered sender on a test channel → `test`; an unknown sender on the same line → `health` even when the message claims to be a test; a lead on a line with no registration → `health`; a retired registration → `health`; registration only on a test line, only by the owner, never through the browser) and asserts that the in-process fake keeps a `health` task `health`. The driver-backed suite gains the same-task case (refused before any call for a real-looking provider, then run on the fake relying on no authorization, still `health`): 7/7. After the patch, with a clean reset: `test:db` 22/22 suites; `test:db:engine` 53 files, 398/398 (397 before, plus that case); security invariants and the migration guards 344/344 (invariants 78/78); typecheck exit 0; ESLint on the changed files clean. The fixtures that admit WhatsApp test traffic now register their synthetic senders.
 - **Fixtures changed:** existing fixtures that ran unclassified tasks now declare `synthetic` (they are synthetic by construction). Pins updated as reviewed changes:
   - the `create_task` signature;
   - the reserved error codes;
@@ -188,6 +192,8 @@ Only once those exist can one owner `data-auth record` name them, and even then 
 4. **Minimisation applies to synthetic data too** (`lead_triage.v2`), so there is one code path.
 5. **A retired version is deletable only while no run relied on it,** following the spend-limit pattern.
 6. **Legacy rows:** closed tasks stay `unclassified`, and runs finished before the gate carry no class.
+7. **The early refusal applies to the fake too.** A `health` task gets a job only when some provider is authorized for its class and capability (ADR 0020 §D4, defence in depth); on that job the in-process fake runs it without relying on the authorization, and the task stays `health`. Testing `health` on the fake with no authorization at all would need the early refusal moved to the start only: an owner decision, not taken here.
+8. **Registering a test sender is an owner SQL act** (`ops.register_test_sender`, `ops.retire_test_sender`), like the commercial bridge's configuration; no CLI command yet.
 
 ## 12. Next
 

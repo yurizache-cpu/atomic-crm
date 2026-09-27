@@ -90,6 +90,8 @@ const acceptedReview = async (
     owner,
     options.tenantId ?? TENANT_A,
     options.target ?? TARGET_A,
+    "test",
+    [LEAD],
   );
   const contactId = await addCrmContact(admin, LEAD);
   await deliver(
@@ -178,7 +180,9 @@ describe("the human boundary", () => {
   it.each(["rejected", "needs_edit", "pending"] as const)(
     "a %s review cannot be sent",
     async (decision) => {
-      const clinic = await buildClinic(owner, TENANT_A, TARGET_A);
+      const clinic = await buildClinic(owner, TENANT_A, TARGET_A, "test", [
+        LEAD,
+      ]);
       await addCrmContact(admin, LEAD);
       await deliver(
         gateway,

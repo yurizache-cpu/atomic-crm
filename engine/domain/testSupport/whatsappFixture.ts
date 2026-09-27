@@ -97,13 +97,16 @@ export interface Clinic {
 /**
  * One company, one triage agent, and one WhatsApp channel on `providerTarget`.
  * A production channel is configured inactive: the BASELINE Q8 real-data gate
- * is closed, so it can be nothing else.
+ * is closed, so it can be nothing else. `testSenders` are registered as the
+ * test line's controlled test devices (owner decision D8: a test channel is not
+ * test data, so any other sender's message is presumed health).
  */
 export async function buildClinic(
   owner: WorkerDatabase,
   tenantId: string,
   providerTarget: string,
   mode: ChannelMode = "test",
+  testSenders: readonly string[] = [],
 ): Promise<Clinic> {
   return owner.withTransaction(async (tx) => {
     const ctx = { tenantId, source: SOURCE };
@@ -134,6 +137,13 @@ export async function buildClinic(
       actor: "dbtest",
       active: mode === "test",
     });
+    for (const sender of testSenders) {
+      await tx.query("select ops.register_test_sender($1, $2, $3, 'dbtest')", [
+        tenantId,
+        channelId,
+        sender,
+      ]);
+    }
     return { tenantId, companyId, agentId, channelId, providerTarget };
   });
 }

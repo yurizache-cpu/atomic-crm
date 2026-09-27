@@ -388,6 +388,11 @@ begin
     t, co, ag_triage, p_target || '2', 'production', 'Production ' || upper(k), 'sentinel-' || k || '-configured-by', false));
   ch_test2 := pg_temp.remember(k || '.channel_test2', ops.configure_whatsapp_channel(
     t, co, ag_triage, p_target || '3', 'test', 'Second test ' || upper(k), 'sentinel-' || k || '-configured-by'));
+  -- D8: a test channel is not test data. The fixture's synthetic senders are
+  -- registered as the controlled test devices of their lines.
+  perform ops.register_test_sender(t, ch_test, p_phone || '1', 'sentinel-' || k || '-configured-by');
+  perform ops.register_test_sender(t, ch_test, p_phone || '2', 'sentinel-' || k || '-configured-by');
+  perform ops.register_test_sender(t, ch_test2, p_phone || '3', 'sentinel-' || k || '-configured-by');
 
   -- Runs, one per state.
   -- succeeded, with its review opened after the settlement (pending)

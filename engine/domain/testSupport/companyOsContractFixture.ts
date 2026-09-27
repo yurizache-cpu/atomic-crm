@@ -500,10 +500,19 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
   );
 
   // Channels: an active test line and an inactive production one.
-  await tx.query(
-    "select ops.configure_whatsapp_channel($1, $2, $3, $4, 'test', 'Synthetic test line', $5)",
+  const testLine = await one<string>(
+    tx,
+    "select ops.configure_whatsapp_channel($1, $2, $3, $4, 'test', 'Synthetic test line', $5) as v",
     [tenantId, clinic, triage.id, providerTarget, ACTOR],
   );
+  // D8: a test channel is not test data. The fixture's synthetic sender is
+  // registered as the line's controlled test device.
+  await tx.query("select ops.register_test_sender($1, $2, $3, $4)", [
+    tenantId,
+    testLine,
+    PHONE,
+    ACTOR,
+  ]);
   await tx.query(
     "select ops.configure_whatsapp_channel($1, $2, $3, $4, 'production', 'Production line', $5, false)",
     [tenantId, clinic, triage.id, "38" + digits, ACTOR],

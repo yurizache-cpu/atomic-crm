@@ -3801,7 +3801,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-71",
     statement:
-      "A task's data class is assigned at creation by its trusted creator and never changes: the admission derives it from provenance (synthetic from the synthetic ingress, test from an owner-configured test channel, health for any other free text a lead or patient wrote), never from a payload, the browser or the content; a direct ops.create_task names a class from the closed classification or creates an unclassified task, which no model may read, and the same idempotency key under another class is refused; an ENABLE ALWAYS trigger refuses any change of the class, the owner's included; and an agent run takes its class from its task, never from its caller, fixed at its creation.",
+      "A task's data class is assigned at creation by its trusted creator and never changes: the admission derives it from provenance (synthetic from the synthetic ingress; test only for a message on an owner-configured test channel from a sender the owner registered for that channel, because a test channel is not test data; health for any other free text a lead or patient wrote, an unknown sender on a test channel included), never from a payload, the browser or the content, and a test sender is registered and retired only with the owner's credential; a direct ops.create_task names a class from the closed classification or creates an unclassified task, which no model may read, and the same idempotency key under another class is refused; an ENABLE ALWAYS trigger refuses any change of the class, the owner's included; and an agent run takes its class from its task, never from its caller, fixed at its creation.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -3821,6 +3821,24 @@ const INVARIANTS: Invariant[] = [
         marker: /L1: a synthetic admission did not become a synthetic task/,
       },
       {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /M1: a registered test sender on a test channel did not produce test data/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /M2: an unknown sender on a test channel was not presumed health/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /M5: % can reach the test-sender registry/,
+      },
+      {
+        file: "supabase/migrations/20261001120000_model_data_authorization.sql",
+        marker: /Q8 enforcement shipped a registered test sender/,
+      },
+      {
         file: "supabase/migrations/20261001120000_model_data_authorization.sql",
         marker:
           /a task''s data class is fixed at creation by its trusted creator/,
@@ -3832,7 +3850,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "The owner's credential stays the trust root: it states the class of a task it creates directly, and it can disable triggers (SI-22). A WhatsApp test channel still rests on the owner's word that its numbers carry test data; restricting it to registered test senders (owner decision D8) is not built yet. A task closed before this migration is immutable and stays unclassified.",
+      "The owner's credential stays the trust root: it states the class of a task it creates directly, and it can disable triggers (SI-22). A registered test sender rests on the owner's word that the number is a controlled test device, and on the provider's attestation of the sender in its signed webhook; registering one is an owner SQL act (ops.register_test_sender), with no CLI command yet. A task closed before this migration is immutable and stays unclassified.",
   },
 ];
 

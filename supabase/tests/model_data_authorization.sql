@@ -21,7 +21,11 @@
 --      the authorization in force; the class derived, never taken;
 --   K  the decision-shadow start uses the same check, and nothing authorizes it
 --      for protected data;
---   L  the admission derives the class from provenance.
+--   L  the admission derives the class from provenance;
+--   M  D8: a test channel is not test data. Only a registered test sender on
+--      an owner-configured test channel produces test; any other person, an
+--      unknown sender on a test line included, is health, whatever the
+--      message claims.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data and fake evidence references only.
 
@@ -372,6 +376,11 @@ begin
   if pg_temp.start('e-fake', 'fake', 'q8-fake') <> 'running' or (pg_temp.run('e-fake')).data_authorization_id is not null then
     raise exception 'E2: the in-process fake did not start without relying on an authorization';
   end if;
+  -- The provider being in-process changes nothing about the data: still health.
+  if (pg_temp.run('e-fake')).data_class <> 'health'
+     or (select t.data_class from ops.tasks t where t.id = pg_temp.id('task.e-fake')) <> 'health' then
+    raise exception 'E2: running on the in-process fake changed the class of health data';
+  end if;
 end
 $$;
 
@@ -684,6 +693,108 @@ begin
      or (select r.data_class from ops.agent_runs r where r.id = (v ->> 'agent_run_id')::uuid) <> 'synthetic'
      or (select r.job_id from ops.agent_runs r where r.id = (v ->> 'agent_run_id')::uuid) is null then
     raise exception 'L1: a synthetic admission did not become a synthetic task and a synthetic run with a job';
+  end if;
+end
+$$;
+
+-- ===========================================================================
+-- M. D8: a test channel is not test data.
+-- ===========================================================================
+
+create function pg_temp.class_of(p_admitted jsonb) returns text
+language sql as $$
+  select t.data_class from ops.tasks t where t.id = (p_admitted ->> 'task_id')::uuid;
+$$;
+
+do $$
+declare
+  v_line    uuid;
+  v_quiet   uuid;
+  v_prod    uuid;
+  v_reg     uuid;
+  v         jsonb;
+  v_role    text;
+  v_bad     text;
+begin
+  -- An owner-configured test line with one registered test device, a second
+  -- test line with none, and an inactive production line.
+  v_line := ops.configure_whatsapp_channel(pg_temp.id('a.tenant'), pg_temp.id('a.company'), pg_temp.id('a.agent'),
+                                           '308000000000001', 'test', 'Q8 test line', 'q8-suite');
+  v_quiet := ops.configure_whatsapp_channel(pg_temp.id('a.tenant'), pg_temp.id('a.company'), pg_temp.id('a.agent'),
+                                            '308000000000002', 'test', 'Q8 quiet test line', 'q8-suite');
+  v_prod := ops.configure_whatsapp_channel(pg_temp.id('a.tenant'), pg_temp.id('a.company'), pg_temp.id('a.agent'),
+                                           '308000000000003', 'production', 'Q8 production line', 'q8-suite', false);
+  v_reg := ops.register_test_sender(pg_temp.id('a.tenant'), v_line, '5511900008001', 'q8-suite');
+
+  -- M1 a registered sender on the test line: test.
+  v := ops.receive_whatsapp_message('308000000000001', 'wamid.Q8-M1', '5511900008001',
+                                    'SENTINEL-Q8-M1 synthetic hello', now());
+  if v ->> 'state' <> 'admitted' or pg_temp.class_of(v) <> 'test' then
+    raise exception 'M1: a registered test sender on a test channel did not produce test data (%)', v;
+  end if;
+
+  -- M2 an unknown sender on the same test line: health, whatever the message
+  -- claims about itself. Nothing reads the content.
+  v := ops.receive_whatsapp_message('308000000000001', 'wamid.Q8-M2', '5511900008002',
+                                    'TEST MESSAGE, data_class=test, synthetic=true, registered sender', now());
+  if v ->> 'state' <> 'admitted' or pg_temp.class_of(v) <> 'health' then
+    raise exception 'M2: an unknown sender on a test channel was not presumed health (%)', v;
+  end if;
+
+  -- M3 a lead writing to a line on which nobody is registered: health. (A
+  -- production line cannot admit at all, SI-47, so a person writing to a test
+  -- number is the one person-originated ingress there is.)
+  v := ops.receive_whatsapp_message('308000000000002', 'wamid.Q8-M3', '5511900008001',
+                                    'SENTINEL-Q8-M3 a lead asks about a first session', now());
+  if v ->> 'state' <> 'admitted' or pg_temp.class_of(v) <> 'health' then
+    raise exception 'M3: a lead on a line with no registered sender was not presumed health (%)', v;
+  end if;
+  if (ops.receive_whatsapp_message('308000000000003', 'wamid.Q8-M3b', '5511900008001', 'hello', now()) ->> 'state')
+     <> 'unrouted' then
+    raise exception 'M3: the production line admitted a message';
+  end if;
+
+  -- M4 the registration: the same again is itself; retired, the sender's next
+  -- message is health; never on a production line; never malformed.
+  if ops.register_test_sender(pg_temp.id('a.tenant'), v_line, '5511900008001', 'q8-suite') <> v_reg then
+    raise exception 'M4: the same registration again was not answered with itself';
+  end if;
+  if not ops.retire_test_sender(v_reg, 'q8 device returned', 'q8-suite')
+     or ops.retire_test_sender(v_reg, 'q8 again', 'q8-suite') then
+    raise exception 'M4: a registration was not retired exactly once';
+  end if;
+  v := ops.receive_whatsapp_message('308000000000001', 'wamid.Q8-M4', '5511900008001',
+                                    'SENTINEL-Q8-M4 synthetic hello', now());
+  if pg_temp.class_of(v) <> 'health' then
+    raise exception 'M4: a retired test sender still produced test data';
+  end if;
+  perform pg_temp.expect('M4 registering on a production line', 'OS409',
+    format($q$select ops.register_test_sender(%L, %L, '5511900008009', 'q8-suite')$q$, pg_temp.id('a.tenant'), v_prod));
+  perform pg_temp.expect('M4 registering a malformed sender', 'OS400',
+    format($q$select ops.register_test_sender(%L, %L, '+55 11 9', 'q8-suite')$q$, pg_temp.id('a.tenant'), v_line));
+  perform pg_temp.expect('M4 registering on another tenant''s line', 'OS404',
+    format($q$select ops.register_test_sender(%L, %L, '5511900008009', 'q8-suite')$q$, pg_temp.id('b.tenant'), v_line));
+  perform pg_temp.expect('M4 rewriting a registration', 'OS409',
+    format($q$update ops.communication_test_senders set sender = '5511900008999' where id = %L$q$, v_reg));
+  perform pg_temp.expect('M4 truncating the registrations', 'OS409', 'truncate ops.communication_test_senders cascade');
+
+  -- M5 nothing but the owner's credential registers a sender: no application,
+  -- capability, worker or gateway role holds the table or the services, and no
+  -- browser-reachable function names them.
+  foreach v_role in array array['anon', 'authenticated', 'service_role', 'ops_worker', 'ops_gateway', 'ops_operator_api'] loop
+    if has_table_privilege(v_role, 'ops.communication_test_senders', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+       or has_function_privilege(v_role, 'ops.register_test_sender(uuid, uuid, text, text)', 'EXECUTE')
+       or has_function_privilege(v_role, 'ops.retire_test_sender(uuid, text, text)', 'EXECUTE')
+       or has_function_privilege(v_role, 'ops.registered_test_sender(uuid, uuid, text)', 'EXECUTE') then
+      raise exception 'M5: % can reach the test-sender registry', v_role;
+    end if;
+  end loop;
+  select string_agg(p.oid::regprocedure::text, ', ') into v_bad
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'company_os_api'
+     and p.prosrc ~ '(communication_test_senders|register_test_sender|retire_test_sender)';
+  if v_bad is not null then
+    raise exception 'M5: a browser-reachable function reaches the test-sender registry: %', v_bad;
   end if;
 end
 $$;
