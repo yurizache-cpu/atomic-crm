@@ -18,6 +18,9 @@ import {
 import {
   ACTS,
   AUTH_USER,
+  DATA_AUTH_RECORD,
+  DATA_AUTH_RETIRE,
+  DATA_AUTHORIZATION,
   DECISION_RECOVER,
   LIMIT,
   LIMIT_RETIRE,
@@ -83,6 +86,12 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   }
   if (sql.includes("ops.revoke_membership")) {
     return [{ result: { membershipId: MEMBERSHIP, revoked: true } }];
+  }
+  if (sql.includes("ops.record_model_data_authorization")) {
+    return [{ result: DATA_AUTHORIZATION }];
+  }
+  if (sql.includes("ops.retire_model_data_authorization")) {
+    return [{ result: true }];
   }
   if (sql.includes("ops.record_review_decision")) {
     // The decision is params[2]: the subcommand chose it, and it reaches the
@@ -195,6 +204,16 @@ describe("running the operator tool", () => {
     ["decision recover", DECISION_RECOVER, "ops.recover_shadow_decision"],
     ["membership grant", MEMBERSHIP_GRANT, "ops.grant_membership"],
     ["membership revoke", MEMBERSHIP_REVOKE, "ops.revoke_membership"],
+    [
+      "data-auth record",
+      DATA_AUTH_RECORD,
+      "ops.record_model_data_authorization",
+    ],
+    [
+      "data-auth retire",
+      DATA_AUTH_RETIRE,
+      "ops.retire_model_data_authorization",
+    ],
   ])(
     "runs %s as one parameterised function call in a writable transaction",
     async (_name, argv, fn) => {
@@ -231,6 +250,8 @@ describe("running the operator tool", () => {
       { result: "created", reviewItemId: REVIEW, evaluationId: EVALUATION },
       { principalId: PRINCIPAL, membershipId: MEMBERSHIP, recorded: true },
       { membershipId: MEMBERSHIP, revoked: true },
+      { result: "recorded", authorizationId: DATA_AUTHORIZATION },
+      { result: "retired", authorizationId: DATA_AUTHORIZATION },
     ]);
   });
 
@@ -246,6 +267,8 @@ describe("running the operator tool", () => {
       "decision recover",
       "membership grant",
       "membership revoke",
+      "data-auth record",
+      "data-auth retire",
     ]);
     const actKinds = ACTS.map((argv) => {
       const command = parseOperatorArgs(argv);

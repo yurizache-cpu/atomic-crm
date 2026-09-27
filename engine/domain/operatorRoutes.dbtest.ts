@@ -119,6 +119,7 @@ function buildWorstCaseOffice(): Promise<GovernedOffice> {
       companyId,
       departmentId,
       type: "a".repeat(100),
+      dataClass: "synthetic",
       title: escaped(300),
       description: escaped(10_000),
       priority: 1000,

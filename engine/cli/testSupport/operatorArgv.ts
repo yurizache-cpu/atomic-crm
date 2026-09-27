@@ -8,6 +8,7 @@ export const REVIEW = "e0000000-0000-4000-8000-00000000000e";
 export const AUTH_USER = "f0000000-0000-4000-8000-00000000000f";
 export const PRINCIPAL = "a1000000-0000-4000-8000-0000000000a1";
 export const MEMBERSHIP = "b1000000-0000-4000-8000-0000000000b1";
+export const DATA_AUTHORIZATION = "c1000000-0000-4000-8000-0000000000c1";
 
 /** The command words, then each flag as `--name value`, in the order given. */
 const argv = (
@@ -51,6 +52,8 @@ export const READS: readonly (readonly string[])[] = [
   ["triage", "show", "--id", REVIEW, "--tenant", TENANT],
   ["membership", "list"],
   ["membership", "list", "--tenant", TENANT, "--limit", "20"],
+  ["data-auth", "list"],
+  ["data-auth", "list", "--tenant", TENANT, "--all"],
 ];
 
 /** READS[RUNS_WITH_OPTIONS] is `runs` with a tenant, a status and a limit. */
@@ -126,6 +129,34 @@ export const MEMBERSHIP_REVOKE = argv("membership revoke", {
   reason: "pilot ended",
 });
 
+/** Every field of a person-content authorization, with FAKE evidence references. */
+export const DATA_AUTH_RECORD = argv("data-auth record", {
+  tenant: TENANT,
+  class: "health",
+  capability: "lead_triage",
+  provider: "openai",
+  model: "gpt-fixture-2026-09-01",
+  "valid-from": "2026-10-01T00:00:00Z",
+  "expires-at": "2026-12-01T00:00:00Z",
+  "evidence-ref": "fixture:provider-evidence:v1",
+  "evidence-verified-at": "2026-09-30T00:00:00Z",
+  "training-excluded": "yes",
+  "contract-ref": "fixture:contract:v1",
+  "dpa-ref": "fixture:dpa:v1",
+  "zero-retention-ref": "fixture:zdr:v1",
+  "retention-evidence-ref": "fixture:retention:v1",
+  "transfer-ref": "fixture:transfer:v1",
+  "lawful-basis-ref": "fixture:consent:v1",
+  "content-retention-days": "30",
+  actor: "owner",
+});
+
+export const DATA_AUTH_RETIRE = argv("data-auth retire", {
+  id: DATA_AUTHORIZATION,
+  reason: "evidence withdrawn",
+  actor: "owner",
+});
+
 /**
  * Every mutation the tool offers, SI-39's act allowlist in its order: the price
  * and spend-limit acts, Phase 2A's three review decisions and the review
@@ -144,6 +175,8 @@ export const ACTS: readonly (readonly string[])[] = [
   DECISION_RECOVER,
   MEMBERSHIP_GRANT,
   MEMBERSHIP_REVOKE,
+  DATA_AUTH_RECORD,
+  DATA_AUTH_RETIRE,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

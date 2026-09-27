@@ -14,10 +14,13 @@
 // at this now" and nothing more. That flag is a routing signal, never an
 // assessment — the model is not qualified to make one and is told so.
 //
-// Q8 (BASELINE): Phase 2A admits SYNTHETIC messages only
-// (ops.inbound_messages.source_kind), so no real message body reaches a
-// provider through this capability. That constraint is enforced in the database
-// and by the ingress, not by this prompt.
+// Q8 (BASELINE): the database decides whether the task's data may reach the
+// provider at all (ops.start_agent_run, ADR 0020; SI-70), never this prompt.
+// What this builder adds is minimisation (ADR 0020 §D8): the input document
+// carries only the fields triage needs, the message with its structured
+// identifiers (e-mail, URL, CPF-shaped and phone-shaped numbers) removed, and a
+// constant title. That is NOT anonymisation: names and stories stay in the text,
+// and the data keeps its class (identifierRedaction.ts).
 //
 // THREE copies of the same envelope rules exist, deliberately:
 //   * the JSON schema, which asks the provider to constrain generation;
@@ -27,6 +30,7 @@
 
 import { z } from "zod";
 import { defineOutputContract, type OutputContract } from "./outputContract.ts";
+import { redactNullable } from "./identifierRedaction.ts";
 import {
   AGENT_LABEL_MAX_LENGTH,
   boundedText,
@@ -37,7 +41,8 @@ import {
 } from "./promptText.ts";
 
 export const LEAD_TRIAGE_CAPABILITY = "lead_triage";
-export const LEAD_TRIAGE_PROMPT_VERSION = "lead_triage.v1";
+// v2 (ADR 0020 §D8): the minimised input document.
+export const LEAD_TRIAGE_PROMPT_VERSION = "lead_triage.v2";
 
 export type LeadTriageOutcome = "triaged" | "needs_input" | "out_of_scope";
 export type LeadTriageIntent =
@@ -253,12 +258,21 @@ export function buildLeadTriagePrompt(
   const role = truncateText(context.agent.role, AGENT_LABEL_MAX_LENGTH);
 
   // The key order here is the byte order of the prompt, and the request
-  // fingerprint is computed over it.
-  const { agent, task } = promptDocumentFields(context);
+  // fingerprint is computed over it. The allowlist: the agent's labels and the
+  // task's type, constant title and message, never its priority or due date.
+  // Identifiers are redacted BEFORE the truncation, so a cut can never leave
+  // half an address the patterns no longer recognise.
+  const { agent, task } = promptDocumentFields({
+    agent: context.agent,
+    task: {
+      ...context.task,
+      description: redactNullable(context.task.description),
+    },
+  });
   const document = {
     capability: LEAD_TRIAGE_CAPABILITY,
     agent,
-    task,
+    task: { type: task.type, title: task.title, description: task.description },
   };
 
   return Object.freeze({

@@ -113,7 +113,7 @@ const OFFICE_A = `
   select ops.create_agent(:'tenant_a', :'company_a', :'department_a', 'probe-assistant', 'Probe assistant',
                           '${SENTINELS.agentRole}', '${SOURCE}', '${SENTINELS.agentDescription}') as agent_a \\gset
   select ops.create_task(:'tenant_a', :'company_a', 'office_follow_up', '${SENTINELS.taskTitle}', '${SOURCE}',
-                         '${SENTINELS.taskBody}', :'department_a') as task_a \\gset
+                         '${SENTINELS.taskBody}', :'department_a', p_data_class => 'synthetic') as task_a \\gset
   select ops.assign_task(:'tenant_a', :'task_a', :'agent_a', '${SOURCE}');`;
 
 // The probe's own platform price row, which only its runs reference.
@@ -242,7 +242,7 @@ const OFFICE_B = `
   select ops.create_agent(:'tenant_b', :'company_b', :'department_b', 'probe-assistant-b', '${SENTINELS.agentB}',
                           'Assistant', '${SOURCE}') as agent_b \\gset
   select ops.create_task(:'tenant_b', :'company_b', 'office_follow_up', '${SENTINELS.taskTitleB}', '${SOURCE}',
-                         '${SENTINELS.taskBodyB}', :'department_b') as task_b \\gset
+                         '${SENTINELS.taskBodyB}', :'department_b', p_data_class => 'synthetic') as task_b \\gset
   select ops.assign_task(:'tenant_b', :'task_b', :'agent_b', '${SOURCE}');
   select ops.push_event_context('${SOURCE}', :'correlation_b', null);
   insert into ops.agent_runs (tenant_id, company_id, department_id, task_id, agent_id, capability, model_route,

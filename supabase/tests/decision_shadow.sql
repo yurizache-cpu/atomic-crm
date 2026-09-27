@@ -228,9 +228,12 @@ begin
   perform pg_temp.review('b', tb, cob, agb, pg_temp.triage('triaged', 'information', 'normal', '[]'));
 
   -- A lead triage review of a task NO synthetic or test admission created: the
-  -- stand-in for a real-origin review while BASELINE Q8 is open.
+  -- stand-in for a real-origin review while BASELINE Q8 is open. The fixture
+  -- task declares the synthetic class (ADR 0020), so its run can succeed; with no
+  -- admission, the shadow's origin gate is what this case proves.
   task := ops.create_task(ta, co, 'lead_triage', 'Lead triage: real origin', 'ds-suite',
-                          'SENTINEL-DS-REAL-BODY', null, null, 100, null, null, null, 'ds-real-origin');
+                          'SENTINEL-DS-REAL-BODY', null, null, 100, null, null, null, 'ds-real-origin',
+                          'synthetic');
   perform ops.assign_task(ta, task, ag, 'ds-suite');
   run := ops.request_agent_run(ta, task, ag, 'lead_triage', 'ds-real-origin', 'ds-suite');
   select r.job_id into job from ops.agent_runs r where r.id = run;

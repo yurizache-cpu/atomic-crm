@@ -405,6 +405,7 @@ async function requestSmokeRun(tx: TxClient, now: Date): Promise<SmokeRequest> {
     companyId: found.company_id,
     departmentId: found.department_id,
     type: "operations.supply_order",
+    dataClass: "synthetic",
     title: "Prepare next week's office supply order",
     description: "Paper, toner and coffee are running low.",
   });
