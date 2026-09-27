@@ -2,7 +2,7 @@
 
 | | |
 | --- | --- |
-| **Status** | **OWNER VISUAL REVIEW PASS (2026-09-27); READY FOR THE SINGLE REMOTE INTEGRATION CYCLE.** Six implementation and documentation commits on `feature/phase-3b2-operational-funnel` (`62cebbd2`, `7c62fb39`, `4087595b`, `9e386c0d`, `d0babcbc`, `14fc0ab2`), plus this reconciliation (§17). *(Superseded wording: "implemented locally; owner visual review required".)* |
+| **Status** | **PHASE 3B.2: INTEGRATED (2026-09-27).** PR #15, normal merge `336802ecd36e6961b896bdb7300bdce04bfeef7c` into `feature/clinical-phase-1`; post-merge core CI PASS; no new regression (§18). Six implementation and documentation commits on `feature/phase-3b2-operational-funnel` (`62cebbd2`, `7c62fb39`, `4087595b`, `9e386c0d`, `d0babcbc`, `14fc0ab2`) and the visual-review reconciliation `726f4a3c` (§17). *(Superseded wording: "implemented locally; owner visual review required", then "owner visual review PASS; ready for the single remote integration cycle".)* |
 | **Base** | `feature/clinical-phase-1` at `8aa65873247e34e1753f61e6f67b16ce93114e7e`, the PR #14 merge that integrated Phase 3B.1. Post-merge CI Check #78 (run 36204665177): Build, Test, Typecheck, ESLint and Database security & reproducibility passed; only the historical e2e baseline (9 failed, 1 skipped) and the Prettier baseline (`sampleCsv.test.ts`, `canAccess.test.ts`) are red. `main` is unchanged at `a863e2a0`. |
 | **Branch** | `feature/phase-3b2-operational-funnel` |
 | **Governing records** | The Phase 3B.2 brief (controlled batch, 2026-09-26); **owner decision R** (commercial browser authority; [DECISIONS.md](DECISIONS.md), [ADR 0019](adr/0019-company-os-operator-surface.md) "Owner decision R"); [ADR 0013](adr/0013-pipeline-stages-are-configuration.md); CLAUDE.md's five rules. |
@@ -195,3 +195,14 @@ The owner exercised the operational Funil comercial by hand on the local synthet
 **Carried without change (not expanded in the integration cycle):** legacy outcome consistency (§14 item 4); the canonical next action (§14 item 1); commercial RBAC, tenant-wide today (§14 item 2); follow-up bridge administration (§15); the review's P3 residuals (§11). A final integration review changes them only for a real P0 or P1.
 
 **Before the push:** the dev server stopped, the synthetic owner signed out and the browser storage cleared, the e2e database reset to its seed (no auth user, deal, membership, follow-up plan, bridge, act row or job remains), the temporary `.claude/launch.json` entry reverted, and the scratch sign-in files removed; the committed demo tooling is kept. No implementation changed, so the §10 evidence stands.
+
+## 18. Integration (2026-09-27): INTEGRATED
+
+- **Merge.** PR #15 (`feature/phase-3b2-operational-funnel` → `feature/clinical-phase-1`, 7 commits, head `726f4a3c33651593ccee4782af729283008298cb`) was merged on 2026-09-27 with a normal merge commit, `336802ecd36e6961b896bdb7300bdce04bfeef7c`. Its parents are `8aa65873` and `726f4a3c`, and its tree equals the reviewed head's. The source branch is retained at `726f4a3c`. `main` is unchanged at `a863e2a084fae8c7adf7a2efc547ad7ce38e699b`.
+- **Final integration review** (one focused pass over the two migrations and the act hook): P0 0, P1 0. The Codex bot's two P2 comments on `src/company-os/query/useCommercialAct.ts` are recorded, not fixed. First, after an uncertain result whose refresh also failed, the screen still says the funnel was updated. Second, every OS409 reads as a stale opportunity (the §11 P3). The server's revision check makes a stale retry harmless in both cases.
+- **Post-merge CI:** Check #81, run 36349867884, on `336802ec`. Test, Build, Typecheck, ESLint and Database security & reproducibility PASS. The workflow's overall conclusion is still failure, only because of the accepted historical baseline:
+  - e2e: exactly 9 failed and 1 skipped, the same cases by name;
+  - Prettier: exactly the 2 historical errors, `sampleCsv.test.ts` and `canAccess.test.ts`.
+
+  The PR's own run on `726f4a3c` had the same result. There is no new regression.
+- **Unchanged:** Q8 OPEN; no real patient data was used; no production deploy occurred.
