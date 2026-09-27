@@ -684,7 +684,7 @@ declare
     'ops.fail_agent_run(text, text, text, text, text, integer, integer, integer, integer, integer, integer)',
     'ops.settle_stale_agent_runs()']::regprocedure[];
   c_owner_services constant regprocedure[] := array[
-    'ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid)',
+    'ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid, text)',
     'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)',
     'ops.clear_execution_stop(uuid, text, text)',
     'ops.active_execution_stop(uuid, uuid, uuid, uuid)',
@@ -3184,7 +3184,8 @@ declare
   c_reserved constant text[] := array['execution_stopped', 'execution_interrupted', 'database_contract',
                                       'job_failed', 'job_ended_before_start',
                                       'price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
-                                      'budget_unconfigured', 'budget_exhausted', 'data_not_authorized'];
+                                      'budget_unconfigured', 'budget_exhausted', 'data_not_authorized',
+                                      'route_provider_mismatch'];
   -- Not reserved: it only begins like a reserved code, so it is kept.
   c_lookalike constant text := 'execution_stopped_upstream';
   v_code text;

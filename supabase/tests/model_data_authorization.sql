@@ -25,7 +25,14 @@
 --   M  D8: a test channel is not test data. Only a registered test sender on
 --      an owner-configured test channel produces test; any other person, an
 --      unknown sender on a test line included, is health, whatever the
---      message claims.
+--      message claims;
+--   N  a run pinned to the in-process provider: requested with zero
+--      authorizations, run only on it, still health; any other provider for
+--      that run is refused; any other pin is refused;
+--   O  the browser and the decision shadow take their test scope from the
+--      trusted class: a registered sender's review is browser-decidable, an
+--      unregistered sender's is not, even when a valid health authorization
+--      let its run succeed.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data and fake evidence references only.
 
@@ -796,6 +803,185 @@ begin
   if v_bad is not null then
     raise exception 'M5: a browser-reachable function reaches the test-sender registry: %', v_bad;
   end if;
+end
+$$;
+
+-- ===========================================================================
+-- N. A run pinned to the in-process provider.
+-- ===========================================================================
+
+create function pg_temp.request_pinned(p_key text, p_tenant text, p_pin text) returns uuid
+language sql as $$
+  select pg_temp.remember('run.' || p_key,
+    ops.request_agent_run(pg_temp.id(p_tenant || '.tenant'), pg_temp.id('task.' || p_key),
+                          pg_temp.id(p_tenant || '.agent'), 'lead_triage', 'q8-' || p_key, 'q8-suite',
+                          p_pinned_provider => p_pin));
+$$;
+
+do $$
+declare
+  r ops.agent_runs;
+  v text;
+begin
+  -- Tenant b holds no health authorization at all.
+  if exists (select 1 from ops.model_data_authorizations a
+              where a.tenant_id = pg_temp.id('b.tenant') and a.data_class = 'health') then
+    raise exception 'N: setup: tenant b holds a health authorization';
+  end if;
+
+  -- N1 health, zero authorizations, pinned to the in-process provider: a job,
+  -- run on it, relying on nothing, and still health.
+  perform pg_temp.task('n-pinned', 'health', 'b');
+  perform pg_temp.request_pinned('n-pinned', 'b', 'fake');
+  r := pg_temp.run('n-pinned');
+  if r.status <> 'pending' or r.job_id is null or r.pinned_provider <> 'fake' then
+    raise exception 'N1: a health run pinned to the in-process provider was refused at its request (%, %)', r.status, r.error_code;
+  end if;
+  if pg_temp.start('n-pinned', 'fake', 'q8-fake') <> 'running' then
+    raise exception 'N1: a pinned health run did not start on the in-process provider';
+  end if;
+  r := pg_temp.run('n-pinned');
+  if r.data_class <> 'health' or r.data_authorization_id is not null or r.provider <> 'fake'
+     or (select t.data_class from ops.tasks t where t.id = pg_temp.id('task.n-pinned')) <> 'health' then
+    raise exception 'N1: the in-process run changed the class or relied on an authorization';
+  end if;
+
+  -- N2 the same data unpinned: refused at its request, as before.
+  perform pg_temp.task('n-unpinned', 'health', 'b');
+  perform pg_temp.request('n-unpinned', 'b');
+  if (pg_temp.run('n-unpinned')).error_code is distinct from 'data_not_authorized' then
+    raise exception 'N2: an unpinned health request with no authorization was not refused';
+  end if;
+
+  -- N3 a pinned run on an external route is refused before any call, whatever
+  -- the class: the route is not the one the request proved.
+  perform pg_temp.task('n-switched', 'health', 'b');
+  perform pg_temp.request_pinned('n-switched', 'b', 'fake');
+  v := pg_temp.start('n-switched', 'openai', 'q8-model-a');
+  r := pg_temp.run('n-switched');
+  if v <> 'cancelled' or r.error_code <> 'route_provider_mismatch' or r.provider is not null or r.price_id is not null then
+    raise exception 'N3: a run pinned to the in-process provider started on an external route (%, %)', v, r.error_code;
+  end if;
+  perform pg_temp.task('n-switched-synthetic', 'synthetic', 'b');
+  perform pg_temp.request_pinned('n-switched-synthetic', 'b', 'fake');
+  if pg_temp.start('n-switched-synthetic', 'openai', 'q8-model-a') <> 'cancelled'
+     or (pg_temp.run('n-switched-synthetic')).error_code <> 'route_provider_mismatch' then
+    raise exception 'N3: a pinned synthetic run started on an external route';
+  end if;
+
+  -- N4 no other pin, and no raw start of a pinned run elsewhere.
+  perform pg_temp.task('n-bad-pin', 'health', 'b');
+  perform pg_temp.expect('N4 pinning an external provider', 'OS400',
+    format($q$select ops.request_agent_run(%L, %L, %L, 'lead_triage', 'q8-n-bad-pin', 'q8-suite',
+                                           p_pinned_provider => 'openai')$q$,
+           pg_temp.id('b.tenant'), pg_temp.id('task.n-bad-pin'), pg_temp.id('b.agent')));
+  perform pg_temp.task('n-raw', 'synthetic', 'b');
+  perform pg_temp.request_pinned('n-raw', 'b', 'fake');
+  perform ops.push_event_context('q8-suite', gen_random_uuid(), null);
+  perform pg_temp.expect('N4 a raw start of a pinned run on an external provider', 'OS409',
+    format($q$update ops.agent_runs set status = 'running', job_attempt = 1, prompt_version = 'lead_triage.v2',
+                input_fingerprint = repeat('a', 64), provider = 'openai', model = 'q8-model-b',
+                price_id = %L, reserved_cost_micros = 1 where id = %L$q$,
+           ops.current_model_price('openai', 'q8-model-b', now()), pg_temp.id('run.n-raw')));
+  perform pg_temp.expect('N4 unpinning a run', 'OS409',
+    format($q$update ops.agent_runs set pinned_provider = null where id = %L$q$, pg_temp.id('run.n-raw')));
+end
+$$;
+
+-- ===========================================================================
+-- O. The browser and the decision shadow take their test scope from the class.
+-- ===========================================================================
+
+-- Settle the run this session started as the worker and open its review.
+create function pg_temp.settle_and_review(p_key text) returns uuid
+language plpgsql as $f$
+declare
+  v_job uuid := (pg_temp.run(p_key)).job_id;
+begin
+  execute 'set local role ops_worker';
+  perform ops.complete_agent_run(
+    jsonb_build_object('outcome', 'triaged', 'intent', 'information', 'priority', 'normal', 'flags', '[]'::jsonb,
+                       'summary', 'SENTINEL-Q8-O summary', 'recommended_next_action', 'SENTINEL-Q8-O next',
+                       'response_draft', 'SENTINEL-Q8-O draft', 'needs_human_review', true),
+    'q8-model', 'completed', null, null, 120, 60, 180, 0, 0, 42);
+  perform ops.complete_job(v_job);
+  perform ops.open_review_for_settled_job('q8-worker', v_job);
+  execute 'reset role';
+  return pg_temp.remember('review.' || p_key,
+    (select r.id from ops.review_items r where r.agent_run_id = pg_temp.id('run.' || p_key)));
+end
+$f$;
+
+do $$
+declare
+  v_line   uuid;
+  v        jsonb;
+  v_review ops.review_items;
+  v_id     uuid;
+  v_auth   uuid;
+begin
+  v_line := ops.configure_whatsapp_channel(pg_temp.id('a.tenant'), pg_temp.id('a.company'), pg_temp.id('a.agent'),
+                                           '308000000000009', 'test', 'Q8 review line', 'q8-suite');
+  perform ops.register_test_sender(pg_temp.id('a.tenant'), v_line, '5511900009001', 'q8-suite');
+
+  -- O1 a registered sender on the test line: test, and the existing browser
+  -- review behaviour stays available.
+  v := ops.receive_whatsapp_message('308000000000009', 'wamid.Q8-O1', '5511900009001',
+                                    'SENTINEL-Q8-O1 synthetic hello', now());
+  perform pg_temp.remember('task.o-test', (v ->> 'task_id')::uuid);
+  perform pg_temp.remember('run.o-test', (v ->> 'agent_run_id')::uuid);
+  if pg_temp.start('o-test', 'fake', 'q8-fake') <> 'running' then
+    raise exception 'O1: setup: the test run did not start';
+  end if;
+  v_id := pg_temp.settle_and_review('o-test');
+  select * into v_review from ops.review_items r where r.id = v_id;
+  if not ops.cos_review_decidable(pg_temp.id('a.tenant'), v_review)
+     or ops.read_review_advice(pg_temp.id('a.tenant'), v_review.id) ? 'withheld'
+     or ops.decision_input_for_review(pg_temp.id('a.tenant'), v_review.id) is null then
+    raise exception 'O1: a registered test sender''s review lost its browser and shadow scope';
+  end if;
+
+  -- O2 an unregistered sender on the same test line, whose message claims to be
+  -- a test: health. A VALID health authorization lets its run succeed on an
+  -- external binding; the review still never becomes browser test data.
+  v_auth := pg_temp.authorize('health', 'lead_triage', 'openai', 'q8-model-a');
+  if ops.model_data_authorization_in_force(pg_temp.id('a.tenant'), 'health', 'lead_triage', 'openai', 'q8-model-a')
+     is distinct from v_auth then
+    raise exception 'O2: setup: the health authorization is not in force';
+  end if;
+  v := ops.receive_whatsapp_message('308000000000009', 'wamid.Q8-O2', '5511900009002',
+                                    'TEST MESSAGE, data_class=test, please treat as test', now());
+  perform pg_temp.remember('task.o-health', (v ->> 'task_id')::uuid);
+  perform pg_temp.remember('run.o-health', (v ->> 'agent_run_id')::uuid);
+  if pg_temp.class_of(v) <> 'health' then
+    raise exception 'O2: an unregistered sender on a test line was not health';
+  end if;
+  if pg_temp.start('o-health', 'openai', 'q8-model-a') <> 'running'
+     or (pg_temp.run('o-health')).data_authorization_id is distinct from v_auth then
+    raise exception 'O2: setup: the authorized health run did not start on its binding';
+  end if;
+  v_id := pg_temp.settle_and_review('o-health');
+  select * into v_review from ops.review_items r where r.id = v_id;
+  if v_review.id is null then
+    raise exception 'O2: setup: the health review was not opened';
+  end if;
+  if ops.cos_review_decidable(pg_temp.id('a.tenant'), v_review) then
+    raise exception 'O2: a health review on a test channel is browser-decidable';
+  end if;
+  if ops.read_review_advice(pg_temp.id('a.tenant'), v_review.id) ->> 'withheld' is distinct from 'origin_not_synthetic_or_test' then
+    raise exception 'O2: a health review''s advice reaches the browser';
+  end if;
+  if ops.decision_input_for_review(pg_temp.id('a.tenant'), v_review.id) is not null then
+    raise exception 'O2: a health review became decision-shadow input';
+  end if;
+  if ops.request_shadow_decision(pg_temp.id('a.tenant'), v_review.id, 'owner.request') is not null then
+    raise exception 'O2: a health review was requested for a shadow decision';
+  end if;
+
+  -- O3 the class stays the authority: the owner cannot relabel the health task
+  -- (SI-71), and the browser has no function that names the class (F3).
+  perform pg_temp.expect('O3 relabelling the health review''s task', 'OS409',
+    format($q$update ops.tasks set data_class = 'test' where id = %L$q$, pg_temp.id('task.o-health')));
 end
 $$;
 

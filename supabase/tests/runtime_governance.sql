@@ -2546,7 +2546,8 @@ declare
   r       ops.agent_runs;
 begin
   foreach v_code in array array['price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
-                                'budget_unconfigured', 'budget_exhausted', 'data_not_authorized'] loop
+                                'budget_unconfigured', 'budget_exhausted', 'data_not_authorized',
+                                'route_provider_mismatch'] loop
     v_run := pg_temp.adm_run('rg1d-a9-refuse-' || v_code);
     v_state := pg_temp.worker(format('select ops.refuse_agent_run(%L)', v_code));
     r := pg_temp.run(v_run);
@@ -2566,8 +2567,8 @@ begin
   if v_state is distinct from 'failed' or r.error_code is not null or r.spend_limit_id is not null then
     raise exception 'A9: a worker recorded budget_exhausted through fail_agent_run (%, %)', v_state, r.error_code;
   end if;
-  if v_n <> 6 then
-    raise exception 'A9: % codes were attacked, expected 6', v_n;
+  if v_n <> 7 then
+    raise exception 'A9: % codes were attacked, expected 7', v_n;
   end if;
 end
 $$;
@@ -3871,7 +3872,7 @@ declare
     'ops.record_model_price(text, text, numeric, numeric, boolean, timestamptz, timestamptz, text, text, numeric)',
     'ops.set_spend_limit(text, bigint, text, text, text, uuid, uuid)', 'ops.retire_spend_limit(uuid, text, text)',
     'ops.spend_status(timestamptz)', 'ops.trip_execution_stop(text, text, text, uuid, uuid, uuid, uuid, text)',
-    'ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid)',
+    'ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid, text)',
     'ops.create_task(uuid, uuid, text, text, text, text, uuid, uuid, integer, timestamptz, uuid, uuid, text, text)',
     'ops.record_event(uuid, uuid, text, text, text, uuid, jsonb, uuid, uuid, text)',
     'ops.leased_job()']::regprocedure[];

@@ -3735,7 +3735,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-70",
     statement:
-      "Data reaches a model provider only through an owner authorization in force for its exact binding (BASELINE Q8, ADR 0020): ops.start_agent_run, lease-bound, after the kill switch and before the route, the price and the spend reservation, cancels a run as data_not_authorized, before any call and with no retry or other provider, unless its task's data class is synthetic or test, its provider is the in-process fake, or a version of ops.model_data_authorizations is in force for exactly its tenant, data class, capability, provider and model; ops.request_agent_run refuses such data earlier, on the record and with no job, when no provider is authorized for that class and capability; the decision-shadow start applies the same check; the run guard requires that authorization on every write path that starts a run and fixes it on the run with the class; identifier, clinical_record, derived and unclassified data can never be authorized; person content (person_text, health) only for the tenant that owns the local CRM, only for a capability whose input is minimised, and only with every evidence reference, training excluded and at most 30 days of content retention; an authorization is recorded and retired only with the owner's credential (npm run ops -- data-auth), never by a migration, an environment variable, the browser, the gateway or the worker, and a version is immutable but for its one retirement.",
+      "Data reaches a model provider only through an owner authorization in force for its exact binding (BASELINE Q8, ADR 0020): ops.start_agent_run, lease-bound, after the kill switch and before the route, the price and the spend reservation, cancels a run as data_not_authorized, before any call and with no retry or other provider, unless its task's data class is synthetic or test, its provider is the in-process fake, or a version of ops.model_data_authorizations is in force for exactly its tenant, data class, capability, provider and model; ops.request_agent_run refuses such data earlier, on the record and with no job, when no provider is authorized for that class and capability, unless the request pins the run to the in-process provider (the only pin), which no other provider may then start (route_provider_mismatch); the decision-shadow start applies the same check; the run guard requires that authorization on every write path that starts a run and fixes it on the run with the class; identifier, clinical_record, derived and unclassified data can never be authorized; person content (person_text, health) only for the tenant that owns the local CRM, only for a capability whose input is minimised, and only with every evidence reference, training excluded and at most 30 days of content retention; an authorization is recorded and retired only with the owner's credential (npm run ops -- data-auth), never by a migration, an environment variable, the browser, the gateway or the worker, and a version is immutable but for its one retirement.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -3775,6 +3775,20 @@ const INVARIANTS: Invariant[] = [
         marker: /H6 health for a tenant that is not the controller/,
       },
       {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /N1: a health run pinned to the in-process provider was refused at its request/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /N3: a run pinned to the in-process provider started on an external route/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /N4 pinning an external provider/,
+      },
+      {
         file: "supabase/migrations/20261001120000_model_data_authorization.sql",
         marker:
           /Q8 enforcement shipped a data authorization; authorizations are owner data/,
@@ -3801,7 +3815,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-71",
     statement:
-      "A task's data class is assigned at creation by its trusted creator and never changes: the admission derives it from provenance (synthetic from the synthetic ingress; test only for a message on an owner-configured test channel from a sender the owner registered for that channel, because a test channel is not test data; health for any other free text a lead or patient wrote, an unknown sender on a test channel included), never from a payload, the browser or the content, and a test sender is registered and retired only with the owner's credential; a direct ops.create_task names a class from the closed classification or creates an unclassified task, which no model may read, and the same idempotency key under another class is refused; an ENABLE ALWAYS trigger refuses any change of the class, the owner's included; and an agent run takes its class from its task, never from its caller, fixed at its creation.",
+      "A task's data class is assigned at creation by its trusted creator and never changes: the admission derives it from provenance (synthetic from the synthetic ingress; test only for a message on an owner-configured test channel from a sender the owner registered for that channel, because a test channel is not test data; health for any other free text a lead or patient wrote, an unknown sender on a test channel included), never from a payload, the browser or the content, and a test sender is registered and retired only with the owner's credential; a direct ops.create_task names a class from the closed classification or creates an unclassified task, which no model may read, and the same idempotency key under another class is refused; an ENABLE ALWAYS trigger refuses any change of the class, the owner's included; an agent run takes its class from its task, never from its caller, fixed at its creation; and a review is browser-decidable, its advice shown to the browser and its decision-shadow input built only when its task's class is synthetic or test, never because its channel is in test mode.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -3837,6 +3851,19 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/migrations/20261001120000_model_data_authorization.sql",
         marker: /Q8 enforcement shipped a registered test sender/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /O2: a health review on a test channel is browser-decidable/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /O2: a health review''s advice reaches the browser/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /O1: a registered test sender''s review lost its browser and shadow scope/,
       },
       {
         file: "supabase/migrations/20261001120000_model_data_authorization.sql",

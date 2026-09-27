@@ -38,7 +38,7 @@ A miss sets the run to `cancelled` / `refused` / `data_not_authorized`. It recor
 
 The run guard (`ops.guard_agent_run_update`, `ENABLE ALWAYS`) repeats the rule on **every** write path. A `pending → running` transition of data that is not exempt must carry the `data_authorization_id` that is in force for its exact binding. A synthetic, test or fake run must carry none. The authorization is then fixed on the run.
 
-`ops.request_agent_run` refuses earlier: after the stop check, a class that no provider is authorized for, for this capability, is cancelled on the record with no job. The ingress checks (the synthetic flag, the closed production WhatsApp gate, the shadow's origin gate) stay as defence in depth; none of them is the authority.
+`ops.request_agent_run` refuses earlier: after the stop check, a class that no provider is authorized for, for this capability, is cancelled on the record with no job. The one exception is a request that pins the run to the in-process provider `fake` (the only pin): it needs no authorization and keeps its class, and the start refuses any other provider for that run as `route_provider_mismatch`, so switching the route to an external provider immediately needs the matching external authorization. The ingress checks (the synthetic flag, the closed production WhatsApp gate, the shadow's origin gate) stay as defence in depth; none of them is the authority.
 
 ## 4. Authorization semantics
 
@@ -192,8 +192,9 @@ Only once those exist can one owner `data-auth record` name them, and even then 
 4. **Minimisation applies to synthetic data too** (`lead_triage.v2`), so there is one code path.
 5. **A retired version is deletable only while no run relied on it,** following the spend-limit pattern.
 6. **Legacy rows:** closed tasks stay `unclassified`, and runs finished before the gate carry no class.
-7. **The early refusal applies to the fake too.** A `health` task gets a job only when some provider is authorized for its class and capability (ADR 0020 §D4, defence in depth); on that job the in-process fake runs it without relying on the authorization, and the task stays `health`. Testing `health` on the fake with no authorization at all would need the early refusal moved to the start only: an owner decision, not taken here.
-8. **Registering a test sender is an owner SQL act** (`ops.register_test_sender`, `ops.retire_test_sender`), like the commercial bridge's configuration; no CLI command yet.
+7. **Resolved at the final review: in-process runs are pinned.** A request may pin a run to the in-process provider; it then needs no authorization, keeps its class and cannot start on any other provider. An unrelated authorization no longer plays any part in local fake tests.
+8. **Resolved at the final review: the browser trusts the class, not the channel.** A review is browser-decidable, its advice shown in the browser and its decision-shadow input built only when its task is `synthetic` or `test`. A `health` review from a test line stays out of that scope even when a valid authorization let its run succeed.
+9. **Registering a test sender is an owner SQL act** (`ops.register_test_sender`, `ops.retire_test_sender`), like the commercial bridge's configuration; no CLI command yet.
 
 ## 12. Next
 

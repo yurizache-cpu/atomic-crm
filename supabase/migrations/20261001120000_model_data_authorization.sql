@@ -459,7 +459,10 @@ $function$;
 
 alter table ops.agent_runs
   add column if not exists data_class            text,
-  add column if not exists data_authorization_id uuid;
+  add column if not exists data_authorization_id uuid,
+  -- The request may pin a run to the in-process provider (the only value):
+  -- then no provider but it may start the run. Fixed at creation.
+  add column if not exists pinned_provider       text;
 
 -- Unfinished runs take their task's class now, under the Phase 1D.1 guard (which
 -- does not yet know the column). A finished run is immutable and keeps NULL: it
@@ -486,6 +489,12 @@ alter table ops.agent_runs drop constraint if exists agent_runs_data_authorizati
 alter table ops.agent_runs add constraint agent_runs_data_authorization_fkey
   foreign key (tenant_id, data_authorization_id)
   references ops.model_data_authorizations (tenant_id, id) on delete restrict;
+alter table ops.agent_runs drop constraint if exists agent_runs_pinned_provider_check;
+alter table ops.agent_runs add constraint agent_runs_pinned_provider_check check (
+  pinned_provider is null or pinned_provider = 'fake');
+alter table ops.agent_runs drop constraint if exists agent_runs_pinned_provider_started;
+alter table ops.agent_runs add constraint agent_runs_pinned_provider_started check (
+  pinned_provider is null or provider is null or provider = pinned_provider);
 alter table ops.agent_runs drop constraint if exists agent_runs_authorization_only_when_started;
 alter table ops.agent_runs add constraint agent_runs_authorization_only_when_started check (
   data_authorization_id is null or started_at is not null);
@@ -503,7 +512,8 @@ as $function$
   select array['execution_stopped', 'execution_interrupted', 'database_contract',
                'job_failed', 'job_ended_before_start',
                'price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
-               'budget_unconfigured', 'budget_exhausted', 'data_not_authorized']::text[];
+               'budget_unconfigured', 'budget_exhausted', 'data_not_authorized',
+               'route_provider_mismatch']::text[];
 $function$;
 
 -- The Phase 1D.1 insert guard, plus the class: derived from the task, never
@@ -600,10 +610,11 @@ begin
      or new.correlation_id is distinct from old.correlation_id
      or new.requested_by is distinct from old.requested_by
      or new.created_at is distinct from old.created_at
-     or new.data_class is distinct from old.data_class then
+     or new.data_class is distinct from old.data_class
+     or new.pinned_provider is distinct from old.pinned_provider then
     raise exception using
       errcode = 'OS409',
-      message = 'ops.agent_runs: tenant, company, department, task, agent, capability, route, key, fingerprint, correlation, lineage and data class are fixed at creation';
+      message = 'ops.agent_runs: tenant, company, department, task, agent, capability, route, key, fingerprint, correlation, lineage, data class and pinned provider are fixed at creation';
   end if;
 
   if new.job_id is distinct from old.job_id
@@ -686,6 +697,12 @@ begin
       raise exception using
         errcode = 'OS409',
         message = 'ops.agent_runs: a run starts only with a reservation and the price version of its own provider and model';
+    end if;
+    -- A run pinned to the in-process provider starts only on it.
+    if new.pinned_provider is not null and new.provider is distinct from new.pinned_provider then
+      raise exception using
+        errcode = 'OS409',
+        message = 'ops.agent_runs: a run pinned to the in-process provider starts only on it';
     end if;
     -- BASELINE Q8 (SI-70): exempt data starts with no authorization; any other
     -- data only with the version in force for its exact binding.
@@ -1354,7 +1371,11 @@ $function$;
 -- The Phase 1D.1 request (20260917120000), plus the early Q8 refusal: after the
 -- kill switch (a stop refuses first, owner decision E), before spend, a class no
 -- authorization of any provider covers for this capability is refused on the
--- record, with no job.
+-- record, with no job. A request may instead pin the run to the in-process
+-- provider (`fake`, the only value): nothing leaves the process, so the early
+-- refusal does not apply, and the start refuses any other provider for that run
+-- (route_provider_mismatch). An unpinned request is refused exactly as before.
+drop function if exists ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid);
 create or replace function ops.request_agent_run(
   p_tenant_id       uuid,
   p_task_id         uuid,
@@ -1362,7 +1383,8 @@ create or replace function ops.request_agent_run(
   p_capability      text,
   p_idempotency_key text,
   p_source          text,
-  p_retry_of_run_id uuid default null
+  p_retry_of_run_id uuid default null,
+  p_pinned_provider text default null
 )
 returns uuid
 language plpgsql
@@ -1396,11 +1418,21 @@ begin
   if p_source is null or p_source !~ '^[a-z][a-z0-9_.:-]{0,127}$' then
     raise exception using errcode = 'OS400', message = 'ops.request_agent_run: the request source is missing or malformed';
   end if;
+  if p_pinned_provider is not null and p_pinned_provider <> 'fake' then
+    raise exception using
+      errcode = 'OS400',
+      message = 'ops.request_agent_run: a run can be pinned only to the in-process provider';
+  end if;
   perform ops.require_read_committed('ops.request_agent_run');
 
+  -- The v1 fingerprint, unchanged for an unpinned request; a pin is part of the
+  -- request, so the same key with another pin is a different request.
   v_fingerprint := encode(sha256(convert_to(concat_ws('|',
     'agent_run.request.v1', coalesce(p_task_id::text, ''), coalesce(p_agent_id::text, ''),
     coalesce(p_capability, ''), coalesce(p_retry_of_run_id::text, '')), 'UTF8')), 'hex');
+  if p_pinned_provider is not null then
+    v_fingerprint := encode(sha256(convert_to(concat_ws('|', v_fingerprint, 'pinned', p_pinned_provider), 'UTF8')), 'hex');
+  end if;
 
   select r.* into v_existing
     from ops.agent_runs r
@@ -1480,10 +1512,12 @@ begin
 
   insert into ops.agent_runs (
     tenant_id, company_id, department_id, task_id, agent_id, retry_of_run_id,
-    capability, model_route, idempotency_key, request_fingerprint, correlation_id, requested_by)
+    capability, model_route, idempotency_key, request_fingerprint, correlation_id, requested_by,
+    pinned_provider)
   values (
     p_tenant_id, v_task.company_id, v_agent.department_id, p_task_id, p_agent_id, p_retry_of_run_id,
-    p_capability, v_route, p_idempotency_key, v_fingerprint, v_correlation, p_source)
+    p_capability, v_route, p_idempotency_key, v_fingerprint, v_correlation, p_source,
+    p_pinned_provider)
   on conflict (tenant_id, idempotency_key) do nothing
   returning id into v_run;
 
@@ -1514,7 +1548,8 @@ begin
   -- BASELINE Q8, at request time (ADR 0020 §D4): data no authorization of any
   -- provider covers for this capability is refused now, with no job. The start
   -- re-checks the exact binding; this can only refuse early, never admit a call.
-  if not ops.model_data_class_admissible(p_tenant_id, v_task.data_class, p_capability) then
+  if p_pinned_provider is null
+     and not ops.model_data_class_admissible(p_tenant_id, v_task.data_class, p_capability) then
     update ops.agent_runs
        set status = 'cancelled', error_category = 'refused', error_code = 'data_not_authorized'
      where id = v_run;
@@ -1644,6 +1679,12 @@ begin
     when v_department is distinct from 'active' then 'department_inactive'
     when v_agent.status is distinct from 'active' then 'agent_inactive'
   end;
+
+  if v_code is null and v_run.pinned_provider is not null and p_provider is distinct from v_run.pinned_provider then
+    -- Admitted at its request only because it was pinned to the in-process
+    -- provider: any other provider is a route that request never proved.
+    v_code := 'route_provider_mismatch';
+  end if;
 
   if v_code is null then
     -- BASELINE Q8 (ADR 0020 §D4): the authoritative gate. The class is the task's,
@@ -1825,6 +1866,117 @@ begin
 end
 $$;
 
+
+-- ---------------------------------------------------------------------------
+-- 8b. The browser and the decision shadow take their test scope from the
+--     trusted class (owner decision D8: a test channel is not test data). A
+--     review is browser-decidable, its advice shown on explicit open, and its
+--     decision-shadow input built only when its task is synthetic or test; the
+--     origin checks stay as defence in depth. The admission already decided
+--     the class; nothing here repeats the test-sender rule.
+-- ---------------------------------------------------------------------------
+
+create or replace function ops.cos_review_decidable(p_tenant pg_catalog.uuid, r ops.review_items) returns pg_catalog.bool
+language sql stable security invoker set search_path = '' as $$
+  select r.capability = 'lead_triage'
+     and exists (select 1 from ops.tasks t
+                  where t.tenant_id = p_tenant and t.id = r.task_id and t.data_class in ('synthetic', 'test'))
+     and exists (
+    select 1 from ops.inbound_messages i
+      left join ops.communication_channels ch on ch.tenant_id = i.tenant_id and ch.id = i.channel_id
+     where i.tenant_id = p_tenant and i.task_id = r.task_id
+       and (i.source_kind = 'synthetic' or (i.source_kind = 'whatsapp' and ch.mode = 'test')));
+$$;
+
+create or replace function ops.read_review_advice(p_tenant_id pg_catalog.uuid, p_review_id pg_catalog.uuid) returns pg_catalog.jsonb
+language plpgsql stable security invoker set search_path = '' as $$
+declare
+  v_item ops.review_items;
+begin
+  -- The tenant lookup first, before any other branch: a foreign review is OS404.
+  select * into v_item from ops.review_items r where r.id = p_review_id and r.tenant_id = p_tenant_id;
+  if not found then
+    raise exception using errcode = 'OS404', message = 'not found';
+  end if;
+  if v_item.capability <> 'lead_triage' then
+    return pg_catalog.jsonb_build_object('v', 1, 'asOf', ops.cos_ts(now()), 'reviewId', v_item.id, 'withheld', 'capability_not_pinned');
+  end if;
+  -- The origin, read at call time: a synthetic admission, or a WhatsApp
+  -- admission on a channel that is still in test mode. No admission row, any
+  -- other kind, or a channel no longer in test mode is withheld.
+  if not exists (
+    select 1 from ops.inbound_messages i
+      left join ops.communication_channels ch on ch.tenant_id = i.tenant_id and ch.id = i.channel_id
+     where i.tenant_id = p_tenant_id and i.task_id = v_item.task_id
+       and (i.source_kind = 'synthetic' or (i.source_kind = 'whatsapp' and ch.mode = 'test')))
+     or not exists (select 1 from ops.tasks t
+                     where t.tenant_id = p_tenant_id and t.id = v_item.task_id
+                       and t.data_class in ('synthetic', 'test')) then
+    return pg_catalog.jsonb_build_object('v', 1, 'asOf', ops.cos_ts(now()), 'reviewId', v_item.id, 'withheld', 'origin_not_synthetic_or_test');
+  end if;
+  if not ops.agent_run_result_valid('lead_triage', v_item.proposed) then
+    return pg_catalog.jsonb_build_object('v', 1, 'asOf', ops.cos_ts(now()), 'reviewId', v_item.id, 'withheld', 'contract_invalid');
+  end if;
+  return pg_catalog.jsonb_build_object(
+    'v', 1, 'asOf', ops.cos_ts(now()), 'reviewId', v_item.id, 'capability', 'lead_triage',
+    'outcome', v_item.proposed -> 'outcome', 'intent', v_item.proposed -> 'intent',
+    'priority', v_item.proposed -> 'priority', 'needsHumanReview', v_item.proposed -> 'needs_human_review',
+    'flags', v_item.proposed -> 'flags', 'summary', v_item.proposed -> 'summary',
+    'recommendedNextAction', v_item.proposed -> 'recommended_next_action');
+end
+$$;
+
+create or replace function ops.decision_input_for_review(p_tenant_id pg_catalog.uuid, p_review_item_id pg_catalog.uuid)
+returns pg_catalog.jsonb
+language plpgsql stable security invoker set search_path = '' as $$
+declare
+  v_item   ops.review_items;
+  v_result pg_catalog.jsonb;
+  v_source pg_catalog.text;
+begin
+  select * into v_item from ops.review_items r where r.tenant_id = p_tenant_id and r.id = p_review_item_id;
+  if not found or v_item.capability <> 'lead_triage' then
+    return null;
+  end if;
+  select r.result into v_result from ops.agent_runs r
+   where r.tenant_id = p_tenant_id and r.id = v_item.agent_run_id and r.status = 'succeeded';
+  if v_result is null or pg_catalog.jsonb_typeof(v_result) <> 'object' then
+    return null;
+  end if;
+  select case when i.source_kind = 'synthetic' then 'synthetic'
+              when i.source_kind = 'whatsapp' and ch.mode = 'test' then 'whatsapp_test' end
+    into v_source
+    from ops.inbound_messages i
+    left join ops.communication_channels ch on ch.tenant_id = i.tenant_id and ch.id = i.channel_id
+   where i.tenant_id = p_tenant_id and i.task_id = v_item.task_id
+   limit 1;
+  if v_source is null or not exists (select 1 from ops.tasks t
+                                      where t.tenant_id = p_tenant_id and t.id = v_item.task_id
+                                        and t.data_class in ('synthetic', 'test')) then
+    return null;
+  end if;
+  return pg_catalog.jsonb_build_object(
+    'version', 'decision_input.v1',
+    'subject', 'lead_triage.review',
+    'sourceClass', v_source,
+    'contactPolicy', case when v_item.do_not_contact then 'do_not_contact' else 'contactable' end,
+    'triage', pg_catalog.jsonb_build_object(
+      'outcome', case when v_result ->> 'outcome' in ('triaged', 'needs_input', 'out_of_scope')
+                      then v_result ->> 'outcome' end,
+      'intent', case when v_result ->> 'intent' in ('book_appointment', 'pricing', 'information', 'support', 'other')
+                     then v_result ->> 'intent' end,
+      'priority', case when v_result ->> 'priority' in ('low', 'normal', 'high') then v_result ->> 'priority' end,
+      'flags', coalesce((select pg_catalog.jsonb_agg(distinct f order by f)
+                           from pg_catalog.jsonb_array_elements_text(
+                                  case when pg_catalog.jsonb_typeof(v_result -> 'flags') = 'array'
+                                       then v_result -> 'flags' else '[]'::pg_catalog.jsonb end) f
+                          where f in ('possible_crisis', 'minor', 'out_of_scope', 'already_a_patient', 'spam', 'unclear')),
+                        '[]'::pg_catalog.jsonb),
+      'needsHumanReview', case when pg_catalog.jsonb_typeof(v_result -> 'needs_human_review') = 'boolean'
+                               then (v_result ->> 'needs_human_review')::pg_catalog.bool end));
+end
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 9. Owner services. SECURITY INVOKER, EXECUTE granted to no role.
 -- ---------------------------------------------------------------------------
@@ -1987,7 +2139,7 @@ revoke all on function ops.guard_agent_run_update() from public;
 revoke all on function ops.guard_task_data_class() from public;
 revoke all on function ops.create_task(uuid, uuid, text, text, text, text, uuid, uuid, integer, timestamptz, uuid, uuid, text, text) from public;
 revoke all on function ops.admit_inbound_core(uuid, uuid, uuid, text, text, text, text, text, boolean, timestamptz, uuid, uuid, text, text) from public;
-revoke all on function ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid) from public;
+revoke all on function ops.request_agent_run(uuid, uuid, uuid, text, text, text, uuid, text) from public;
 revoke all on function ops.start_agent_run(text, text, text, text, integer) from public;
 revoke all on function ops.start_shadow_decision(text, text, text) from public;
 revoke all on function ops.record_model_data_authorization(uuid, text, text, text, text, timestamptz, timestamptz, text, timestamptz, boolean, text, text, text, text, text, text, integer, text) from public;
@@ -2026,6 +2178,10 @@ begin
   if (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'ops' and p.proname = 'create_task') <> 1 then
     raise exception 'ops.create_task has more than one signature';
+  end if;
+  if (select count(*) from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'ops' and p.proname = 'request_agent_run') <> 1 then
+    raise exception 'ops.request_agent_run has more than one signature';
   end if;
   if not has_function_privilege('ops_worker', 'ops.start_agent_run(text, text, text, text, integer)', 'EXECUTE') then
     raise exception 'the worker lost its start';

@@ -62,6 +62,13 @@ export interface RequestAgentRunInput {
   readonly idempotencyKey: string;
   /** A FINISHED run of the same task, agent and capability that this repeats. */
   readonly retryOfRunId?: string;
+  /**
+   * BASELINE Q8: pins the run to the in-process provider, the only value. It
+   * may then start only on that provider, so protected data needs no external
+   * authorization to be requested; its class never changes. Local and test
+   * flows only: a deployed worker cannot select the in-process provider.
+   */
+  readonly pinnedProvider?: "fake";
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -116,12 +123,23 @@ function requireShape(
  * `async`, so invalid input REJECTS the returned promise rather than throwing
  * before one exists.
  */
+function optionalPinnedProvider(value: unknown): "fake" | null {
+  if (value === undefined || value === null) return null;
+  if (value !== "fake") {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "a run can be pinned only to the in-process provider",
+    );
+  }
+  return value;
+}
+
 export async function requestAgentRun(
   tx: TxClient,
   context: AgentRunRequestContext,
   input: RequestAgentRunInput,
 ): Promise<string> {
-  // Exactly seven positions, each read from a named field: nothing else on
+  // Exactly eight positions, each read from a named field: nothing else on
   // `context` or `input` can become an argument.
   const params = [
     requireTenant(context.tenantId),
@@ -141,12 +159,13 @@ export async function requestAgentRun(
     ),
     requireShape(context.source, SOURCE, 128, "source is missing or malformed"),
     optionalUuid(input.retryOfRunId, "retryOfRunId"),
+    optionalPinnedProvider(input.pinnedProvider),
   ] as const;
 
   let id: unknown;
   try {
     const { rows } = await tx.query<{ result: unknown }>(
-      "select ops.request_agent_run($1, $2, $3, $4, $5, $6, $7) as result",
+      "select ops.request_agent_run($1, $2, $3, $4, $5, $6, $7, $8) as result",
       params,
     );
     id = rows[0]?.result;

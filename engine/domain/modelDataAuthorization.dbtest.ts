@@ -123,6 +123,43 @@ const buildLead = (dataClass: DataClass): Promise<Lead> =>
     return { companyId, agentId, taskId };
   });
 
+/** A request, optionally pinned to the in-process provider or retrying a run. */
+const requestRun = (
+  lead: Lead,
+  key: string,
+  options: { readonly pinned?: boolean; readonly retryOf?: string } = {},
+) =>
+  owner.withTransaction((tx) =>
+    requestAgentRun(
+      tx,
+      { tenantId: TENANT_A, source: SOURCE },
+      {
+        taskId: lead.taskId,
+        agentId: lead.agentId,
+        capability: LEAD_TRIAGE_CAPABILITY,
+        idempotencyKey: key,
+        retryOfRunId: options.retryOf,
+        pinnedProvider: options.pinned === true ? "fake" : undefined,
+      },
+    ),
+  );
+
+const taskClass = async (lead: Lead): Promise<string> => {
+  const { rows } = await admin.query<{ data_class: string }>(
+    "select data_class from ops.tasks where id = $1",
+    [lead.taskId],
+  );
+  return rows[0].data_class;
+};
+
+const countAuthorizations = async (): Promise<number> => {
+  const { rows } = await admin.query<{ n: number }>(
+    "select count(*)::int as n from ops.model_data_authorizations where tenant_id = $1",
+    [TENANT_A],
+  );
+  return rows[0].n;
+};
+
 const request = (lead: Lead, key: string) =>
   owner.withTransaction((tx) =>
     requestAgentRun(
@@ -319,55 +356,68 @@ describe("the model boundary (SI-70)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("keeps a health task health: refused for a real-looking provider before any call, then run on the in-process fake relying on no authorization", async () => {
-    const real = openaiNamedFake();
+  it("runs a health task pinned to the in-process provider with zero authorizations, and it stays health", async () => {
+    const external = openaiNamedFake();
     const inProcess = createFakeModelProvider({
       type: "respond",
       content: ADVICE,
     });
     const lead = await buildLead("health");
-    // Some provider is authorized for the class, so the request is admitted;
-    // not the model this worker would call.
-    await authorize("another-model");
 
-    const refusedId = await request(lead, "dbtest-q8-real-looking");
-    await runAgentJob(real.registry);
-    expect(await readGate(refusedId)).toMatchObject({
-      status: "cancelled",
-      error_code: "data_not_authorized",
-      data_class: "health",
-    });
-    expect(real.provider.calls).toHaveLength(0);
-
-    // The SAME task, retried on the in-process fake: nothing leaves the process.
-    const retryId = await owner.withTransaction((tx) =>
-      requestAgentRun(
-        tx,
-        { tenantId: TENANT_A, source: SOURCE },
-        {
-          taskId: lead.taskId,
-          agentId: lead.agentId,
-          capability: LEAD_TRIAGE_CAPABILITY,
-          idempotencyKey: "dbtest-q8-in-process",
-          retryOfRunId: refusedId,
-        },
-      ),
-    );
+    const runId = await requestRun(lead, "dbtest-q8-pinned", { pinned: true });
     await runAgentJob(registryServing(inProcess));
 
-    expect(await readGate(retryId)).toMatchObject({
+    expect(await readGate(runId)).toMatchObject({
       status: "succeeded",
       provider: "fake",
       data_class: "health",
       data_authorization_id: null,
     });
-    const { rows } = await admin.query<{ data_class: string }>(
-      "select data_class from ops.tasks where id = $1",
-      [lead.taskId],
-    );
-    expect(rows[0].data_class).toBe("health");
+    expect(await taskClass(lead)).toBe("health");
+    expect(await countAuthorizations()).toBe(0);
     expect(inProcess.calls).toHaveLength(1);
-    expect(real.provider.calls).toHaveLength(0);
+    expect(external.provider.calls).toHaveLength(0);
+  });
+
+  it("needs the matching external authorization as soon as the route is external: a pinned run is refused, an unpinned one too until it exists", async () => {
+    const external = openaiNamedFake();
+    const lead = await buildLead("health");
+
+    // Pinned to the in-process provider, then leased by an external route.
+    const pinnedId = await requestRun(lead, "dbtest-q8-switched", {
+      pinned: true,
+    });
+    await runAgentJob(external.registry);
+    expect(await readGate(pinnedId)).toMatchObject({
+      status: "cancelled",
+      error_code: "route_provider_mismatch",
+      provider: null,
+    });
+
+    // Unpinned, with zero authorizations: refused at its request.
+    const unpinnedId = await requestRun(lead, "dbtest-q8-external", {
+      retryOf: pinnedId,
+    });
+    expect(await readGate(unpinnedId)).toMatchObject({
+      status: "cancelled",
+      error_code: "data_not_authorized",
+      job_id: null,
+    });
+    expect(external.provider.calls).toHaveLength(0);
+
+    // The matching external authorization, and only then the external call.
+    const authorizationId = await authorize(MODEL);
+    const authorizedId = await requestRun(lead, "dbtest-q8-authorized", {
+      retryOf: unpinnedId,
+    });
+    await runAgentJob(external.registry);
+    expect(await readGate(authorizedId)).toMatchObject({
+      status: "succeeded",
+      provider: PROVIDER,
+      data_class: "health",
+      data_authorization_id: authorizationId,
+    });
+    expect(external.provider.calls).toHaveLength(1);
   });
 
   it("leaves synthetic data unaffected: it runs with no authorization and relies on none", async () => {

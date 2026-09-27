@@ -22,7 +22,7 @@ const CORRELATION = "10000000-0000-4000-8000-000000000001";
 const CAUSATION = "20000000-0000-4000-8000-000000000002";
 
 const REQUEST_SQL =
-  "select ops.request_agent_run($1, $2, $3, $4, $5, $6, $7) as result";
+  "select ops.request_agent_run($1, $2, $3, $4, $5, $6, $7, $8) as result";
 
 interface RecordedCall {
   readonly sql: string;
@@ -83,7 +83,7 @@ const outcomeOf = async (promise: Promise<unknown>) => {
 };
 
 describe("requesting an agent run", () => {
-  it("sends exactly the seven request arguments, in order, and resolves to the run id", async () => {
+  it("sends exactly the eight request arguments, in order, and resolves to the run id", async () => {
     const { tx, calls } = recordingDatabase(RUN);
 
     const id = await requestAgentRun(tx, context(), input());
@@ -100,9 +100,26 @@ describe("requesting an agent run", () => {
           "assessment:1",
           "test",
           null,
+          null,
         ],
       },
     ]);
+  });
+
+  it("pins a run to the in-process provider as the eighth argument, and refuses any other pin before the database", async () => {
+    const { tx, calls } = recordingDatabase(RUN);
+
+    await requestAgentRun(tx, context(), input({ pinnedProvider: "fake" }));
+
+    expect(calls[0]?.params[7]).toBe("fake");
+    await expect(
+      requestAgentRun(
+        tx,
+        context(),
+        input({ pinnedProvider: "openai" as unknown as "fake" }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_argument" });
+    expect(calls).toHaveLength(1);
   });
 
   it("names a retry's parent run as the seventh argument", async () => {
@@ -118,7 +135,12 @@ describe("requesting an agent run", () => {
       "tenantId" | "source"
     >();
     expectTypeOf<keyof RequestAgentRunInput>().toEqualTypeOf<
-      "taskId" | "agentId" | "capability" | "idempotencyKey" | "retryOfRunId"
+      | "taskId"
+      | "agentId"
+      | "capability"
+      | "idempotencyKey"
+      | "retryOfRunId"
+      | "pinnedProvider"
     >();
   });
 
@@ -140,7 +162,7 @@ describe("requesting an agent run", () => {
     await requestAgentRun(tx, smuggledContext, smuggledInput);
 
     const params = calls[0]?.params ?? [];
-    expect(params).toHaveLength(7);
+    expect(params).toHaveLength(8);
     expect(params[0]).toBe(TENANT);
     for (const smuggled of [CORRELATION, CAUSATION, OTHER_TENANT]) {
       expect(params).not.toContain(smuggled);
