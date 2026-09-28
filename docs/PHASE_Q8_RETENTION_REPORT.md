@@ -115,7 +115,7 @@ Before any real authorization:
 
 ## 9. The retention fallback: the final internal-retention correction (2026-09-28)
 
-Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c388bf53`, by migration `20261003120000_content_retention_fallback.sql`, and integrated by one PR into `feature/clinical-phase-1`.
+Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c388bf53`, by migration `20261003120000_content_retention_fallback.sql`. **INTEGRATED:** PR #18, normal merge `c4938029e9d185af0c7716892924c93199d3c5e6` into `feature/clinical-phase-1` (parents `c388bf53`, `b354be29`); the source branch `feature/q8-retention-fallback` is retained at `b354be29`, and `main` is unchanged at `a863e2a0`. The automated review's one finding (P2, in scope: two reviews decided at one instant could keep the longer period) was fixed before the merge in `b354be29`. Post-merge Check #99 (run 36457607762): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression.
 
 - **Owner policy (final):** no `health` or `person_text` AI working content may remain indefinitely merely because its flow never reached a decided review.
 - **One effective state per protected task,** derived by `ops.content_retention_anchor` from the task's own rows, in this order:
@@ -135,4 +135,4 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Backfill:** every protected task already stored received its state and its one job at the migration.
 - **Invariant:** SI-72 extended; numbering unchanged.
 - **Tests:** `content_retention.sql` section L (the undecided review, a decision superseding a fallback on the same job, a run ended without a review, a task with no run, repeats, two reviews decided at one instant keeping the shorter period, and exactly one queued job for every unredacted flow). The retention dbtest adds a flow that never reached a review, redacted by the real worker.
-- **Status once integrated:** **Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE**, meaning model-boundary enforcement, D6/D7 working-content retention and the abandoned-flow fallback. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+- **Status:** **Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE**, meaning model-boundary enforcement, D6/D7 working-content retention and the abandoned-flow fallback. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
