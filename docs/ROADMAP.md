@@ -612,18 +612,25 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Production Security Gate A (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+### Production Security Gate A.1 (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+
+Gate A is integrated (PR #19, merge `234f7a89`; source retained at `f17c306e`; `main` unchanged; post-merge core CI PASS with only the historical e2e and Prettier baseline red). **PRODUCTION SECURITY GATE A: INTEGRATED WITH A.1 CORRECTION PENDING.** A.1 is built on `feature/production-security-gate-a1` from `feature/clinical-phase-1` at `234f7a89`, for one PR into `feature/clinical-phase-1` (not `main`). Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md) §7.
+
+- **No automatic third-party enrichment** (owner policy 2026-09-28): the two enrichment triggers and the four functions behind them (Gravatar by a hash of the email, the domain's favicon) are dropped, and the browser-side twin in the FakeRest demo is removed; stored avatars and logos are untouched; `authenticated` executes exactly the six row-security helpers (SI-73).
+- **MFA for the CRM's real-data surface** (owner policy 2026-09-28): `ops.session_assurance_satisfied()` (the same rule as `ops.operator_scope()`, the same single exemption) is required by the two roots every CRM row policy decides through, `current_sales_id()` and `is_admin()`; no policy changed and MFA never widens what a row rule allows. `merge_contacts` (owner-session channel) and the `users` function carry the caller's verified session. The shell sends a level-1 session the server refuses through the Company OS's own second-factor flow (SI-74).
+- **Still open:** a host that sends the declared headers (GitHub Pages cannot; hosting undecided), TOTP enabled on a hosted project, ADR 0020 §C evidence, production WhatsApp. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Production Security Gate A (2026-09-28) — INTEGRATED (PR #19, merge `234f7a89`); A.1 CORRECTION PENDING
 
 Built on `feature/production-security-gate-a` from `feature/clinical-phase-1` at `c4938029` and integrated by one PR into `feature/clinical-phase-1`. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md).
 
-- **PUBLIC helper debt closed** (R-16, ADR 0018 amendment 3): PUBLIC and `anon` execute nothing in `public`; `authenticated` executes exactly eight reviewed functions; the Company OS capability roles execute none (SI-73).
+- **PUBLIC helper debt closed** (R-16, ADR 0018 amendment 3): PUBLIC and `anon` execute nothing in `public`; `authenticated` executed exactly eight reviewed functions (six since A.1); the Company OS capability roles execute none (SI-73).
 - **MFA at the Company OS authority:** `ops.operator_scope()` requires `aal2` on both the provider's session row and the verified token, or refuses. The non-production exemption lives only in the local seed. The browser completes the provider's own TOTP factor (SI-74).
 - **Browser policy:** a Content-Security-Policy and a strict referrer policy in every production page, enforced by the build scan. The host header set is declared in one module and served by `vite preview` (SI-75).
 - **Remaining production-readiness blockers:**
   - a host that sends the declared headers (hosting undecided; GitHub Pages cannot);
   - TOTP enabled on a hosted Supabase project;
-  - CRM screens outside the Company OS not MFA-gated (owner decision);
-  - the Gravatar lookup from service-role contact writes;
+  - ~~CRM screens outside the Company OS not MFA-gated~~ and ~~the Gravatar lookup from service-role contact writes~~ (both closed by A.1);
   - ADR 0020 §C evidence and production WhatsApp.
 - **Unchanged:** PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
 - **Next:** not started; the owner decides the next milestone.

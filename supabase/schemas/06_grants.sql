@@ -57,11 +57,9 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.can_manage_sales_id(bigint) to authenticated;
 grant execute on function public.can_access_contact(bigint) to authenticated;
 grant execute on function public.can_access_deal(bigint) to authenticated;
--- The stamping triggers (handle_contact_saved, handle_company_saved) run as the
--- writing role and call these two (Production Security Gate A,
--- 20261004120000_production_security_gate_a.sql).
-grant execute on function public.get_avatar_for_email(text) to authenticated;
-grant execute on function public.get_domain_favicon(text) to authenticated;
+-- Exactly these six: every browser policy decides through them (Production
+-- Security Gate A and A.1, 20261004120000 and 20261005120000). The avatar and
+-- favicon lookups and their stamping triggers no longer exist.
 grant execute on function public.get_user_id_by_email(text) to service_role;
 
 grant all on all tables in schema public to service_role;

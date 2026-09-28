@@ -147,6 +147,13 @@ check(
 );
 
 check(
+  r.withSession.uid === r.user &&
+    r.withSession.sub === r.user &&
+    r.withSession.sessionId === r.session &&
+    r.withSession.aal === "aal2",
+  "H: a verified session's id and level reach the request claims inside the transaction, and the state after it is clean",
+);
+check(
   !r.thrown.ok && r.thrown.error.includes("probe: client-side failure"),
   `F: a thrown error rejects the merge (${r.thrown.error})`,
 );

@@ -3,7 +3,7 @@ import { supabaseAdmin } from "../_shared/supabaseAdmin.ts";
 import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
 import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
-import { getUserSale } from "../_shared/getUserSale.ts";
+import { getCallerSale } from "../_shared/getUserSale.ts";
 import {
   inviteUser,
   patchUser,
@@ -110,7 +110,9 @@ Deno.serve(async (req: Request) =>
   OptionsMiddleware(req, async (req) =>
     AuthMiddleware(req, async (req) =>
       UserMiddleware(req, async (req, user) => {
-        const currentUserSale = await getUserSale(user);
+        // Read as the caller, so an account-management call below multi-factor
+        // assurance finds no sale and is refused (Production Security Gate A.1).
+        const currentUserSale = await getCallerSale(req, user);
         if (!currentUserSale) {
           return createErrorResponse(401, "Unauthorized");
         }

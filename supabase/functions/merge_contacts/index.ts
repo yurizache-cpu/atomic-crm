@@ -1,9 +1,17 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { sql, type Selectable } from "https://esm.sh/kysely@0.27.2";
-import { runAsUser, type ContactsTable } from "../_shared/db.ts";
+import {
+  runAsUser,
+  type ContactsTable,
+  type VerifiedSession,
+} from "../_shared/db.ts";
 import { corsHeaders, OptionsMiddleware } from "../_shared/cors.ts";
 import { createErrorResponse } from "../_shared/utils.ts";
-import { AuthMiddleware, UserMiddleware } from "../_shared/authentication.ts";
+import {
+  AuthMiddleware,
+  getVerifiedSession,
+  UserMiddleware,
+} from "../_shared/authentication.ts";
 import { mergeLeadProfile } from "./mergeLeadProfile.ts";
 
 type Contact = Selectable<ContactsTable>;
@@ -81,123 +89,132 @@ async function mergeContacts(
   loserId: number,
   winnerId: number,
   userId: string,
+  session: VerifiedSession,
 ) {
   try {
-    // RLS applies: the whole merge runs as `authenticated`, as the caller.
-    return await runAsUser(userId, async (trx) => {
-      // Queries run one after another, never in parallel: the transaction owns
-      // a single pooled session, and a rollback must not race a query still
-      // queued behind a failed one.
+    // RLS applies: the whole merge runs as `authenticated`, as the caller, at
+    // the caller's verified session and level.
+    return await runAsUser(
+      userId,
+      async (trx) => {
+        // Queries run one after another, never in parallel: the transaction owns
+        // a single pooled session, and a rollback must not race a query still
+        // queued behind a failed one.
 
-      // 1. Fetch both contacts
-      const winner = await trx
-        .selectFrom("contacts")
-        .selectAll()
-        .where("id", "=", winnerId)
-        .executeTakeFirstOrThrow();
-      const loser = await trx
-        .selectFrom("contacts")
-        .selectAll()
-        .where("id", "=", loserId)
-        .executeTakeFirstOrThrow();
+        // 1. Fetch both contacts
+        const winner = await trx
+          .selectFrom("contacts")
+          .selectAll()
+          .where("id", "=", winnerId)
+          .executeTakeFirstOrThrow();
+        const loser = await trx
+          .selectFrom("contacts")
+          .selectAll()
+          .where("id", "=", loserId)
+          .executeTakeFirstOrThrow();
 
-      // 2. Reassign tasks from loser to winner
-      await trx
-        .updateTable("tasks")
-        .set({ contact_id: winnerId })
-        .where("contact_id", "=", loserId)
-        .execute();
-
-      // 3. Reassign notes from loser to winner
-      await trx
-        .updateTable("contact_notes")
-        .set({ contact_id: winnerId })
-        .where("contact_id", "=", loserId)
-        .execute();
-
-      // 4. Update deals - replace loserId with winnerId in contact_ids array
-      const deals = await trx
-        .selectFrom("deals")
-        .selectAll()
-        .where(sql`contact_ids @> ARRAY[${loserId}]::bigint[]`)
-        .execute();
-
-      for (const deal of deals) {
-        const newContactIds = [
-          ...new Set(
-            deal.contact_ids.filter((id) => id !== loserId).concat(winnerId),
-          ),
-        ];
+        // 2. Reassign tasks from loser to winner
         await trx
-          .updateTable("deals")
-          .set({ contact_ids: newContactIds })
-          .where("id", "=", deal.id)
-          .execute();
-      }
-
-      // 4b. Re-point the loser's acquisition trail. Every FK referencing
-      // contacts is ON DELETE CASCADE, so anything not re-pointed here is
-      // destroyed by step 6 — silently, because a cascade raises nothing.
-      // acquisition_attributions is an append-only trail (source / medium /
-      // campaign / gclid / utm_*) with NO unique constraint on contact_id, so
-      // both sides' rows survive the merge and the winner keeps the full
-      // history. Losing it would erase the only reason the table exists.
-      await trx
-        .updateTable("acquisition_attributions")
-        .set({ contact_id: winnerId })
-        .where("contact_id", "=", loserId)
-        .execute();
-
-      // 4c. Merge the lead profiles. Unlike the trail, contact_id here is
-      // UNIQUE and a trigger creates exactly one row per contact — so BOTH
-      // sides always have one, every merge, and the loser's is always
-      // cascaded away. It must be folded into the winner's, not re-pointed.
-      //
-      // do_not_contact is the reason this is LGPD-sensitive: it is an opt-out,
-      // and an opt-out is not recoverable by guessing. The rule is therefore
-      // OR, never "winner wins" — if EITHER side asked not to be contacted,
-      // the merged contact is opted out. Silently re-enabling contact because
-      // the surviving row happened to be the winner's is the incident.
-      const winnerProfile = await trx
-        .selectFrom("lead_profiles")
-        .selectAll()
-        .where("contact_id", "=", winnerId)
-        .executeTakeFirst();
-      const loserProfile = await trx
-        .selectFrom("lead_profiles")
-        .selectAll()
-        .where("contact_id", "=", loserId)
-        .executeTakeFirst();
-
-      if (winnerProfile && loserProfile) {
-        await trx
-          .updateTable("lead_profiles")
-          .set(mergeLeadProfile(winnerProfile, loserProfile) as any)
-          .where("contact_id", "=", winnerId)
-          .execute();
-      } else if (loserProfile && !winnerProfile) {
-        // Winner has no profile (possible only if the trigger was bypassed):
-        // re-point rather than drop.
-        await trx
-          .updateTable("lead_profiles")
+          .updateTable("tasks")
           .set({ contact_id: winnerId })
           .where("contact_id", "=", loserId)
           .execute();
-      }
 
-      // 5. Merge and update winner contact
-      const mergedData = mergeContactData(winner as Contact, loser as Contact);
-      await trx
-        .updateTable("contacts")
-        .set(mergedData)
-        .where("id", "=", winnerId)
-        .execute();
+        // 3. Reassign notes from loser to winner
+        await trx
+          .updateTable("contact_notes")
+          .set({ contact_id: winnerId })
+          .where("contact_id", "=", loserId)
+          .execute();
 
-      // 6. Delete loser contact
-      await trx.deleteFrom("contacts").where("id", "=", loserId).execute();
+        // 4. Update deals - replace loserId with winnerId in contact_ids array
+        const deals = await trx
+          .selectFrom("deals")
+          .selectAll()
+          .where(sql`contact_ids @> ARRAY[${loserId}]::bigint[]`)
+          .execute();
 
-      return { success: true, winnerId };
-    });
+        for (const deal of deals) {
+          const newContactIds = [
+            ...new Set(
+              deal.contact_ids.filter((id) => id !== loserId).concat(winnerId),
+            ),
+          ];
+          await trx
+            .updateTable("deals")
+            .set({ contact_ids: newContactIds })
+            .where("id", "=", deal.id)
+            .execute();
+        }
+
+        // 4b. Re-point the loser's acquisition trail. Every FK referencing
+        // contacts is ON DELETE CASCADE, so anything not re-pointed here is
+        // destroyed by step 6 — silently, because a cascade raises nothing.
+        // acquisition_attributions is an append-only trail (source / medium /
+        // campaign / gclid / utm_*) with NO unique constraint on contact_id, so
+        // both sides' rows survive the merge and the winner keeps the full
+        // history. Losing it would erase the only reason the table exists.
+        await trx
+          .updateTable("acquisition_attributions")
+          .set({ contact_id: winnerId })
+          .where("contact_id", "=", loserId)
+          .execute();
+
+        // 4c. Merge the lead profiles. Unlike the trail, contact_id here is
+        // UNIQUE and a trigger creates exactly one row per contact — so BOTH
+        // sides always have one, every merge, and the loser's is always
+        // cascaded away. It must be folded into the winner's, not re-pointed.
+        //
+        // do_not_contact is the reason this is LGPD-sensitive: it is an opt-out,
+        // and an opt-out is not recoverable by guessing. The rule is therefore
+        // OR, never "winner wins" — if EITHER side asked not to be contacted,
+        // the merged contact is opted out. Silently re-enabling contact because
+        // the surviving row happened to be the winner's is the incident.
+        const winnerProfile = await trx
+          .selectFrom("lead_profiles")
+          .selectAll()
+          .where("contact_id", "=", winnerId)
+          .executeTakeFirst();
+        const loserProfile = await trx
+          .selectFrom("lead_profiles")
+          .selectAll()
+          .where("contact_id", "=", loserId)
+          .executeTakeFirst();
+
+        if (winnerProfile && loserProfile) {
+          await trx
+            .updateTable("lead_profiles")
+            .set(mergeLeadProfile(winnerProfile, loserProfile) as any)
+            .where("contact_id", "=", winnerId)
+            .execute();
+        } else if (loserProfile && !winnerProfile) {
+          // Winner has no profile (possible only if the trigger was bypassed):
+          // re-point rather than drop.
+          await trx
+            .updateTable("lead_profiles")
+            .set({ contact_id: winnerId })
+            .where("contact_id", "=", loserId)
+            .execute();
+        }
+
+        // 5. Merge and update winner contact
+        const mergedData = mergeContactData(
+          winner as Contact,
+          loser as Contact,
+        );
+        await trx
+          .updateTable("contacts")
+          .set(mergedData)
+          .where("id", "=", winnerId)
+          .execute();
+
+        // 6. Delete loser contact
+        await trx.deleteFrom("contacts").where("id", "=", loserId).execute();
+
+        return { success: true, winnerId };
+      },
+      session,
+    );
   } catch (error) {
     console.error("Transaction failed:", error);
     throw error;
@@ -217,7 +234,12 @@ Deno.serve(async (req: Request) =>
               return createErrorResponse(400, "Missing loserId or winnerId");
             }
 
-            const result = await mergeContacts(loserId, winnerId, user.id);
+            const result = await mergeContacts(
+              loserId,
+              winnerId,
+              user.id,
+              await getVerifiedSession(req),
+            );
 
             return new Response(JSON.stringify(result), {
               headers: { "Content-Type": "application/json", ...corsHeaders },

@@ -110,6 +110,25 @@ $$;
 rollback;
 select pg_temp.assert_clean('ROLLBACK');
 
+-- G: the caller's verified session travels as the request claims (Production
+-- Security Gate A.1), inside the transaction only.
+begin;
+set local role authenticated;
+select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-00000000c0de', true);
+select set_config('request.jwt.claims',
+  '{"sub":"00000000-0000-4000-8000-00000000c0de","role":"authenticated","aud":"authenticated","session_id":"00000000-0000-4000-8000-0000000005e5","aal":"aal2"}', true);
+do $$
+begin
+  if auth.uid() is distinct from '00000000-0000-4000-8000-00000000c0de'::uuid
+     or current_setting('request.jwt.claims', true)::jsonb ->> 'session_id' is distinct from '00000000-0000-4000-8000-0000000005e5'
+     or current_setting('request.jwt.claims', true)::jsonb ->> 'aal' is distinct from 'aal2' then
+    raise exception 'G: the verified session did not reach the request claims';
+  end if;
+end
+$$;
+commit;
+select pg_temp.assert_clean('a verified session and COMMIT');
+
 -- F: a database error aborts the downgraded transaction. Whether the client
 -- then sends ROLLBACK or COMMIT, nothing survives. The two errors below are
 -- expected: permission denied for schema ops.

@@ -53,55 +53,6 @@ CREATE OR REPLACE FUNCTION "public"."cleanup_note_attachments"() RETURNS "trigge
     END;
     $$;
 
-CREATE OR REPLACE FUNCTION "public"."get_avatar_for_email"("email" "text") RETURNS "text"
-    LANGUAGE "plpgsql"
-    SET "search_path" TO 'public'
-    AS $$
-declare email_hash text;
-declare gravatar_url text;
-declare gravatar_status int8;
-declare email_domain text;
-declare favicon_url text;
-declare domain_status int8;
-
-begin
-    -- Try to fetch a gravatar image
-    email_hash = encode(extensions.digest(email, 'sha256'), 'hex');
-    gravatar_url = concat('https://www.gravatar.com/avatar/', email_hash, '?d=404');
-
-    select status from extensions.http_get(gravatar_url) into gravatar_status;
-
-    if gravatar_status = 200 then
-        return gravatar_url;
-    end if;
-
-    -- Fallback to email's domain favicon if not excluded
-    email_domain = split_part(email, '@', 2);
-    return get_domain_favicon(email_domain);
-exception
-    when others then
-        return 'ERROR';
-end;
-$$;
-
-CREATE OR REPLACE FUNCTION "public"."get_domain_favicon"("domain_name" "text") RETURNS "text"
-    LANGUAGE "plpgsql"
-    SET "search_path" TO 'public'
-    AS $$
-declare domain_status int8;
-
-begin
-    if exists (select from favicons_excluded_domains as fav where fav.domain = domain_name) then
-        return null;
-    end if;
-
-    return concat(
-        'https://favicon.show/',
-        (regexp_matches(domain_name, '^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/?\n]+)', 'i'))[1]
-    );
-end;
-$$;
-
 CREATE OR REPLACE FUNCTION "public"."get_note_attachments_function_url"() RETURNS "text"
     LANGUAGE "plpgsql"
     SET "search_path" TO 'public'
@@ -159,27 +110,6 @@ BEGIN
 END;
 $_$;
 
-CREATE OR REPLACE FUNCTION "public"."handle_company_saved"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    SET "search_path" TO 'public'
-    AS $$
-declare company_logo text;
-
-begin
-    if new.logo is not null then
-        return new;
-    end if;
-
-    company_logo = get_domain_favicon(new.website);
-    if company_logo is null then
-        return new;
-    end if;
-
-    new.logo = concat('{"src":"', company_logo, '","title":"Company favicon"}');
-    return new;
-end;
-$$;
-
 CREATE OR REPLACE FUNCTION "public"."handle_contact_note_created_or_updated"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
@@ -193,40 +123,6 @@ begin
   return new;
 end;
 $$;
-
-CREATE OR REPLACE FUNCTION "public"."handle_contact_saved"() RETURNS "trigger"
-    LANGUAGE "plpgsql"
-    SET "search_path" TO 'public'
-    AS $$declare contact_avatar text;
-declare emails_length int8;
-declare item jsonb;
-
-begin
-    if new.avatar is not null then
-        return new;
-    end if;
-
-    select coalesce(jsonb_array_length(new.email_jsonb), 0) into emails_length;
-
-    if emails_length = 0 then
-        return new;
-    end if;
-
-    for item in select jsonb_array_elements(new.email_jsonb)
-    loop
-        select public.get_avatar_for_email(item->>'email') into contact_avatar;
-        if (contact_avatar is not null) then
-            exit;
-        end if;
-    end loop;
-
-    if contact_avatar is null then
-        return new;
-    end if;
-
-    new.avatar = concat('{"src":"', contact_avatar, '"}');
-    return new;
-end;$$;
 
 CREATE OR REPLACE FUNCTION "public"."handle_new_user"() RETURNS "trigger"
     LANGUAGE "plpgsql" SECURITY DEFINER
@@ -274,6 +170,7 @@ begin
       and administrator = true
       and role = 'owner'
       and disabled = false
+      and ops.session_assurance_satisfied()
   );
 end;
 $$;
@@ -532,6 +429,7 @@ CREATE OR REPLACE FUNCTION "public"."current_sales_id"() RETURNS bigint
     from public.sales s
     where s.user_id = auth.uid()
       and s.disabled = false
+      and ops.session_assurance_satisfied()
     limit 1;
     $$;
 

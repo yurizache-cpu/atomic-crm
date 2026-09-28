@@ -16,6 +16,16 @@
 
 begin;
 
+-- This replay runs on a database built from migrations alone, which requires
+-- multi-factor assurance from every CRM session (Production Security Gate A.1);
+-- these assertions are about what the LEGACY DATA means, read through the CRM's
+-- own policies with only a subject, so the one non-production exemption is
+-- recorded for this transaction, as the development seed does. The rollback at
+-- the end removes it. crm_assurance.sql attacks the assurance rule itself.
+insert into ops.operator_assurance_exemption (reason, recorded_by)
+values ('upgrade replay fixture, rolled back', 'upgrade-assertions')
+on conflict (singleton) do nothing;
+
 -- Act as a sales user through the real `authenticated` role, the way
 -- PostgREST does: a JWT subject and SET ROLE, never a bypass.
 create function pg_temp.act_as(p_email text) returns void

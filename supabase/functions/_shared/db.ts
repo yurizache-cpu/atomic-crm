@@ -189,11 +189,23 @@ const db = new Kysely<Database>({
 });
 
 /**
+ * What the caller's VERIFIED token states about its session: the session id and
+ * the authenticator assurance level. The CRM's row-security policies require
+ * level 2 (Production Security Gate A.1), which the database confirms against
+ * the auth provider's own session row, so a wrong value here can only deny.
+ */
+export interface VerifiedSession {
+  readonly sessionId: string;
+  readonly aal: string;
+}
+
+/**
  * Runs `work` in one transaction as `authenticated`, with the verified caller's
- * id as the RLS identity. The pool logs in as the database owner, so this is how
- * a function uses it (ADR 0002). SET LOCAL ROLE and the local set_config end
- * with the transaction, on COMMIT and ROLLBACK alike, and the id travels as a
- * bound parameter, never inside the SQL text.
+ * id as the RLS identity (and, when given, the verified session's id and level
+ * as the request claims). The pool logs in as the database owner, so this is
+ * how a function uses it (ADR 0002). SET LOCAL ROLE and the local set_config
+ * end with the transaction, on COMMIT and ROLLBACK alike, and the id and the
+ * claims travel as bound parameters, never inside the SQL text.
  *
  * The role switch is not a privilege boundary: the owner session could switch
  * back. What keeps it out of `ops` is that every statement sent here is fixed
@@ -204,6 +216,7 @@ const db = new Kysely<Database>({
 export function runAsUser<T>(
   userId: string,
   work: (trx: Transaction<Database>) => Promise<T>,
+  session?: VerifiedSession,
 ): Promise<T> {
   return db.transaction().execute(async (trx) => {
     await trx.executeQuery(CompiledQuery.raw("SET LOCAL ROLE authenticated"));
@@ -213,6 +226,24 @@ export function runAsUser<T>(
         [userId],
       ),
     );
+    if (session !== undefined) {
+      // The claims the caller's verified token states, as PostgREST would set
+      // them, so the row-security policies see the session and level the
+      // database itself then checks against auth.sessions (Production Security
+      // Gate A.1). Without them the CRM's policies refuse the caller, unless
+      // the non-production exemption exists: it fails closed.
+      await trx.executeQuery(
+        CompiledQuery.raw("SELECT set_config('request.jwt.claims', $1, true)", [
+          JSON.stringify({
+            sub: userId,
+            role: "authenticated",
+            aud: "authenticated",
+            session_id: session.sessionId,
+            aal: session.aal,
+          }),
+        ]),
+      );
+    }
     return await work(trx);
   });
 }

@@ -21,8 +21,6 @@ import type {
 } from "../../types";
 import type { ConfigurationContextValue } from "../../root/ConfigurationContext";
 import { getActivityLog } from "../commons/activity";
-import { getCompanyAvatar } from "../commons/getCompanyAvatar";
-import { getContactAvatar } from "../commons/getContactAvatar";
 import { mergeContacts } from "../commons/mergeContacts";
 import type { CrmDataProvider } from "../types";
 import {
@@ -37,47 +35,22 @@ const TASK_MARKED_AS_DONE = "TASK_MARKED_AS_DONE";
 const TASK_MARKED_AS_UNDONE = "TASK_MARKED_AS_UNDONE";
 const TASK_DONE_NOT_CHANGED = "TASK_DONE_NOT_CHANGED";
 
+// A logo the user uploaded is stored as given. Nothing is looked up from the
+// company's website or a contact's email: no avatar or favicon request leaves
+// the browser (Production Security Gate A.1).
 const processCompanyLogo = async (params: any) => {
-  let logo = params.data.logo;
+  const logo = params.data.logo;
+  if (!(logo?.rawFile instanceof File)) return params;
 
-  if (typeof logo !== "object" || logo === null || !logo.src) {
-    logo = await getCompanyAvatar(params.data);
-  } else if (logo.rawFile instanceof File) {
-    const base64Logo = await convertFileToBase64(logo);
-    logo = { src: base64Logo, title: logo.title };
-  }
-
+  const base64Logo = await convertFileToBase64(logo);
   return {
     ...params,
     data: {
       ...params.data,
-      logo,
+      logo: { src: base64Logo, title: logo.title },
     },
   };
 };
-
-async function processContactAvatar(
-  params: UpdateParams<Contact>,
-): Promise<UpdateParams<Contact>>;
-
-async function processContactAvatar(
-  params: CreateParams<Contact>,
-): Promise<CreateParams<Contact>>;
-
-async function processContactAvatar(
-  params: CreateParams<Contact> | UpdateParams<Contact>,
-): Promise<CreateParams<Contact> | UpdateParams<Contact>> {
-  const { data } = params;
-  if (data.avatar?.src || !data.email_jsonb || !data.email_jsonb.length) {
-    return params;
-  }
-  const avatarUrl = await getContactAvatar(data);
-
-  // Clone the data and modify the clone
-  const newData = { ...data, avatar: { src: avatarUrl || undefined } };
-
-  return { ...params, data: newData };
-}
 
 async function fetchAndUpdateCompanyData(
   params: UpdateParams<Contact>,
@@ -438,8 +411,7 @@ export const createDataProvider = ({
                 createParams.data.last_seen ?? new Date().toISOString(),
             },
           };
-          const newParams = await processContactAvatar(params);
-          return fetchAndUpdateCompanyData(newParams, dataProvider);
+          return fetchAndUpdateCompanyData(params, dataProvider);
         },
         afterCreate: async (result) => {
           if (result.data.company_id != null) {
@@ -451,8 +423,7 @@ export const createDataProvider = ({
           return result;
         },
         beforeUpdate: async (params) => {
-          const newParams = await processContactAvatar(params);
-          return fetchAndUpdateCompanyData(newParams, dataProvider);
+          return fetchAndUpdateCompanyData(params, dataProvider);
         },
         afterDelete: async (result) => {
           if (result.data.company_id != null) {

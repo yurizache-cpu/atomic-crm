@@ -5,8 +5,9 @@
 -- Company OS authority below multi-factor assurance, or waive it from a
 -- request?
 --
---   A  the reviewed public functions: no PUBLIC or anon EXECUTE; exactly eight
---      for authenticated, whose policies and triggers still run; nothing for
+--   A  the reviewed public functions: no PUBLIC or anon EXECUTE; exactly the six
+--      row-security helpers for authenticated (Gate A.1 removed the two avatar
+--      and favicon functions, crm_assurance.sql), whose policies still run; nothing for
 --      the Company OS capability roles; no browser path into those roles;
 --      tenant isolation unchanged;
 --   B  multi-factor assurance at ops.operator_scope(), the one resolver every
@@ -113,15 +114,15 @@ begin
     raise exception 'A1: a public function is still executable by PUBLIC or anon: %', v_bad;
   end if;
 
-  -- A2 authenticated executes exactly the eight reviewed functions.
+  -- A2 authenticated executes exactly the six reviewed row-security helpers.
   select string_agg(p.proname || '(' || oidvectortypes(p.proargtypes) || ')', ', '
                     order by p.proname || '(' || oidvectortypes(p.proargtypes) || ')') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE');
   if v_bad is distinct from
      'can_access_contact(bigint), can_access_deal(bigint), can_manage_sales_id(bigint), current_sales_id(), '
-     || 'get_avatar_for_email(text), get_domain_favicon(text), is_active_sales_user(), is_admin()' then
-    raise exception 'A2: authenticated executes other than the eight reviewed public functions: %', v_bad;
+     || 'is_active_sales_user(), is_admin()' then
+    raise exception 'A2: authenticated executes other than the six reviewed public functions: %', v_bad;
   end if;
 
   -- A3 the Company OS capability roles execute nothing in public, and no
@@ -152,6 +153,10 @@ values
 insert into public.contacts (first_name, last_name, sales_id)
 select 'Contact', 'OfBetaPS', s.id from public.sales s where s.user_id = 'bbbbbbbb-0000-0000-0000-0000000000b2';
 
+insert into ops.operator_assurance_exemption (reason, recorded_by)
+values ('production_security suite, section A only', 'ps-owner')
+on conflict (singleton) do nothing;
+
 do $$
 declare
   v_state text;
@@ -160,7 +165,10 @@ begin
   set local role authenticated;
   set local request.jwt.claims = '{"sub":"aaaaaaaa-0000-0000-0000-0000000000a1"}';
 
-  -- A4 the policies still run their helpers, and the stamping triggers theirs.
+  -- A4 the policies still run their helpers (the non-production exemption is
+  --    present for this section only: Gate A.1 makes every CRM policy require
+  --    multi-factor assurance, which crm_assurance.sql attacks; section B below
+  --    removes the exemption).
   insert into public.contacts (first_name, last_name, sales_id, email_jsonb)
   values ('Synthetic', 'OfAlphaPS', public.current_sales_id(),
           '[{"email": "synthetic.alpha@example.test", "type": "Work"}]');

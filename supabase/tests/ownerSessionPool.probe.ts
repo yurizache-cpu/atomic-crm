@@ -16,6 +16,7 @@ type Row = Record<string, unknown>;
 
 const USER = "00000000-0000-4000-8000-00000000c0de";
 const OTHER = "00000000-0000-4000-8000-00000000beef";
+const SESSION = "00000000-0000-4000-8000-0000000005e5";
 
 const OPS_ATTEMPTS: Record<string, string> = {
   "select ops.tenants": "select count(*) from ops.tenants",
@@ -124,6 +125,23 @@ async function measure(): Promise<Row> {
   });
   states.push(await sessionState("COMMIT"));
 
+  // H: the caller's verified session reaches the request claims, and only
+  // inside the transaction (the state after COMMIT is checked like any other).
+  const withSession = await runAsUser(
+    USER,
+    async (trx) => {
+      const { rows } = await trx.executeQuery<Row>(
+        raw(`select auth.uid()::text as uid,
+                    current_setting('request.jwt.claims', true)::jsonb ->> 'session_id' as "sessionId",
+                    current_setting('request.jwt.claims', true)::jsonb ->> 'aal' as aal,
+                    current_setting('request.jwt.claims', true)::jsonb ->> 'sub' as sub`),
+      );
+      return plain(rows[0]);
+    },
+    { sessionId: SESSION, aal: "aal2" },
+  );
+  states.push(await sessionState("a verified session and COMMIT"));
+
   // F and G: every way a merge fails.
   const thrown = await outcome(
     runAsUser(USER, async (trx) => {
@@ -173,6 +191,8 @@ async function measure(): Promise<Row> {
     user: USER,
     other: OTHER,
     committed: plain(committed),
+    withSession,
+    session: SESSION,
     thrown,
     noResult,
     databaseError,

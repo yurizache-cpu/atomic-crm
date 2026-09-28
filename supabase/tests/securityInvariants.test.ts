@@ -1064,7 +1064,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-27",
     statement:
-      "The owner-session Postgres pool reaches nothing in ops and carries nothing between requests: the pool is private to db.ts, whose only use is runAsUser, which assumes authenticated for one transaction with the caller's id as a bound parameter; merge_contacts, the only function that loads it, sends fixed statements through it, and both files are sealed; authenticated holds no privilege in ops; and after COMMIT, ROLLBACK or an error inside the transaction the one pooled session is again the owner, with no role, identity, tenant context or open transaction.",
+      "The owner-session Postgres pool reaches nothing in ops and carries nothing between requests: the pool is private to db.ts, whose only use is runAsUser, which assumes authenticated for one transaction with the caller's id, and the verified session's id and level when given, as bound parameters; merge_contacts, the only function that loads it, sends fixed statements through it, and both files are sealed; authenticated holds no privilege in ops; and after COMMIT, ROLLBACK or an error inside the transaction the one pooled session is again the owner, with no role, identity, tenant context or open transaction.",
     provenBy: ["live database", "static guard", "unit test"],
     enforcedBy: [
       {
@@ -1094,7 +1094,19 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/functions/merge_contacts/index.ts",
-        marker: /return await runAsUser\(userId,/,
+        marker: /return await runAsUser\(\s*userId,/,
+      },
+      {
+        file: "supabase/functions/_shared/db.ts",
+        marker: /set_config\('request\.jwt\.claims', \$1, true\)/,
+      },
+      {
+        file: "supabase/tests/owner_session_pool.sql",
+        marker: /G: the verified session did not reach the request claims/,
+      },
+      {
+        file: "supabase/tests/ownerSessionPool.mjs",
+        marker: /H: a verified session's id and level reach the request claims/,
       },
       {
         file: "supabase/tests/owner_session_pool.sql",
@@ -3994,8 +4006,8 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-73",
     statement:
-      "No function in schema public is executable by PUBLIC or anon: authenticated executes exactly the eight reviewed functions its row-security policies and stamping triggers call (can_access_contact, can_access_deal, can_manage_sales_id, current_sales_id, is_active_sales_user, is_admin, get_avatar_for_email and get_domain_favicon); the Company OS capability roles (ops_worker, ops_gateway, ops_operator_api) execute nothing in public and no browser role is a member of one; a function added to public is born without PUBLIC EXECUTE, and any grant beyond this reviewed set fails a pin by name.",
-    provenBy: ["live database", "migration assertion"],
+      "No function in schema public is executable by PUBLIC or anon: authenticated executes exactly the six row-security helpers its policies call (can_access_contact, can_access_deal, can_manage_sales_id, current_sales_id, is_active_sales_user, is_admin); the Company OS capability roles (ops_worker, ops_gateway, ops_operator_api) execute nothing in public and no browser role is a member of one; a function added to public is born without PUBLIC EXECUTE, and any grant beyond this reviewed set fails a pin by name. Saving a contact or a company reaches no third party: no trigger or function in public performs or names an avatar or favicon lookup (the two triggers and four functions of the upstream enrichment are dropped, not merely revoked), so no browser, authenticated or service_role write sends a hash of an email or the domain of a website anywhere, and a stored avatar or logo is never rewritten.",
+    provenBy: ["live database", "migration assertion", "static guard"],
     enforcedBy: [
       {
         file: "supabase/tests/production_security.sql",
@@ -4004,7 +4016,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/production_security.sql",
         marker:
-          /A2: authenticated executes other than the eight reviewed public functions/,
+          /A2: authenticated executes other than the six reviewed public functions/,
       },
       {
         file: "supabase/tests/production_security.sql",
@@ -4019,8 +4031,44 @@ const INVARIANTS: Invariant[] = [
         marker: /A7: anon executed a row-security helper/,
       },
       {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /A1: an enrichment function still exists/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /A2: the triggers on contacts and companies changed/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker:
+          /A3: authenticated executes other than the six row-security helpers/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /A6: a stored avatar changed/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /A8: a service_role write stamped an avatar or a logo/,
+      },
+      {
         file: "supabase/migrations/20261004120000_production_security_gate_a.sql",
         marker: /Gate A: a public function is executable by PUBLIC or anon/,
+      },
+      {
+        file: "supabase/migrations/20261005120000_production_security_gate_a1.sql",
+        marker:
+          /Gate A\.1: authenticated executes other than the six reviewed row-security helpers/,
+      },
+      {
+        file: "supabase/migrations/20261005120000_production_security_gate_a1.sql",
+        marker:
+          /Gate A\.1: a public function still performs or names a third-party lookup/,
+      },
+      {
+        file: "supabase/tests/productionSecurityGateA1.test.ts",
+        marker:
+          /names no third-party avatar or favicon host in application, function or schema source/,
       },
       {
         file: "supabase/tests/whatsapp_transport.sql",
@@ -4034,13 +4082,18 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "service_role keeps its explicit grants: it is the backend trust root and bypasses row security (SI-06). The stamping helper get_avatar_for_email still asks Gravatar for a hash of a contact's email through extensions.http_get when service_role writes a contact (the Postmark path): an outbound disclosure recorded as open debt, not a PUBLIC grant.",
+      "service_role keeps its explicit grants: it is the backend trust root and bypasses row security (SI-06); what it can no longer do is ask a third party about a contact or a company, because no such function exists. Avatars and logos already stored, whatever their value, are left as stored (the interface shows initials or a letter when an image does not load). A future feature that wants a picture must bring its own reviewed source and a new decision; nothing here approves one.",
   },
   {
     id: "SI-74",
     statement:
-      "A Company OS principal acts only with multi-factor assurance: ops.operator_scope(), the one resolver every company_os_api gate calls, refuses as not signed in (OS401) any session unless both the auth provider's own auth.sessions row and the verified token's aal claim are at level aal2 or above; no request value, browser state, legacy per-claim setting or argument can raise either; the only waiver is a single owner-recorded non-production row (ops.operator_assurance_exemption) that no application role can read or write, that no migration ships, and that only the local development seed records, which never reaches a hosted project (SI-25).",
-    provenBy: ["live database", "migration assertion", "unit test"],
+      "A browser session acts on real data only with multi-factor assurance: ops.operator_scope(), the one resolver every company_os_api gate calls, and public.current_sales_id() and public.is_admin(), the two roots every CRM row-security policy decides through (so every browser-readable CRM table and view, the views being security_invoker), refuse or answer nothing to any session unless both the auth provider's own auth.sessions row and the verified token's aal claim, for the user the request acts as, are at level aal2 or above; the level is an additional prerequisite and never widens what a row rule allows; the two backend paths that act as a caller (merge_contacts through the owner-session pool, and the users function's caller lookup) carry the caller's verified session and are refused the same way; no request value, browser state, legacy per-claim setting or argument can raise the level; the only waiver is a single owner-recorded non-production row (ops.operator_assurance_exemption) that no application role can read or write, that no migration ships, and that only the local development seed records, which never reaches a hosted project (SI-25).",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "unit test",
+      "static guard",
+    ],
     enforcedBy: [
       {
         file: "supabase/tests/production_security.sql",
@@ -4063,9 +4116,47 @@ const INVARIANTS: Invariant[] = [
         marker: /C3: % holds a privilege on the assurance exemption/,
       },
       {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /B1: a policy decides without the row-security helpers/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /B2: the row rules at aal2 changed/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /B3 insert at aal1/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /B4 the stale pre-second-factor token/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /B5 the owner-session channel at aal2/,
+      },
+      {
+        file: "supabase/tests/crm_assurance.sql",
+        marker: /C4: session %, token %, exemption %/,
+      },
+      {
         file: "supabase/migrations/20261004120000_production_security_gate_a.sql",
         marker:
           /Gate A: a migration shipped the non-production assurance exemption/,
+      },
+      {
+        file: "supabase/migrations/20261005120000_production_security_gate_a1.sql",
+        marker:
+          /Gate A\.1: a row-security root does not require multi-factor assurance/,
+      },
+      {
+        file: "supabase/tests/productionSecurityGateA1.test.ts",
+        marker: /is inserted by no migration/,
+      },
+      {
+        file: "supabase/tests/productionSecurityGateA1.test.ts",
+        marker:
+          /defines %s with the same body, and that body requires the assurance rule/,
       },
       {
         file: "supabase/tests/referenceData.mjs",
@@ -4076,9 +4167,19 @@ const INVARIANTS: Invariant[] = [
         file: "src/company-os/CompanyOsApp.mfa.test.tsx",
         marker: /only the server's next answer opens the Company OS/,
       },
+      {
+        file: "src/crmSecondFactor.test.tsx",
+        marker:
+          /sends a session the server refuses at level 1 to the second factor, not to the CRM/,
+      },
+      {
+        file: "src/components/atomic-crm/providers/supabase/authProvider.secondFactor.test.ts",
+        marker:
+          /keeps a level-1 session whose account the database does not show/,
+      },
     ],
     caveat:
-      "The waiver is the owner's to record, as every owner act is (the owner's credential can also disable triggers, SI-22); a hosted project that holds the row accepts level-1 sessions, so its absence is a production precondition. A hosted project must also enable TOTP in its own auth settings, or no one reaches level 2 and the Company OS stays closed. A token issued before its session reached level 2 stays refused, since its claim still says aal1. Verified against the local Supabase Auth: the provider records aal2 on the same session row and in the new token after a TOTP verification.",
+      "The waiver is the owner's to record, as every owner act is (the owner's credential can also disable triggers, SI-22); a hosted project that holds the row accepts level-1 sessions, so its absence is a production precondition. A hosted project must also enable TOTP in its own auth settings, or no one reaches level 2 and the CRM and the Company OS stay closed. A token issued before its session reached level 2 stays refused, since its claim still says aal1. The provider lets a person with no enrolled factor enrol one at level 1, so a stolen level-1 session of someone who has not yet enrolled can enrol its own factor: token theft remains a known residual, and the first enrolment should be done at onboarding. The screen that asks for the second factor (src/crmSecondFactor.tsx, src/crmAccess.ts) is convenience only. update_password (a reset email to the caller's own address), the inbound-email webhook and the attachment cleanup function are not browser reads of CRM data and are unchanged. Verified against the local Supabase Auth: the provider records aal2 on the same session row and in the new token after a TOTP verification.",
   },
   {
     id: "SI-75",
