@@ -611,3 +611,19 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Status:** Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE. PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED. Strict MVP ~93%.
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
+
+### Production Security Gate A (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+
+Built on `feature/production-security-gate-a` from `feature/clinical-phase-1` at `c4938029` and integrated by one PR into `feature/clinical-phase-1`. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md).
+
+- **PUBLIC helper debt closed** (R-16, ADR 0018 amendment 3): PUBLIC and `anon` execute nothing in `public`; `authenticated` executes exactly eight reviewed functions; the Company OS capability roles execute none (SI-73).
+- **MFA at the Company OS authority:** `ops.operator_scope()` requires `aal2` on both the provider's session row and the verified token, or refuses. The non-production exemption lives only in the local seed. The browser completes the provider's own TOTP factor (SI-74).
+- **Browser policy:** a Content-Security-Policy and a strict referrer policy in every production page, enforced by the build scan. The host header set is declared in one module and served by `vite preview` (SI-75).
+- **Remaining production-readiness blockers:**
+  - a host that sends the declared headers (hosting undecided; GitHub Pages cannot);
+  - TOTP enabled on a hosted Supabase project;
+  - CRM screens outside the Company OS not MFA-gated (owner decision);
+  - the Gravatar lookup from service-role contact writes;
+  - ADR 0020 §C evidence and production WhatsApp.
+- **Unchanged:** PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
+- **Next:** not started; the owner decides the next milestone.
