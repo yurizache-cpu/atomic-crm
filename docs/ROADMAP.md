@@ -579,4 +579,22 @@ The owner answered D1–D10 (ADR 0020 §H) and the §G batch was built on the sa
 - **Unchanged:** no authorization recorded; real patient model traffic DISABLED; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED; no RAG.
 - **Integration (2026-09-28):** PR #16, normal merge `097b4b3cfdd7e18f65bc0b057820dd9eac998aa1` into `feature/clinical-phase-1` (parents `156977dd`, `697745a8`); the source branch is retained at `697745a8`, and `main` is unchanged at `a863e2a0`. The Codex review's P1 (the lead-triage model input still carried the task's title and type) was fixed before the merge in `697745a8`. Post-merge Check #87 (run 36362501229) passed Test, Build, Typecheck, ESLint and Database security & reproducibility; the workflow stays red only for the accepted historical baseline: e2e exactly 9 failed and 1 skipped, and Prettier exactly 2 historical errors (`sampleCsv.test.ts`, `canAccess.test.ts`). There is no new regression.
 - **Status:** Q8 ENFORCEMENT: INTEGRATED (the technical fail-closed enforcement). PRODUCTION REAL-DATA AUTHORIZATION: CLOSED: no model-data authorization exists, and ADR 0020 stays Proposed. REAL PATIENT MODEL TRAFFIC: DISABLED. No production provider enablement, no production WhatsApp enablement, no Jev, no RAG. Strict MVP: ~91% (directional).
-- **Next:** the next technical Q8 sub-batch is expected to address the retention / redaction lifecycle (D6, D7). Not started.
+- **Next:** the next technical Q8 sub-batch is expected to address the retention / redaction lifecycle (D6, D7). *(2026-09-28: implemented; see below.)*
+
+### Q8 D6/D7 — AI working-content retention and redaction (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+
+Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99666512` and integrated by one PR into `feature/clinical-phase-1`. Read [PHASE_Q8_RETENTION_REPORT.md](PHASE_Q8_RETENTION_REPORT.md) and ADR 0020 §I.
+
+- **What is redacted:**
+  - the AI working content of a `health` or `person_text` task: its description, every run's result, and every review's proposed copy and note;
+  - the unkeyed fingerprints derived from it (task request, run input, admission body).
+
+  The redaction happens in place. No row is deleted, and every content-free audit fact stays.
+- **When:** at most 30 days after the database's `reviewed_at` of the task's latest decided review, or the relied-on authorization's own `content_retention_days` when fewer. The worker redacts on the one INTERNAL `content.retention_due` job queued at the due instant (the follow-up pattern: no cron).
+- **Owner acts:** `npm run ops -- retention erase` (one task, its own tenant, now) and `retention sweep` (bounded); `retention list` reads. SI-39 is extended, and SI-72 is added.
+- **Open for the owner:** a flow that never has a decided review has no clock; explicit erasure covers it, and an abandoned-flow policy is an owner decision.
+- **Unchanged:**
+  - PRODUCTION REAL-DATA AUTHORIZATION: CLOSED, and REAL PATIENT MODEL TRAFFIC: DISABLED;
+  - no authorization recorded, and no provider-side deletion;
+  - no production WhatsApp (ADR 0018 keeps body and identifier retention), no Jev and no RAG.
+- **Next:** not started; the owner decides the next milestone.

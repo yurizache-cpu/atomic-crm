@@ -1,7 +1,7 @@
 # ADR 0020 — Real data at the model boundary (BASELINE Q8): a closed data classification, recorded provider evidence and one fail-closed gate
 
-**Status:** Proposed — owner decision packet (2026-09-27). **Owner decisions D1–D10 given 2026-09-27 (§H) and implemented as the enforcement batch; the record awaits the owner's acceptance at the review checkpoint.** BASELINE Q8 stays OPEN for real data: no authorization is recorded, and real patient model traffic is still disabled.
-**Implemented by:** `supabase/migrations/20261001120000_model_data_authorization.sql`, `npm run ops -- data-auth`, `engine/models/identifierRedaction.ts` and the minimised `lead_triage.v2` input (enforcement only; see [PHASE_Q8_ENFORCEMENT_REPORT.md](../PHASE_Q8_ENFORCEMENT_REPORT.md)). Content redaction and retention (D6, D7) are the next batch.
+**Status:** Proposed — owner decision packet (2026-09-27). **Owner decisions D1–D10 given 2026-09-27 (§H); the fail-closed enforcement is integrated (PR #16) and the D6/D7 retention and redaction lifecycle is implemented (§I).** The record is NOT production-authorized: BASELINE Q8 stays OPEN for real data, no authorization is recorded, and real patient model traffic is disabled.
+**Implemented by:** `supabase/migrations/20261001120000_model_data_authorization.sql`, `npm run ops -- data-auth`, `engine/models/identifierRedaction.ts` and the minimised `lead_triage.v2` input (enforcement; see [PHASE_Q8_ENFORCEMENT_REPORT.md](../PHASE_Q8_ENFORCEMENT_REPORT.md)); `supabase/migrations/20261002120000_content_retention_redaction.sql`, the `content.retention_due` worker job and `npm run ops -- retention` (D6, D7; see [PHASE_Q8_RETENTION_REPORT.md](../PHASE_Q8_RETENTION_REPORT.md)).
 **Relates to:**
 - [ADR 0016](0016-agent-runs-and-model-providers.md): agent runs and the provider boundary.
 - [ADR 0017](0017-runtime-governance.md): owner-recorded versioned governance data; the pattern reused in §D.
@@ -227,9 +227,32 @@ The owner answered §E for this implementation. Legal and provider evidence stay
 | D3 | (a) free text a lead or patient wrote is presumed `health`; no semantic downgrade. | The admission derives `health` for any free text that is neither synthetic nor from a test channel; nothing inspects content. |
 | D4 | An explicit, versioned authorization reference compatible with specific consent; receiving a message is not consent; real health traffic stays denied until the lawful-basis evidence exists; another basis only by an explicit owner/legal decision. | `lawful_basis_ref` is required for person content, as an opaque reference; nothing records one. |
 | D5 | For health: the contract covers the processing, a DPA, API data not used for training, zero data retention enabled (or an owner-approved equivalent; `store:false` is not it), exact provider/project/model evidence, retention behaviour verified. No OpenAI production access in this batch. | Every one is a required reference or `training_excluded = true` on a person-content authorization, bound to one provider and exact model; no provider configuration changed. |
-| D6 | AI working content: 30 days after the review that completes the flow. Not clinical-record retention. Redaction is a later batch. | `content_retention_days` between 1 and 30 on every person-content authorization; enforcement is the next batch. |
-| D7 | (a) redact content in place, keep non-content audit evidence; never hard-delete audit history. | Next batch. This one deletes nothing and keeps every version and run row. |
+| D6 | AI working content: 30 days after the review that completes the flow. Not clinical-record retention. Redaction is a later batch. | `content_retention_days` between 1 and 30 on every person-content authorization; enforced by the D6/D7 batch (§I). |
+| D7 | (a) redact content in place, keep non-content audit evidence; never hard-delete audit history. | Implemented by the D6/D7 batch (§I): redaction in place, no row deleted, unkeyed content fingerprints nulled, owner erasure per task. |
 | D8 | **A test channel is not test data** (and, at the final review, the browser-decidable review, its browser advice and the decision-shadow input take their test scope from the task's trusted class, `synthetic` or `test`, never from the channel's mode) (made precise at the owner's review of the batch, 2026-09-27). Person-originated free text is `test` only when BOTH the ingress is an explicitly configured test channel AND the sender is an explicitly registered test sender; any other person-originated text, an unknown sender on a test channel included, is `health`. Trusted internal fixtures and the synthetic ingress keep producing `synthetic` or `test`. Production WhatsApp unchanged; ADR 0018 stays an independent gate. | `ops.communication_test_senders`: owner-only registrations of a sender on one test channel, retired once, never a migration row or the browser (`ops.register_test_sender`, `ops.retire_test_sender`). `ops.admit_inbound_core` classifies `test` only through `ops.registered_test_sender`; the sender is the provider's signed attestation, never the message. No content inspection. ADR 0018 unchanged. |
 | D9 | A documented international-transfer mechanism for real sensitive data; until it exists, deny; the generic DPA is not assumed to satisfy it. | `transfer_mechanism_ref` is required for person content; none is recorded. |
 | D10 | (a) owner-only CLI act; every record and retire auditable; no browser authority. | `npm run ops -- data-auth` (`list`, `record`, `retire`); SI-39 extended; immutable versions retired once, on the record; no `company_os_api` function reaches the table. |
+
+## I. D6/D7 implementation: AI working-content retention and redaction (2026-09-28)
+
+Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99666512`. It enforces D6 and D7 and changes nothing else in this record: no authorization is recorded, and real patient model traffic stays disabled.
+
+- **Content, traced from the lead-triage input to the decision:**
+  - the task's description (the admitted body);
+  - every run's result (the model's advice and reply draft);
+  - every review's proposed copy of that result, and the reviewer's free-text note.
+
+  The unkeyed digests of that content are nulled with it: the task's request fingerprint, every run's input fingerprint and the admission's body fingerprint. Nothing is re-keyed: tenant-keyed fingerprints are not built.
+- **Not content, and kept:** every id, class, status, decision, reviewer, instant, cost, usage count, refusal code, provider and model fact, authorization reference, idempotency key, event and act log. The decision-shadow input fingerprint hashes classification enums only, and protected classes never reach it (SI-71). The contact reference and every WhatsApp identifier stay ADR 0018's decision.
+- **Clock:** the database's `reviewed_at` of the task's latest decided review; a later decided review moves it forward, never back. Every authorized person-content capability (`lead_triage`, the only one) reaches a review.
+- **Days:** the relied-on authorization's `content_retention_days`, or 30 where none applied (the in-process provider); never more than 30. Days are 24-hour days.
+- **Flows with no decided review** (a run failed, was refused or is indeterminate, or its review is never decided) have no clock. Explicit erasure covers them. A policy for abandoned flows is an owner decision not taken here.
+- **Mechanism:**
+  - `ops.content_retention`: one ledger row per protected task, holding no content.
+  - One INTERNAL `content.retention_due` job per scheduled flow, available at the due instant (the Phase 3A.1 follow-up pattern: no cron, no second queue). Its one lease-bound capability is `ops.redact_due_content()`.
+  - A bounded owner sweep (`npm run ops -- retention sweep`) for anything left due.
+  - An owner-only erasure of one task's flow, in its own tenant (`npm run ops -- retention erase`).
+  - No browser authority, and no row is deleted.
+- **Guards:** every immutability guard over this content admits exactly one more change, a redaction the ledger records at that instant. It removes the named content, marks the row and changes no other column. A flow with a run pending or running, or a review undecided, is never redacted. A redacted task gets no new run, and a redacted review's send is blocked (`content_redacted`).
+- **Invariant:** SI-72. SI-39 is extended with `retention erase` and `retention sweep`.
 
