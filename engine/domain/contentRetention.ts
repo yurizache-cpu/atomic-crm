@@ -26,6 +26,8 @@ export interface ContentRetentionRow {
   readonly tenantId: string;
   readonly taskId: string;
   readonly dataClass: string;
+  /** Why the clock is anchored: review_decided, review_undecided, terminal_without_review or task_created. */
+  readonly anchorReason: string | null;
   readonly reviewItemId: string | null;
   readonly anchoredAt: string | null;
   readonly retentionDays: number | null;
@@ -65,7 +67,7 @@ const invalid = (message: string): CompanyOsError =>
 const UTC = (column: string): string =>
   `case when ${column} is null then null else to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') end`;
 
-const LIST_SQL = `select r.id, r.tenant_id, r.task_id, r.data_class, r.review_item_id,
+const LIST_SQL = `select r.id, r.tenant_id, r.task_id, r.data_class, r.anchor_reason, r.review_item_id,
          ${UTC("r.anchored_at")} as anchored_at, r.retention_days, r.data_authorization_id,
          ${UTC("r.due_at")} as due_at, ${UTC("r.redacted_at")} as redacted_at,
          r.redaction_reason, r.redacted_by,
@@ -84,6 +86,7 @@ interface ContentRetentionRecord {
   tenant_id: string;
   task_id: string;
   data_class: string;
+  anchor_reason: string | null;
   review_item_id: string | null;
   anchored_at: string | null;
   retention_days: number | null;
@@ -120,6 +123,7 @@ function toRow(record: ContentRetentionRecord): ContentRetentionRow {
     tenantId: record.tenant_id,
     taskId: record.task_id,
     dataClass: record.data_class,
+    anchorReason: record.anchor_reason,
     reviewItemId: record.review_item_id,
     anchoredAt: record.anchored_at,
     retentionDays: record.retention_days,

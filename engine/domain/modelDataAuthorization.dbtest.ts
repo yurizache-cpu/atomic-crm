@@ -248,7 +248,14 @@ describe("the model boundary (SI-70)", () => {
       data_class: "health",
       job_id: null,
     });
-    expect(await countJobs(TENANT_A)).toBe(0);
+    // The one job the tenant has is the task's content-retention clock (Q8
+    // D6/D7): the refused run got none.
+    const { rows: runJobs } = await admin.query<{ n: number }>(
+      "select count(*)::int as n from ops.jobs where tenant_id = $1 and kind <> 'content.retention_due'",
+      [TENANT_A],
+    );
+    expect(runJobs[0].n).toBe(0);
+    expect(await countJobs(TENANT_A)).toBe(1);
     expect(provider.calls).toHaveLength(0);
   });
 
@@ -343,9 +350,10 @@ describe("the model boundary (SI-70)", () => {
         actor: "dbtest",
       }),
     );
+    // Only the run's own job: the task's retention job (Q8 D6/D7) stays at its due instant.
     await admin.query(
-      "update ops.jobs set available_at = now() where tenant_id = $1 and status = 'queued'",
-      [TENANT_A],
+      "update ops.jobs set available_at = now() where id = (select job_id from ops.agent_runs where id = $1)",
+      [runId],
     );
     await runAgentJob(registry);
 

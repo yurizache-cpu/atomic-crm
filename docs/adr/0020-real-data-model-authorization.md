@@ -246,7 +246,14 @@ Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99
 - **Not content, and kept:** every id, class, status, decision, reviewer, instant, cost, usage count, refusal code, provider and model fact, authorization reference, idempotency key, event and act log. The decision-shadow input fingerprint hashes classification enums only, and protected classes never reach it (SI-71). The contact reference and every WhatsApp identifier stay ADR 0018's decision.
 - **Clock:** the database's `reviewed_at` of the task's latest decided review; a later decided review moves it forward, never back. Every authorized person-content capability (`lead_triage`, the only one) reaches a review.
 - **Days:** the relied-on authorization's `content_retention_days`, or 30 where none applied (the in-process provider); never more than 30. Days are 24-hour days.
-- **Flows with no decided review** (a run failed, was refused or is indeterminate, or its review is never decided) have no clock. Explicit erasure covers them. A policy for abandoned flows is an owner decision not taken here.
+- ~~**Flows with no decided review** (a run failed, was refused or is indeterminate, or its review is never decided) have no clock. Explicit erasure covers them. A policy for abandoned flows is an owner decision not taken here.~~
+- **Fallback clocks (owner policy, 2026-09-28; the final internal-retention correction, `20261003120000_content_retention_fallback.sql`):** no protected AI working content remains indefinitely because its flow never reached a decided review. Each protected task has one retention state from its creation, recorded with `anchor_reason`:
+  - `review_decided`: the D6 clock above, authoritative;
+  - otherwise `review_undecided`: the latest review's creation + 30 days;
+  - otherwise `terminal_without_review`: the latest finished run + 30;
+  - otherwise `task_created`: the task's creation + 30.
+
+  The clock only moves forward, and the flow keeps one job. Only a run pending or running defers expiry; the owner's erasure keeps its stricter rule. See [PHASE_Q8_RETENTION_REPORT.md](../PHASE_Q8_RETENTION_REPORT.md) §9.
 - **Mechanism:**
   - `ops.content_retention`: one ledger row per protected task, holding no content.
   - One INTERNAL `content.retention_due` job per scheduled flow, available at the due instant (the Phase 3A.1 follow-up pattern: no cron, no second queue). Its one lease-bound capability is `ops.redact_due_content()`.
