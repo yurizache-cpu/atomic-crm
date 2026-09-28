@@ -11,7 +11,8 @@
 --
 --   A  review_decided           the latest decided review's reviewed_at, for the
 --                               relied-on authorization's content_retention_days,
---                               or 30 (unchanged D6);
+--                               or 30 (unchanged D6; two reviews decided at one
+--                               instant: the shorter period);
 --   B  review_undecided         otherwise, the latest review's created_at + 30;
 --   C  terminal_without_review  otherwise, the latest finished run's
 --                               completed_at + 30 (succeeded, failed,
@@ -108,13 +109,15 @@ begin
         errcode = 'OS409',
         message = 'ops.content_retention: the clock only moves forward';
     end if;
-  elsif new.review_item_id is distinct from old.review_item_id
-        or new.retention_days is distinct from old.retention_days
-        or new.data_authorization_id is distinct from old.data_authorization_id
-        or new.due_at is distinct from old.due_at then
+  elsif (new.review_item_id is distinct from old.review_item_id
+         or new.retention_days is distinct from old.retention_days
+         or new.data_authorization_id is distinct from old.data_authorization_id
+         or new.due_at is distinct from old.due_at)
+        -- Two reviews decided at one instant: the shorter period wins.
+        and not (new.due_at < old.due_at and new.anchor_reason = 'review_decided') then
     raise exception using
       errcode = 'OS409',
-      message = 'ops.content_retention: the anchor''s review, days and due instant change only with the anchor';
+      message = 'ops.content_retention: the anchor''s review, days and due instant change only with the anchor, or to a shorter period at the same instant';
   end if;
   new.updated_at := now();
   return new;
@@ -168,7 +171,7 @@ begin
     from ops.review_items v
     left join ops.agent_runs r on r.tenant_id = v.tenant_id and r.id = v.agent_run_id
    where v.tenant_id = p_tenant_id and v.task_id = p_task_id and v.status <> 'pending'
-   order by v.reviewed_at desc, v.id desc
+   order by v.reviewed_at desc, ops.content_retention_days(r.data_authorization_id), v.id desc
    limit 1;
   if found then
     anchor_reason := 'review_decided';
@@ -286,7 +289,9 @@ begin
   end if;
   if v_eff.anchored_at > v_row.anchored_at
      or (v_eff.anchored_at = v_row.anchored_at
-         and ops.content_anchor_rank(v_eff.anchor_reason) > ops.content_anchor_rank(v_row.anchor_reason)) then
+         and ops.content_anchor_rank(v_eff.anchor_reason) > ops.content_anchor_rank(v_row.anchor_reason))
+     or (v_eff.anchored_at = v_row.anchored_at and v_eff.anchor_reason = 'review_decided'
+         and v_row.anchor_reason = 'review_decided' and v_due < v_row.due_at) then
     update ops.content_retention
        set anchor_reason = v_eff.anchor_reason, review_item_id = v_eff.review_item_id,
            anchored_at = v_eff.anchored_at, retention_days = v_eff.retention_days,

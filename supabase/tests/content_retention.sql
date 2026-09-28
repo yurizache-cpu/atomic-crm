@@ -968,6 +968,28 @@ begin
 end
 $$;
 
+-- L6 two reviews of one task decided at one instant: the shorter authorized
+-- period wins, whichever is decided first.
+do $$
+declare
+  l ops.content_retention;
+begin
+  perform pg_temp.remember('a.auth7', pg_temp.authorize(7));
+  perform pg_temp.task('l6', 'health');
+  perform pg_temp.remember('task.l6b', pg_temp.id('task.l6'));
+  perform pg_temp.flow_run('l6', 'openai', 'cr-model');
+  perform pg_temp.flow_run('l6b', 'fake', 'cr-fake', 'a', 'fake');
+  perform pg_temp.decide('l6b');
+  perform pg_temp.decide('l6');
+  l := pg_temp.ledger('l6');
+  if l.anchor_reason <> 'review_decided' or l.retention_days <> 7 or l.data_authorization_id <> pg_temp.id('a.auth7')
+     or l.review_item_id <> pg_temp.id('review.l6')
+     or (select j.available_at from ops.jobs j where j.id = l.job_id) <> l.due_at then
+    raise exception 'L6: two reviews decided at one instant did not keep the shorter period (%)', row_to_json(l);
+  end if;
+end
+$$;
+
 -- L5 every health or person_text task this suite made has one retention state,
 -- and every unredacted one exactly one queued job, the bound one.
 do $$

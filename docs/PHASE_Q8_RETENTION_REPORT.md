@@ -122,7 +122,7 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 
   | Reason (`anchor_reason`) | When it applies | Anchor | Days |
   | --- | --- | --- | --- |
-  | `review_decided` | a review of the task is decided | the latest decided review's `reviewed_at` | the relied-on authorization's `content_retention_days`, or 30 (unchanged D6) |
+  | `review_decided` | a review of the task is decided | the latest decided review's `reviewed_at` | the relied-on authorization's `content_retention_days`, or 30 (unchanged D6); two reviews decided at one instant take the shorter period |
   | `review_undecided` | otherwise, a review exists | the latest review's `created_at` | 30 |
   | `terminal_without_review` | otherwise, a run finished (`succeeded`, `failed`, `indeterminate` or `cancelled`) | the latest `completed_at` | 30 |
   | `task_created` | otherwise | the task's `created_at` | 30 |
@@ -134,5 +134,5 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Redaction:** unchanged (§5). Content is removed in place, the fingerprints are nulled, and no row is deleted. The class stays, and the authorization linkage and every content-free fact stay.
 - **Backfill:** every protected task already stored received its state and its one job at the migration.
 - **Invariant:** SI-72 extended; numbering unchanged.
-- **Tests:** `content_retention.sql` section L (the undecided review, a decision superseding a fallback on the same job, a run ended without a review, a task with no run, repeats, and exactly one queued job for every unredacted flow). The retention dbtest adds a flow that never reached a review, redacted by the real worker.
+- **Tests:** `content_retention.sql` section L (the undecided review, a decision superseding a fallback on the same job, a run ended without a review, a task with no run, repeats, two reviews decided at one instant keeping the shorter period, and exactly one queued job for every unredacted flow). The retention dbtest adds a flow that never reached a review, redacted by the real worker.
 - **Status once integrated:** **Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE**, meaning model-boundary enforcement, D6/D7 working-content retention and the abandoned-flow fallback. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
