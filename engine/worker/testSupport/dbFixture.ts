@@ -217,6 +217,9 @@ export async function deleteCompanyOsRows(
     "delete from ops.outbound_messages where tenant_id = any($1::uuid[])",
     // Phase 2D.1's shadow decisions reference the reviews they evaluated.
     "delete from ops.decision_evaluations where tenant_id = any($1::uuid[])",
+    // Q8 D6/D7: the retention ledger references its task, its anchoring
+    // review, the authorization relied on and its job.
+    "delete from ops.content_retention where tenant_id = any($1::uuid[])",
     "delete from ops.review_items where tenant_id = any($1::uuid[])",
     "delete from ops.inbound_messages where tenant_id = any($1::uuid[])",
     "delete from ops.conversations where tenant_id = any($1::uuid[])",

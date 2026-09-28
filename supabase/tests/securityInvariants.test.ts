@@ -1909,7 +1909,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-39",
     statement:
-      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; and, from BASELINE Q8 D6/D7 (owner decisions D6 and D7, 2026-09-28), erasing one task's AI working content now and sweeping, bounded, the flows whose retention has ended (retention erase and sweep), both redacting content in place and deleting nothing; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -3815,7 +3815,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "The gate proves that an authorization is recorded, not that the evidence it references is true: the references are pointers to the owner's records, and no real authorization exists (real patient data stays closed until the provider evidence, the lawful basis and the transfer mechanism exist, and WhatsApp keeps its own ADR 0018 gate). Minimisation removes structured identifiers (e-mail, URL, CPF-shaped and phone-shaped numbers) and is not anonymisation: names and stories in free text remain, and the data keeps its class. The in-process fake is exempt by its literal name; the deployed worker cannot select it. A call already in flight when an authorization is retired cannot be recalled. The content retention period is recorded, not yet enforced: redaction and erasure (D6, D7) are the next batch. A finished run recorded before this gate carries no class.",
+      "The gate proves that an authorization is recorded, not that the evidence it references is true: the references are pointers to the owner's records, and no real authorization exists (real patient data stays closed until the provider evidence, the lawful basis and the transfer mechanism exist, and WhatsApp keeps its own ADR 0018 gate). Minimisation removes structured identifiers (e-mail, URL, CPF-shaped and phone-shaped numbers) and is not anonymisation: names and stories in free text remain, and the data keeps its class. The in-process fake is exempt by its literal name; the deployed worker cannot select it. A call already in flight when an authorization is retired cannot be recalled. The content retention period is enforced by SI-72 (D6, D7). A finished run recorded before this gate carries no class.",
   },
   {
     id: "SI-71",
@@ -3883,6 +3883,76 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The owner's credential stays the trust root: it states the class of a task it creates directly, and it can disable triggers (SI-22). A registered test sender rests on the owner's word that the number is a controlled test device, and on the provider's attestation of the sender in its signed webhook; registering one is an owner SQL act (ops.register_test_sender), with no CLI command yet. A task closed before this migration is immutable and stays unclassified.",
+  },
+  {
+    id: "SI-72",
+    statement:
+      "AI working content of a health or person_text task (its description, every run's result, every review's proposed copy and note) and the unkeyed fingerprints derived from it (the task's request fingerprint, every run's input fingerprint, the admission's body fingerprint) is kept at most 30 days after the database's decision instant of the task's latest decided review, or the relied-on authorization's own content retention days when fewer, and is then redacted in place by the worker's one lease-bound capability on the internal job queued at the due instant, or earlier by the owner's erasure of that one task in its own tenant, and by nothing else: every guard that keeps those rows immutable admits only a redaction the retention ledger records at that instant, which removes the named content, marks the row and changes no other column; a redaction deletes no row and never changes a class, status, decision, reviewer, instant, cost, provider, model, authorization reference, idempotency key or event; content written back or a marker cleared is refused; the ledger holds no content and no application role reads or writes it; a flow with a run pending or running or a review undecided is never redacted; a redacted task gets no new run, and a redacted review's send is blocked.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker:
+          /C2: protected content or a content fingerprint remains after its deadline/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /C4: the task''s audit facts changed/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /A2: the relied-on authorization''s 7 days were not applied/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /B3: content before its deadline is not intact/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /D2: a sweep after redaction redacted again/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /E2 erasing a flow whose review is undecided/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /F1 tenant a erasing tenant b''s task/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /G1 task marker without the ledger/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /H1: % holds a privilege on ops.content_retention/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /I1: a redacted review''s send was not blocked/,
+      },
+      {
+        file: "supabase/migrations/20261002120000_content_retention_redaction.sql",
+        marker:
+          /a retention function is executable by a role other than its owner/,
+      },
+      {
+        file: "engine/domain/contentRetention.dbtest.ts",
+        marker:
+          /the worker redacts a decided health flow when its 30 days end, and nothing before/,
+      },
+      {
+        file: "engine/domain/contentRetention.dbtest.ts",
+        marker: /two concurrent sweeps redact each due flow exactly once/,
+      },
+      {
+        file: "engine/handlers/contentRetentionDue.test.ts",
+        marker:
+          /retries a flow still in progress or not yet due, instead of finishing the job/,
+      },
+    ],
+    caveat:
+      "The clock starts only at a decided review: a flow whose run failed, was refused or is indeterminate, or whose review is never decided, keeps its content until the owner erases it, and a policy for such abandoned flows is an owner decision not yet taken. A flow held in progress (a pending run held by a stop, an undecided review) is retried, not redacted. Days are 24-hour days on the database clock. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 \u00a7C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
   },
 ];
 

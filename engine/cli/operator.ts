@@ -32,6 +32,14 @@
 //   npm run ops -- data-auth list [--tenant <uuid>] [--all]
 //   npm run ops -- data-auth record ... (every field a flag; dataAuthCommand.ts)
 //   npm run ops -- data-auth retire --id <uuid> --reason <text> --actor <label>
+//   npm run ops -- retention list [--tenant <uuid>]
+//   npm run ops -- retention erase --tenant <uuid> --task <uuid> --actor <label>
+//   npm run ops -- retention sweep --actor <label> [--limit <n>]
+//
+// RETENTION (BASELINE Q8 D6/D7, retentionCommand.ts) shows the AI working-content
+// retention ledger and makes the owner's two acts over it: erase one task's
+// flow now, or sweep what is due. Both redact content in place and delete
+// nothing; the worker's retention job does the same at each due instant.
 //
 // DATA-AUTH (BASELINE Q8, ADR 0020) records and retires the versioned owner
 // authorizations the model boundary checks (ops.start_agent_run, SI-70). Only
@@ -63,7 +71,8 @@
 // through a function with a side effect. The tool changes state only through an
 // explicit allowlist of acts (OPERATOR_ACTS): price record, limit set and retire,
 // triage accept, reject, needs-edit and recover, decision recover (Phase 2D.2),
-// membership grant and revoke, and data-auth record and retire (BASELINE Q8).
+// membership grant and revoke, data-auth record and retire (BASELINE Q8), and
+// retention erase and sweep (Q8 D6/D7).
 // None has a force flag, every other command is a read, and no further act
 // exists without a reviewed extension of SI-39. Tripping and clearing stops stay
 // in `npm run execution-stop`.
@@ -160,6 +169,15 @@ import {
   DATA_AUTH_RECORD_REQUIRED,
   DATA_AUTH_SYNOPSIS,
 } from "./dataAuthCommand.ts";
+import {
+  buildRetentionCommand,
+  RETENTION_ERASE_FLAGS,
+  RETENTION_SYNOPSIS,
+  runRetentionAct,
+  runRetentionRead,
+  type RetentionActCommand,
+  type RetentionReadCommand,
+} from "./retentionCommand.ts";
 
 export {
   ADMIN_DATABASE_URL,
@@ -202,7 +220,8 @@ type ReadCommand =
       readonly kind: "data-auth list";
       readonly tenantId?: string;
       readonly includeHistory: boolean;
-    };
+    }
+  | RetentionReadCommand;
 
 type ActCommand =
   | {
@@ -255,7 +274,8 @@ type ActCommand =
       readonly kind: "data-auth retire";
       readonly authorizationId: string;
       readonly act: SpendLimitAct;
-    };
+    }
+  | RetentionActCommand;
 
 export type OperatorCommand =
   | ReadCommand
@@ -264,7 +284,7 @@ export type OperatorCommand =
 
 type CommandName = (ReadCommand | ActCommand)["kind"];
 
-export const OPERATOR_SYNOPSIS = `npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>] | decision recover --review <uuid> --tenant <uuid> | membership grant --tenant <uuid> --auth-user-id <uuid> --display-name <label> --actor <label> --reason <text> | membership revoke --id <uuid> --actor <label> --reason <text> | membership list [--tenant <uuid>] [--limit <n>] | ${DATA_AUTH_SYNOPSIS}`;
+export const OPERATOR_SYNOPSIS = `npm run ops -- status | stops [--all] | routes | prices [--all] | limits [--all] | spend [--tenant <uuid>] | runs [--tenant <uuid>] [--status <status>] [--limit <n>] | indeterminate [--tenant <uuid>] | price record --provider <name> --model <id> --input-usd-per-mtok <decimal> --output-usd-per-mtok <decimal> [--cached-input-usd-per-mtok <decimal>] --reasoning-in-output yes|no --effective-from <ISO instant> --expires-at <ISO instant> --source <text> --actor <label> | limit set --scope global|tenant|company [--tenant <uuid>] [--company <uuid>] --daily-usd <decimal> --timezone <IANA name> --reason <text> --actor <label> | limit retire --id <uuid> --reason <text> --actor <label> | triage list [--tenant <uuid>] [--status <status>] [--limit <n>] | triage show --id <uuid> [--tenant <uuid>] | triage accept|reject|needs-edit --id <uuid> --tenant <uuid> --reviewer <label> [--note <text>] | triage recover [--tenant <uuid>] [--limit <n>] | decision recover --review <uuid> --tenant <uuid> | membership grant --tenant <uuid> --auth-user-id <uuid> --display-name <label> --actor <label> --reason <text> | membership revoke --id <uuid> --actor <label> --reason <text> | membership list [--tenant <uuid>] [--limit <n>] | ${DATA_AUTH_SYNOPSIS} | ${RETENTION_SYNOPSIS}`;
 
 /** The first statement of every read command's transaction. */
 export const READ_ONLY_TRANSACTION = "set transaction read only";
@@ -408,6 +428,12 @@ const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
     "data-auth retire",
     grammar(false, ["id", "reason", "actor"], [], ["id", "reason", "actor"]),
   ],
+  ["retention list", grammar(true, ["tenant"])],
+  [
+    "retention erase",
+    grammar(false, RETENTION_ERASE_FLAGS, [], RETENTION_ERASE_FLAGS),
+  ],
+  ["retention sweep", grammar(false, ["actor", "limit"], [], ["actor"])],
 ]);
 
 /** The acts, in SI-39's order: the only commands that change state. */
@@ -423,6 +449,7 @@ const GROUPS: ReadonlyMap<string, readonly string[]> = new Map([
   ["decision", ["recover"]],
   ["membership", ["grant", "revoke", "list"]],
   ["data-auth", ["list", "record", "retire"]],
+  ["retention", ["list", "erase", "sweep"]],
 ]);
 
 const LIMIT_TEXT = /^[0-9]{1,6}$/;
@@ -719,6 +746,10 @@ export function parseOperatorArgs(argv: readonly string[]): OperatorCommand {
         authorizationId: values.get("id") as string,
         act: actFrom(values),
       };
+    case "retention list":
+    case "retention erase":
+    case "retention sweep":
+      return buildRetentionCommand(name, values);
   }
 }
 
@@ -776,6 +807,8 @@ async function runRead(
         tenantId: command.tenantId,
         includeHistory: command.includeHistory,
       });
+    case "retention list":
+      return runRetentionRead(tx, command);
   }
 }
 
@@ -871,6 +904,9 @@ async function runAct(
         },
       ];
     }
+    case "retention erase":
+    case "retention sweep":
+      return runRetentionAct(tx, command);
   }
 }
 

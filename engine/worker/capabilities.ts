@@ -147,6 +147,13 @@ export interface Capabilities {
    */
   markFollowUpDue(): Promise<string>;
   /**
+   * BASELINE Q8 D6/D7. Redacts the AI working content of the flow bound to the
+   * leased retention job once it is due: `redacted`, or on a replay
+   * `already_redacted` or `superseded`, or `not_due` / `in_progress` changing
+   * nothing. It calls nothing and returns no content.
+   */
+  redactDueContent(): Promise<string>;
+  /**
    * Phase 3A.2. Starts the calendar sync bound to the leased job for a worker
    * whose calendar provider is `providerKind`: records `running` BEFORE the
    * provider is called and answers the minimised request, or settles it
@@ -170,6 +177,7 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "startShadowDecision",
   "settleShadowDecision",
   "markFollowUpDue",
+  "redactDueContent",
   "startCalendarSync",
   "settleCalendarSync",
 ]);
@@ -302,6 +310,13 @@ function allCapabilities(tx: TxClient): Capabilities {
         "select ops.mark_follow_up_due() as status",
       );
       return statusOf(rows, "ops.mark_follow_up_due");
+    },
+
+    async redactDueContent() {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.redact_due_content() as status",
+      );
+      return statusOf(rows, "ops.redact_due_content");
     },
 
     async startCalendarSync(providerKind) {

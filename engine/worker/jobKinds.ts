@@ -38,6 +38,7 @@ export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([
 
 export const INTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "postmark.ledger_retention",
+  "content.retention_due",
 ]);
 
 /** Whether the kill switch re-checks this kind before its transactional handler runs. */
