@@ -259,7 +259,9 @@ export function buildLeadTriagePrompt(
 
   // The key order here is the byte order of the prompt, and the request
   // fingerprint is computed over it. The allowlist: the agent's labels and the
-  // task's type, constant title and message, never its priority or due date.
+  // message, redacted. Never the task's title or type: a task created directly
+  // (not by the admission, whose title is constant) could carry a name or a
+  // number there, and neither is redacted. Never its priority or due date.
   // Identifiers are redacted BEFORE the truncation, so a cut can never leave
   // half an address the patterns no longer recognise.
   const { agent, task } = promptDocumentFields({
@@ -272,7 +274,7 @@ export function buildLeadTriagePrompt(
   const document = {
     capability: LEAD_TRIAGE_CAPABILITY,
     agent,
-    task: { type: task.type, title: task.title, description: task.description },
+    task: { description: task.description },
   };
 
   return Object.freeze({

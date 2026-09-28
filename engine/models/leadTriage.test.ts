@@ -213,6 +213,26 @@ describe("the lead triage prompt", () => {
     expect(prompt.input).not.toContain("2026-10-02T12");
   });
 
+  it("never sends the task's title or type, which a directly created task could fill with an identifier", () => {
+    const prompt = buildLeadTriagePrompt(
+      context({
+        task: {
+          type: "lead_triage",
+          title: "Maria Silva 11987654321 maria@example.test",
+          description: "Oi, queria entender a primeira consulta.",
+          priority: 100,
+          dueAt: null,
+        },
+      }),
+    );
+
+    expect(prompt.input).not.toContain("Maria Silva");
+    expect(prompt.input).not.toContain("11987654321");
+    expect(prompt.input).not.toContain('"title"');
+    expect(prompt.input).not.toContain('"type"');
+    expect(prompt.input).toContain("primeira consulta");
+  });
+
   it("forbids the clinical work this agent must never do", () => {
     const { instructions } = buildLeadTriagePrompt(context());
     expect(instructions).toContain("Never diagnose");

@@ -3808,6 +3808,11 @@ const INVARIANTS: Invariant[] = [
         marker:
           /sends the message with its structured identifiers removed and no priority or due date/,
       },
+      {
+        file: "engine/models/leadTriage.test.ts",
+        marker:
+          /never sends the task's title or type, which a directly created task could fill with an identifier/,
+      },
     ],
     caveat:
       "The gate proves that an authorization is recorded, not that the evidence it references is true: the references are pointers to the owner's records, and no real authorization exists (real patient data stays closed until the provider evidence, the lawful basis and the transfer mechanism exist, and WhatsApp keeps its own ADR 0018 gate). Minimisation removes structured identifiers (e-mail, URL, CPF-shaped and phone-shaped numbers) and is not anonymisation: names and stories in free text remain, and the data keeps its class. The in-process fake is exempt by its literal name; the deployed worker cannot select it. A call already in flight when an authorization is retired cannot be recalled. The content retention period is recorded, not yet enforced: redaction and erasure (D6, D7) are the next batch. A finished run recorded before this gate carries no class.",

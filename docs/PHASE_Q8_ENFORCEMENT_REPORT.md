@@ -96,8 +96,8 @@ A class comes **from provenance, assigned by trusted server code**, never from a
 The lead-triage input builder (`engine/models/leadTriage.ts`, `lead_triage.v2`) now sends:
 
 - the agent's labels;
-- the task's type, the constant title and the message;
-- never its priority or due date.
+- the message, redacted;
+- never the task's title or type (a directly created task could carry a name or a number there; found by the automated PR review), its priority or its due date.
 
 Before truncation it removes, deterministically (`engine/models/identifierRedaction.ts`):
 
