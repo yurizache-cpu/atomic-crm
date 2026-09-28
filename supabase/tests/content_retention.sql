@@ -22,10 +22,14 @@
 --   H  only the owner (and the worker, through its one lease-bound capability)
 --      can redact; no role reads the ledger;
 --   I  a redacted review's send is blocked, never attempted;
---   J  a later decided review moves the clock forward; the earlier job is
---      superseded;
+--   J  a later decided review moves the clock forward, on the flow's one job;
 --   K  a flow still in progress at its deadline is never redacted under it,
---      and never left without a job: the job defers, binding the next one.
+--      and never left without a job: the job defers, binding the next one;
+--   L  the owner's fallback clocks (final internal-retention correction): an
+--      undecided review, a flow that ended without a review and a task that
+--      never got a run each reach their deadline 30 days on, a decision
+--      supersedes a fallback, and every unredacted protected flow keeps exactly
+--      one queued job.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data and fake evidence references only.
 
@@ -164,15 +168,31 @@ language sql as $$
                                     'cr-reviewer', 'cr-suite', 'SENTINEL-CR-NOTE-' || p_key);
 $$;
 
--- Moves a flow's clock into the past: the one way to reach a deadline inside
--- one transaction. The owner's DISABLE TRIGGER, rolled back with the suite.
+-- Moves a flow into the past: its task, runs and reviews, and so its clock,
+-- which the database re-derives from them. The one way to reach a deadline
+-- inside one transaction: the owner's DISABLE TRIGGER, rolled back with the suite.
 create function pg_temp.backdate(p_key text, p_by interval) returns void
 language plpgsql as $f$
+declare
+  v_task uuid := pg_temp.id('task.' || p_key);
 begin
+  alter table ops.tasks disable trigger tasks_guard_update;
+  alter table ops.agent_runs disable trigger agent_runs_guard_update;
+  alter table ops.review_items disable trigger review_items_guard_update;
   alter table ops.content_retention disable trigger content_retention_guard_update;
+  update ops.tasks set created_at = created_at - p_by, updated_at = updated_at - p_by where id = v_task;
+  update ops.agent_runs
+     set created_at = created_at - p_by, started_at = started_at - p_by, completed_at = completed_at - p_by
+   where task_id = v_task;
+  update ops.review_items
+     set created_at = created_at - p_by, reviewed_at = reviewed_at - p_by
+   where task_id = v_task;
   update ops.content_retention
      set anchored_at = anchored_at - p_by, due_at = due_at - p_by
-   where task_id = pg_temp.id('task.' || p_key);
+   where task_id = v_task;
+  alter table ops.tasks enable always trigger tasks_guard_update;
+  alter table ops.agent_runs enable always trigger agent_runs_guard_update;
+  alter table ops.review_items enable always trigger review_items_guard_update;
   alter table ops.content_retention enable always trigger content_retention_guard_update;
 end
 $f$;
@@ -188,7 +208,11 @@ begin
   execute 'set local role ops_worker';
   v := ops.redact_due_content();
   execute 'reset role';
-  update ops.jobs set status = 'queued', lease_owner = null, leased_at = null, lease_expires_at = null
+  -- Still the flow's job (a replay): queued again, so it can be run again.
+  -- Otherwise the worker would have completed it.
+  update ops.jobs
+     set status = case when (pg_temp.ledger(p_key)).job_id = v_job then 'queued' else 'succeeded' end,
+         lease_owner = null, leased_at = null, lease_expires_at = null
    where id = v_job;
   return v;
 end
@@ -253,15 +277,17 @@ begin
   -- the database's decision instant, one internal job at that instant.
   perform pg_temp.task('a-fake', 'health');
   perform pg_temp.flow_run('a-fake', 'fake', 'cr-fake', 'a', 'fake');
-  if exists (select 1 from ops.content_retention r where r.task_id = pg_temp.id('task.a-fake')) then
-    raise exception 'A1: a pending review started a retention clock';
+  l := pg_temp.ledger('a-fake');
+  if l.anchor_reason <> 'review_undecided' or l.anchored_at <> (pg_temp.review('a-fake')).created_at then
+    raise exception 'A1: a pending review did not hold the undecided-review fallback (%)', row_to_json(l);
   end if;
   perform pg_temp.decide('a-fake');
   v := pg_temp.review('a-fake');
   l := pg_temp.ledger('a-fake');
   if l.id is null or l.anchored_at is distinct from v.reviewed_at or l.review_item_id <> v.id
      or l.retention_days <> 30 or l.data_authorization_id is not null or l.data_class <> 'health'
-     or l.due_at <> v.reviewed_at + interval '720 hours' or l.redacted_at is not null then
+     or l.due_at <> v.reviewed_at + interval '720 hours' or l.redacted_at is not null
+     or l.anchor_reason <> 'review_decided' then
     raise exception 'A1: the in-process health flow was not anchored at reviewed_at for 30 days (%)', row_to_json(l);
   end if;
   select * into j from ops.jobs where id = l.job_id;
@@ -382,6 +408,8 @@ begin
   execute 'reset role';
   perform pg_temp.remember('review.c', (select r.id from ops.review_items r where r.agent_run_id = pg_temp.id('run.c')));
   perform pg_temp.decide('c', 'rejected');
+  -- Its deadline passes (the authorization's 7 days, and more).
+  perform pg_temp.backdate('c', interval '8 days');
 
   t0 := pg_temp.task_row('c'); r0 := pg_temp.run('c'); w0 := pg_temp.review('c');
   select * into m0 from ops.inbound_messages where id = pg_temp.id('inbound.c');
@@ -391,8 +419,6 @@ begin
   end if;
   select count(*) into v_events from ops.events e where e.tenant_id = t0.tenant_id;
 
-  -- Its deadline passes (the authorization's 7 days, and more).
-  perform pg_temp.backdate('c', interval '8 days');
   if pg_temp.retention_job('c') <> 'redacted' then
     raise exception 'C1: the due job did not redact the flow';
   end if;
@@ -537,8 +563,8 @@ begin
     raise exception 'E2: a refused erasure removed content';
   end if;
 
-  -- E3 a flow that never reached a review (its run was refused): no clock, but
-  -- erasable; the ledger records an erasure with no anchor.
+  -- E3 a flow that never reached a review (its run was refused): erasable
+  -- before its fallback clock ends.
   perform pg_temp.task('e-refused', 'health');
   perform pg_temp.remember('run.e-refused',
     ops.request_agent_run(pg_temp.id('a.tenant'), pg_temp.id('task.e-refused'), pg_temp.id('a.agent'),
@@ -548,7 +574,7 @@ begin
   end if;
   v := ops.erase_task_content(pg_temp.id('a.tenant'), pg_temp.id('task.e-refused'), 'cr-owner');
   l := pg_temp.ledger('e-refused');
-  if v ->> 'status' <> 'redacted' or l.anchored_at is not null or l.redaction_reason <> 'erasure'
+  if v ->> 'status' <> 'redacted' or l.anchor_reason <> 'task_created' or l.redaction_reason <> 'erasure'
      or (pg_temp.task_row('e-refused')).description is not null
      or (pg_temp.run('e-refused')).content_redacted_at is null then
     raise exception 'E3: a flow with no decided review was not erasable (%)', row_to_json(l);
@@ -757,19 +783,15 @@ begin
   perform pg_temp.decide('j2');
   l1 := pg_temp.ledger('j');
   if l1.id <> l0.id or l1.review_item_id <> pg_temp.id('review.j2') or l1.anchored_at <= l0.anchored_at
-     or l1.due_at <> l1.anchored_at + interval '720 hours' or l1.job_id = l0.job_id then
+     or l1.due_at <> l1.anchored_at + interval '720 hours' or l1.job_id <> l0.job_id
+     or (select j.available_at from ops.jobs j where j.id = l1.job_id) <> l1.due_at then
     raise exception 'J1: the later decision did not move the clock forward (%)', row_to_json(l1);
   end if;
-  -- The earlier anchor's job finds no binding.
-  perform pg_temp.lease(l0.job_id);
-  set local role ops_worker;
-  if ops.redact_due_content() <> 'superseded' then
-    reset role;
-    raise exception 'J2: the earlier job was not superseded';
-  end if;
-  reset role;
-  if not pg_temp.content_left('j') then
-    raise exception 'J2: the superseded job removed content';
+  -- ONE job: the flow's queued job moved to the new due instant, none added.
+  if (select count(*) from ops.jobs j
+       where j.kind = 'content.retention_due' and j.status = 'queued'
+         and j.payload ->> 'content_retention_id' = l1.id::text) <> 1 then
+    raise exception 'J2: the moved clock left more than one queued job';
   end if;
 end
 $$;
@@ -816,8 +838,155 @@ begin
   if (pg_temp.run('k2')).status not in ('failed', 'cancelled') then
     raise exception 'K2: setup: the second run did not end';
   end if;
+  if (select count(*) from ops.jobs x
+       where x.kind = 'content.retention_due' and x.status = 'queued'
+         and x.payload ->> 'content_retention_id' = l1.id::text) <> 1 then
+    raise exception 'K2: the deferral left other than exactly one queued job';
+  end if;
   if pg_temp.retention_job('k') <> 'redacted' or pg_temp.content_left('k') then
     raise exception 'K2: the flow''s next job did not redact it once the run ended';
+  end if;
+end
+$$;
+
+-- ===========================================================================
+-- L. The fallback clocks: nothing waits for a decision that never comes.
+-- ===========================================================================
+
+do $$
+declare
+  l   ops.content_retention;
+  l0  ops.content_retention;
+  v   ops.review_items;
+  t   ops.tasks;
+  r   ops.agent_runs;
+  j   ops.jobs;
+  t0  jsonb;
+  r0  jsonb;
+  w0  jsonb;
+begin
+  -- L1 a review that is never decided: its creation + 30 days, then redacted,
+  -- the review still pending, every content-free fact kept.
+  perform pg_temp.task('l-undecided', 'health');
+  perform pg_temp.flow_run('l-undecided', 'fake', 'cr-fake', 'a', 'fake');
+  v := pg_temp.review('l-undecided');
+  l := pg_temp.ledger('l-undecided');
+  select * into j from ops.jobs where id = l.job_id;
+  if l.anchor_reason <> 'review_undecided' or l.anchored_at <> v.created_at or l.review_item_id <> v.id
+     or l.retention_days <> 30 or l.due_at <> v.created_at + interval '720 hours'
+     or j.status <> 'queued' or j.available_at <> l.due_at then
+    raise exception 'L1: an undecided review did not get its creation + 30 days (%)', row_to_json(l);
+  end if;
+  perform pg_temp.backdate('l-undecided', interval '31 days');
+  t0 := to_jsonb(pg_temp.task_row('l-undecided')) - array['description', 'request_fingerprint', 'content_redacted_at'];
+  r0 := to_jsonb(pg_temp.run('l-undecided')) - array['result', 'input_fingerprint', 'content_redacted_at'];
+  w0 := to_jsonb(pg_temp.review('l-undecided')) - array['proposed', 'decision_note', 'content_redacted_at'];
+  if pg_temp.retention_job('l-undecided') <> 'redacted' or pg_temp.content_left('l-undecided') then
+    raise exception 'L1: an undecided review''s flow was not redacted at its fallback deadline';
+  end if;
+  if (to_jsonb(pg_temp.task_row('l-undecided')) - array['description', 'request_fingerprint', 'content_redacted_at']) <> t0
+     or (to_jsonb(pg_temp.run('l-undecided')) - array['result', 'input_fingerprint', 'content_redacted_at']) <> r0
+     or (to_jsonb(pg_temp.review('l-undecided')) - array['proposed', 'decision_note', 'content_redacted_at']) <> w0
+     or (pg_temp.review('l-undecided')).status <> 'pending'
+     or (pg_temp.task_row('l-undecided')).data_class <> 'health'
+     or (pg_temp.ledger('l-undecided')).anchor_reason <> 'review_undecided'
+     or (pg_temp.ledger('l-undecided')).redaction_reason <> 'retention_expired' then
+    raise exception 'L1: a fallback redaction changed a content-free fact';
+  end if;
+
+  -- L2 a review decided before its fallback: the D6 clock supersedes it, on the
+  -- same one job, moved in place.
+  perform pg_temp.task('l-decided', 'health');
+  perform pg_temp.flow_run('l-decided', 'fake', 'cr-fake', 'a', 'fake');
+  l0 := pg_temp.ledger('l-decided');
+  perform pg_temp.decide('l-decided');
+  l := pg_temp.ledger('l-decided');
+  if l0.anchor_reason <> 'review_undecided' or l.anchor_reason <> 'review_decided'
+     or l.anchored_at <> (pg_temp.review('l-decided')).reviewed_at or l.job_id <> l0.job_id
+     or (select j2.available_at from ops.jobs j2 where j2.id = l.job_id) <> l.due_at
+     or (select count(*) from ops.jobs j2 where j2.kind = 'content.retention_due' and j2.status = 'queued'
+          and j2.payload ->> 'content_retention_id' = l.id::text) <> 1 then
+    raise exception 'L2: the decision did not supersede the fallback on the flow''s one job (%)', row_to_json(l);
+  end if;
+  -- No fallback ever displaces a decided review's clock.
+  perform pg_temp.expect('L2 a fallback displacing a decided review', 'OS409', format($q$
+    update ops.content_retention
+       set anchor_reason = 'review_undecided', anchored_at = anchored_at + interval '1 day',
+           due_at = due_at + interval '1 day', data_authorization_id = null
+     where task_id = %L$q$, pg_temp.id('task.l-decided')));
+
+  -- L3 a flow that ends without a review (its run refused at the request):
+  -- the run's terminal instant + 30 days, read when the flow's job fires.
+  perform pg_temp.task('l-terminal', 'health');
+  perform pg_temp.backdate('l-terminal', interval '1 day');
+  perform pg_temp.remember('run.l-terminal',
+    ops.request_agent_run(pg_temp.id('a.tenant'), pg_temp.id('task.l-terminal'), pg_temp.id('a.agent'),
+                          'lead_triage', 'cr-l-terminal', 'cr-suite'));
+  r := pg_temp.run('l-terminal');
+  if r.status <> 'cancelled' or (pg_temp.ledger('l-terminal')).anchor_reason <> 'task_created' then
+    raise exception 'L3: setup: the unauthorized request was not refused, or the task had no creation clock';
+  end if;
+  if pg_temp.retention_job('l-terminal') <> 'deferred' then
+    raise exception 'L3: a flow not yet due was not deferred';
+  end if;
+  l := pg_temp.ledger('l-terminal');
+  if l.anchor_reason <> 'terminal_without_review' or l.anchored_at <> r.completed_at
+     or l.due_at <> r.completed_at + interval '720 hours' or l.review_item_id is not null
+     or (select j2.available_at from ops.jobs j2 where j2.id = l.job_id) <> l.due_at then
+    raise exception 'L3: a flow that ended without a review did not get its terminal + 30 days (%)', row_to_json(l);
+  end if;
+  perform pg_temp.backdate('l-terminal', interval '31 days');
+  if pg_temp.retention_job('l-terminal') <> 'redacted'
+     or (pg_temp.task_row('l-terminal')).description is not null
+     or (pg_temp.run('l-terminal')).error_code <> 'data_not_authorized'
+     or (pg_temp.run('l-terminal')).content_redacted_at is null then
+    raise exception 'L3: a flow that ended without a review was not redacted at its fallback deadline';
+  end if;
+
+  -- L4 a protected task that never gets a run or a review: its creation + 30.
+  perform pg_temp.task('l-none', 'person_text');
+  t := pg_temp.task_row('l-none');
+  l := pg_temp.ledger('l-none');
+  if l.anchor_reason <> 'task_created' or l.anchored_at <> t.created_at
+     or l.due_at <> t.created_at + interval '720 hours' or l.data_class <> 'person_text'
+     or (select j2.available_at from ops.jobs j2 where j2.id = l.job_id) <> l.due_at then
+    raise exception 'L4: a task with no run or review did not get its creation + 30 days (%)', row_to_json(l);
+  end if;
+  if pg_temp.retention_job('l-none') <> 'deferred' or not pg_temp.content_left('l-none') then
+    raise exception 'L4: a task was redacted before its fallback deadline';
+  end if;
+  perform pg_temp.backdate('l-none', interval '31 days');
+  if (ops.sweep_content_retention(1000, 'cr-owner') ->> 'redacted')::int <> 1
+     or pg_temp.content_left('l-none') or (pg_temp.task_row('l-none')).status <> 'assigned'
+     or (pg_temp.task_row('l-none')).data_class <> 'person_text' then
+    raise exception 'L4: the sweep did not redact the one task past its creation fallback';
+  end if;
+  if (ops.sweep_content_retention(1000, 'cr-owner') ->> 'redacted')::int <> 0
+     or pg_temp.retention_job('l-none') <> 'already_redacted' then
+    raise exception 'L4: a repeat after a fallback redaction did something';
+  end if;
+end
+$$;
+
+-- L5 every health or person_text task this suite made has one retention state,
+-- and every unredacted one exactly one queued job, the bound one.
+do $$
+begin
+  if exists (select 1 from ops.tasks t
+              where t.tenant_id in (pg_temp.id('a.tenant'), pg_temp.id('b.tenant'))
+                and t.data_class in ('health', 'person_text')
+                and not exists (select 1 from ops.content_retention r
+                                 where r.tenant_id = t.tenant_id and r.task_id = t.id)) then
+    raise exception 'L5: a protected task has no retention state';
+  end if;
+  if exists (select 1 from ops.content_retention r
+              where r.tenant_id in (pg_temp.id('a.tenant'), pg_temp.id('b.tenant')) and r.redacted_at is null
+                and ((select count(*) from ops.jobs j
+                       where j.kind = 'content.retention_due' and j.status = 'queued'
+                         and j.payload ->> 'content_retention_id' = r.id::text) <> 1
+                     or not exists (select 1 from ops.jobs j
+                                     where j.id = r.job_id and j.status = 'queued'))) then
+    raise exception 'L5: an unredacted protected flow does not keep exactly one queued job';
   end if;
 end
 $$;

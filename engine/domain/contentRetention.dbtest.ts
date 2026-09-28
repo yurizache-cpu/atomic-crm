@@ -146,27 +146,56 @@ async function decidedFlow(
   return { tenantId, taskId, runId, reviewId };
 }
 
-/** Moves a flow's clock and its job into the past: the owner's DISABLE TRIGGER. */
-async function passDeadline(flow: Flow): Promise<void> {
+/**
+ * Moves a flow into the past: its task, runs and reviews (the clock is derived
+ * from them), its ledger row, and its job. The owner's DISABLE TRIGGER, in one
+ * transaction.
+ */
+async function passDeadline(taskId: string): Promise<void> {
   const client = await admin.connect();
+  const guards: readonly [string, string][] = [
+    ["ops.tasks", "tasks_guard_update"],
+    ["ops.agent_runs", "agent_runs_guard_update"],
+    ["ops.review_items", "review_items_guard_update"],
+    ["ops.content_retention", "content_retention_guard_update"],
+  ];
   try {
     await client.query("begin");
+    for (const [table, trigger] of guards) {
+      await client.query(`alter table ${table} disable trigger ${trigger}`);
+    }
     await client.query(
-      "alter table ops.content_retention disable trigger content_retention_guard_update",
+      "update ops.tasks set created_at = created_at - interval '31 days' where id = $1",
+      [taskId],
+    );
+    await client.query(
+      `update ops.agent_runs
+          set created_at = created_at - interval '31 days', started_at = started_at - interval '31 days',
+              completed_at = completed_at - interval '31 days'
+        where task_id = $1`,
+      [taskId],
+    );
+    await client.query(
+      `update ops.review_items
+          set created_at = created_at - interval '31 days', reviewed_at = reviewed_at - interval '31 days'
+        where task_id = $1`,
+      [taskId],
     );
     await client.query(
       `update ops.content_retention
           set anchored_at = anchored_at - interval '31 days', due_at = due_at - interval '31 days'
         where task_id = $1`,
-      [flow.taskId],
+      [taskId],
     );
-    await client.query(
-      "alter table ops.content_retention enable always trigger content_retention_guard_update",
-    );
+    for (const [table, trigger] of guards) {
+      await client.query(
+        `alter table ${table} enable always trigger ${trigger}`,
+      );
+    }
     await client.query(
       `update ops.jobs set available_at = now() - interval '1 second'
         where id = (select job_id from ops.content_retention where task_id = $1)`,
-      [flow.taskId],
+      [taskId],
     );
     await client.query("commit");
   } catch (error) {
@@ -227,6 +256,7 @@ describe("AI working-content retention (D6)", () => {
     expect(row).toMatchObject({
       taskId: flow.taskId,
       dataClass: "health",
+      anchorReason: "review_decided",
       reviewItemId: flow.reviewId,
       retentionDays: 30,
       dataAuthorizationId: null,
@@ -240,7 +270,8 @@ describe("AI working-content retention (D6)", () => {
     expect((await runAgentJob(registry)).outcome).toBe("idle");
     expect((await readFlow(flow)).contentLeft).toBe(true);
 
-    await passDeadline(flow);
+    await passDeadline(flow.taskId);
+    const due = await readFlow(flow);
     const pass = await runAgentJob(registry);
     expect(pass).toMatchObject({
       outcome: "succeeded",
@@ -257,7 +288,7 @@ describe("AI working-content retention (D6)", () => {
       inputFingerprint: null,
       runStatus: "succeeded",
       provider: "fake",
-      completedAt: before.completedAt,
+      completedAt: due.completedAt,
       proposed: null,
       note: null,
       decision: "rejected",
@@ -287,7 +318,7 @@ describe("AI working-content retention (D6)", () => {
     const { registry } = fakeProvider();
     const flows = [];
     for (let i = 0; i < 3; i += 1) flows.push(await decidedFlow(registry));
-    for (const flow of flows) await passDeadline(flow);
+    for (const flow of flows) await passDeadline(flow.taskId);
 
     const results = await Promise.all(
       ["dbtest-sweep-a", "dbtest-sweep-b"].map((actor) =>
@@ -311,6 +342,88 @@ describe("AI working-content retention (D6)", () => {
         "content_retention=already_redacted",
       );
     }
+  });
+});
+
+describe("the fallback clocks (the owner's final retention policy)", () => {
+  it("the worker redacts a health flow that never reached a review, 30 days after its run ended", async () => {
+    const { provider, registry } = fakeProvider();
+    sequence += 1;
+    const { taskId, runId } = await owner.withTransaction(async (tx) => {
+      const ctx = { tenantId: TENANT_A, source: SOURCE };
+      const companyId = await createCompany(tx, ctx, {
+        slug: `dbtest-retention-${sequence}`,
+        name: "Clinic",
+      });
+      const departmentId = await createDepartment(tx, ctx, {
+        companyId,
+        slug: "intake",
+        name: "Intake",
+      });
+      const agentId = await createAgent(tx, ctx, {
+        companyId,
+        departmentId,
+        slug: "lead-triage",
+        name: "Lead Triage",
+        role: "Intake assistant",
+      });
+      const task = await createTask(tx, ctx, {
+        companyId,
+        type: LEAD_TRIAGE_CAPABILITY,
+        title: "Lead triage",
+        description: `${SENTINEL} invented enquiry ${sequence}`,
+        dataClass: "health",
+      });
+      await assignTask(tx, ctx, task, agentId);
+      // No authorization and no pin: refused at the request, so no review ever opens.
+      const run = await requestAgentRun(tx, ctx, {
+        taskId: task,
+        agentId,
+        capability: LEAD_TRIAGE_CAPABILITY,
+        idempotencyKey: `dbtest-retention-refused-${sequence}`,
+      });
+      return { taskId: task, runId: run };
+    });
+    const [scheduled] = await owner.withTransaction((tx) =>
+      listContentRetention(tx, { tenantId: TENANT_A }),
+    );
+    expect(scheduled).toMatchObject({
+      taskId,
+      anchorReason: "task_created",
+      retentionDays: 30,
+      state: "scheduled",
+    });
+
+    await passDeadline(taskId);
+    const pass = await runAgentJob(registry);
+    expect(pass).toMatchObject({
+      kind: "content.retention_due",
+      detail: "content_retention=redacted",
+    });
+    const { rows } = await admin.query<{
+      description: string | null;
+      data_class: string;
+      status: string;
+      error_code: string | null;
+      anchor_reason: string;
+      redaction_reason: string;
+    }>(
+      `select t.description, t.data_class, r.status, r.error_code, l.anchor_reason, l.redaction_reason
+         from ops.tasks t
+         join ops.agent_runs r on r.task_id = t.id
+         join ops.content_retention l on l.task_id = t.id
+        where t.id = $1 and r.id = $2`,
+      [taskId, runId],
+    );
+    expect(rows[0]).toEqual({
+      description: null,
+      data_class: "health",
+      status: "cancelled",
+      error_code: "data_not_authorized",
+      anchor_reason: "terminal_without_review",
+      redaction_reason: "retention_expired",
+    });
+    expect(provider.calls).toHaveLength(0);
   });
 });
 

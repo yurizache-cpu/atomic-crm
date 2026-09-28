@@ -3887,7 +3887,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-72",
     statement:
-      "AI working content of a health or person_text task (its description, every run's result, every review's proposed copy and note) and the unkeyed fingerprints derived from it (the task's request fingerprint, every run's input fingerprint, the admission's body fingerprint) is kept at most 30 days after the database's decision instant of the task's latest decided review, or the relied-on authorization's own content retention days when fewer, and is then redacted in place by the worker's one lease-bound capability on the internal job queued at the due instant, or earlier by the owner's erasure of that one task in its own tenant, and by nothing else: every guard that keeps those rows immutable admits only a redaction the retention ledger records at that instant, which removes the named content, marks the row and changes no other column; a redaction deletes no row and never changes a class, status, decision, reviewer, instant, cost, provider, model, authorization reference, idempotency key or event; content written back or a marker cleared is refused; the ledger holds no content and no application role reads or writes it; a flow with a run pending or running or a review undecided is never redacted; a redacted task gets no new run, and a redacted review's send is blocked.",
+      "AI working content of a health or person_text task (its description, every run's result, every review's proposed copy and note) and the unkeyed fingerprints derived from it (the task's request fingerprint, every run's input fingerprint, the admission's body fingerprint) never remains indefinitely: every such task has one retention state from its creation, anchored at the database's decision instant of its latest decided review for the relied-on authorization's own content retention days or 30, or, while no review is decided, 30 days after its latest review opened, else after its latest run finished, else after its creation; the clock only moves forward and no fallback displaces a decided review's; the content is then redacted in place by the worker's one lease-bound capability on the flow's one job, which only a run pending or running defers, always leaving exactly one next job queued, or earlier by the owner's erasure of that one task in its own tenant, and by nothing else: every guard that keeps those rows immutable admits only a redaction the retention ledger records at that instant, which removes the named content, marks the row and changes no other column; a redaction deletes no row and never changes a class, status, decision, reviewer, instant, cost, provider, model, authorization reference, idempotency key or event; content written back or a marker cleared is refused; the ledger holds no content and no application role reads or writes it; a redacted task gets no new run, and a redacted review's send is blocked.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -3950,13 +3950,46 @@ const INVARIANTS: Invariant[] = [
         marker: /K1: a due flow with a pending run was not deferred/,
       },
       {
+        file: "supabase/tests/content_retention.sql",
+        marker:
+          /L1: an undecided review''s flow was not redacted at its fallback deadline/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker:
+          /L3: a flow that ended without a review did not get its terminal \+ 30 days/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker:
+          /L4: a task with no run or review did not get its creation \+ 30 days/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker:
+          /L5: an unredacted protected flow does not keep exactly one queued job/,
+      },
+      {
+        file: "supabase/tests/content_retention.sql",
+        marker: /L2 a fallback displacing a decided review/,
+      },
+      {
+        file: "supabase/migrations/20261003120000_content_retention_fallback.sql",
+        marker: /a health or person_text task has no retention state/,
+      },
+      {
+        file: "engine/domain/contentRetention.dbtest.ts",
+        marker:
+          /the worker redacts a health flow that never reached a review, 30 days after its run ended/,
+      },
+      {
         file: "engine/handlers/contentRetentionDue.test.ts",
         marker:
           /records the database's answer as a status token, a deferral included, so no attempt is spent waiting/,
       },
     ],
     caveat:
-      "The clock starts only at a decided review: a flow whose run failed, was refused or is indeterminate, or whose review is never decided, keeps its content until the owner erases it, and a policy for such abandoned flows is an owner decision not yet taken. A flow still in progress at its deadline (a pending run held by a stop, an undecided review) is deferred: its job queues and binds the next one an hour on, so it is never redacted under a run or an undecided review and never left without a job, however long it waits. Days are 24-hour days on the database clock. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 \u00a7C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
+      "A run pending or running defers expiry for as long as it stays so, a run held by a stop included: the flow keeps one job, re-examined hourly. A review left undecided past its fallback is redacted and stays pending with no content; the owner's erasure still refuses a flow in progress. Days are 24-hour days on the database clock. A run's terminal instant is read when the flow's job fires or the owner sweeps, never written inside the run's settlement. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 §C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
   },
 ];
 
