@@ -57,6 +57,11 @@ grant execute on function public.is_admin() to authenticated;
 grant execute on function public.can_manage_sales_id(bigint) to authenticated;
 grant execute on function public.can_access_contact(bigint) to authenticated;
 grant execute on function public.can_access_deal(bigint) to authenticated;
+-- The stamping triggers (handle_contact_saved, handle_company_saved) run as the
+-- writing role and call these two (Production Security Gate A,
+-- 20261004120000_production_security_gate_a.sql).
+grant execute on function public.get_avatar_for_email(text) to authenticated;
+grant execute on function public.get_domain_favicon(text) to authenticated;
 grant execute on function public.get_user_id_by_email(text) to service_role;
 
 grant all on all tables in schema public to service_role;

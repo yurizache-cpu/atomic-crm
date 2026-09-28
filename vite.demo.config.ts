@@ -5,6 +5,8 @@ import { visualizer } from "rollup-plugin-visualizer";
 import { defineConfig } from "vite";
 import createHtmlPlugin from "vite-plugin-simple-html";
 
+import { securityHeadersPlugins } from "./scripts/security-headers.mjs";
+
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
@@ -30,6 +32,9 @@ export default defineConfig({
         },
       },
     }),
+    // Production Security Gate A: the demo is published through the same
+    // build scan (scripts/publish-pages.mjs), so it carries the same policy.
+    ...securityHeadersPlugins(),
   ],
   define: {
     "import.meta.env.VITE_IS_DEMO": JSON.stringify("true"),

@@ -4099,6 +4099,10 @@ const INVARIANTS: Invariant[] = [
         marker: /\.\.\.securityHeadersPlugins\(\)/,
       },
       {
+        file: "vite.demo.config.ts",
+        marker: /\.\.\.securityHeadersPlugins\(\)/,
+      },
+      {
         file: "scripts/test/security-headers.test.mjs",
         marker:
           /admits scripts from this origin only, and connections to this origin and the configured API only/,
