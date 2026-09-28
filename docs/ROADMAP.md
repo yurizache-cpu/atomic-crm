@@ -600,13 +600,30 @@ Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99
   - no production WhatsApp (ADR 0018 keeps body and identifier retention), no Jev and no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Q8 retention fallback — final internal-retention correction (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+### Q8 retention fallback — final internal-retention correction (2026-09-28) — INTEGRATED; Q8 INTERNAL RETENTION LIFECYCLE COMPLETE
 
 Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c388bf53` and integrated by one PR into `feature/clinical-phase-1`. Read [PHASE_Q8_RETENTION_REPORT.md](PHASE_Q8_RETENTION_REPORT.md) §9 and ADR 0020 §I.
 
 - **The gap closed:** a protected flow whose run failed, was refused or is indeterminate, whose review was never decided, or that never got a run, had no automatic retention clock.
 - **Owner policy:** every `health` or `person_text` task has ONE retention state from its creation, with a compact `anchor_reason`: **A** `review_decided`, the latest decided review's `reviewed_at` + the relied-on authorization's `content_retention_days` or 30 (unchanged D6); **B** `review_undecided`, otherwise the latest review's `created_at` + 30; **C** `terminal_without_review`, otherwise the latest finished run's `completed_at` + 30; **D** `task_created`, otherwise the task's `created_at` + 30. The clock only moves forward and no fallback displaces a decided review's. The flow keeps exactly ONE job (moved in place while queued). Only a run pending or running defers expiry (hourly, always leaving one next job); an undecided review no longer holds it, and the owner's erasure keeps its stricter rule. A run's terminal instant is read when the flow's job fires, never written inside a run's settlement.
 - **Invariant:** SI-72 extended (no protected AI working content remains indefinitely); numbering unchanged.
-- **Status once integrated:** Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE. PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
+- **Integration (2026-09-28):** PR #18, normal merge `c4938029e9d185af0c7716892924c93199d3c5e6` into `feature/clinical-phase-1` (parents `c388bf53`, `b354be29`); the source branch `feature/q8-retention-fallback` is retained at `b354be29`, and `main` is unchanged at `a863e2a0`. The automated review's one finding (P2, in scope: two reviews decided at one instant could keep the longer period) was fixed before the merge in `b354be29`. Post-merge Check #99 (run 36457607762): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression.
+- **Status:** Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE. PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED. Strict MVP ~93%.
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
+- **Next:** not started; the owner decides the next milestone.
+
+### Production Security Gate A (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+
+Built on `feature/production-security-gate-a` from `feature/clinical-phase-1` at `c4938029` and integrated by one PR into `feature/clinical-phase-1`. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md).
+
+- **PUBLIC helper debt closed** (R-16, ADR 0018 amendment 3): PUBLIC and `anon` execute nothing in `public`; `authenticated` executes exactly eight reviewed functions; the Company OS capability roles execute none (SI-73).
+- **MFA at the Company OS authority:** `ops.operator_scope()` requires `aal2` on both the provider's session row and the verified token, or refuses. The non-production exemption lives only in the local seed. The browser completes the provider's own TOTP factor (SI-74).
+- **Browser policy:** a Content-Security-Policy and a strict referrer policy in every production page, enforced by the build scan. The host header set is declared in one module and served by `vite preview` (SI-75).
+- **Remaining production-readiness blockers:**
+  - a host that sends the declared headers (hosting undecided; GitHub Pages cannot);
+  - TOTP enabled on a hosted Supabase project;
+  - CRM screens outside the Company OS not MFA-gated (owner decision);
+  - the Gravatar lookup from service-role contact writes;
+  - ADR 0020 §C evidence and production WhatsApp.
+- **Unchanged:** PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
 - **Next:** not started; the owner decides the next milestone.

@@ -44,7 +44,44 @@ export interface RpcResponse {
   readonly error: { readonly code: string } | null;
 }
 
+/**
+ * Where the session stands on multi-factor authentication, as the auth
+ * provider reports it for its own session (Production Security Gate A). The
+ * server never trusts this: it reads the provider's session row itself. The
+ * Company OS uses it only to choose what to show after a refusal.
+ */
+export interface MfaStatus {
+  /** The session is below assurance level 2: a second factor is still needed. */
+  readonly needsSecondFactor: boolean;
+  /** The user's verified authenticator-app factor, or null when none is enrolled. */
+  readonly factorId: string | null;
+}
+
+/** A new authenticator-app factor, waiting for its first code. */
+export interface TotpEnrollment {
+  readonly factorId: string;
+  /** The provider's QR code image, as a data URI. */
+  readonly qrCode: string;
+  /** The same key as text, for an app that cannot scan. */
+  readonly secret: string;
+}
+
+/**
+ * The auth provider's own second factor (an authenticator app). Nothing here
+ * computes a code: enrolment, challenge and verification are the provider's.
+ */
+export interface MfaPort {
+  /** The session's multi-factor state, or null when there is no session. */
+  status(): Promise<MfaStatus | null>;
+  /** Starts an authenticator-app enrolment, discarding any unfinished one. */
+  enrollTotp(): Promise<TotpEnrollment>;
+  /** Checks a code for the factor; true when the session now holds level 2. */
+  verifyTotp(factorId: string, code: string): Promise<boolean>;
+}
+
 export interface SessionPort {
+  /** The provider's second factor; absent where none is available. */
+  readonly mfa?: MfaPort;
   /** The signed-in user now, or null; never rejects (a failure is no session). */
   currentUser(): Promise<SessionUser | null>;
   /** Every later change; returns the unsubscribe. */

@@ -1,7 +1,7 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 
 import type { OperatorContext } from "../../../contracts/company-os-api/index.ts";
-import type { CompanyOsApi } from "../ports";
+import type { CompanyOsApi, MfaPort } from "../ports";
 import type { DataScope } from "../query/keys";
 import type { AccessController, AccessState } from "./accessController";
 import type { GenerationConfirmer } from "./generation";
@@ -17,6 +17,8 @@ export interface CompanyOsRuntime {
   readonly generation: GenerationConfirmer;
   /** Milliseconds since the epoch; how old a read is, for the "unknown" rule. */
   readonly now: () => number;
+  /** The provider's second factor, when the session offers one (Security Gate A). */
+  readonly mfa?: MfaPort;
 }
 
 export const RuntimeContext = createContext<CompanyOsRuntime | null>(null);

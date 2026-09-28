@@ -49,6 +49,7 @@ import { KEY_MATERIAL_RULES } from "./scan-build-rules-key-material.mjs";
 import { NAME_RULES } from "./scan-build-rules-names.mjs";
 import { SUPABASE_KEY_RULES } from "./scan-build-rules-supabase-keys.mjs";
 import { TOKEN_RULES } from "./scan-build-rules-tokens.mjs";
+import { auditHtmlPage } from "./security-headers.mjs";
 
 export { isPrivilegedViteName } from "./scan-build-vite-names.mjs";
 
@@ -204,6 +205,15 @@ export function scanDirectory(dir, { devSigningKeys } = {}) {
     const content = readFileSync(file, "utf8");
 
     findings.push(...scanText(rel, content));
+    // Production Security Gate A: every page the application serves carries
+    // its security policy. A file that should not ship at all (a bundle
+    // report) is already flagged above, and is not audited as a page.
+    if (
+      /\.html?$/i.test(rel) &&
+      !UNWANTED_ARTIFACTS.some((artifact) => artifact.match(rel))
+    ) {
+      findings.push(...auditHtmlPage(rel, content));
+    }
 
     if (devKeys?.containsPrivateMaterial(content)) {
       findings.push({

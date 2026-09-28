@@ -45,7 +45,13 @@ const CompanyOsApp = ({ session, screens, clock }: CompanyOsAppProps) => {
         ),
       ),
     );
-    return { api, controller, generation, now: clock ?? systemClock };
+    return {
+      api,
+      controller,
+      generation,
+      now: clock ?? systemClock,
+      mfa: session.mfa,
+    };
   });
   const router = useOwnedRouter(() => createCompanyOsRouter(screens));
 

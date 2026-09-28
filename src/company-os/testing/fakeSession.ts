@@ -1,5 +1,6 @@
 import type { CompanyOsFunction } from "../../../contracts/company-os-api/index.ts";
 import type {
+  MfaPort,
   RpcResponse,
   SessionEvent,
   SessionListener,
@@ -45,6 +46,7 @@ export const refused = (code: string): RpcResponse => ({
 
 export const createFakeSession = (
   initialUser: SessionUser | null,
+  options: { readonly mfa?: MfaPort } = {},
 ): FakeSession => {
   let user = initialUser;
   const listeners = new Set<SessionListener>();
@@ -59,6 +61,7 @@ export const createFakeSession = (
   };
 
   const port: SessionPort = {
+    mfa: options.mfa,
     currentUser: async () => user,
     onAuthStateChange: (listener) => {
       listeners.add(listener);

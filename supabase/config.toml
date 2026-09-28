@@ -108,6 +108,17 @@ enable_signup = false
 # Development signing keys
 signing_keys_path = "./signing_keys.json"
 
+# Production Security Gate A: the Company OS requires authenticator assurance
+# level 2 (ops.operator_scope), reached with an authenticator app (TOTP) through
+# the provider's own MFA API. Enabled here for local development; a hosted
+# project enables the same in its own auth settings.
+[auth.mfa]
+max_enrolled_factors = 10
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
 [auth.oauth_server]
 enabled = false
 authorization_url_path = "/oauth/consent"

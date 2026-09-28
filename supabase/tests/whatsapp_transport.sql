@@ -766,20 +766,16 @@ begin
     raise exception 'K2: ops_gateway reaches a table outside ops: %', v_bad;
   end if;
 
-  -- K3. Outside ops it executes no SECURITY DEFINER function but the ones
-  --     PUBLIC already holds: the CRM's row-level-security helpers (read-only,
-  --     answering for auth.uid()) and trigger functions (not callable). A new
-  --     one shows up here by name.
+  -- K3. Outside ops it executes no SECURITY DEFINER function at all. Until
+  --     Production Security Gate A (20261004120000) PUBLIC held the CRM's
+  --     row-level-security helpers and trigger functions; now nothing outside
+  --     ops is left to it, and a new one shows up here by name.
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname not in ('pg_catalog', 'information_schema', 'ops')
      and p.prosecdef
      and has_schema_privilege('ops_gateway', n.oid, 'USAGE')
-     and has_function_privilege('ops_gateway', p.oid, 'EXECUTE')
-     and not (p.prorettype = 'trigger'::regtype
-              or (n.nspname = 'public'
-                  and p.proname in ('can_access_contact', 'can_access_deal', 'can_manage_sales_id',
-                                    'current_sales_id', 'is_active_sales_user', 'is_admin')));
+     and has_function_privilege('ops_gateway', p.oid, 'EXECUTE');
   if v_bad is not null then
     raise exception 'K3: ops_gateway executes a SECURITY DEFINER function outside ops: %', v_bad;
   end if;

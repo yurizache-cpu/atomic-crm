@@ -3991,6 +3991,134 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "A run pending or running defers expiry for as long as it stays so, a run held by a stop included: the flow keeps one job, re-examined hourly. A review left undecided past its fallback is redacted and stays pending with no content; the owner's erasure still refuses a flow in progress. Days are 24-hour days on the database clock. A run's terminal instant is read when the flow's job fires or the owner sweeps, never written inside the run's settlement. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 §C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
   },
+  {
+    id: "SI-73",
+    statement:
+      "No function in schema public is executable by PUBLIC or anon: authenticated executes exactly the eight reviewed functions its row-security policies and stamping triggers call (can_access_contact, can_access_deal, can_manage_sales_id, current_sales_id, is_active_sales_user, is_admin, get_avatar_for_email and get_domain_favicon); the Company OS capability roles (ops_worker, ops_gateway, ops_operator_api) execute nothing in public and no browser role is a member of one; a function added to public is born without PUBLIC EXECUTE, and any grant beyond this reviewed set fails a pin by name.",
+    provenBy: ["live database", "migration assertion"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /A1: a public function is still executable by PUBLIC or anon/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker:
+          /A2: authenticated executes other than the eight reviewed public functions/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /A3: % executes public functions/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /A4: authenticated could not read back its own contact/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /A7: anon executed a row-security helper/,
+      },
+      {
+        file: "supabase/migrations/20261004120000_production_security_gate_a.sql",
+        marker: /Gate A: a public function is executable by PUBLIC or anon/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /K3: ops_gateway executes a SECURITY DEFINER function outside ops/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /P8 \(K5\): the functions ops_operator_api owns or can execute outside ops drifted/,
+      },
+    ],
+    caveat:
+      "service_role keeps its explicit grants: it is the backend trust root and bypasses row security (SI-06). The stamping helper get_avatar_for_email still asks Gravatar for a hash of a contact's email through extensions.http_get when service_role writes a contact (the Postmark path): an outbound disclosure recorded as open debt, not a PUBLIC grant.",
+  },
+  {
+    id: "SI-74",
+    statement:
+      "A Company OS principal acts only with multi-factor assurance: ops.operator_scope(), the one resolver every company_os_api gate calls, refuses as not signed in (OS401) any session unless both the auth provider's own auth.sessions row and the verified token's aal claim are at level aal2 or above; no request value, browser state, legacy per-claim setting or argument can raise either; the only waiver is a single owner-recorded non-production row (ops.operator_assurance_exemption) that no application role can read or write, that no migration ships, and that only the local development seed records, which never reaches a hosted project (SI-25).",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /B1 aal1 session, aal1 claims/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /B2 aal2 claims over an aal1 session/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /B2 a legacy aal claim setting/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /B5: a company_os_api gate bypasses the resolver/,
+      },
+      {
+        file: "supabase/tests/production_security.sql",
+        marker: /C3: % holds a privilege on the assurance exemption/,
+      },
+      {
+        file: "supabase/migrations/20261004120000_production_security_gate_a.sql",
+        marker:
+          /Gate A: a migration shipped the non-production assurance exemption/,
+      },
+      {
+        file: "supabase/tests/referenceData.mjs",
+        marker:
+          /no assurance exemption: a hosted project built from migrations requires multi-factor authentication/,
+      },
+      {
+        file: "src/company-os/CompanyOsApp.mfa.test.tsx",
+        marker: /only the server's next answer opens the Company OS/,
+      },
+    ],
+    caveat:
+      "The waiver is the owner's to record, as every owner act is (the owner's credential can also disable triggers, SI-22); a hosted project that holds the row accepts level-1 sessions, so its absence is a production precondition. A hosted project must also enable TOTP in its own auth settings, or no one reaches level 2 and the Company OS stays closed. A token issued before its session reached level 2 stays refused, since its claim still says aal1. Verified against the local Supabase Auth: the provider records aal2 on the same session row and in the new token after a TOTP verification.",
+  },
+  {
+    id: "SI-75",
+    statement:
+      "Every production build page carries, in its head, one Content-Security-Policy that admits scripts only from its own origin and connections only to its own origin and the configured Supabase project, with no 'unsafe-eval', no wildcard, scheme or inline script source, object-src 'none', base-uri and form-action 'self', and a strict referrer policy, and no page carries an inline script; the build scan refuses a build without them; and the header set a host must send (the same policy with frame-ancestors 'none', HSTS, nosniff, the referrer policy and a permissions policy) is declared in one module and served by vite preview.",
+    provenBy: ["unit test", "static guard"],
+    enforcedBy: [
+      {
+        file: "scripts/security-headers.mjs",
+        marker: /export function auditBuiltPage/,
+      },
+      {
+        file: "scripts/scan-build-artifacts.mjs",
+        marker: /findings.push\(...auditHtmlPage\(rel, content\)\)/,
+      },
+      {
+        file: "vite.config.ts",
+        marker: /\.\.\.securityHeadersPlugins\(\)/,
+      },
+      {
+        file: "vite.demo.config.ts",
+        marker: /\.\.\.securityHeadersPlugins\(\)/,
+      },
+      {
+        file: "scripts/test/security-headers.test.mjs",
+        marker:
+          /admits scripts from this origin only, and connections to this origin and the configured API only/,
+      },
+      {
+        file: "scripts/test/security-headers.test.mjs",
+        marker: /refuses a missing, duplicated or weakened policy/,
+      },
+      {
+        file: "scripts/test/security-headers.test.mjs",
+        marker: /refuses any inline script, on any page/,
+      },
+    ],
+    caveat:
+      "style-src admits 'unsafe-inline' because the UI libraries insert <style> elements at runtime; it admits styles, never scripts. The committed deploy target (GitHub Pages) cannot send response headers, so frame-ancestors, HSTS, nosniff and the permissions policy depend on a host that sends the declared set: a real-data Company OS must not be served from one that does not.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

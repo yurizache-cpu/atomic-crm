@@ -328,3 +328,106 @@ describe("the SessionPort src/App.tsx builds: the CRM's own client and logout", 
     expect(localStorage.getItem(CACHED_SALE_KEY)).toBeNull();
   });
 });
+
+// Production Security Gate A: the second factor goes through the provider's
+// own MFA API, and only ids, the provider's QR image and the key text come
+// back across the port. A malformed code never reaches the provider.
+describe("the provider's second factor behind the port", () => {
+  const mfaClient = (options: {
+    level: "aal1" | "aal2";
+    verified?: { id: string }[];
+    all?: { id: string; factor_type: string; status: string }[];
+    verifyError?: unknown;
+  }) => {
+    const calls: string[] = [];
+    const client = {
+      auth: {
+        getSession: async () => ({ data: { session: SESSION }, error: null }),
+        onAuthStateChange: () => ({
+          data: { subscription: { unsubscribe: () => {} } },
+        }),
+        mfa: {
+          getAuthenticatorAssuranceLevel: async () => ({
+            data: { currentLevel: options.level, nextLevel: "aal2" },
+            error: null,
+          }),
+          listFactors: async () => ({
+            data: { totp: options.verified ?? [], all: options.all ?? [] },
+            error: null,
+          }),
+          unenroll: async ({ factorId }: { factorId: string }) => {
+            calls.push(`unenroll:${factorId}`);
+            return { data: {}, error: null };
+          },
+          enroll: async () => {
+            calls.push("enroll");
+            return {
+              data: {
+                id: "factor-new",
+                totp: {
+                  qr_code: "data:image/svg+xml;utf8,qr",
+                  secret: "KEY",
+                  uri: "otpauth://x",
+                },
+              },
+              error: null,
+            };
+          },
+          challengeAndVerify: async ({ code }: { code: string }) => {
+            calls.push(`verify:${code}`);
+            return { data: {}, error: options.verifyError ?? null };
+          },
+        },
+      },
+    };
+    const port = createSupabaseSessionPort({
+      client: client as unknown as SupabaseClient,
+      logout: noLogout,
+    });
+    return { mfa: port.mfa!, calls };
+  };
+
+  it("reports whether the live session still needs its second factor, and the verified factor", async () => {
+    expect(await mfaClient({ level: "aal1" }).mfa.status()).toEqual({
+      needsSecondFactor: true,
+      factorId: null,
+    });
+    expect(
+      await mfaClient({
+        level: "aal2",
+        verified: [{ id: "factor-1" }],
+      }).mfa.status(),
+    ).toEqual({ needsSecondFactor: false, factorId: "factor-1" });
+  });
+
+  it("discards an unfinished enrolment before starting one, and returns only the factor, QR image and key", async () => {
+    const { mfa, calls } = mfaClient({
+      level: "aal1",
+      all: [
+        { id: "stale", factor_type: "totp", status: "unverified" },
+        { id: "kept", factor_type: "totp", status: "verified" },
+      ],
+    });
+    expect(await mfa.enrollTotp()).toEqual({
+      factorId: "factor-new",
+      qrCode: "data:image/svg+xml;utf8,qr",
+      secret: "KEY",
+    });
+    expect(calls).toEqual(["unenroll:stale", "enroll"]);
+  });
+
+  it("verifies through the provider, and never sends a malformed code", async () => {
+    const accepted = mfaClient({ level: "aal1" });
+    expect(await accepted.mfa.verifyTotp("factor-1", "123456")).toBe(true);
+    expect(await accepted.mfa.verifyTotp("factor-1", "12345x")).toBe(false);
+    expect(accepted.calls).toEqual(["verify:123456"]);
+
+    const refusedByProvider = mfaClient({
+      level: "aal1",
+      verifyError: new Error("invalid"),
+    });
+    expect(await refusedByProvider.mfa.verifyTotp("factor-1", "654321")).toBe(
+      false,
+    );
+  });
+});

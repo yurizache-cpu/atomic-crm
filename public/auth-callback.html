@@ -2,6 +2,8 @@
 <html lang="en" translate="no" class="notranslate">
     <head>
         <meta charset="utf-8" />
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'" />
+        <meta name="referrer" content="no-referrer" />
         <meta
             name="viewport"
             content="minimum-scale=1, initial-scale=1, width=device-width, shrink-to-fit=no"
@@ -117,25 +119,5 @@
             </div>
         </div>
     </body>
-    <script>
-        const getUrlParams = () => {
-            const urlSearchParams = new URLSearchParams(
-                window.location.hash.substring(1)
-            );
-            const access_token = urlSearchParams.get('access_token');
-            const refresh_token = urlSearchParams.get('refresh_token');
-            const type = urlSearchParams.get('type');
-
-            return { access_token, refresh_token, type };
-        };
-
-        function interceptAuthCallback() {
-                const hash = window.location.hash;
-                const {access_token, refresh_token, type} = getUrlParams();
-                window.location.href = `./#/auth-callback?access_token=${access_token}&refresh_token=${refresh_token}&type=${type}`;
-        }
-    
-        // Call the function to intercept the auth callback
-        interceptAuthCallback();
-    </script>
+    <script src="./auth-callback.js"></script>
 </html>

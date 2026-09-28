@@ -54,3 +54,12 @@ begin
                            'Marketing Analyst', 'Marketing analyst', 'seed');
 end
 $$;
+
+-- Production Security Gate A: the explicit NON-PRODUCTION path. While this row
+-- exists, the Company OS accepts a session below authenticator assurance level
+-- 2, so local development and the test suites run without enrolling an
+-- authenticator. It lives here, never in a migration: a hosted project never
+-- runs this file (SI-25), so it requires multi-factor authentication.
+insert into ops.operator_assurance_exemption (reason, recorded_by)
+values ('local development and CI only: the development seed never reaches a hosted project (SI-25)', 'seed')
+on conflict (singleton) do nothing;

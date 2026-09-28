@@ -167,6 +167,17 @@ try {
       `no registered test sender: one is registered by an owner act, never shipped by a migration (found ${testSenders})`,
     );
 
+    // Production Security Gate A: the non-production assurance exemption lives
+    // only in the development seed. A migration that shipped it would let a
+    // hosted Company OS accept a session without multi-factor authentication.
+    const [[assuranceExemptions]] = psql(
+      "select count(*) from ops.operator_assurance_exemption;",
+    );
+    check(
+      assuranceExemptions === "0",
+      `no assurance exemption: a hosted project built from migrations requires multi-factor authentication (found ${assuranceExemptions})`,
+    );
+
     // The CRM owner is chosen by a person (public.bootstrap_owner, Phase 1D.2):
     // a migration that shipped one, or a record of one, would be an owner
     // nobody chose.
