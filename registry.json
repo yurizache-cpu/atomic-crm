@@ -314,14 +314,6 @@
           "type": "registry:component"
         },
         {
-          "path": "src/components/atomic-crm/providers/commons/getContactAvatar.ts",
-          "type": "registry:component"
-        },
-        {
-          "path": "src/components/atomic-crm/providers/commons/getCompanyAvatar.ts",
-          "type": "registry:component"
-        },
-        {
           "path": "src/components/atomic-crm/providers/commons/frenchCrmMessages.ts",
           "type": "registry:component"
         },
@@ -415,10 +407,6 @@
         },
         {
           "path": "src/components/atomic-crm/misc/useAppBarHeight.ts",
-          "type": "registry:component"
-        },
-        {
-          "path": "src/components/atomic-crm/misc/unsupportedDomains.const.ts",
           "type": "registry:component"
         },
         {
