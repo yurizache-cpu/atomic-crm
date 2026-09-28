@@ -1035,8 +1035,12 @@ $function$;
 
 -- The worker's one new capability: redacts the flow bound to the live lease's
 -- job. Takes no tenant, task or job argument. Answers redacted,
--- already_redacted, not_due, in_progress, or superseded (a later decided review
--- moved the clock and its own job took the binding).
+-- already_redacted, superseded (a later decided review moved the clock and its
+-- own job took the binding), or deferred: the flow is still in progress (a run
+-- pending or running, a review undecided) or not yet due, so it queues the
+-- flow's next job, an hour on (or at the due instant), and binds it. The job
+-- itself then succeeds: a flow in progress never exhausts a job's attempts, and
+-- a flow whose clock has ended always has one job queued until it is redacted.
 create or replace function ops.redact_due_content()
 returns text
 language plpgsql
@@ -1044,8 +1048,10 @@ security definer
 set search_path to ''
 as $function$
 declare
-  v_job ops.jobs := ops.leased_job();
-  v_row ops.content_retention;
+  v_job    ops.jobs := ops.leased_job();
+  v_row    ops.content_retention;
+  v_status text;
+  v_next   uuid;
 begin
   if v_job.kind <> 'content.retention_due' then
     raise exception using errcode = '42501', message = 'ops.redact_due_content: the leased job is not a retention job';
@@ -1056,12 +1062,22 @@ begin
   if not found then
     return 'superseded';
   end if;
-  return ops.redact_task_content(v_row.tenant_id, v_row.task_id, 'retention_expired', 'system:content-retention');
+  v_status := ops.redact_task_content(v_row.tenant_id, v_row.task_id, 'retention_expired', 'system:content-retention');
+  if v_status not in ('in_progress', 'not_due') then
+    return v_status;
+  end if;
+  v_next := ops.enqueue_job(v_job.tenant_id, 'content.retention_due',
+                            jsonb_build_object('content_retention_id', v_row.id), 100,
+                            case when v_status = 'not_due' then v_row.due_at
+                                 else clock_timestamp() + interval '1 hour' end,
+                            10, 'content.retention_due:after:' || v_job.id::text);
+  update ops.content_retention set job_id = v_next where id = v_row.id;
+  return 'deferred';
 end
 $function$;
 
 comment on function ops.redact_due_content() is
-  'D6: redacts the flow bound to the live lease''s content.retention_due job once it is due; a replay changes nothing. Resolves the flow from the lease; takes no id. Contacts nobody.';
+  'D6: redacts the flow bound to the live lease''s content.retention_due job once it is due; a flow still in progress (or not yet due) gets its next job queued and bound instead. A replay changes nothing. Resolves the flow from the lease; takes no id. Contacts nobody.';
 
 -- ---------------------------------------------------------------------------
 -- 7. A redacted review has no draft: its send is blocked, never attempted.

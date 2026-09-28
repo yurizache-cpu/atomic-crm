@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { PermanentError, TransientError } from "../worker/failures.ts";
+import { PermanentError } from "../worker/failures.ts";
 import type { LeasedJob } from "../worker/job.ts";
 import {
   CONTENT_RETENTION_DUE_KIND,
@@ -31,8 +31,13 @@ describe("the content retention handler", () => {
     expect(contentRetentionDue.shape).toBeUndefined();
   });
 
-  it("records the database's final answer as a status token", async () => {
-    for (const answer of ["redacted", "already_redacted", "superseded"]) {
+  it("records the database's answer as a status token, a deferral included, so no attempt is spent waiting", async () => {
+    for (const answer of [
+      "redacted",
+      "already_redacted",
+      "superseded",
+      "deferred",
+    ]) {
       let calls = 0;
       const detail = await contentRetentionDue.run(job, {
         redactDueContent: async () => {
@@ -42,14 +47,6 @@ describe("the content retention handler", () => {
       });
       expect(detail).toBe(`content_retention=${answer}`);
       expect(calls).toBe(1);
-    }
-  });
-
-  it("retries a flow still in progress or not yet due, instead of finishing the job", async () => {
-    for (const answer of ["in_progress", "not_due"]) {
-      await expect(
-        contentRetentionDue.run(job, { redactDueContent: async () => answer }),
-      ).rejects.toBeInstanceOf(TransientError);
     }
   });
 

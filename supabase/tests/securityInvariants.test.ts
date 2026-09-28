@@ -3946,13 +3946,17 @@ const INVARIANTS: Invariant[] = [
         marker: /two concurrent sweeps redact each due flow exactly once/,
       },
       {
+        file: "supabase/tests/content_retention.sql",
+        marker: /K1: a due flow with a pending run was not deferred/,
+      },
+      {
         file: "engine/handlers/contentRetentionDue.test.ts",
         marker:
-          /retries a flow still in progress or not yet due, instead of finishing the job/,
+          /records the database's answer as a status token, a deferral included, so no attempt is spent waiting/,
       },
     ],
     caveat:
-      "The clock starts only at a decided review: a flow whose run failed, was refused or is indeterminate, or whose review is never decided, keeps its content until the owner erases it, and a policy for such abandoned flows is an owner decision not yet taken. A flow held in progress (a pending run held by a stop, an undecided review) is retried, not redacted. Days are 24-hour days on the database clock. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 \u00a7C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
+      "The clock starts only at a decided review: a flow whose run failed, was refused or is indeterminate, or whose review is never decided, keeps its content until the owner erases it, and a policy for such abandoned flows is an owner decision not yet taken. A flow still in progress at its deadline (a pending run held by a stop, an undecided review) is deferred: its job queues and binds the next one an hour on, so it is never redacted under a run or an undecided review and never left without a job, however long it waits. Days are 24-hour days on the database clock. Nothing here reaches the provider: what it received, and what it retains, is ADR 0020 \u00a7C evidence. The contact reference and every WhatsApp identifier stay ADR 0018's decision. The owner's credential can still disable triggers (SI-22) and delete ledger rows, like every ops audit row.",
   },
 ];
 

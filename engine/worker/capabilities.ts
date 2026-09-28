@@ -149,8 +149,9 @@ export interface Capabilities {
   /**
    * BASELINE Q8 D6/D7. Redacts the AI working content of the flow bound to the
    * leased retention job once it is due: `redacted`, or on a replay
-   * `already_redacted` or `superseded`, or `not_due` / `in_progress` changing
-   * nothing. It calls nothing and returns no content.
+   * `already_redacted` or `superseded`, or `deferred` when the flow is still in
+   * progress, having queued and bound the flow's next job. It calls nothing and
+   * returns no content.
    */
   redactDueContent(): Promise<string>;
   /**

@@ -16,32 +16,29 @@
 // the payload, and a replay changes nothing: the database answers
 // already_redacted, or superseded when a later decided review moved the clock
 // and its own job took the binding. A flow still in progress (a run pending or
-// running, a review undecided) is retried later, never redacted under it.
+// running, a review undecided) is never redacted under it: the database queues
+// and binds the flow's next job an hour on and answers deferred, so this job
+// succeeds and no attempt is spent waiting.
 
-import { PermanentError, TransientError } from "../worker/failures.ts";
+import { PermanentError } from "../worker/failures.ts";
 import type { HandlerDefinition } from "../worker/handlerRegistry.ts";
 
 export const CONTENT_RETENTION_DUE_KIND = "content.retention_due";
 
-/** The answers after which the job is done. */
-export const CONTENT_RETENTION_FINAL_ANSWERS: readonly string[] = Object.freeze(
-  ["redacted", "already_redacted", "superseded"],
-);
-
-/** The answers that mean "not yet": the job is tried again later. */
-export const CONTENT_RETENTION_RETRY_ANSWERS: readonly string[] = Object.freeze(
-  ["in_progress", "not_due"],
-);
+/** The answers ops.redact_due_content() gives. Anything else is a contract break. */
+export const CONTENT_RETENTION_ANSWERS: readonly string[] = Object.freeze([
+  "redacted",
+  "already_redacted",
+  "superseded",
+  "deferred",
+]);
 
 export const contentRetentionDue: HandlerDefinition<"redactDueContent"> = {
   kind: CONTENT_RETENTION_DUE_KIND,
   capabilities: ["redactDueContent"],
   async run(_job, capabilities) {
     const answer = await capabilities.redactDueContent();
-    if (CONTENT_RETENTION_RETRY_ANSWERS.includes(answer)) {
-      throw new TransientError(`content retention: ${answer}`);
-    }
-    if (!CONTENT_RETENTION_FINAL_ANSWERS.includes(answer)) {
+    if (!CONTENT_RETENTION_ANSWERS.includes(answer)) {
       // Retrying the same code returns the same answer.
       throw new PermanentError(
         "ops.redact_due_content answered outside its contract",

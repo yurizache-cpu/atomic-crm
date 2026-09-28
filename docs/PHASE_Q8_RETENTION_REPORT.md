@@ -56,7 +56,7 @@ Traced from the lead-triage input to the decision:
   It holds no content. Its guards keep the task and class fixed, let the anchor move only forward and make a redaction final. It has RLS forced and no grant.
 - **Automatic expiry:** deciding a review of a protected task queues one INTERNAL `content.retention_due` job, available at the due instant. This is the existing queue and the Phase 3A.1 follow-up pattern: no cron and no second queue.
   - The worker's one new lease-bound capability, `ops.redact_due_content()`, resolves the flow from the leased job and never from the payload.
-  - A flow still in progress is retried with backoff.
+  - A flow still in progress at its deadline (a run pending or running, a review undecided) is deferred. The job queues and binds the flow's next job an hour on, then succeeds, so it never spends its attempts waiting and the flow is never left without a job (the PR review's P1, fixed before the merge).
   - A replay answers `already_redacted`; an earlier anchor's job answers `superseded`.
   - The kind is maintenance, so the kill switch never holds it.
 - **Owner sweep:** `npm run ops -- retention sweep --actor <label> [--limit <n>]` redacts, up to the limit (1 to 1000), the flows due and not yet redacted. It skips tasks another transaction holds, so two sweeps or a sweep and the worker never process one flow twice.
@@ -97,7 +97,7 @@ Traced from the lead-triage input to the decision:
 
 ## 7. Validation (local, once)
 
-- New `supabase/tests/content_retention.sql`, sections A–J: the clock, before and at the deadline, repeats, erasure, tenant isolation, the guards, privileges, the send block and the moving anchor.
+- New `supabase/tests/content_retention.sql`, sections A–K: the clock, before and at the deadline, repeats, erasure, tenant isolation, the guards, privileges, the send block, the moving anchor and the deferral of a flow in progress.
 - `test:db`: 23/23 suites, on a clean reset with the new migration.
 - `test:db:engine`: 402/402 in 54 files, including the new `contentRetention.dbtest.ts` (3 cases through the real worker loop).
 - The `functions` project: 2207/2207 in 96 files, with security invariants 79/79 and the static migration guards green.

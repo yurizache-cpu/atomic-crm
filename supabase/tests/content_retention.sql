@@ -23,7 +23,9 @@
 --      can redact; no role reads the ledger;
 --   I  a redacted review's send is blocked, never attempted;
 --   J  a later decided review moves the clock forward; the earlier job is
---      superseded.
+--      superseded;
+--   K  a flow still in progress at its deadline is never redacted under it,
+--      and never left without a job: the job defers, binding the next one.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data and fake evidence references only.
 
@@ -320,8 +322,10 @@ do $$
 declare
   v jsonb;
 begin
-  if pg_temp.retention_job('a-fake') <> 'not_due' then
-    raise exception 'B1: the job redacted a flow before its due instant';
+  if pg_temp.retention_job('a-fake') <> 'deferred'
+     or (select j.available_at from ops.jobs j where j.id = (pg_temp.ledger('a-fake')).job_id)
+          <> (pg_temp.ledger('a-fake')).due_at then
+    raise exception 'B1: the job redacted a flow before its due instant, or left it without its job';
   end if;
   v := ops.sweep_content_retention(1000, 'cr-owner');
   if (v ->> 'redacted')::int <> 0 then
@@ -581,7 +585,7 @@ begin
     raise exception 'F1: another tenant''s erasure touched tenant b''s content';
   end if;
   -- A worker holding tenant a's retention job reaches only the flow bound to it.
-  if pg_temp.retention_job('a-auth') <> 'not_due' or not pg_temp.content_left('f-b') then
+  if pg_temp.retention_job('a-auth') <> 'deferred' or not pg_temp.content_left('f-b') then
     raise exception 'F2: a tenant a job reached another flow';
   end if;
 end
@@ -766,6 +770,54 @@ begin
   reset role;
   if not pg_temp.content_left('j') then
     raise exception 'J2: the superseded job removed content';
+  end if;
+end
+$$;
+
+-- ===========================================================================
+-- K. A flow in progress at its deadline: deferred, never redacted under it,
+--    never left without a job.
+-- ===========================================================================
+
+do $$
+declare
+  l0  ops.content_retention;
+  l1  ops.content_retention;
+  j   ops.jobs;
+  v_run_job uuid;
+begin
+  perform pg_temp.task('k', 'health');
+  perform pg_temp.flow_run('k', 'fake', 'cr-fake', 'a', 'fake');
+  perform pg_temp.decide('k');
+  perform pg_temp.backdate('k', interval '31 days');
+  -- A second run about the same task, requested and still pending.
+  perform pg_temp.remember('run.k2',
+    ops.request_agent_run(pg_temp.id('a.tenant'), pg_temp.id('task.k'), pg_temp.id('a.agent'),
+                          'lead_triage', 'cr-k2', 'cr-suite', p_pinned_provider => 'fake'));
+  l0 := pg_temp.ledger('k');
+  if pg_temp.retention_job('k') <> 'deferred' then
+    raise exception 'K1: a due flow with a pending run was not deferred';
+  end if;
+  l1 := pg_temp.ledger('k');
+  select * into j from ops.jobs where id = l1.job_id;
+  if not pg_temp.content_left('k') or l1.redacted_at is not null or l1.job_id = l0.job_id
+     or j.kind <> 'content.retention_due' or j.status <> 'queued'
+     or j.available_at < now() + interval '50 minutes' then
+    raise exception 'K1: the deferral redacted content or left the flow without its next job (%)', row_to_json(j);
+  end if;
+
+  -- The pending run ends without a review (refused by the worker): the next
+  -- job then redacts the flow.
+  v_run_job := (pg_temp.run('k2')).job_id;
+  perform pg_temp.lease(v_run_job);
+  set local role ops_worker;
+  perform ops.refuse_agent_run('cr_refused');
+  reset role;
+  if (pg_temp.run('k2')).status not in ('failed', 'cancelled') then
+    raise exception 'K2: setup: the second run did not end';
+  end if;
+  if pg_temp.retention_job('k') <> 'redacted' or pg_temp.content_left('k') then
+    raise exception 'K2: the flow''s next job did not redact it once the run ended';
   end if;
 end
 $$;
