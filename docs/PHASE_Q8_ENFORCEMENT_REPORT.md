@@ -1,8 +1,8 @@
 # BASELINE Q8 — enforcement batch report
 
-**Status:** implemented locally on `feature/q8-real-data-authorization` (from `feature/clinical-phase-1` at `156977dd`, after the ADR 0020 decision packet `0b4f66f3`); broad local validation green; **owner review checkpoint pending**. Not pushed, not merged.
+**Status:** **Q8 ENFORCEMENT: INTEGRATED (2026-09-28).** Built on `feature/q8-real-data-authorization` (from `feature/clinical-phase-1` at `156977dd`, after the ADR 0020 decision packet `0b4f66f3`) and integrated by PR #16, normal merge `097b4b3cfdd7e18f65bc0b057820dd9eac998aa1` (§13). *(Superseded status: "implemented locally; owner review checkpoint pending; not pushed, not merged".)*
 **Decision record:** [ADR 0020](adr/0020-real-data-model-authorization.md), with the owner decisions D1–D10 of 2026-09-27 in its §H.
-**Real patient model traffic: STILL DISABLED.** This batch builds the enforcement, not a production enablement.
+**Technical fail-closed enforcement: INTEGRATED. Production real-data authorization: CLOSED. Real patient model traffic: DISABLED.** This batch builds the enforcement, not a production enablement.
 
 ## 1. The gap this closes
 
@@ -167,7 +167,7 @@ All local, on the isolated e2e stack, with synthetic data and fake evidence refe
 
 ## 10. Real-data status
 
-**REAL PATIENT MODEL TRAFFIC: STILL DISABLED.** No authorization is recorded, no provider configuration changed, Jev is untouched, and the ADR 0018 WhatsApp production gate stays CLOSED and independent. External gates that remain, each outside the code:
+**REAL PATIENT MODEL TRAFFIC: DISABLED.** No authorization is recorded, no provider configuration changed, Jev is untouched, and the ADR 0018 WhatsApp production gate stays CLOSED and independent. External gates that remain, each outside the code:
 
 - **Contract coverage:** the provider contract must explicitly cover the intended sensitive health-data processing, under a DPA. The generic DPA is not assumed sufficient.
 - **Zero data retention and provider evidence:**
@@ -198,5 +198,14 @@ Only once those exist can one owner `data-auth record` name them, and even then 
 
 ## 12. Next
 
-- **The owner review checkpoint:** read ADR 0020 §H against this report, and accept or amend the record.
-- **Not started:** the retention and redaction batch (D6, D7), registered test senders (D8), any OpenAI production authorization.
+- ~~**The owner review checkpoint:** read ADR 0020 §H against this report, and accept or amend the record.~~ *(2026-09-28: passed; D8 built at that review; integrated by PR #16, §13.)*
+- **Next technical Q8 sub-batch (expected):** the retention / redaction lifecycle (D6, D7). Not started.
+- **Not started:** any production model-data authorization (OpenAI or other), production WhatsApp, Jev, RAG.
+
+## 13. Integration (2026-09-28)
+
+- **PR #16**, normal merge `097b4b3cfdd7e18f65bc0b057820dd9eac998aa1` into `feature/clinical-phase-1` (parents `156977dd`, `697745a8`; its tree identical to the reviewed head). The source branch `feature/q8-real-data-authorization` is retained at `697745a8`; `main` is unchanged at `a863e2a0`; no production deploy.
+- **Review:** the Codex review raised one P1: the lead-triage model input redacted the message but still carried the task's title and type. It was fixed before the merge in `697745a8`: the input is the agent's labels and the redacted message only. No P0; no P1 remains.
+- **Post-merge CI:** Check #87 (run 36362501229) passed Test, Build, Typecheck, ESLint and Database security & reproducibility; the workflow stays red only for the accepted historical baseline: e2e exactly 9 failed and 1 skipped, and Prettier exactly 2 historical errors (`sampleCsv.test.ts`, `canAccess.test.ts`). There is no new regression.
+- **Status:** Q8 ENFORCEMENT: INTEGRATED (the technical fail-closed enforcement). PRODUCTION REAL-DATA AUTHORIZATION: CLOSED: no model-data authorization exists, and ADR 0020 stays Proposed. REAL PATIENT MODEL TRAFFIC: DISABLED. No production provider enablement, no production WhatsApp enablement, no Jev, no RAG.
+- **Strict MVP:** ~91% (a directional estimate).

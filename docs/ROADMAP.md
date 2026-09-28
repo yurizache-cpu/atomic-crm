@@ -568,13 +568,15 @@ A decision milestone, not an implementation, on the local branch `feature/q8-rea
 - **Unchanged:** Q8 OPEN; no real patient data; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED and not superseded; no RAG.
 - **Next:** the owner answers D1–D10. Only then does the one implementation batch in ADR 0020 §G start. *(2026-09-27: answered and implemented; see below.)*
 
-### Q8 enforcement batch (2026-09-27) — IMPLEMENTED LOCALLY, OWNER REVIEW CHECKPOINT
+### Q8 enforcement batch (2026-09-27) — INTEGRATED (2026-09-28)
 
-The owner answered D1–D10 (ADR 0020 §H) and the §G batch is built on the same branch. Read [PHASE_Q8_ENFORCEMENT_REPORT.md](PHASE_Q8_ENFORCEMENT_REPORT.md).
+The owner answered D1–D10 (ADR 0020 §H) and the §G batch was built on the same branch and integrated by PR #16. Read [PHASE_Q8_ENFORCEMENT_REPORT.md](PHASE_Q8_ENFORCEMENT_REPORT.md).
 
 - **The gate is at the model boundary.** `ops.start_agent_run` refuses, as `data_not_authorized` and before any call, a run whose task's class is neither synthetic nor test, unless an owner authorization is in force for exactly its tenant, class, capability, provider and model; the in-process fake is exempt. `ops.request_agent_run` refuses early with no job; the decision-shadow start runs the same check; the run guard enforces it on every write path (SI-70).
 - **Classification from provenance,** immutable (SI-71): synthetic; `test` only from a sender the owner registered on a configured test channel (D8: a test channel is not test data); `health` for any other lead or patient free text (D3); a direct task names a class or is `unclassified`.
 - **Owner authorization,** versioned and tenant-scoped, recorded and retired only by `npm run ops -- data-auth` (D10). Person content needs every evidence reference, training excluded, at most 30 days of content retention, the CRM-owning tenant (D1) and a minimising capability (`lead_triage`).
 - **Minimisation** of the lead-triage input: a field allowlist and structured-identifier redaction, which is NOT anonymisation.
-- **Unchanged:** no authorization recorded; real patient model traffic STILL DISABLED; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED; no RAG.
-- **Next:** the owner review checkpoint. Retention and redaction (D6, D7) are the next Q8 sub-batch, not started.
+- **Unchanged:** no authorization recorded; real patient model traffic DISABLED; no provider change; no Jev; the ADR 0018 WhatsApp gate CLOSED; no RAG.
+- **Integration (2026-09-28):** PR #16, normal merge `097b4b3cfdd7e18f65bc0b057820dd9eac998aa1` into `feature/clinical-phase-1` (parents `156977dd`, `697745a8`); the source branch is retained at `697745a8`, and `main` is unchanged at `a863e2a0`. The Codex review's P1 (the lead-triage model input still carried the task's title and type) was fixed before the merge in `697745a8`. Post-merge Check #87 (run 36362501229) passed Test, Build, Typecheck, ESLint and Database security & reproducibility; the workflow stays red only for the accepted historical baseline: e2e exactly 9 failed and 1 skipped, and Prettier exactly 2 historical errors (`sampleCsv.test.ts`, `canAccess.test.ts`). There is no new regression.
+- **Status:** Q8 ENFORCEMENT: INTEGRATED (the technical fail-closed enforcement). PRODUCTION REAL-DATA AUTHORIZATION: CLOSED: no model-data authorization exists, and ADR 0020 stays Proposed. REAL PATIENT MODEL TRAFFIC: DISABLED. No production provider enablement, no production WhatsApp enablement, no Jev, no RAG. Strict MVP: ~91% (directional).
+- **Next:** the next technical Q8 sub-batch is expected to address the retention / redaction lifecycle (D6, D7). Not started.
