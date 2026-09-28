@@ -581,7 +581,7 @@ The owner answered D1–D10 (ADR 0020 §H) and the §G batch was built on the sa
 - **Status:** Q8 ENFORCEMENT: INTEGRATED (the technical fail-closed enforcement). PRODUCTION REAL-DATA AUTHORIZATION: CLOSED: no model-data authorization exists, and ADR 0020 stays Proposed. REAL PATIENT MODEL TRAFFIC: DISABLED. No production provider enablement, no production WhatsApp enablement, no Jev, no RAG. Strict MVP: ~91% (directional).
 - **Next:** the next technical Q8 sub-batch is expected to address the retention / redaction lifecycle (D6, D7). *(2026-09-28: implemented; see below.)*
 
-### Q8 D6/D7 — AI working-content retention and redaction (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+### Q8 D6/D7 — AI working-content retention and redaction (2026-09-28) — INTEGRATED
 
 Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99666512` and integrated by one PR into `feature/clinical-phase-1`. Read [PHASE_Q8_RETENTION_REPORT.md](PHASE_Q8_RETENTION_REPORT.md) and ADR 0020 §I.
 
@@ -592,9 +592,21 @@ Built on `feature/q8-retention-redaction` from `feature/clinical-phase-1` at `99
   The redaction happens in place. No row is deleted, and every content-free audit fact stays.
 - **When:** at most 30 days after the database's `reviewed_at` of the task's latest decided review, or the relied-on authorization's own `content_retention_days` when fewer. The worker redacts on the one INTERNAL `content.retention_due` job queued at the due instant (the follow-up pattern: no cron).
 - **Owner acts:** `npm run ops -- retention erase` (one task, its own tenant, now) and `retention sweep` (bounded); `retention list` reads. SI-39 is extended, and SI-72 is added.
-- **Open for the owner:** a flow that never has a decided review has no clock; explicit erasure covers it, and an abandoned-flow policy is an owner decision.
+- ~~**Open for the owner:** a flow that never has a decided review has no clock; explicit erasure covers it, and an abandoned-flow policy is an owner decision.~~ *(Decided by the owner and built as the retention fallback; see below.)*
+- **Integration (2026-09-28):** PR #17, normal merge `c388bf53b3236a1b5d9d0bb552c58541c06d36f0` into `feature/clinical-phase-1` (parents `99666512`, `fb234afe`); the source branch `feature/q8-retention-redaction` is retained at `fb234afe`, and `main` is unchanged at `a863e2a0`. The automated review's P1 (a due flow still in progress spent its job's retries and could be left with no job) was fixed before the merge in `fb234afe`. Post-merge Check #94 (run 36445210729): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression.
 - **Unchanged:**
   - PRODUCTION REAL-DATA AUTHORIZATION: CLOSED, and REAL PATIENT MODEL TRAFFIC: DISABLED;
   - no authorization recorded, and no provider-side deletion;
   - no production WhatsApp (ADR 0018 keeps body and identifier retention), no Jev and no RAG.
+- **Next:** not started; the owner decides the next milestone.
+
+### Q8 retention fallback — final internal-retention correction (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+
+Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c388bf53` and integrated by one PR into `feature/clinical-phase-1`. Read [PHASE_Q8_RETENTION_REPORT.md](PHASE_Q8_RETENTION_REPORT.md) §9 and ADR 0020 §I.
+
+- **The gap closed:** a protected flow whose run failed, was refused or is indeterminate, whose review was never decided, or that never got a run, had no automatic retention clock.
+- **Owner policy:** every `health` or `person_text` task has ONE retention state from its creation, with a compact `anchor_reason`: **A** `review_decided`, the latest decided review's `reviewed_at` + the relied-on authorization's `content_retention_days` or 30 (unchanged D6); **B** `review_undecided`, otherwise the latest review's `created_at` + 30; **C** `terminal_without_review`, otherwise the latest finished run's `completed_at` + 30; **D** `task_created`, otherwise the task's `created_at` + 30. The clock only moves forward and no fallback displaces a decided review's. The flow keeps exactly ONE job (moved in place while queued). Only a run pending or running defers expiry (hourly, always leaving one next job); an undecided review no longer holds it, and the owner's erasure keeps its stricter rule. A run's terminal instant is read when the flow's job fires, never written inside a run's settlement.
+- **Invariant:** SI-72 extended (no protected AI working content remains indefinitely); numbering unchanged.
+- **Status once integrated:** Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE. PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
+- **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.

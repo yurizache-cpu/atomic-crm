@@ -1,6 +1,6 @@
 # BASELINE Q8 — D6/D7 AI working-content retention and redaction report
 
-**Status:** implemented on `feature/q8-retention-redaction` (from `feature/clinical-phase-1` at `99666512`); integrated by one PR into `feature/clinical-phase-1` (the single remote integration cycle).
+**Status:** **Q8 D6/D7 RETENTION: INTEGRATED (2026-09-28).** Built on `feature/q8-retention-redaction` (from `feature/clinical-phase-1` at `99666512`); PR #17, normal merge `c388bf53b3236a1b5d9d0bb552c58541c06d36f0` into `feature/clinical-phase-1` (parents `99666512`, `fb234afe`); the source branch `feature/q8-retention-redaction` is retained at `fb234afe`, and `main` is unchanged at `a863e2a0`. The automated review's P1 (a due flow still in progress spent its job's retries and could be left with no job) was fixed before the merge in `fb234afe`. Post-merge Check #94 (run 36445210729): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression. The retention fallback (§9) is the final internal-retention correction. *(Superseded status: "implemented; integrated by one PR".)*
 **Decision record:** [ADR 0020](adr/0020-real-data-model-authorization.md) §H (owner decisions D6 and D7) and §I (this implementation).
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.** This batch enforces the lifecycle of content the model boundary already guards. It enables nothing.
 
@@ -44,7 +44,7 @@ Traced from the lead-triage input to the decision:
   - never more than 30.
 - Days are 24-hour days, so the due instant does not depend on a session's time zone.
 - **Scope:** `health` and `person_text` tasks only. `synthetic` and `test` content has no D6 clock.
-- **Flows with no decided review:** every authorized person-content capability (`lead_triage`, the only one) reaches the review lifecycle. A flow whose run failed, was refused or is indeterminate, or whose review is never decided, has no clock. Explicit erasure covers it. **A policy for such abandoned flows is an owner decision this batch does not take.**
+- ~~**Flows with no decided review:** every authorized person-content capability (`lead_triage`, the only one) reaches the review lifecycle. A flow whose run failed, was refused or is indeterminate, or whose review is never decided, has no clock. Explicit erasure covers it. **A policy for such abandoned flows is an owner decision this batch does not take.**~~ *(Decided by the owner on 2026-09-28 and built as the fallback clocks, §9.)*
 
 ## 4. The mechanism
 
@@ -112,3 +112,27 @@ Before any real authorization:
 - the exact provider, project and model;
 - the lawful basis and an international-transfer mechanism;
 - for WhatsApp, ADR 0018's own gate: a new Accepted ADR, the live Meta probe and the PUBLIC helper decision.
+
+## 9. The retention fallback: the final internal-retention correction (2026-09-28)
+
+Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c388bf53`, by migration `20261003120000_content_retention_fallback.sql`, and integrated by one PR into `feature/clinical-phase-1`.
+
+- **Owner policy (final):** no `health` or `person_text` AI working content may remain indefinitely merely because its flow never reached a decided review.
+- **One effective state per protected task,** derived by `ops.content_retention_anchor` from the task's own rows, in this order:
+
+  | Reason (`anchor_reason`) | When it applies | Anchor | Days |
+  | --- | --- | --- | --- |
+  | `review_decided` | a review of the task is decided | the latest decided review's `reviewed_at` | the relied-on authorization's `content_retention_days`, or 30 (unchanged D6) |
+  | `review_undecided` | otherwise, a review exists | the latest review's `created_at` | 30 |
+  | `terminal_without_review` | otherwise, a run finished (`succeeded`, `failed`, `indeterminate` or `cancelled`) | the latest `completed_at` | 30 |
+  | `task_created` | otherwise | the task's `created_at` | 30 |
+
+- **Precedence:** the clock only moves forward (or, at an equal instant, to a reason of higher precedence), and no fallback ever displaces a decided review's clock. A redaction is final.
+- **When it is applied:** when the task is created, when a review of it opens, when one is decided, and whenever its job fires or the owner sweeps it (`ops.refresh_content_retention`). A run's terminal instant is read then, never written inside the run's settlement, so nothing here can roll a paid settlement back.
+- **One job per flow:** the bound job is moved in place while it is queued; a new one is queued and bound only when the bound one is running or finished.
+- **Safety:** only a run pending or running defers automatic expiry. The job then leaves exactly one next job an hour on, so nothing exhausts its retries and no due flow is left without a job. An undecided review no longer holds expiry: past its fallback it is redacted and stays pending with no content. The owner's erasure keeps its stricter rule (refused while a run is active or a review undecided).
+- **Redaction:** unchanged (§5). Content is removed in place, the fingerprints are nulled, and no row is deleted. The class stays, and the authorization linkage and every content-free fact stay.
+- **Backfill:** every protected task already stored received its state and its one job at the migration.
+- **Invariant:** SI-72 extended; numbering unchanged.
+- **Tests:** `content_retention.sql` section L (the undecided review, a decision superseding a fallback on the same job, a run ended without a review, a task with no run, repeats, and exactly one queued job for every unredacted flow). The retention dbtest adds a flow that never reached a review, redacted by the real worker.
+- **Status once integrated:** **Q8 INTERNAL RETENTION LIFECYCLE: COMPLETE**, meaning model-boundary enforcement, D6/D7 working-content retention and the abandoned-flow fallback. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
