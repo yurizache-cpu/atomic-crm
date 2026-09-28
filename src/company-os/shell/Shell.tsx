@@ -1,7 +1,8 @@
 import { useAccess } from "../session/runtime";
-import { LoadingState, NoAccessState, SignedOutState } from "./AccessStates";
+import { LoadingState, NoAccessState } from "./AccessStates";
 import { ContextGate } from "./ContextGate";
 import { DataBanner } from "./DataBanner";
+import { SignedOutOrSecondFactor } from "./SecondFactor";
 
 /**
  * The root of every Company OS route: the persistent data-class banner, then
@@ -15,7 +16,7 @@ export const Shell = () => {
       <DataBanner />
       {access.status === "checking" ? <LoadingState /> : null}
       {access.status === "signed-out" ? (
-        <SignedOutState signOutFailed={access.signOutFailed} />
+        <SignedOutOrSecondFactor signOutFailed={access.signOutFailed} />
       ) : null}
       {access.status === "no-access" ? (
         <NoAccessState reason={access.reason} />

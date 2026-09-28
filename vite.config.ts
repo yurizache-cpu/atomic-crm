@@ -6,6 +6,8 @@ import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 import createHtmlPlugin from "vite-plugin-simple-html";
 
+import { securityHeadersPlugins } from "./scripts/security-headers.mjs";
+
 // https://vitejs.dev/config/
 export default defineConfig({
   server: {
@@ -39,6 +41,9 @@ export default defineConfig({
       },
       manifest: false, // Use existing manifest.json from public/
     }),
+    // Production Security Gate A: the Content-Security-Policy and referrer
+    // policy in every production page, the full header set on `vite preview`.
+    ...securityHeadersPlugins(),
   ],
   define:
     process.env.NODE_ENV === "production" && process.env.VITE_SUPABASE_URL

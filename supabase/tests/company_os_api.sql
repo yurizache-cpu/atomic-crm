@@ -3749,8 +3749,9 @@ $f$;
 -- P8 (K5). Every function outside pg_catalog, information_schema and ops that
 --     ops_operator_api owns anywhere, or can execute (PUBLIC included) in a
 --     schema where it holds USAGE, by signature, trigger functions exempt: its
---     own exposed catalogue, and what PUBLIC already executes in public
---     (measured in S0.4; existing debt, pinned as observed, not approved).
+--     own exposed catalogue and nothing else. (Until Production Security Gate
+--     A, 20261004120000, PUBLIC also let it execute ten CRM functions in
+--     public, the debt S0.4 measured; that is revoked.)
 create function pg_temp.pin_k5() returns void
 language plpgsql as $f$
 declare
@@ -3766,13 +3767,7 @@ begin
     full join (select 'company_os_api.' || c.op || '(' ||
                       (select oidvectortypes(f.proargtypes) from pg_proc f
                         where f.pronamespace = 'company_os_api'::regnamespace and f.proname = c.op) || ')' s
-                 from cos_catalogue c
-               union all
-               select unnest(array['public.is_admin()', 'public.can_access_contact(bigint)', 'public.can_access_deal(bigint)',
-                                   'public.can_manage_sales_id(bigint)', 'public.current_sales_id()',
-                                   'public.is_active_sales_user()', 'public.get_note_attachments_function_url()',
-                                   'public.get_avatar_for_email(text)', 'public.get_domain_favicon(text)',
-                                   'public.merge_contacts(bigint, bigint)'])) e using (s)
+                 from cos_catalogue c) e using (s)
    where a.s is null or e.s is null;
   if v_bad is not null then
     raise exception 'P8 (K5): the functions ops_operator_api owns or can execute outside ops drifted: %', v_bad;
@@ -4021,8 +4016,8 @@ begin
   -- mutation whose anchor is missing changes nothing, so the pin would still
   -- pass and this check would fail, never pass vacuously.)
   perform pg_temp.expect_pin_failure('X16 the resolver reading an auth table besides sessions and users',
-    regexp_replace(pg_get_functiondef('ops.operator_scope()'::regprocedure), 'perform 1 from auth\.sessions s',
-                   'perform 1 from auth.identities i limit 1; perform 1 from auth.sessions s'),
+    regexp_replace(pg_get_functiondef('ops.operator_scope()'::regprocedure), 'into v_aal from auth\.sessions s',
+                   'into v_aal from auth.identities i, auth.sessions s'),
     'pg_temp.pin_graph', 'P5: a graph body names a schema outside its pinned set');
   -- The pg_catalog way past the schema allowlist: a built-in that runs SQL
   -- text or reads a relation, a sequence, a file or a large object by name,

@@ -4,7 +4,7 @@ import { getAuthProvider } from "@/components/atomic-crm/providers/supabase/auth
 import { getSupabaseClient } from "@/components/atomic-crm/providers/supabase/supabase";
 
 import { COMPANY_OS_API_SCHEMA } from "../contracts/company-os-api/index.ts";
-import type { SessionPort, SessionUser } from "./company-os/ports";
+import type { MfaPort, SessionPort, SessionUser } from "./company-os/ports";
 
 // The one SessionPort implementation (docs/PHASE_2C_BRIEF.md §6.2, OD-10):
 // the CRM's own supabase-js client, never a second createClient. It lives here,
@@ -36,9 +36,66 @@ const crmDependencies = (): SessionPortDependencies => ({
 const userOf = (session: Session | null): SessionUser | null =>
   session === null ? null : { userId: session.user.id };
 
+const TOTP_CODE = /^[0-9]{6}$/;
+
+/**
+ * The provider's own authenticator-app factor (Production Security Gate A).
+ * Only factor ids, the provider's QR image and the key text cross the port.
+ */
+const createMfaPort = (client: SupabaseClient): MfaPort => ({
+  async status() {
+    const { data: sessionData, error: sessionError } =
+      await client.auth.getSession();
+    if (sessionError !== null || sessionData.session === null) return null;
+    const { data: level, error: levelError } =
+      await client.auth.mfa.getAuthenticatorAssuranceLevel();
+    if (levelError !== null) return null;
+    const { data: factors, error: factorsError } =
+      await client.auth.mfa.listFactors();
+    if (factorsError !== null) return null;
+    return {
+      needsSecondFactor: level.currentLevel !== "aal2",
+      factorId: factors.totp[0]?.id ?? null,
+    };
+  },
+
+  async enrollTotp() {
+    const { data: factors, error: listError } =
+      await client.auth.mfa.listFactors();
+    if (listError !== null) throw new Error("The factors could not be read.");
+    // An enrolment abandoned before its first code would otherwise block a new one.
+    for (const factor of factors.all) {
+      if (factor.factor_type === "totp" && factor.status === "unverified") {
+        await client.auth.mfa.unenroll({ factorId: factor.id });
+      }
+    }
+    const { data, error } = await client.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: "Company OS",
+    });
+    if (error !== null) throw new Error("The enrolment could not start.");
+    return {
+      factorId: data.id,
+      qrCode: data.totp.qr_code,
+      secret: data.totp.secret,
+    };
+  },
+
+  async verifyTotp(factorId, code) {
+    if (!TOTP_CODE.test(code)) return false;
+    const { error } = await client.auth.mfa.challengeAndVerify({
+      factorId,
+      code,
+    });
+    return error === null;
+  },
+});
+
 export const createSupabaseSessionPort = (
   { client, logout }: SessionPortDependencies = crmDependencies(),
 ): SessionPort => ({
+  mfa: createMfaPort(client),
+
   async currentUser() {
     try {
       // The stored session, refreshed when expired; a failed refresh is none.
