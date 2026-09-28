@@ -24,6 +24,10 @@ import {
 } from "../handlers/calendarSync.ts";
 import { FOLLOW_UP_DUE_KIND, followUpDue } from "../handlers/followUpDue.ts";
 import {
+  CONTENT_RETENTION_DUE_KIND,
+  contentRetentionDue,
+} from "../handlers/contentRetentionDue.ts";
+import {
   UNCONFIGURED_CALENDAR_PORT,
   type CalendarPort,
 } from "../calendar/calendarPort.ts";
@@ -67,6 +71,7 @@ export function createHandlerRegistry(
       decisionPort: dependencies.decisionPort ?? UNCONFIGURED_DECISION_PORT,
     }),
     followUpDue,
+    contentRetentionDue,
     ...createCalendarSyncHandlers({
       calendarPort: dependencies.calendarPort ?? UNCONFIGURED_CALENDAR_PORT,
     }),
@@ -89,6 +94,7 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   AGENT_RUN_EXECUTE_KIND,
   DECISION_SHADOW_EVALUATE_KIND,
   FOLLOW_UP_DUE_KIND,
+  CONTENT_RETENTION_DUE_KIND,
   CALENDAR_CREATE_KIND,
   CALENDAR_UPDATE_KIND,
   CALENDAR_CANCEL_KIND,

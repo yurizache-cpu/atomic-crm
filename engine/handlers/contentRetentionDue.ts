@@ -1,0 +1,50 @@
+// BASELINE Q8, owner decisions D6 and D7: a protected flow's AI working
+// content reaches the end of its retention.
+//
+// When a review of a health or person_text task is decided, the database
+// anchors the flow's clock at that decision and queues ONE
+// `content.retention_due` job, available at the due instant
+// (ops.schedule_content_retention). When the queue leases it, this handler asks
+// the database to redact that flow's content in place, and that is all: the
+// task, run and review rows stay, with every content-free fact on them.
+//
+// INTERNAL, not governed (jobKinds.ts): maintenance the kill switch never
+// holds, because an erasure obligation does not pause with execution. It calls
+// nothing outside the database.
+//
+// IDEMPOTENT. The capability resolves the flow from the leased job, never from
+// the payload, and a replay changes nothing: the database answers
+// already_redacted, or superseded when a later decided review moved the clock
+// and its own job took the binding. A flow still in progress (a run pending or
+// running, a review undecided) is never redacted under it: the database queues
+// and binds the flow's next job an hour on and answers deferred, so this job
+// succeeds and no attempt is spent waiting.
+
+import { PermanentError } from "../worker/failures.ts";
+import type { HandlerDefinition } from "../worker/handlerRegistry.ts";
+
+export const CONTENT_RETENTION_DUE_KIND = "content.retention_due";
+
+/** The answers ops.redact_due_content() gives. Anything else is a contract break. */
+export const CONTENT_RETENTION_ANSWERS: readonly string[] = Object.freeze([
+  "redacted",
+  "already_redacted",
+  "superseded",
+  "deferred",
+]);
+
+export const contentRetentionDue: HandlerDefinition<"redactDueContent"> = {
+  kind: CONTENT_RETENTION_DUE_KIND,
+  capabilities: ["redactDueContent"],
+  async run(_job, capabilities) {
+    const answer = await capabilities.redactDueContent();
+    if (!CONTENT_RETENTION_ANSWERS.includes(answer)) {
+      // Retrying the same code returns the same answer.
+      throw new PermanentError(
+        "ops.redact_due_content answered outside its contract",
+      );
+    }
+    // A status token only: the job detail is metadata, never content.
+    return `content_retention=${answer}`;
+  },
+};

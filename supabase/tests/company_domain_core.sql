@@ -295,6 +295,10 @@ begin
     -- the leased job from scheduled to due; no argument, no send
     -- (supabase/tests/follow_up_scheduling.sql).
     ('ops_worker',   'ops.mark_follow_up_due()'::regprocedure),
+    -- Q8 D6/D7: one lease-bound capability that redacts the flow bound to the
+    -- leased retention job once it is due; no argument, no call
+    -- (supabase/tests/content_retention.sql).
+    ('ops_worker',   'ops.redact_due_content()'::regprocedure),
     -- Phase 3A.2: the calendar sync's two lease-bound capabilities; neither
     -- takes a tenant, booking or sync, and neither writes a booking.
     ('ops_worker',   'ops.start_calendar_sync(text)'::regprocedure),
@@ -378,6 +382,9 @@ begin
   --     sync's start and settle, bound to the live lease's job exactly like the
   --     shadow decision's: running is recorded before a call, an earlier
   --     attempt's running is settled indeterminate, and neither writes a booking.
+  --     The Q8 D6/D7 batch adds redact_due_content: argument-free and
+  --     lease-bound, it redacts only the flow bound to the live lease's
+  --     retention job, once due; it calls nothing.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -390,6 +397,7 @@ begin
                            'open_review_for_settled_job', 'request_shadow_decision_for_settled_job',
                            'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
                            'mark_follow_up_due', 'start_calendar_sync', 'settle_calendar_sync',
+                           'redact_due_content',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

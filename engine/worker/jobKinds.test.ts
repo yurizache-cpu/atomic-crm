@@ -8,6 +8,7 @@ import {
 } from "../handlers/calendarSync.ts";
 import { DECISION_SHADOW_EVALUATE_KIND } from "../handlers/decisionShadowEvaluate.ts";
 import { FOLLOW_UP_DUE_KIND } from "../handlers/followUpDue.ts";
+import { CONTENT_RETENTION_DUE_KIND } from "../handlers/contentRetentionDue.ts";
 import { POSTMARK_LEDGER_RETENTION_KIND } from "../handlers/postmarkLedgerRetention.ts";
 import { createModelRouter } from "../models/router.ts";
 import {
@@ -82,7 +83,10 @@ describe("the worker's registry classifies every job kind for the kill switch", 
       CALENDAR_CANCEL_KIND,
     ]);
     expect([...GOVERNED_JOB_KINDS]).toEqual([FOLLOW_UP_DUE_KIND]);
-    expect([...INTERNAL_JOB_KINDS]).toEqual([POSTMARK_LEDGER_RETENTION_KIND]);
+    expect([...INTERNAL_JOB_KINDS]).toEqual([
+      POSTMARK_LEDGER_RETENTION_KIND,
+      CONTENT_RETENTION_DUE_KIND,
+    ]);
   });
 
   it("keeps the three lists disjoint and frozen", () => {

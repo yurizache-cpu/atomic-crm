@@ -9,6 +9,7 @@ export const AUTH_USER = "f0000000-0000-4000-8000-00000000000f";
 export const PRINCIPAL = "a1000000-0000-4000-8000-0000000000a1";
 export const MEMBERSHIP = "b1000000-0000-4000-8000-0000000000b1";
 export const DATA_AUTHORIZATION = "c1000000-0000-4000-8000-0000000000c1";
+export const TASK = "d1000000-0000-4000-8000-0000000000d1";
 
 /** The command words, then each flag as `--name value`, in the order given. */
 const argv = (
@@ -54,6 +55,8 @@ export const READS: readonly (readonly string[])[] = [
   ["membership", "list", "--tenant", TENANT, "--limit", "20"],
   ["data-auth", "list"],
   ["data-auth", "list", "--tenant", TENANT, "--all"],
+  ["retention", "list"],
+  ["retention", "list", "--tenant", TENANT],
 ];
 
 /** READS[RUNS_WITH_OPTIONS] is `runs` with a tenant, a status and a limit. */
@@ -157,6 +160,17 @@ export const DATA_AUTH_RETIRE = argv("data-auth retire", {
   actor: "owner",
 });
 
+export const RETENTION_ERASE = argv("retention erase", {
+  tenant: TENANT,
+  task: TASK,
+  actor: "owner",
+});
+
+export const RETENTION_SWEEP = argv("retention sweep", {
+  actor: "owner",
+  limit: "50",
+});
+
 /**
  * Every mutation the tool offers, SI-39's act allowlist in its order: the price
  * and spend-limit acts, Phase 2A's three review decisions and the review
@@ -177,6 +191,8 @@ export const ACTS: readonly (readonly string[])[] = [
   MEMBERSHIP_REVOKE,
   DATA_AUTH_RECORD,
   DATA_AUTH_RETIRE,
+  RETENTION_ERASE,
+  RETENTION_SWEEP,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

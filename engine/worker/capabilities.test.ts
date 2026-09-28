@@ -367,6 +367,7 @@ describe("the capability list", () => {
       "startShadowDecision",
       "settleShadowDecision",
       "markFollowUpDue",
+      "redactDueContent",
       "startCalendarSync",
       "settleCalendarSync",
     ]);

@@ -32,7 +32,10 @@ import {
   PRINCIPAL,
   READS,
   REVIEW,
+  RETENTION_ERASE,
+  RETENTION_SWEEP,
   RUNS_WITH_OPTIONS,
+  TASK,
   TENANT,
   withoutFlag,
 } from "./testSupport/operatorArgv.ts";
@@ -92,6 +95,12 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   }
   if (sql.includes("ops.retire_model_data_authorization")) {
     return [{ result: true }];
+  }
+  if (sql.includes("ops.erase_task_content")) {
+    return [{ result: { task_id: params[1], status: "redacted" } }];
+  }
+  if (sql.includes("ops.sweep_content_retention")) {
+    return [{ result: { redacted: 3, in_progress: 1 } }];
   }
   if (sql.includes("ops.record_review_decision")) {
     // The decision is params[2]: the subcommand chose it, and it reaches the
@@ -214,6 +223,8 @@ describe("running the operator tool", () => {
       DATA_AUTH_RETIRE,
       "ops.retire_model_data_authorization",
     ],
+    ["retention erase", RETENTION_ERASE, "ops.erase_task_content"],
+    ["retention sweep", RETENTION_SWEEP, "ops.sweep_content_retention"],
   ])(
     "runs %s as one parameterised function call in a writable transaction",
     async (_name, argv, fn) => {
@@ -252,6 +263,8 @@ describe("running the operator tool", () => {
       { membershipId: MEMBERSHIP, revoked: true },
       { result: "recorded", authorizationId: DATA_AUTHORIZATION },
       { result: "retired", authorizationId: DATA_AUTHORIZATION },
+      { result: "redacted", taskId: TASK },
+      { result: "swept", redacted: 3, inProgress: 1 },
     ]);
   });
 
@@ -269,6 +282,8 @@ describe("running the operator tool", () => {
       "membership revoke",
       "data-auth record",
       "data-auth retire",
+      "retention erase",
+      "retention sweep",
     ]);
     const actKinds = ACTS.map((argv) => {
       const command = parseOperatorArgs(argv);
