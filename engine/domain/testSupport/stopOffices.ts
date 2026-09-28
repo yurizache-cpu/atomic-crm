@@ -81,6 +81,7 @@ export function buildStopOffice(
       companyId,
       departmentId,
       type: "operations.supply_order",
+      dataClass: "synthetic",
       title: "Prepare next week's office supply order",
       description: "Paper, toner and coffee are running low.",
     });

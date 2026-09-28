@@ -309,6 +309,7 @@ export function agentRuntimeProbes(
         companyId,
         departmentId,
         type: "operations.supply_order",
+        dataClass: "synthetic",
         title: "Prepare next week's office supply order",
         description: `Paper, toner and coffee are running low. ${TASK_SENTINEL}`,
         dueAt: new Date("2026-09-21T12:00:00Z"),

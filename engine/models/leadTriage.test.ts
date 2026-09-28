@@ -187,6 +187,52 @@ describe("the lead triage prompt", () => {
     expect(prompt.input).toContain(`"capability":"${LEAD_TRIAGE_CAPABILITY}"`);
   });
 
+  it("sends the message with its structured identifiers removed and no priority or due date, and names the minimised version", () => {
+    const prompt = buildLeadTriagePrompt(
+      context({
+        task: {
+          type: "lead_triage",
+          title: "Lead triage",
+          description:
+            "Sou a Maria, meu zap é (11) 98765-4321, email maria.s@example.test, CPF 123.456.789-09, vi em https://example.test/x",
+          priority: 700,
+          dueAt: "2026-10-02T12:00:00.000Z",
+        },
+      }),
+    );
+
+    expect(prompt.promptVersion).toBe("lead_triage.v2");
+    expect(prompt.input).not.toMatch(/98765|maria\.s@|123\.456|example\.test/);
+    expect(prompt.input).toContain("[phone]");
+    expect(prompt.input).toContain("[email]");
+    expect(prompt.input).toContain("[cpf]");
+    expect(prompt.input).toContain("[url]");
+    // Not anonymisation: a name in free text is not removable deterministically.
+    expect(prompt.input).toContain("Sou a Maria");
+    expect(prompt.input).not.toContain("700");
+    expect(prompt.input).not.toContain("2026-10-02T12");
+  });
+
+  it("never sends the task's title or type, which a directly created task could fill with an identifier", () => {
+    const prompt = buildLeadTriagePrompt(
+      context({
+        task: {
+          type: "lead_triage",
+          title: "Maria Silva 11987654321 maria@example.test",
+          description: "Oi, queria entender a primeira consulta.",
+          priority: 100,
+          dueAt: null,
+        },
+      }),
+    );
+
+    expect(prompt.input).not.toContain("Maria Silva");
+    expect(prompt.input).not.toContain("11987654321");
+    expect(prompt.input).not.toContain('"title"');
+    expect(prompt.input).not.toContain('"type"');
+    expect(prompt.input).toContain("primeira consulta");
+  });
+
   it("forbids the clinical work this agent must never do", () => {
     const { instructions } = buildLeadTriagePrompt(context());
     expect(instructions).toContain("Never diagnose");

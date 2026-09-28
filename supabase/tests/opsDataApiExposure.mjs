@@ -274,6 +274,11 @@ async function main() {
       `ops.${relation} is missing from the catalogue; is the Phase 1D.1 migration (20260917120000_runtime_governance) applied?`,
     );
   }
+  // BASELINE Q8: the model-data authorizations, for the same reason.
+  check(
+    relations.includes("model_data_authorizations"),
+    "ops.model_data_authorizations is missing from the catalogue; is the Q8 migration (20261001120000_model_data_authorization) applied?",
+  );
   for (const fn of [
     "record_model_price",
     "set_spend_limit",

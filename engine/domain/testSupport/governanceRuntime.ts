@@ -128,6 +128,7 @@ export function buildGovernedOffice(
       companyId,
       departmentId,
       type: "operations.supply_order",
+      dataClass: "synthetic",
       title: text.taskTitle,
       description: text.taskDescription ?? undefined,
       dueAt: new Date("2026-09-21T12:00:00Z"),

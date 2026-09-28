@@ -388,6 +388,11 @@ begin
     t, co, ag_triage, p_target || '2', 'production', 'Production ' || upper(k), 'sentinel-' || k || '-configured-by', false));
   ch_test2 := pg_temp.remember(k || '.channel_test2', ops.configure_whatsapp_channel(
     t, co, ag_triage, p_target || '3', 'test', 'Second test ' || upper(k), 'sentinel-' || k || '-configured-by'));
+  -- D8: a test channel is not test data. The fixture's synthetic senders are
+  -- registered as the controlled test devices of their lines.
+  perform ops.register_test_sender(t, ch_test, p_phone || '1', 'sentinel-' || k || '-configured-by');
+  perform ops.register_test_sender(t, ch_test, p_phone || '2', 'sentinel-' || k || '-configured-by');
+  perform ops.register_test_sender(t, ch_test2, p_phone || '3', 'sentinel-' || k || '-configured-by');
 
   -- Runs, one per state.
   -- succeeded, with its review opened after the settlement (pending)
@@ -1392,10 +1397,11 @@ begin
     select ta, co, 'crm.follow_up', 'Index probe', v_at - make_interval(secs => g), v_at - make_interval(secs => g)
       from generate_series(1, c_rows) g;
     insert into ops.agent_runs (tenant_id, company_id, department_id, task_id, agent_id, capability, model_route,
-                                idempotency_key, request_fingerprint, correlation_id, requested_by, created_at, updated_at)
+                                idempotency_key, request_fingerprint, correlation_id, requested_by, created_at, updated_at,
+                                data_class)
     select r.tenant_id, r.company_id, r.department_id, r.task_id, r.agent_id, r.capability, r.model_route,
            'index-probe-' || g, r.request_fingerprint, gen_random_uuid(), 'cos-api-suite',
-           v_at - make_interval(secs => g), v_at - make_interval(secs => g)
+           v_at - make_interval(secs => g), v_at - make_interval(secs => g), r.data_class
       from ops.agent_runs r, generate_series(1, c_rows) g
      where r.id = pg_temp.id('a.run_queued');
     insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, status, reviewer,
@@ -2383,9 +2389,10 @@ begin
       from unnest(array[c_task[1], c_task[3], c_task[2]],
                   array[v_at + interval '3 hours', v_at + interval '2 hours', v_at + interval '2 hours']) as x (id, at);
     insert into ops.agent_runs (id, tenant_id, company_id, department_id, task_id, agent_id, capability, model_route,
-                                idempotency_key, request_fingerprint, correlation_id, requested_by, created_at, updated_at)
+                                idempotency_key, request_fingerprint, correlation_id, requested_by, created_at, updated_at,
+                                data_class)
     select x.id, r.tenant_id, r.company_id, r.department_id, r.task_id, r.agent_id, r.capability, r.model_route,
-           'order-probe-' || x.id, r.request_fingerprint, gen_random_uuid(), 'cos-api-suite', x.at, x.at
+           'order-probe-' || x.id, r.request_fingerprint, gen_random_uuid(), 'cos-api-suite', x.at, x.at, r.data_class
       from ops.agent_runs r,
            unnest(array[c_run[1], c_run[3], c_run[2]],
                   array[v_at + interval '3 hours', v_at + interval '2 hours', v_at + interval '2 hours']) as x (id, at)
@@ -2948,12 +2955,14 @@ begin
   -- Phase 3B.1's commercial funnel CRM adapter, which serves only the tenant
   -- that owns the local CRM (as crm_contact_by_phone does), and Phase 3B.2's
   -- two: the one lock every commercial act takes on a deal, which refuses any
-  -- other tenant first, and the operator context's hint for those acts.
+  -- other tenant first, and the operator context's hint for those acts; and
+  -- BASELINE Q8's one reader (ADR 0020, owner decision D1): person content is
+  -- authorized for a model only for the tenant that owns the local CRM.
   select string_agg(p.proname, ', ' order by p.proname) into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('ops', 'company_os_api') and p.prosrc ~ 'owns_local_crm';
-  if v_bad is distinct from 'cos_commercial_acts_available, crm_commercial_funnel, crm_contact_by_phone, crm_lock_deal, membership_tenant_eligible, purge_inbound_email_ledger' then
-    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers, the funnel''s CRM adapter and the commercial acts'' lock and hint)', v_bad;
+  if v_bad is distinct from 'cos_commercial_acts_available, crm_commercial_funnel, crm_contact_by_phone, crm_lock_deal, membership_tenant_eligible, model_data_controller_tenant, purge_inbound_email_ledger' then
+    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers, the funnel''s CRM adapter, the commercial acts'' lock and hint, and the Q8 controller check)', v_bad;
   end if;
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace

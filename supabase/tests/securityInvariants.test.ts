@@ -1891,7 +1891,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/companyOs.test.ts",
         marker:
-          /forwards a task's idempotency key as the thirteenth and last argument of ops\.create_task/,
+          /forwards a task's idempotency key as the thirteenth argument of ops\.create_task/,
       },
       {
         file: "engine/domain/domainIdempotency.dbtest.ts",
@@ -1909,7 +1909,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-39",
     statement:
-      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -3731,6 +3731,158 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The bridge follows the four Company OS acts only: a next action, conversion or loss recorded in the CRM's own form moves no follow-up plan. A newer version of the pinned policy makes the bridge invalid until the owner pins it again, because the Phase 3A service plans a policy's latest version. No owner CLI command configures it yet: the owner's credential calls ops.configure_commercial_follow_up_bridge directly, as the synthetic demo does.",
+  },
+  {
+    id: "SI-70",
+    statement:
+      "Data reaches a model provider only through an owner authorization in force for its exact binding (BASELINE Q8, ADR 0020): ops.start_agent_run, lease-bound, after the kill switch and before the route, the price and the spend reservation, cancels a run as data_not_authorized, before any call and with no retry or other provider, unless its task's data class is synthetic or test, its provider is the in-process fake, or a version of ops.model_data_authorizations is in force for exactly its tenant, data class, capability, provider and model; ops.request_agent_run refuses such data earlier, on the record and with no job, when no provider is authorized for that class and capability, unless the request pins the run to the in-process provider (the only pin), which no other provider may then start (route_provider_mismatch); the decision-shadow start applies the same check; the run guard requires that authorization on every write path that starts a run and fixes it on the run with the class; identifier, clinical_record, derived and unclassified data can never be authorized; person content (person_text, health) only for the tenant that owns the local CRM, only for a capability whose input is minimised, and only with every evidence reference, training excluded and at most 30 days of content retention; an authorization is recorded and retired only with the owner's credential (npm run ops -- data-auth), never by a migration, an environment variable, the browser, the gateway or the worker, and a version is immutable but for its one retirement.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "unit test",
+      "static guard",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /A1: a % run with no authorization was not refused at its request with no job/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /B1: a start for a model no authorization names was not refused before any call/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /C1: a start after its authorization was retired was not refused/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /D1: a stop did not hold the run before the data gate decided/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /F1: % holds a privilege on ops\.model_data_authorizations/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /I1 a raw start of health data with no authorization/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /H6 health for a tenant that is not the controller/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /N1: a health run pinned to the in-process provider was refused at its request/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /N3: a run pinned to the in-process provider started on an external route/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /N4 pinning an external provider/,
+      },
+      {
+        file: "supabase/migrations/20261001120000_model_data_authorization.sql",
+        marker:
+          /Q8 enforcement shipped a data authorization; authorizations are owner data/,
+      },
+      {
+        file: "supabase/tests/referenceData.mjs",
+        marker:
+          /no model-data authorization: one is recorded by an owner act, never shipped by a migration/,
+      },
+      {
+        file: "engine/domain/modelDataAuthorization.dbtest.ts",
+        marker:
+          /refuses at the start, before any call, a model the authorization does not name/,
+      },
+      {
+        file: "engine/models/leadTriage.test.ts",
+        marker:
+          /sends the message with its structured identifiers removed and no priority or due date/,
+      },
+      {
+        file: "engine/models/leadTriage.test.ts",
+        marker:
+          /never sends the task's title or type, which a directly created task could fill with an identifier/,
+      },
+    ],
+    caveat:
+      "The gate proves that an authorization is recorded, not that the evidence it references is true: the references are pointers to the owner's records, and no real authorization exists (real patient data stays closed until the provider evidence, the lawful basis and the transfer mechanism exist, and WhatsApp keeps its own ADR 0018 gate). Minimisation removes structured identifiers (e-mail, URL, CPF-shaped and phone-shaped numbers) and is not anonymisation: names and stories in free text remain, and the data keeps its class. The in-process fake is exempt by its literal name; the deployed worker cannot select it. A call already in flight when an authorization is retired cannot be recalled. The content retention period is recorded, not yet enforced: redaction and erasure (D6, D7) are the next batch. A finished run recorded before this gate carries no class.",
+  },
+  {
+    id: "SI-71",
+    statement:
+      "A task's data class is assigned at creation by its trusted creator and never changes: the admission derives it from provenance (synthetic from the synthetic ingress; test only for a message on an owner-configured test channel from a sender the owner registered for that channel, because a test channel is not test data; health for any other free text a lead or patient wrote, an unknown sender on a test channel included), never from a payload, the browser or the content, and a test sender is registered and retired only with the owner's credential; a direct ops.create_task names a class from the closed classification or creates an unclassified task, which no model may read, and the same idempotency key under another class is refused; an ENABLE ALWAYS trigger refuses any change of the class, the owner's included; an agent run takes its class from its task, never from its caller, fixed at its creation; and a review is browser-decidable, its advice shown to the browser and its decision-shadow input built only when its task's class is synthetic or test, never because its channel is in test mode.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /G1 the owner relabels a task''s class/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /G4 the same key under another class/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /I3: a run took its class from the caller instead of its task/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /L1: a synthetic admission did not become a synthetic task/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /M1: a registered test sender on a test channel did not produce test data/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /M2: an unknown sender on a test channel was not presumed health/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /M5: % can reach the test-sender registry/,
+      },
+      {
+        file: "supabase/migrations/20261001120000_model_data_authorization.sql",
+        marker: /Q8 enforcement shipped a registered test sender/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /O2: a health review on a test channel is browser-decidable/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker: /O2: a health review''s advice reaches the browser/,
+      },
+      {
+        file: "supabase/tests/model_data_authorization.sql",
+        marker:
+          /O1: a registered test sender''s review lost its browser and shadow scope/,
+      },
+      {
+        file: "supabase/migrations/20261001120000_model_data_authorization.sql",
+        marker:
+          /a task''s data class is fixed at creation by its trusted creator/,
+      },
+      {
+        file: "engine/domain/companyOs.test.ts",
+        marker:
+          /never sends a data class outside the closed classification to the database/,
+      },
+    ],
+    caveat:
+      "The owner's credential stays the trust root: it states the class of a task it creates directly, and it can disable triggers (SI-22). A registered test sender rests on the owner's word that the number is a controlled test device, and on the provider's attestation of the sender in its signed webhook; registering one is an owner SQL act (ops.register_test_sender), with no CLI command yet. A task closed before this migration is immutable and stays unclassified.",
   },
 ];
 

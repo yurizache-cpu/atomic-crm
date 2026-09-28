@@ -80,7 +80,8 @@ const inboundFor = async (tenantId: string) =>
 
 describe("a signed delivery to a configured test channel", () => {
   it("becomes one inbound admission, one task and one agent run, in the channel's tenant", async () => {
-    const clinic = await buildClinic(owner, TENANT_A, TARGET_A);
+    // A registered test device: its message is test data (D8).
+    const clinic = await buildClinic(owner, TENANT_A, TARGET_A, "test", [LEAD]);
     await addCrmContact(admin, LEAD);
 
     const answer = await deliver(

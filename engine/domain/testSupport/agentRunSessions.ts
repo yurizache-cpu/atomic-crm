@@ -150,6 +150,7 @@ export async function createAssignedTask(
     companyId: office.companyId,
     departmentId: office.departmentId,
     type: "operations.supply_order",
+    dataClass: "synthetic",
     title,
   });
   await assignTask(tx, ctx, taskId, office.agentId);

@@ -220,8 +220,21 @@ export async function deleteCompanyOsRows(
     "delete from ops.review_items where tenant_id = any($1::uuid[])",
     "delete from ops.inbound_messages where tenant_id = any($1::uuid[])",
     "delete from ops.conversations where tenant_id = any($1::uuid[])",
+    // D8: a test-sender registration in force is never deleted, so it is
+    // retired first, the way an owner retires one, and goes before its channel.
+    `update ops.communication_test_senders
+        set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup'
+      where tenant_id = any($1::uuid[]) and retired_at is null`,
+    "delete from ops.communication_test_senders where tenant_id = any($1::uuid[])",
     "delete from ops.communication_channels where tenant_id = any($1::uuid[])",
     "delete from ops.agent_runs where tenant_id = any($1::uuid[])",
+    // BASELINE Q8: an authorization in force is never deleted (an ENABLE ALWAYS
+    // trigger refuses it), so it is retired first, the way an owner retires
+    // one; the runs that relied on one are gone by now.
+    `update ops.model_data_authorizations
+        set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup'
+      where tenant_id = any($1::uuid[]) and retired_at is null`,
+    "delete from ops.model_data_authorizations where tenant_id = any($1::uuid[])",
     "delete from ops.task_jobs where tenant_id = any($1::uuid[])",
     "delete from ops.events where tenant_id = any($1::uuid[])",
     `update ops.execution_stops

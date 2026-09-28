@@ -17,6 +17,7 @@
 // database resolves it inside that scope or answers "not found".
 
 import type { TxClient } from "../db/types.ts";
+import { isDataClass, type DataClass } from "./dataClasses.ts";
 import { CompanyOsError, toDomainError } from "./errors.ts";
 import { isTaskStatus, type TaskStatus } from "./taskStateMachine.ts";
 
@@ -72,6 +73,12 @@ export interface CreateTaskInput {
    * request it is refused (invalid_state). Grants nothing.
    */
   readonly idempotencyKey?: string;
+  /**
+   * BASELINE Q8 (ADR 0020): the class the TRUSTED caller knows from where the
+   * text came from, never from its content. Absent: unclassified, which no
+   * model may read. Fixed at creation.
+   */
+  readonly dataClass?: DataClass;
 }
 
 export type EventSubjectType = "company" | "department" | "agent" | "task";
@@ -117,6 +124,17 @@ function optionalIdempotencyKey(value: unknown): string | null {
     throw new CompanyOsError(
       "invalid_argument",
       "idempotencyKey must be 1 to 200 printable ASCII characters",
+    );
+  }
+  return value;
+}
+
+function optionalDataClass(value: unknown): DataClass | null {
+  if (value === undefined || value === null) return null;
+  if (!isDataClass(value)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "dataClass is not one of the closed classification",
     );
   }
   return value;
@@ -315,7 +333,7 @@ export async function createTask(
   const [tenant, source, correlation, causation] = contextParams(context);
   return callForId(
     tx,
-    "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) as result",
+    "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) as result",
     [
       tenant,
       requireUuid(input.companyId, "companyId"),
@@ -330,6 +348,7 @@ export async function createTask(
       correlation,
       causation,
       optionalIdempotencyKey(input.idempotencyKey),
+      optionalDataClass(input.dataClass),
     ],
   );
 }

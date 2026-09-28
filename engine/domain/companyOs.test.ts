@@ -133,7 +133,7 @@ describe("the Company OS domain boundary", () => {
     ).toBe("not_found");
   });
 
-  it("forwards a task's idempotency key as the thirteenth and last argument of ops.create_task", async () => {
+  it("forwards a task's idempotency key as the thirteenth argument of ops.create_task and its data class as the fourteenth and last", async () => {
     const { tx, calls } = recording(TASK);
 
     await createTask(tx, context(), {
@@ -141,11 +141,12 @@ describe("the Company OS domain boundary", () => {
       type: "operations.supply_order",
       title: "Order paper",
       idempotencyKey: "integration:order-42",
+      dataClass: "operational",
     });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.sql).toBe(
-      "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) as result",
+      "select ops.create_task($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) as result",
     );
     expect(calls[0]?.params).toEqual([
       TENANT,
@@ -161,7 +162,21 @@ describe("the Company OS domain boundary", () => {
       null,
       null,
       "integration:order-42",
+      "operational",
     ]);
+  });
+
+  it("never sends a data class outside the closed classification to the database", async () => {
+    expect(
+      await codeOf(
+        createTask(unreachable, context(), {
+          companyId: COMPANY,
+          type: "operations.supply_order",
+          title: "Order paper",
+          dataClass: "public" as unknown as "synthetic",
+        }),
+      ),
+    ).toBe("invalid_argument");
   });
 
   it("forwards an event's idempotency key as the tenth and last argument of ops.record_event", async () => {
@@ -194,8 +209,10 @@ describe("the Company OS domain boundary", () => {
       type: "crm.lead_received",
     });
 
-    expect(task.calls[0]?.params).toHaveLength(13);
+    expect(task.calls[0]?.params).toHaveLength(14);
     expect(task.calls[0]?.params[12]).toBeNull();
+    // No class named: the database makes the task unclassified, which no model may read.
+    expect(task.calls[0]?.params[13]).toBeNull();
     expect(event.calls[0]?.params).toHaveLength(10);
     expect(event.calls[0]?.params[9]).toBeNull();
   });

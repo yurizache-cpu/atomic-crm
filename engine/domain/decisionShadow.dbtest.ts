@@ -339,6 +339,9 @@ describe("the shadow decision through the worker", () => {
       const taskId = await createTask(tx, ctx, {
         companyId: clinic.companyId,
         type: "lead_triage",
+        // The fixture task declares the synthetic class (ADR 0020), so its run can
+        // succeed; with no admission, the origin gate is what this case proves.
+        dataClass: "synthetic",
         title: "Lead triage: real origin",
         description: SYNTHETIC_BODY,
       });
