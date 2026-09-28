@@ -51,6 +51,19 @@ export const AuthMiddleware = async (
 };
 
 /**
+ * The session id and authenticator assurance level the caller's VERIFIED token
+ * states (Production Security Gate A.1). A token without either yields empty
+ * strings, which the database's row-security policies refuse.
+ */
+export const getVerifiedSession = async (req: Request) => {
+  const { payload } = await verifySupabaseJWT(getAuthToken(req));
+  return {
+    sessionId: typeof payload.session_id === "string" ? payload.session_id : "",
+    aal: typeof payload.aal === "string" ? payload.aal : "",
+  };
+};
+
+/**
  * Get the authenticated user using the authorization header.
  * User will be undefined for OPTIONS requests.
  */

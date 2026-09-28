@@ -18,9 +18,9 @@ const ROOT = process.cwd();
 
 const OWNER_SESSION_SEAL: Readonly<Record<string, string>> = Object.freeze({
   "supabase/functions/_shared/db.ts":
-    "ec0f11ea878affea91feefdc8304217309b2bf03786a7182975d6f59bed32a89",
+    "44f6f4daca16284567817de663fe42ea6727dfec1e592931513ad1808f106b05",
   "supabase/functions/merge_contacts/index.ts":
-    "76b61b1512a5e9aaf1a488d6fd2b3b43700134b40dddeb777926aa90ee4bdd70",
+    "c714f1f58a166a881bb629f9a304b15c723b1ea04cf71809e453bcfcfd0d559c",
 });
 
 const digestOf = (path: string) =>

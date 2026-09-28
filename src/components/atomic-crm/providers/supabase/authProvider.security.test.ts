@@ -11,7 +11,7 @@ import { QUERY_CACHE_STORAGE_KEY } from "../queryCacheKey";
 //
 // These drive the REAL auth provider's `logout`. `vi.mock` does not work under
 // the browser-mode runner (CLAUDE.md, "Tests"), so the seam is the global
-// `fetch` plus stubbed env, exactly as `getContactAvatar.test.ts` does it.
+// `fetch` plus stubbed env, the same way the other provider tests do.
 
 const SENSITIVE = JSON.stringify({
   clientState: {

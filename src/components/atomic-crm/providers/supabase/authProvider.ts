@@ -34,6 +34,29 @@ function getLocalStorage(): Storage | null {
   return null;
 }
 
+/**
+ * The two pages a person reaches with only a link from an email, before any
+ * session that could pass the second factor exists: setting a first password
+ * and asking for a reset. checkAuth lets them through, and so does the
+ * application shell's second-factor gate (src/crmAccess.ts).
+ */
+export const isPublicAuthPage = () =>
+  window.location.pathname === "/set-password" ||
+  window.location.hash.includes("#/set-password") ||
+  window.location.pathname === "/forgot-password" ||
+  window.location.hash.includes("#/forgot-password");
+
+/**
+ * The provider holds a session that has not yet passed its second factor. The
+ * database answers such a session nothing (Production Security Gate A.1), so
+ * the missing sale is not proof of a disabled account.
+ */
+const sessionAwaitsSecondFactor = async () => {
+  const { data, error } =
+    await getSupabaseClient().auth.mfa.getAuthenticatorAssuranceLevel();
+  return error === null && data.currentLevel === "aal1";
+};
+
 export async function getIsInitialized() {
   // Phase 1 removes the public first-user bootstrap. An owner is provisioned
   // through the controlled Supabase/admin procedure documented for deployment.
@@ -104,22 +127,15 @@ export const getAuthProvider = (): AuthProvider => {
       return baseAuthProvider.logout(params);
     },
     checkAuth: async (params) => {
-      // Users are on the set-password page, nothing to do
-      if (
-        window.location.pathname === "/set-password" ||
-        window.location.hash.includes("#/set-password")
-      ) {
-        return;
-      }
-      // Users are on the forgot-password page, nothing to do
-      if (
-        window.location.pathname === "/forgot-password" ||
-        window.location.hash.includes("#/forgot-password")
-      ) {
-        return;
-      }
+      // Users are on the set-password or forgot-password page, nothing to do
+      if (isPublicAuthPage()) return;
       await baseAuthProvider.checkAuth(params);
       if (await getSale()) return;
+
+      // A session still below its second factor is not a disabled account. The
+      // application shell asks for the factor (src/crmAccess.ts); ending the
+      // session here would make it unreachable.
+      if (await sessionAwaitsSecondFactor()) return;
 
       await getSupabaseClient().auth.signOut();
       throw new Error("Your account is disabled or has not been provisioned.");

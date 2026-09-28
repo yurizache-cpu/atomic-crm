@@ -384,7 +384,12 @@ begin
   --     attempt's running is settled indeterminate, and neither writes a booking.
   --     The Q8 D6/D7 batch adds redact_due_content: argument-free and
   --     lease-bound, it redacts only the flow bound to the live lease's
-  --     retention job, once due; it calls nothing.
+  --     retention job, once due; it calls nothing. Gate A.1 adds
+  --     session_assurance_satisfied: argument-free and STABLE, it answers one
+  --     boolean (the session's assurance level, as the verified claims and the
+  --     provider's own session row state it) to public.current_sales_id() and
+  --     public.is_admin(); nobody but the owner may execute it (crm_assurance.sql
+  --     A4), and it reads and writes nothing else.
   select string_agg(distinct p.proname, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops' and p.prosecdef
@@ -397,7 +402,7 @@ begin
                            'open_review_for_settled_job', 'request_shadow_decision_for_settled_job',
                            'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
                            'mark_follow_up_due', 'start_calendar_sync', 'settle_calendar_sync',
-                           'redact_due_content',
+                           'redact_due_content', 'session_assurance_satisfied',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

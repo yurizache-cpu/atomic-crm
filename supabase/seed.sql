@@ -55,11 +55,13 @@ begin
 end
 $$;
 
--- Production Security Gate A: the explicit NON-PRODUCTION path. While this row
--- exists, the Company OS accepts a session below authenticator assurance level
--- 2, so local development and the test suites run without enrolling an
--- authenticator. It lives here, never in a migration: a hosted project never
--- runs this file (SI-25), so it requires multi-factor authentication.
+-- Production Security Gate A and A.1: the explicit NON-PRODUCTION path. While
+-- this row exists, the Company OS AND the CRM's row-security policies accept a
+-- session below authenticator assurance level 2, so local development and the
+-- test suites run without enrolling an authenticator. It is the ONE exemption,
+-- and it lives here, never in a migration: a hosted project never runs this file
+-- (SI-25), so it requires multi-factor authentication on every CRM and Company
+-- OS request.
 insert into ops.operator_assurance_exemption (reason, recorded_by)
 values ('local development and CI only: the development seed never reaches a hosted project (SI-25)', 'seed')
 on conflict (singleton) do nothing;

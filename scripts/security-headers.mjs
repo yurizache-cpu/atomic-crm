@@ -17,11 +17,10 @@
 // target elsewhere. One exception: style-src 'unsafe-inline', because the UI
 // libraries in the bundle insert <style> elements at runtime (six
 // createElement("style") sites, measured 2026-09-28) and the page carries one
-// inline loader style. It admits styles, never scripts. The CRM's own
-// browser-side avatar lookups (Gravatar with a hash of the email, the email
-// domain's favicon) are refused by connect-src and img-src on purpose: they
-// disclose a person's address to third parties, and the CRM falls back to
-// initials when they fail.
+// inline loader style. It admits styles, never scripts. The CRM performs no
+// avatar or favicon lookup (Production Security Gate A.1 removed them: a hash
+// of a person's email must not leave for a third party); connect-src and
+// img-src would refuse one on purpose, and the CRM shows initials.
 
 const REFERRER_POLICY = "strict-origin-when-cross-origin";
 
