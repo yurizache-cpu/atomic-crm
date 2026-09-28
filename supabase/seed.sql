@@ -61,5 +61,5 @@ $$;
 -- authenticator. It lives here, never in a migration: a hosted project never
 -- runs this file (SI-25), so it requires multi-factor authentication.
 insert into ops.operator_assurance_exemption (reason, recorded_by)
-values ('local development and CI only: supabase/seed.sql never reaches a hosted project (SI-25)', 'seed')
+values ('local development and CI only: the development seed never reaches a hosted project (SI-25)', 'seed')
 on conflict (singleton) do nothing;

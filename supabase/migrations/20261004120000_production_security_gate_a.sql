@@ -42,7 +42,7 @@
 --
 --    The explicit non-production path is an owner-recorded exemption row
 --    (ops.operator_assurance_exemption). No migration creates it: only the local
---    development seed (supabase/seed.sql), which never reaches a hosted
+--    development seed, which never reaches a hosted
 --    project (SI-25), and the owner's own credential. A hosted project built
 --    from migrations requires MFA from its first request.
 
