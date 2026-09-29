@@ -201,6 +201,18 @@ jobs:
             - name: 🔨 Build
               run: npm run build
 
+            # Production Hosting Gate B (SI-76): the production contract, before
+            # anything is pushed to a database or published to any host. The
+            # build must not be a demo build, must point at a hosted API with a
+            # publishable key that is not the local stack's, must carry no
+            # privileged VITE_ variable, no local endpoint and no published
+            # registry, and its page policy must be the one declared for that
+            # API. It names no host: whichever host is chosen deploys behind it.
+            # scripts/test/production-preflight.test.mjs fails if this step
+            # moves below a push or a publish, or stops blocking.
+            - name: 🔒 Production preflight (environment and artifact contract)
+              run: node scripts/production-preflight.mjs --dist dist
+
             # The repository commits upstream's DEVELOPMENT signing key, private
             # half included, and a token it signs as service_role bypasses RLS.
             # No CLI command uploads it, but a person can import it through the

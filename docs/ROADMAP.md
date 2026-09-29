@@ -612,15 +612,23 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Production Security Gate A.1 (2026-09-28) — IMPLEMENTED; SINGLE REMOTE INTEGRATION CYCLE
+### Production Hosting Gate B (2026-09-28) — PROVIDER-NEUTRAL WORK IMPLEMENTED; OWNER HOSTING DECISION REQUIRED
 
-Gate A is integrated (PR #19, merge `234f7a89`; source retained at `f17c306e`; `main` unchanged; post-merge core CI PASS with only the historical e2e and Prettier baseline red). **PRODUCTION SECURITY GATE A: INTEGRATED WITH A.1 CORRECTION PENDING.** A.1 is built on `feature/production-security-gate-a1` from `feature/clinical-phase-1` at `234f7a89`, for one PR into `feature/clinical-phase-1` (not `main`). Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md) §7.
+Built on `feature/production-hosting-gate-b` from `feature/clinical-phase-1` at `afcb7224`. Read [PRODUCTION_HOSTING_DECISION_PACKET.md](PRODUCTION_HOSTING_DECISION_PACKET.md) and [PRODUCTION_HOSTING_GATE_B_REPORT.md](PRODUCTION_HOSTING_GATE_B_REPORT.md).
+
+- **No host is chosen** (no accepted decision exists; GitHub Pages is upstream's inherited deploy, insufficient by measurement and by its terms). Three candidates are compared from official documentation: Cloudflare Workers static assets (preferred technical fit, not a decision), Netlify, Vercel. **OWNER ACTION REQUIRED**; nothing paid or provider-specific was created.
+- **Built, provider-neutral (SI-76):** the host contract; `production:preflight` in the production deploy job; `verify:production-host`; `verify:hosted-supabase`; `production:headers`; the production and staging environment contract.
+- **Next:** on the owner's host decision, the provider-specific step (header file, prebuilt-directory deploy behind the preflight, a post-deploy host check, a synthetic-only staging project), about half a day of engineering. Hosting of the worker and the WhatsApp gateway is a separate decision. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Production Security Gate A.1 (2026-09-28) — INTEGRATED (PR #20, merge `afcb7224`); PRODUCTION SECURITY GATE A: COMPLETE
+
+Gate A is integrated in two PRs into `feature/clinical-phase-1`, neither into `main`: PR #19 (merge `234f7a89`, source retained at `f17c306e`) and its A.1 correction PR #20 (normal merge `afcb722435026f745536caef3f7b167b52195da5`, parents `234f7a89` and `c81f1cba`, source `feature/production-security-gate-a1` retained at `c81f1cba`; `main` unchanged at `a863e2a0`). Post-merge CI: Test, Build, Typecheck, ESLint and Database PASS, with only the historical e2e (9 failed, 1 skipped) and Prettier (2 errors) red. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md) §7. **PRODUCTION SECURITY GATE A: COMPLETE.** It includes PUBLIC helper hardening, AAL2 for the Company OS and for the CRM protected data surface, no automatic Gravatar or favicon enrichment, the CSP and build policy, the local-only assurance exemption, and no AAL1 real-data browser bypass.
 
 - **No automatic third-party enrichment** (owner policy 2026-09-28): the two enrichment triggers and the four functions behind them (Gravatar by a hash of the email, the domain's favicon) are dropped, and the browser-side twin in the FakeRest demo is removed; stored avatars and logos are untouched; `authenticated` executes exactly the six row-security helpers (SI-73).
 - **MFA for the CRM's real-data surface** (owner policy 2026-09-28): `ops.session_assurance_satisfied()` (the same rule as `ops.operator_scope()`, the same single exemption) is required by the two roots every CRM row policy decides through, `current_sales_id()` and `is_admin()`; no policy changed and MFA never widens what a row rule allows. `merge_contacts` (owner-session channel) and the `users` function carry the caller's verified session. The shell sends a level-1 session the server refuses through the Company OS's own second-factor flow (SI-74).
 - **Still open:** a host that sends the declared headers (GitHub Pages cannot; hosting undecided), TOTP enabled on a hosted project, ADR 0020 §C evidence, production WhatsApp. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
-### Production Security Gate A (2026-09-28) — INTEGRATED (PR #19, merge `234f7a89`); A.1 CORRECTION PENDING
+### Production Security Gate A (2026-09-28) — INTEGRATED (PR #19, merge `234f7a89`); corrected by A.1 (PR #20)
 
 Built on `feature/production-security-gate-a` from `feature/clinical-phase-1` at `c4938029` and integrated by one PR into `feature/clinical-phase-1`. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md).
 

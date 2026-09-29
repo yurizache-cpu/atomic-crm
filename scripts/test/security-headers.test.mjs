@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   auditHtmlPage,
   contentSecurityPolicy,
+  duplicateDirectives,
   hostedSecurityHeaders,
+  parsePolicy,
   securityHeadersPlugins,
   securityMetaTags,
   supabaseOrigins,
@@ -105,6 +107,36 @@ describe("the build scan refuses a page without the policy", () => {
     expect(findings(weakened(/<meta name="referrer"[^>]*>/, ""))).toContain(
       "the page head carries no strict referrer policy",
     );
+  });
+
+  it("reads a policy as a browser does: the first occurrence of a directive counts", () => {
+    const parsed = parsePolicy(
+      "script-src *; script-src 'self'; object-src 'none'",
+    );
+    expect(parsed.get("script-src")).toEqual(["*"]);
+    expect(
+      duplicateDirectives("script-src *; script-src 'self'; object-src 'none'"),
+    ).toEqual(["script-src"]);
+    expect(
+      duplicateDirectives(contentSecurityPolicy({ supabaseUrl: API })),
+    ).toEqual([]);
+  });
+
+  it("refuses a built page whose policy names a directive twice, the weak one first or last", () => {
+    const meta = securityMetaTags({ supabaseUrl: API });
+    const twice = (extra, first) =>
+      page(
+        meta.replace(
+          /content="([^"]*)"/,
+          (_, policy) =>
+            `content="${first ? extra + "; " + policy : policy + "; " + extra}"`,
+        ),
+      );
+    for (const first of [true, false]) {
+      expect(findings(twice("script-src *", first)).join(" ")).toMatch(
+        /script-src more than once/,
+      );
+    }
   });
 
   it("refuses any inline script, on any page", () => {
