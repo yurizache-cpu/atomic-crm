@@ -1,6 +1,8 @@
 # Production Hosting Gate B — report
 
-**Status: PRODUCTION HOSTING GATE B — OWNER DECISION REQUIRED (2026-09-28).** The provider-independent work is implemented; the host is not chosen, so no provider-specific code, account, project or staging deployment exists. Read [PRODUCTION_HOSTING_DECISION_PACKET.md](PRODUCTION_HOSTING_DECISION_PACKET.md) for the decision.
+**Status: PROVIDER-NEUTRAL CONTRACT INTEGRATED; OWNER HOSTING DECISION REQUIRED (2026-09-29).** PR #21, normal merge `889766cb2d5da0711cca3df18a8b3766bfd8eb45` into `feature/clinical-phase-1` (parents `afcb7224` and `1b9353fc90a92f682d34128d5578ccb636b6a098`); the source branch `feature/production-hosting-gate-b` is retained at `1b9353fc`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression. The automated review's two P1 and one P2 (a duplicated CSP directive read last-wins, a same-origin absolute script URL never read, an unreadable script silently skipped) were fixed before the merge in `1b9353fc`.
+
+*(Status when implemented, 2026-09-28: PRODUCTION HOSTING GATE B — OWNER DECISION REQUIRED.)* The provider-independent work is implemented; the host is not chosen, so no provider-specific code, account, project or staging deployment exists. Read [PRODUCTION_HOSTING_DECISION_PACKET.md](PRODUCTION_HOSTING_DECISION_PACKET.md) for the decision.
 **Built on** `feature/production-hosting-gate-b`, from `feature/clinical-phase-1` at `afcb7224` (Gate A complete: PR #19 and PR #20).
 **Invariant:** SI-76.
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.** Nothing here authorizes either.
