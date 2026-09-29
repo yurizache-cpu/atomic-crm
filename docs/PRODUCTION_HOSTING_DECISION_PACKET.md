@@ -1,6 +1,6 @@
 # Production hosting — owner decision packet
 
-**Status: OWNER HOSTING DECISION REQUIRED (2026-09-28).** No production host has been chosen, and none is chosen here. This packet states what the host must guarantee, compares three realistic candidates from their official documentation, and names the one decision the owner has to make. **OWNER ACTION REQUIRED** before any account, project, domain or payment exists. Nothing paid was created.
+**Status: OWNER HOSTING DECISION REQUIRED (2026-09-29): the frontend host and the worker/gateway runtime, as one decision (§9).** *(First written 2026-09-28; §9 added 2026-09-29 after the facts it needed were verified.)* No production host has been chosen, and none is chosen here. This packet states what the host must guarantee, compares three realistic candidates from their official documentation, and names the one decision the owner has to make. **OWNER ACTION REQUIRED** before any account, project, domain or payment exists. Nothing paid was created.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.** Choosing a host authorizes neither.
 
@@ -101,9 +101,35 @@ Roughly half a day of engineering **after** the decision, none before it:
 
 The Company OS **worker** and the **WhatsApp gateway** are long-running Node processes with database credentials and TLS needs (ADR 0018 §gateway); they need a runtime that is not a static host, and the hosted **Supabase project** (plan, region, backups, the data-processing agreement, LGPD basis, international transfer) is a legal and account decision. Neither is decided or started here.
 
+## 9. The recommendation to decide (2026-09-29)
+
+Two facts verified on 2026-09-29 settle what §4 left open:
+
+- **Cloudflare's Self-Serve Subscription Agreement has no non-commercial restriction** on self-serve or free services (unlike Vercel Hobby). It does bar using the services to store or transmit "protected health information" without Cloudflare's written consent (§2.2.1(i)). **The static frontend is outside that clause by construction:** the bundle holds no patient data, and the browser talks to the Supabase API directly (`connect-src` names only the Supabase origin), never through Cloudflare. The API must therefore never be proxied through a Cloudflare zone.
+- **The same clause, and the product's shape, rule Cloudflare out for the worker and the WhatsApp gateway.** They carry message bodies, and Cloudflare Containers are started on demand and put to sleep when idle, not an always-on queue worker.
+
+| Component | Recommended | Plan | Expected monthly cost | Why |
+| --- | --- | --- | --- | --- |
+| Frontend (static build) | **Cloudflare Workers static assets** | Workers Free (static-asset requests are free and unlimited); Workers Paid (US$5) only if a limit is ever reached | **US$0** (plus the domain, which the clinic may already own) | Headers file, SPA fallback, 100-version rollback, a separate Worker per environment (`--env staging`), no usage cap that becomes an outage, no commercial restriction |
+| Worker + WhatsApp gateway (long-running Node) | **Fly.io, region `gru` (São Paulo)** | Pay as you go; two always-on `shared-cpu-1x` machines (worker: no public port; gateway: public HTTPS for Meta's webhook only) | **about US$6–11** (US$3.14 per 256 MB machine in `gru`, about US$5.15 at 512 MB; a dedicated IPv4 at US$2 only if ever needed) | Always-on machines, per-process health checks and restart policy, private worker, secrets store, São Paulo region next to Supabase `sa-east-1`, deploys the same container image anywhere else later |
+| Database and Auth | Supabase, region **`sa-east-1` (São Paulo)**, a production and a separate staging project | decided at Milestone 2 | confirmed at Milestone 2 | Co-located with the runtime; production and staging never share data |
+
+Alternatives, only where material: **Netlify on a paid plan** (US$9–20) if the owner prefers not to move the domain's DNS to Cloudflare; **Render** (about US$14 for a background worker and a web service) if the owner prefers a dashboard-only runtime, at the cost of no Brazilian region.
+
+**What accepting implies (owner actions, listed now so nothing surprises later; asked for only after the decision):**
+
+1. The clinic's domain becomes a zone on a free Cloudflare account (its nameservers move to Cloudflare; existing DNS records are imported). A Worker custom domain requires an active Cloudflare zone.
+2. A Cloudflare API token limited to Workers, saved as the GitHub Actions secret `CLOUDFLARE_API_TOKEN` (with `CLOUDFLARE_ACCOUNT_ID`).
+3. A Fly.io organisation with a card on file, and a deploy token saved as the GitHub Actions secret `FLY_API_TOKEN`.
+4. At Milestone 2: the two Supabase projects in `sa-east-1`.
+
+**Data-processing agreements** with each infrastructure provider (Cloudflare, Fly.io, Supabase) are a legal item for real data (LGPD processors), checked at the production-readiness review; they do not block a synthetic staging.
+
 ## Sources (official documentation, read 2026-09-28)
 
 - GitHub Pages limits: <https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits>
 - Cloudflare: Pages status <https://developers.cloudflare.com/pages/>; Workers static assets headers <https://developers.cloudflare.com/workers/static-assets/headers/>, SPA <https://developers.cloudflare.com/workers/static-assets/routing/single-page-application/>; pricing <https://developers.cloudflare.com/workers/platform/pricing/>; rollbacks <https://developers.cloudflare.com/workers/configuration/versions-and-deployments/rollbacks/>; Workers Builds <https://developers.cloudflare.com/workers/ci-cd/builds/>
 - Netlify: headers <https://docs.netlify.com/manage/routing/headers/>; HTTPS and HSTS <https://docs.netlify.com/manage/domains/secure-domains-with-https/https-ssl/>; rewrites <https://docs.netlify.com/manage/routing/redirects/rewrites-proxies/>; deploys and rollbacks <https://docs.netlify.com/deploy/manage-deploys/manage-deploys-overview/>; plans <https://www.netlify.com/pricing/>; credits <https://docs.netlify.com/manage/accounts-and-billing/billing/billing-for-credit-based-plans/how-credits-work/>
+- Cloudflare Self-Serve Subscription Agreement <https://www.cloudflare.com/terms/>; Workers custom domains <https://developers.cloudflare.com/workers/configuration/routing/custom-domains/>; Wrangler environments <https://developers.cloudflare.com/workers/wrangler/environments/>; Containers <https://developers.cloudflare.com/containers/> (read 2026-09-29)
+- Fly.io pricing <https://fly.io/pricing/>, regions <https://docs.fly.io/reference/regions/>, fly.toml reference <https://docs.fly.io/reference/configuration/>, billing <https://docs.fly.io/about/billing/> (read 2026-09-29)
 - Vercel: headers <https://vercel.com/docs/headers>, `vercel.json` <https://vercel.com/docs/project-configuration/vercel-json>; CDN security and HSTS <https://vercel.com/docs/cdn-security>; Hobby plan and Pro price <https://vercel.com/docs/plans/hobby>; Instant Rollback <https://vercel.com/docs/instant-rollback>
