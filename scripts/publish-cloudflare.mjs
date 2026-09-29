@@ -26,31 +26,23 @@
 // Exit 0 published and verified, 1 refused or not verified, 2 could not run.
 
 import { spawnSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { cloudflareWorkerConfig } from "./cloudflare-config.mjs";
 import { HEADERS_FILE, renderHeadersFile } from "./host-headers-file.mjs";
 import {
-  auditHostResponse,
-  pageAssetPaths,
-} from "./production-contract-host.mjs";
+  VERIFY_ATTEMPTS,
+  VERIFY_INTERVAL_MS,
+  verifyLiveRelease,
+} from "./live-release.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 import { preflightFindings } from "./production-preflight.mjs";
 import { readDeployedOrigin } from "./verify-production-host.mjs";
 
 /** The Wrangler release this repository measured; change it deliberately. */
 export const WRANGLER_VERSION = "4.129.1";
-
-const VERIFY_ATTEMPTS = 8;
-const VERIFY_INTERVAL_MS = 15_000;
 
 const defaultRun = (args, env) =>
   spawnSync("npx", ["--yes", `wrangler@${WRANGLER_VERSION}`, ...args], {
@@ -119,47 +111,17 @@ export async function publish({
     return 1;
   }
 
-  // 4. The deployed origin's actual response, held to the contract, and
-  // bound to THIS build: its page must load the hashed scripts of the build
-  // just uploaded, or a previous release (or a cached one) would pass for it.
-  const url = `https://${hostname}/`;
-  const uploaded = pageAssetPaths(
-    readFileSync(join(dist, "index.html"), "utf8"),
-  )
-    .sort()
-    .join(" ");
-  let findings = [];
-  for (let attempt = 1; attempt <= attempts; attempt += 1) {
-    try {
-      const facts = await readOrigin(url);
-      findings = auditHostResponse(facts.response, {
-        supabaseUrl,
-        expectedHost: hostname,
-      });
-      const live = pageAssetPaths(facts.response.html ?? "")
-        .sort()
-        .join(" ");
-      if (live !== uploaded) {
-        findings.push({
-          rule: "stale-release",
-          severity: "blocking",
-          detail:
-            "the live page does not load the scripts of the build just uploaded (a previous or cached release, or not yet propagated)",
-        });
-      }
-    } catch (error) {
-      findings = [
-        {
-          rule: "origin-unreadable",
-          severity: "blocking",
-          detail: `the deployed origin could not be read (${error?.name ?? "error"})`,
-        },
-      ];
-    }
-    if (!findings.some((f) => f.severity === "blocking")) break;
-    if (attempt < attempts) await sleep(intervalMs);
-  }
-  const verified = report(`deployed origin ${hostname}`, findings);
+  // 4. The deployed origin's actual response, held to the contract and bound
+  // to THIS build (scripts/live-release.mjs).
+  const verified = await verifyLiveRelease({
+    dist,
+    hostname,
+    supabaseUrl,
+    readOrigin,
+    sleep,
+    attempts,
+    intervalMs,
+  });
   if (verified !== 0) {
     write(
       `\nThe new version is live on ${hostname} but does NOT meet the host contract. Roll back now:\n` +

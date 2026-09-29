@@ -13,12 +13,11 @@
 //
 // Pure, so it is tested without the tool or an account.
 
+import { ENVIRONMENTS, assertPublishTarget } from "./live-release.mjs";
+
+export { ENVIRONMENTS };
 export const WORKER_NAME_PREFIX = "clinic-crm";
 export const COMPATIBILITY_DATE = "2026-09-01";
-export const ENVIRONMENTS = Object.freeze(["staging", "production"]);
-
-const HOSTNAME =
-  /^(?=.{1,253}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 
 /** The Wrangler configuration object for one environment. */
 export function cloudflareWorkerConfig({
@@ -26,14 +25,7 @@ export function cloudflareWorkerConfig({
   hostname,
   assetsDirectory,
 }) {
-  if (!ENVIRONMENTS.includes(environment)) {
-    throw new Error('the environment must be "staging" or "production"');
-  }
-  if (typeof hostname !== "string" || !HOSTNAME.test(hostname)) {
-    throw new Error(
-      "the hostname must be a plain lower-case domain name, such as app.example.org (no scheme, path or port)",
-    );
-  }
+  assertPublishTarget({ environment, hostname });
   if (typeof assetsDirectory !== "string" || assetsDirectory === "") {
     throw new Error("the assets directory is required");
   }
