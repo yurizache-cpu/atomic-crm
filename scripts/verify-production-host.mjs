@@ -31,7 +31,7 @@ import {
 } from "./production-contract-host.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 
-const MAX_ASSETS = 30;
+const MAX_ASSETS = 60;
 const TIMEOUT_MS = 15_000;
 
 const get = (url, init = {}) =>
@@ -43,11 +43,21 @@ export async function readDeployedOrigin(url, { allowLocal = false } = {}) {
   const html = await page.text();
   const origin = new URL(page.url);
   const assets = [];
-  for (const path of pageAssetPaths(html).slice(0, MAX_ASSETS)) {
-    const asset = new URL(path, page.url);
-    if (asset.origin !== origin.origin) continue;
-    const response = await get(asset, { redirect: "follow" });
-    if (response.ok) assets.push({ path, text: await response.text() });
+  const assetFailures = [];
+  // As the page names them (a path, or a full URL), resolved against the page:
+  // an absolute URL on this very origin is this origin's script too.
+  const sameOrigin = pageAssetPaths(html)
+    .map((ref) => new URL(ref, page.url))
+    .filter((asset) => asset.origin === origin.origin);
+  for (const asset of sameOrigin.slice(0, MAX_ASSETS)) {
+    const path = asset.pathname.replace(/^\//, "");
+    try {
+      const response = await get(asset, { redirect: "follow" });
+      if (response.ok) assets.push({ path, text: await response.text() });
+      else assetFailures.push({ path, reason: `status ${response.status}` });
+    } catch (error) {
+      assetFailures.push({ path, reason: error.name });
+    }
   }
 
   let httpRedirect = "not checked";
@@ -74,6 +84,8 @@ export async function readDeployedOrigin(url, { allowLocal = false } = {}) {
       headers: page.headers,
       html,
       assets,
+      assetFailures,
+      assetsNotChecked: Math.max(0, sameOrigin.length - MAX_ASSETS),
     },
     httpRedirect,
   };

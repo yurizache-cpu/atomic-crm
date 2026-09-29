@@ -29,16 +29,19 @@ afterEach(async () => {
 const host = async ({
   headers = hostedSecurityHeaders({ supabaseUrl: API }),
   script = "console.log(1)",
+  scriptStatus = 200,
+  pageFor = () => PAGE,
 } = {}) => {
   const server = createServer((request, response) => {
     for (const [name, value] of Object.entries(headers))
       response.setHeader(name, value);
     if (request.url === "/assets/app.js") {
+      response.statusCode = scriptStatus;
       response.setHeader("Content-Type", "text/javascript");
       response.end(script);
     } else {
       response.setHeader("Content-Type", "text/html");
-      response.end(PAGE);
+      response.end(pageFor(`http://${request.headers.host}/`));
     }
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -84,6 +87,59 @@ describe("reading a deployed origin", () => {
         auditHostResponse(response, { supabaseUrl: API, allowLocal: true }),
       ),
     ).toEqual(["local-endpoint"]);
+  });
+
+  it("reads a script the page names by its full URL when that URL is this very origin", async () => {
+    const pageFor = (origin) =>
+      PAGE.replace('src="./assets/app.js"', `src="${origin}assets/app.js"`);
+    const { response } = await readDeployedOrigin(
+      await host({ pageFor, script: `fetch("http://127.0.0.1:54321/x")` }),
+      { allowLocal: true },
+    );
+    expect(response.assets.map((a) => a.path)).toEqual(["assets/app.js"]);
+    // The page names its own (local) address, and the script's content is read
+    // and judged too: the finding in the script is the one that matters here.
+    const findings = auditHostResponse(response, {
+      supabaseUrl: API,
+      allowLocal: true,
+    });
+    expect(
+      findings.some(
+        (f) => f.rule === "local-endpoint" && f.file === "assets/app.js",
+      ),
+    ).toBe(true);
+  });
+
+  it("refuses a page whose script could not be read, instead of certifying a page it never looked at", async () => {
+    const { response } = await readDeployedOrigin(
+      await host({ scriptStatus: 404 }),
+      { allowLocal: true },
+    );
+    expect(response.assets).toEqual([]);
+    expect(response.assetFailures).toEqual([
+      { path: "assets/app.js", reason: "status 404" },
+    ]);
+    expect(
+      blocking(
+        auditHostResponse(response, { supabaseUrl: API, allowLocal: true }),
+      ),
+    ).toEqual(["asset-unreadable"]);
+  });
+
+  it("refuses a page whose only script is on another origin: nothing of its own was scanned", async () => {
+    const pageFor = () =>
+      PAGE.replace(
+        'src="./assets/app.js"',
+        'src="https://cdn.example.net/app.js"',
+      );
+    const { response } = await readDeployedOrigin(await host({ pageFor }), {
+      allowLocal: true,
+    });
+    expect(
+      blocking(
+        auditHostResponse(response, { supabaseUrl: API, allowLocal: true }),
+      ),
+    ).toEqual(["page-loads-no-script"]);
   });
 
   it("without the self-test flag, a local origin is refused whatever it sends", async () => {

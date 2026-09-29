@@ -113,6 +113,19 @@ describe("the Content-Security-Policy header cannot be weakened", () => {
     );
   });
 
+  it("refuses a directive named twice: a browser keeps the first, a reader may keep the last", () => {
+    const base = declared()["Content-Security-Policy"];
+    // The weak one first: the wildcard is the effective script-src.
+    expect(problems(`script-src *; ${base}`).join(" ")).toMatch(
+      /script-src is \[\*\]|script-src is named more than once/,
+    );
+    // The declared one first: effective, but ambiguous between parsers.
+    expect(problems(`${base}; script-src *`).join(" ")).toMatch(
+      /script-src is named more than once/,
+    );
+    expect(problems(`${base}; connect-src 'self'`).length).toBeGreaterThan(0);
+  });
+
   it("accepts repeated policies when one equals the declared one (they intersect)", () => {
     const base = declared()["Content-Security-Policy"];
     expect(problems(`${base}, default-src 'none'`)).toEqual([]);
@@ -319,6 +332,35 @@ describe("a deployed response", () => {
     expect(JSON.stringify(findings)).not.toContain("synthetic-signature-value");
   });
 
+  it("refuses a script the page names that could not be read: its content was never checked", () => {
+    const findings = auditHostResponse(
+      {
+        ...goodResponse(),
+        assetFailures: [{ path: "assets/index-abc.js", reason: "status 404" }],
+      },
+      { supabaseUrl: API },
+    );
+    expect(blockingRules(findings)).toEqual(["asset-unreadable"]);
+    expect(findings[0].file).toBe("assets/index-abc.js");
+  });
+
+  it("refuses a page that loads no script of its own, and notes scripts it did not read", () => {
+    expect(
+      blockingRules(
+        auditHostResponse(
+          { ...goodResponse(), assets: [] },
+          { supabaseUrl: API },
+        ),
+      ),
+    ).toEqual(["page-loads-no-script"]);
+    const capped = auditHostResponse(
+      { ...goodResponse(), assetsNotChecked: 3 },
+      { supabaseUrl: API },
+    );
+    expect(blockingRules(capped)).toEqual([]);
+    expect(capped.map((f) => f.rule)).toEqual(["assets-not-all-checked"]);
+  });
+
   it("rejects an unreadable address as not https", () => {
     expect(
       blockingRules(
@@ -329,7 +371,7 @@ describe("a deployed response", () => {
 });
 
 describe("what a page loads", () => {
-  it("lists same-origin scripts and modulepreloads, and nothing from another origin", () => {
+  it("lists every script and modulepreload as the page names it, leaving the origin to the resolver", () => {
     const html = `<head>
       <script type="module" crossorigin src="./assets/index-1.js"></script>
       <link rel="modulepreload" href="/assets/vendor-2.js">
@@ -339,9 +381,13 @@ describe("what a page loads", () => {
       <script src="data:text/javascript,1"></script>
       <script>inline()</script>
     </head>`;
+    // An absolute URL is kept: it may well be this very origin's script, and
+    // only resolving it against the page's URL can tell.
     expect(pageAssetPaths(html).sort()).toEqual([
-      "assets/index-1.js",
-      "assets/vendor-2.js",
+      "./assets/index-1.js",
+      "//cdn.example.net/y.js",
+      "/assets/vendor-2.js",
+      "https://cdn.example.net/x.js",
     ]);
   });
 });

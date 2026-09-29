@@ -21,6 +21,7 @@ import { scanText } from "./scan-build-artifacts.mjs";
 import {
   auditHtmlPage,
   contentSecurityPolicy,
+  duplicateDirectives,
   hostedPolicy,
   pageContentSecurityPolicy,
   parsePolicy,
@@ -109,9 +110,13 @@ function cspFindings(value, supabaseUrl) {
     ];
   }
   const declared = hostedPolicy({ supabaseUrl });
-  const candidates = value.split(",").map(parsePolicy);
-  const problems = candidates.map((served) => {
-    const found = [];
+  const problems = value.split(",").map((text) => {
+    const served = parsePolicy(text);
+    // A browser keeps the first occurrence of a directive and ignores a later
+    // duplicate; a reader that keeps the last would disagree. Refuse both.
+    const found = duplicateDirectives(text).map(
+      (name) => `${name} is named more than once`,
+    );
     for (const [name, sources] of declared) {
       const got = served.get(name);
       if (got === undefined) found.push(`${name} is missing`);
@@ -216,24 +221,25 @@ export function auditResponseHeaders(headers, { supabaseUrl } = {}) {
   return findings;
 }
 
-/** The scripts a page loads from its own origin, as paths (script src and modulepreload). */
+/**
+ * The scripts a page loads (script src and modulepreload), exactly as the page
+ * names them: a relative path, an absolute path or a full URL. Whether one is
+ * on the page's own origin is decided by resolving it against the page's URL,
+ * where that URL is known (scripts/verify-production-host.mjs).
+ */
 export function pageAssetPaths(html) {
-  const paths = new Set();
+  const refs = new Set();
   const tag = /<(script|link)\b[^>]*>/gi;
   for (const [element, name] of html.matchAll(tag)) {
     const isScript = name.toLowerCase() === "script";
     if (!isScript && !/rel\s*=\s*["']modulepreload["']/i.test(element))
       continue;
     const ref = /\b(?:src|href)\s*=\s*["']([^"']+)["']/i.exec(element)?.[1];
-    if (
-      ref !== undefined &&
-      !/^(https?:)?\/\//i.test(ref) &&
-      !ref.startsWith("data:")
-    ) {
-      paths.add(ref.replace(/^\.\//, "").replace(/^\//, ""));
+    if (ref !== undefined && !/^(data|blob|javascript):/i.test(ref)) {
+      refs.add(ref);
     }
   }
-  return [...paths];
+  return [...refs];
 }
 
 /**
@@ -288,6 +294,38 @@ export function auditHostResponse(
       ...localEndpointFindings("index.html", response.html),
     );
   }
+  // A page that loads no script of its own is not the application, and a script
+  // it names that could not be read is one whose content nothing checked.
+  const failures = response.assetFailures ?? [];
+  if (
+    Array.isArray(response.assets) &&
+    response.assets.length === 0 &&
+    failures.length === 0
+  ) {
+    findings.push(
+      blocking(
+        "page-loads-no-script",
+        "the page loads no script from its own origin: it is not the application, and nothing was scanned",
+      ),
+    );
+  }
+  for (const failure of failures) {
+    findings.push(
+      blocking(
+        "asset-unreadable",
+        `a script the page loads could not be read (${failure.reason}), so its content was not checked`,
+        failure.path,
+      ),
+    );
+  }
+  if (response.assetsNotChecked > 0) {
+    findings.push(
+      advisory(
+        "assets-not-all-checked",
+        `${response.assetsNotChecked} script(s) beyond the first were not read`,
+      ),
+    );
+  }
   for (const asset of response.assets ?? []) {
     for (const finding of scanText(asset.path, asset.text)) {
       findings.push({
@@ -320,7 +358,13 @@ export function auditPageAgainstEnvironment(html, supabaseUrl) {
   }
   const declared = parsePolicy(contentSecurityPolicy({ supabaseUrl }));
   const got = parsePolicy(served);
-  const findings = [];
+  const findings = duplicateDirectives(served).map((name) =>
+    blocking(
+      "page-policy-differs",
+      `the page's policy names ${name} more than once`,
+      "index.html",
+    ),
+  );
   for (const [name, sources] of declared) {
     if (!got.has(name) || !sameSet(got.get(name), sources)) {
       findings.push(

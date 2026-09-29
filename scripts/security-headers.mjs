@@ -91,15 +91,33 @@ export function hostedSecurityHeaders({ supabaseUrl } = {}) {
   };
 }
 
-/** A policy's directives, by lower-cased name, each with its source list. */
+/**
+ * A policy's directives, by lower-cased name, each with its source list. As a
+ * browser reads a policy, the FIRST occurrence of a directive counts and any
+ * later duplicate is ignored, so that is the one kept here.
+ */
 export function parsePolicy(policy) {
-  return new Map(
-    policy
-      .split(";")
-      .map((part) => part.trim().split(/\s+/))
-      .filter((tokens) => tokens[0])
-      .map(([name, ...sources]) => [name.toLowerCase(), sources]),
-  );
+  const directives = new Map();
+  for (const part of policy.split(";")) {
+    const [name, ...sources] = part.trim().split(/\s+/);
+    if (name && !directives.has(name.toLowerCase())) {
+      directives.set(name.toLowerCase(), sources);
+    }
+  }
+  return directives;
+}
+
+/** The directives a policy names more than once (a parser-dependent policy). */
+export function duplicateDirectives(policy) {
+  const seen = new Set();
+  const duplicates = new Set();
+  for (const part of policy.split(";")) {
+    const name = part.trim().split(/\s+/)[0]?.toLowerCase();
+    if (!name) continue;
+    if (seen.has(name)) duplicates.add(name);
+    seen.add(name);
+  }
+  return [...duplicates];
 }
 
 /** The policy a host must send, by directive: the declared header's, frame-ancestors included. */
@@ -161,13 +179,12 @@ export function auditBuiltPage(rel, html) {
   const policy = CSP_META.exec(html)[1]
     .replaceAll("&quot;", '"')
     .replaceAll("&amp;", "&");
-  const parsed = new Map(
-    policy
-      .split(";")
-      .map((part) => part.trim().split(/\s+/))
-      .filter((tokens) => tokens[0])
-      .map(([name, ...sources]) => [name.toLowerCase(), sources]),
-  );
+  const parsed = parsePolicy(policy);
+  for (const name of duplicateDirectives(policy)) {
+    fail(
+      `the policy names ${name} more than once: a browser keeps the first, a reader may keep the last`,
+    );
+  }
   for (const required of [
     "default-src",
     "script-src",
