@@ -122,6 +122,7 @@ if (isEntryPoint) {
     process.exit(2);
   }
   const findings = auditHostResponse(facts.response, {
+    expectedHost: new URL(url).host,
     supabaseUrl,
     allowLocal,
   });

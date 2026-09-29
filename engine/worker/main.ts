@@ -34,6 +34,11 @@ import { decisionShadowFromEnv } from "../decision/providerFromEnv.ts";
 import { DEFAULT_LEASE_SAFETY_MARGIN_MS } from "./runOneJob.ts";
 import { runWorker } from "./runWorker.ts";
 import { startWorkerObservability } from "../telemetry/fromEnv.ts";
+import { assertDeploymentEnvironment } from "../runtime/deploymentEnvironment.ts";
+import {
+  createPollHealth,
+  startHealthServer,
+} from "../runtime/healthServer.ts";
 
 /**
  * Lease time spent before a call can start: the lease commit, then the prepare
@@ -107,7 +112,19 @@ export function workerStartDetail(
   return formatWorkerDetail("started", summarizeRoutes(router));
 }
 
+/**
+ * How long the worker stays healthy after its last poll that reached the
+ * database: a poll can hold a whole lease (a model call), so twice the lease,
+ * and never under a minute.
+ */
+export function healthStaleAfterMs(leaseSeconds: number): number {
+  return Math.max(60_000, leaseSeconds * 2 * 1000);
+}
+
 export async function main(): Promise<void> {
+  // Production Hosting (SI-77): a deployed worker is held to its declared
+  // environment before anything else is read or opened.
+  const deployment = assertDeploymentEnvironment(process.env, "worker");
   const connectionString = process.env.OPS_WORKER_DATABASE_URL;
   if (!connectionString) {
     throw new Error(
@@ -137,6 +154,21 @@ export async function main(): Promise<void> {
   const startDetail = workerStartDetail(modelRouter);
 
   const log = createLogger();
+  for (const finding of deployment.advisories) {
+    log("worker.environment_advisory", { workerId, detail: finding.detail });
+  }
+  const pollHealth = createPollHealth(healthStaleAfterMs(leaseSeconds));
+  const healthPort = process.env.WORKER_HEALTH_PORT
+    ? readInt("WORKER_HEALTH_PORT", 8080)
+    : undefined;
+  const health =
+    healthPort === undefined
+      ? undefined
+      : await startHealthServer({
+          host: process.env.WORKER_HEALTH_HOST ?? "127.0.0.1",
+          port: healthPort,
+          isHealthy: pollHealth.isHealthy,
+        });
   // Phase 2E.1: off unless configured, and never a reason to refuse to start.
   const observability = await startWorkerObservability(process.env, log);
   const db = createWorkerDatabase({
@@ -179,10 +211,12 @@ export async function main(): Promise<void> {
       log,
       startDetail,
       telemetry: observability.telemetry,
+      onPoll: pollHealth.onPoll,
     });
   } finally {
     await db.close();
     await observability.close();
+    await health?.close();
   }
 }
 

@@ -106,6 +106,22 @@ describe("the gateway server", () => {
     expect(calls).toEqual(["wamid.SERVER0001"]);
   });
 
+  it("answers the platform's liveness check with a status only, touching no store", async () => {
+    const { url, calls, logs } = await serve();
+    const base = url.slice(0, url.indexOf(CONFIG.path));
+    const response = await fetch(`${base}/healthz`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("ok");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(calls).toEqual([]);
+    expect(logs).toEqual([]);
+    // Only GET, and only that exact path: nothing else is a way around the webhook.
+    expect(
+      (await fetch(`${base}/healthz`, { method: "POST", body: "x" })).status,
+    ).not.toBe(200);
+    expect((await fetch(`${base}/healthz/x`)).status).toBe(404);
+  });
+
   it("answers 413 past the body bound and hands nothing to the store", async () => {
     const { url, calls, logs } = await serve(256);
     const oversize = payload.padEnd(4096, " ");
@@ -159,6 +175,21 @@ describe("starting the gateway", () => {
     ).catch((e: unknown) => e);
     expect((error as Error).message).toBe(
       "WHATSAPP_GATEWAY_PORT is not a port",
+    );
+  });
+
+  it("refuses the health path as the webhook path, which would swallow Meta's handshake", async () => {
+    const error = await startWhatsAppGateway(
+      {
+        OPS_GATEWAY_DATABASE_URL: "postgres://x:y@127.0.0.1:1/postgres",
+        WHATSAPP_APP_SECRET: "s",
+        WHATSAPP_VERIFY_TOKEN: "t",
+        WHATSAPP_GATEWAY_PATH: "/healthz",
+      },
+      () => {},
+    ).catch((e: unknown) => e);
+    expect((error as Error).message).toMatch(
+      /WHATSAPP_GATEWAY_PATH cannot be \/healthz/,
     );
   });
 });

@@ -1,0 +1,70 @@
+# The Company OS runtime on Fly.io (Production Hosting, SI-77; owner decision
+# pending acceptance by account creation, docs/PRODUCTION_HOSTING_DECISION_PACKET.md §9).
+#
+# One Fly app per environment (staging, production), each deployed from this
+# file with its own name and environment:
+#
+#   flyctl deploy --app <FLY_APP> --config fly.toml --ha=false \
+#     --env DEPLOYMENT_ENVIRONMENT=<staging|production>
+#
+# (.github/workflows/deploy-hosted.yml). The app name is not written here: it is
+# the GitHub environment's FLY_APP variable, so staging can never deploy over
+# production. Every secret (database URLs, WhatsApp app secret and verify token,
+# model provider key) is a Fly secret of that app, set by the owner, never in
+# this file or the image.
+
+primary_region = "gru"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Non-secret defaults shared by both processes. DEPLOYMENT_ENVIRONMENT is
+  # "production" in the image unless the deploy says "staging".
+  WORKER_HEALTH_HOST = "0.0.0.0"
+  WORKER_HEALTH_PORT = "8080"
+  WHATSAPP_GATEWAY_HOST = "0.0.0.0"
+  WHATSAPP_GATEWAY_PORT = "8787"
+
+[processes]
+  worker = "node engine/worker/main.ts"
+  gateway = "node engine/cli/whatsappGateway.ts"
+
+# Only the gateway is public, over HTTPS terminated by Fly's edge: Meta's
+# webhook path and /healthz. The worker has no service, so no public address.
+[http_service]
+  processes = ["gateway"]
+  internal_port = 8787
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "15s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+# The worker's health endpoint, reachable by Fly's checks inside the private
+# network only: a deploy waits for it, and a stuck worker shows as failing.
+[checks]
+  [checks.worker_health]
+    processes = ["worker"]
+    type = "http"
+    port = 8080
+    method = "GET"
+    path = "/healthz"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "60s"
+
+[[restart]]
+  policy = "always"
+  retries = 10
+  processes = ["worker", "gateway"]
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

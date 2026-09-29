@@ -4283,6 +4283,76 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "The commands are a contract and a check, not a host: no production host is chosen, so none is verified, and the deploy workflow's only host today, GitHub Pages, cannot send response headers, so the host check fails against it by design (measured once on a public Pages site). The preflight's ordering is proven by a test of the workflow text, so a chosen host's deploy step must sit behind the same preflight, the way publish-pages runs the scan in the same command. TOTP enablement, the redirect URLs and the custody of the service-role key are account actions the hosted-Supabase command lists as not verified, never assumes. The hosted-project and worker-environment checks run where an owner runs them; CI proves their logic, not a hosted project. --local-self-test exists to exercise the header logic against a local server and is never a sign-off.",
   },
+  {
+    id: "SI-77",
+    statement:
+      "A deployed worker or WhatsApp gateway runs from one container image that defaults to DEPLOYMENT_ENVIRONMENT=production, runs as a non-root user and admits only the dependency manifests and the engine into its build (no environment file, key, schema or seed); at start, before any secret is read or connection opened, a staging or production process refuses a local or private database, a production one also a fake decision or calendar provider and synthetic ingress, and a misspelt environment is refused rather than read as local, each refusal naming variables and never values; its health endpoints answer a status and nothing else; and the frontend reaches its host only through scripts/publish-cloudflare.mjs, which writes the declared headers file, runs the production preflight before the upload and holds the deployed origin's actual response to the host contract after it, from a manually dispatched workflow whose deploy jobs directly need the gate and the live-database suites.",
+    provenBy: ["unit test", "static guard"],
+    enforcedBy: [
+      {
+        file: "engine/runtime/deploymentEnvironment.ts",
+        marker: /export function assertDeploymentEnvironment/,
+      },
+      {
+        file: "engine/worker/main.ts",
+        marker:
+          /const deployment = assertDeploymentEnvironment\(process\.env, "worker"\)/,
+      },
+      {
+        file: "engine/cli/whatsappGateway.ts",
+        marker:
+          /const deployment = assertDeploymentEnvironment\(env, "gateway"\)/,
+      },
+      {
+        file: "Dockerfile",
+        marker: /DEPLOYMENT_ENVIRONMENT=production/,
+      },
+      {
+        file: "Dockerfile",
+        marker: /^USER node$/m,
+      },
+      {
+        file: ".dockerignore",
+        marker: /^\*$/m,
+      },
+      {
+        file: "scripts/publish-cloudflare.mjs",
+        marker: /export async function publish/,
+      },
+      {
+        file: ".github/workflows/deploy-hosted.yml",
+        marker: /needs: \[gate, database\]/,
+      },
+      {
+        file: "engine/runtime/deploymentEnvironment.test.ts",
+        marker:
+          /the worker exits 1 in production with a fake provider, printing no value/,
+      },
+      {
+        file: "engine/runtime/deploymentEnvironment.test.ts",
+        marker: /refuses the misspelt value %j instead of reading it as local/,
+      },
+      {
+        file: "engine/runtime/healthServer.test.ts",
+        marker: /serves nothing but that one path, by GET or HEAD/,
+      },
+      {
+        file: "scripts/test/deploy-hosted.test.mjs",
+        marker: /uploads nothing when the preflight blocks/,
+      },
+      {
+        file: "scripts/test/deploy-hosted.test.mjs",
+        marker: /never runs Wrangler anywhere but inside the publish command/,
+      },
+      {
+        file: "scripts/test/deploy-hosted.test.mjs",
+        marker:
+          /admits only the manifests and the engine into the build context/,
+      },
+    ],
+    caveat:
+      "No host, account or deployment exists yet: the Cloudflare and Fly.io configuration is written for the recommended option (docs/PRODUCTION_HOSTING_DECISION_PACKET.md §9) and takes effect only when the owner creates the accounts, which is the owner's acceptance. Wrangler and flyctl were not run in this repository; their releases are pinned (flyctl verified by its published checksum) and await the owner's validation under the dependency policy. A platform health check does not restart a stuck worker (Fly restarts an exited process): a stuck worker shows as failing and needs a person. The start gate judges configuration only; the database identity is still checked by the existing boot gates (assertWorkerIdentity, assertGatewayIdentity). The hosted database is not deployed by this workflow (deploy.yml, SI-40).",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

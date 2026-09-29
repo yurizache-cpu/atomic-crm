@@ -362,6 +362,24 @@ describe("a database outage is not a reason to exit", () => {
     expect(slept[0]).toBeLessThan(slept[1]);
   });
 
+  it("tells the health signal which polls reached the database", async () => {
+    const outcomes: string[] = [];
+    const { db } = scriptedDb({
+      queue: [null, null, null],
+      failTransactions: [3],
+    });
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 3,
+      sleep: noSleep,
+      onPoll: (outcome) => outcomes.push(outcome),
+    });
+    // Transaction 1 is the boot heartbeat; the polls are 2, 3 (failed) and 4.
+    expect(outcomes).toEqual(["ok", "failed", "ok"]);
+  });
+
   it("resets the backoff after a good poll", async () => {
     const slept: number[] = [];
     const { db } = scriptedDb({

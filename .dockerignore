@@ -1,0 +1,10 @@
+# An allowlist (Production Hosting, SI-77): the runtime image receives the
+# dependency manifests and the engine, and nothing else. No environment file,
+# key, schema, seed, frontend or history can enter the build context.
+*
+!package.json
+!package-lock.json
+!engine/
+engine/**/*.test.ts
+engine/**/*.dbtest.ts
+engine/**/testSupport/

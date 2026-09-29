@@ -21,6 +21,9 @@ export type WorkerLogEvent =
   | "worker.heartbeat"
   | "worker.idle"
   | "worker.poll_failed"
+  // A deployment advisory from the start gate (engine/runtime/
+  // deploymentEnvironment.ts): `detail` names a variable and a rule, never a value.
+  | "worker.environment_advisory"
   | "job.leased"
   | "job.handler_selected"
   | "job.attempt_started"
