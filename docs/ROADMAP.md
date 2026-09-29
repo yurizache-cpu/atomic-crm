@@ -612,7 +612,16 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Production Hosting Gate B (2026-09-28) — INTEGRATED (PR #21, merge `889766cb`); OWNER HOSTING DECISION REQUIRED
+### Production hosting and runtime (2026-09-29) — IMPLEMENTED; OWNER ACTION REQUIRED (ACCOUNTS)
+
+Built on `feature/production-hosting-runtime` from `889766cb`. Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
+
+- **Hosting as recommended** (packet §9, implemented after the owner said to continue; creating the accounts is the acceptance): Cloudflare Workers static assets for the frontend, Fly.io `gru` for the worker and gateway, Supabase `sa-east-1`.
+- **Runtime (Milestone 3, provider-neutral parts):** the `DEPLOYMENT_ENVIRONMENT` start gate (one rule set with the Gate B preflight), `/healthz` on the worker and gateway, one digest-pinned, non-root, production-by-default image with an allowlisted build context.
+- **Frontend publish:** `scripts/publish-cloudflare.mjs` (headers file, preflight, pinned Wrangler, the live origin checked); the manual `deploy-hosted.yml` per GitHub Environment, both deploy jobs behind the gate and the live-database suites (SI-40). SI-77.
+- **Next:** the owner's account checklist (runbook §6); then Milestone 2 (hosted Supabase posture from the repository: migrations, Auth settings including TOTP, runtime logins and Fly secrets without a person handling passwords) and the first synthetic staging deploy. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Production Hosting Gate B (2026-09-28) — INTEGRATED (PR #21, merge `889766cb`); host recommendation implemented (above)
 
 PR #21, normal merge `889766cb2d5da0711cca3df18a8b3766bfd8eb45` into `feature/clinical-phase-1` (parents `afcb7224` and `1b9353fc90a92f682d34128d5578ccb636b6a098`); the source branch `feature/production-hosting-gate-b` is retained at `1b9353fc`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; the workflow stays red only for the historical baseline, e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors; no new regression. The automated review's two P1 and one P2 (a duplicated CSP directive read last-wins, a same-origin absolute script URL never read, an unreadable script silently skipped) were fixed before the merge in `1b9353fc`. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 

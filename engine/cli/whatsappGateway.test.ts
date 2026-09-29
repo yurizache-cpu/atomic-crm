@@ -106,6 +106,22 @@ describe("the gateway server", () => {
     expect(calls).toEqual(["wamid.SERVER0001"]);
   });
 
+  it("answers the platform's liveness check with a status only, touching no store", async () => {
+    const { url, calls, logs } = await serve();
+    const base = url.slice(0, url.indexOf(CONFIG.path));
+    const response = await fetch(`${base}/healthz`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("ok");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(calls).toEqual([]);
+    expect(logs).toEqual([]);
+    // Only GET, and only that exact path: nothing else is a way around the webhook.
+    expect(
+      (await fetch(`${base}/healthz`, { method: "POST", body: "x" })).status,
+    ).not.toBe(200);
+    expect((await fetch(`${base}/healthz/x`)).status).toBe(404);
+  });
+
   it("answers 413 past the body bound and hands nothing to the store", async () => {
     const { url, calls, logs } = await serve(256);
     const oversize = payload.padEnd(4096, " ");

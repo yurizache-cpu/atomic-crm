@@ -44,15 +44,10 @@ const advisory = (rule, detail, file) => ({
 const scanSeverity = (severity) =>
   severity === "critical" || severity === "high" ? "blocking" : "advisory";
 
-/** Names that resolve only on the developer's own machine or network. */
-const NON_PUBLIC_HOST =
-  /^(localhost|.*\.localhost|.*\.local|.*\.test|.*\.internal|host\.docker\.internal|kong|0\.0\.0\.0|\[::1?\])$/i;
-const PRIVATE_IPV4 =
-  /^(127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+)$/;
-
-/** True when a hostname cannot be a public production origin. */
-export const isNonPublicHost = (hostname) =>
-  NON_PUBLIC_HOST.test(hostname) || PRIVATE_IPV4.test(hostname);
+// One definition of a non-public host, shared with the deployed runtime's
+// start gate (engine/runtime/deploymentEnvironment.ts).
+export { isNonPublicHost } from "../engine/runtime/deploymentEnvironment.ts";
+import { isNonPublicHost } from "../engine/runtime/deploymentEnvironment.ts";
 
 /**
  * What a production page or bundle must never point at: a developer machine, a

@@ -29,6 +29,7 @@ import {
   auditArtifactFiles,
   auditPageAgainstEnvironment,
 } from "./production-contract-host.mjs";
+import { HEADERS_FILE, auditHeadersFile } from "./host-headers-file.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 import { scanDirectory } from "./scan-build-artifacts.mjs";
 
@@ -81,6 +82,20 @@ export function preflightFindings({ dist, env, services = false }) {
     try {
       findings.push(
         ...auditPageAgainstEnvironment(index.text, env.VITE_SUPABASE_URL),
+      );
+    } catch {
+      // An unreadable API URL is already a blocking finding above.
+    }
+  }
+  // A headers file in the build is what a static host will be told to send:
+  // it must be exactly the declared set for the configured API.
+  const headersFile = join(dist, HEADERS_FILE);
+  if (existsSync(headersFile) && env.VITE_SUPABASE_URL) {
+    try {
+      findings.push(
+        ...auditHeadersFile(readFileSync(headersFile, "utf8"), {
+          supabaseUrl: env.VITE_SUPABASE_URL,
+        }),
       );
     } catch {
       // An unreadable API URL is already a blocking finding above.

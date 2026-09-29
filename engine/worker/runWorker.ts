@@ -62,6 +62,11 @@ export interface RunWorkerOptions {
    * no-op default records nothing and reads nothing extra.
    */
   telemetry?: WorkerTelemetry;
+  /**
+   * Told after every poll whether it reached the database ("ok") or failed.
+   * The deployed worker's health endpoint reads it (engine/runtime/healthServer.ts).
+   */
+  onPoll?: (outcome: "ok" | "failed") => void;
 }
 
 export interface WorkerStats {
@@ -119,6 +124,7 @@ export async function runWorker(
     sleep = defaultSleep,
     startDetail = "started",
     telemetry = NOOP_WORKER_TELEMETRY,
+    onPoll = () => {},
   } = options;
 
   if (!workerId.trim()) {
@@ -291,12 +297,14 @@ export async function runWorker(
           telemetry,
         });
         consecutivePollFailures = 0;
+        onPoll("ok");
       } catch (error) {
         // The database is unreachable, or something below threw in a way
         // runOneJob does not convert into an outcome. Neither is a reason to
         // exit: the process stays up and backs off.
         stats.pollFailures += 1;
         consecutivePollFailures += 1;
+        onPoll("failed");
         log("worker.poll_failed", {
           workerId,
           detail: describeError(error),

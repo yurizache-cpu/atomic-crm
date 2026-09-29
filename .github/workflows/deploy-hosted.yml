@@ -1,0 +1,154 @@
+name: 🌐 Deploy hosted (staging or production)
+# Production Hosting (SI-77; docs/PRODUCTION_DEPLOYMENT.md). Manual only: nothing
+# here runs on a push. Each target is a GitHub Environment ("staging",
+# "production") holding its own variables and secrets, so a staging run can
+# never read a production credential; the owner can require an approval for the
+# production environment in the repository settings.
+#
+# Variables per environment: APP_HOSTNAME, VITE_SUPABASE_URL,
+# VITE_SB_PUBLISHABLE_KEY, CLOUDFLARE_ACCOUNT_ID, FLY_APP.
+# Secrets per environment:   CLOUDFLARE_API_TOKEN, FLY_API_TOKEN.
+#
+# The database is NOT deployed here: migrations reach a hosted project only
+# through deploy.yml's gated job. This workflow ships the static frontend and
+# the runtime image together, each behind its own checks, and only a commit the
+# live-database suites passed in this same run (SI-40: a job that can read a
+# deploy credential directly needs the database gate and has no job condition).
+on:
+    workflow_dispatch:
+        inputs:
+            environment:
+                description: Target environment
+                type: choice
+                options:
+                    - staging
+                    - production
+                required: true
+
+permissions:
+    contents: read
+
+concurrency:
+    group: deploy-hosted-${{ inputs.environment }}
+    cancel-in-progress: false
+
+jobs:
+    # The same gate deploy.yml runs before any deploy: a red build ships nothing.
+    gate:
+        name: 🚦 Gate (must pass before any deploy)
+        runs-on: ubuntu-latest
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - name: 📥 Install dependencies
+              run: npm ci
+
+            - name: 🏷️ Typecheck
+              run: npm run typecheck
+
+            - name: 🔬 Lint
+              run: npm run lint
+
+            - name: 🎭 Install Playwright browsers
+              run: npx playwright install chromium-headless-shell 1>/dev/null
+
+            - name: 🔎 Unit Tests on App
+              run: CI=1 npm run test:unit:app -- --run
+
+            - name: 🔎 Unit Tests on Supabase functions
+              run: CI=1 npm run test:unit:functions -- --run
+
+            - name: 🔎 Unit Tests on agent harness
+              run: CI=1 npm run test:unit:claude -- --run
+
+    # The live-database proof for the commit this run ships (SI-40).
+    database:
+        name: 🗄️ Database gate (must pass before any deploy)
+        permissions:
+            contents: read
+        uses: ./.github/workflows/database.yml
+
+    frontend:
+        name: 🖥️ Frontend (${{ inputs.environment }})
+        needs: [gate, database]
+        runs-on: ubuntu-latest
+        environment: ${{ inputs.environment }}
+        env:
+            VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+            VITE_SB_PUBLISHABLE_KEY: ${{ vars.VITE_SB_PUBLISHABLE_KEY }}
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            - name: ⚙️ Setup node
+              uses: actions/setup-node@v4
+              with:
+                  node-version-file: .nvmrc
+                  cache: npm
+
+            - name: 📥 Install dependencies
+              run: npm ci
+
+            - name: 🔨 Build
+              run: npm run build
+
+            # Headers file, preflight, upload and the deployed origin's check, in
+            # one command (scripts/publish-cloudflare.mjs): no edit here can
+            # reorder or drop a step. It is the only way the frontend is
+            # uploaded (scripts/test/deploy-hosted.test.mjs).
+            - name: 📡 Publish and verify the frontend
+              run: node scripts/publish-cloudflare.mjs --environment "${{ inputs.environment }}" --hostname "${{ vars.APP_HOSTNAME }}" --dist dist
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+
+    runtime:
+        name: ⚙️ Worker and gateway (${{ inputs.environment }})
+        needs: [gate, database]
+        runs-on: ubuntu-latest
+        environment: ${{ inputs.environment }}
+        env:
+            FLYCTL_VERSION: 0.4.100
+            FLY_APP: ${{ vars.FLY_APP }}
+        steps:
+            - name: 📥 Checkout repo
+              uses: actions/checkout@v4
+
+            # The measured release, verified against its published checksum.
+            - name: ⚙️ Install flyctl
+              run: |
+                  set -euo pipefail
+                  base="https://github.com/superfly/flyctl/releases/download/v${FLYCTL_VERSION}"
+                  archive="flyctl_${FLYCTL_VERSION}_Linux_x86_64.tar.gz"
+                  curl -fsSLO "${base}/${archive}"
+                  curl -fsSLO "${base}/flyctl_${FLYCTL_VERSION}_checksums.txt"
+                  grep " ${archive}\$" "flyctl_${FLYCTL_VERSION}_checksums.txt" | sha256sum -c -
+                  tar -xzf "${archive}" flyctl
+                  sudo install -m 0755 flyctl /usr/local/bin/flyctl
+                  flyctl version
+
+            # The app named by the environment's FLY_APP, created on first use
+            # (an organisation token can; an app token finds it existing).
+            - name: 🧱 Ensure the Fly app exists
+              run: flyctl status --app "${FLY_APP}" >/dev/null 2>&1 || flyctl apps create "${FLY_APP}" --org personal
+              env:
+                  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+            # The image defaults to production; the environment is stated anyway,
+            # and the start gate (engine/runtime/deploymentEnvironment.ts)
+            # refuses a test-only or local configuration before the process runs.
+            # Fly waits for both processes' health checks before it finishes.
+            - name: 🚀 Deploy the runtime
+              run: flyctl deploy --app "${FLY_APP}" --config fly.toml --ha=false --remote-only --env "DEPLOYMENT_ENVIRONMENT=${{ inputs.environment }}"
+              env:
+                  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+            - name: 🩺 Gateway answers its health check over HTTPS
+              run: curl --fail --silent --show-error --max-time 20 --retry 6 --retry-delay 10 --retry-all-errors "https://${FLY_APP}.fly.dev/healthz"

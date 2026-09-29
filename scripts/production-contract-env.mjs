@@ -12,6 +12,7 @@
 // synthetic or over-privileged, wherever it runs.
 
 import { createHash } from "node:crypto";
+import { productionServiceFindings } from "../engine/runtime/deploymentEnvironment.ts";
 import { isNonPublicHost } from "./production-contract-host.mjs";
 import { scanText } from "./scan-build-artifacts.mjs";
 
@@ -198,82 +199,15 @@ export function auditClientEnvironment(env) {
   return findings;
 }
 
-const LOCAL_DATABASE_PORTS = /^(5432[0-9]|5433[0-9]|5434[0-9])$/;
-
 /**
- * The environment a production WORKER, gateway or operator command runs in.
- * Only what is set is judged; an unset provider is "off", which is the safe
- * default.
+ * The environment a production WORKER, gateway or operator command runs in,
+ * judged as production whatever it declares. The rules live with the runtime
+ * that enforces them at start (engine/runtime/deploymentEnvironment.ts), so the
+ * preflight and the process cannot disagree. Only what is set is judged; an
+ * unset provider is "off", the safe default.
  */
 export function auditServiceEnvironment(env) {
-  const findings = [];
-
-  for (const name of ["DECISION_SHADOW_PROVIDER", "CALENDAR_PROVIDER"]) {
-    const value = env[name];
-    if (value === "fake") {
-      findings.push(
-        blocking(
-          "fake-provider",
-          `${name} is "fake": a deterministic test provider cannot stand in for a production one`,
-        ),
-      );
-    } else if (value === "jev" || value === "google") {
-      findings.push(
-        advisory(
-          "unconnected-provider",
-          `${name} is "${value}": that boundary is not connected (no approved contract) and calls nothing`,
-        ),
-      );
-    }
-  }
-
-  if (env.COMPANY_OS_SYNTHETIC_INGRESS === "enabled") {
-    findings.push(
-      blocking(
-        "synthetic-ingress",
-        'COMPANY_OS_SYNTHETIC_INGRESS is "enabled": production admits no synthetic message',
-      ),
-    );
-  }
-
-  for (const name of [
-    "ADMIN_DATABASE_URL",
-    "OPS_WORKER_DATABASE_URL",
-    "OPS_GATEWAY_DATABASE_URL",
-  ]) {
-    if (!present(env[name])) continue;
-    let parsed;
-    try {
-      parsed = new URL(env[name]);
-    } catch {
-      findings.push(blocking("database-url", `${name} is not a URL`));
-      continue;
-    }
-    if (
-      isNonPublicHost(parsed.hostname) ||
-      LOCAL_DATABASE_PORTS.test(parsed.port)
-    ) {
-      findings.push(
-        blocking(
-          "local-database",
-          `${name} names a local or private database (host or a local Supabase port)`,
-        ),
-      );
-    }
-  }
-
-  if (present(env.OTEL_EXPORTER_OTLP_ENDPOINT)) {
-    const host = hostnameOf(env.OTEL_EXPORTER_OTLP_ENDPOINT);
-    if (host !== null && isNonPublicHost(host)) {
-      findings.push(
-        advisory(
-          "local-telemetry-endpoint",
-          "OTEL_EXPORTER_OTLP_ENDPOINT is a local collector: fine beside the worker, meaningless if the worker runs elsewhere",
-        ),
-      );
-    }
-  }
-  return findings;
+  return productionServiceFindings(env);
 }
 
 /**

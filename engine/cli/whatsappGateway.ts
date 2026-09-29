@@ -35,6 +35,8 @@ import {
   GATEWAY_ROLE,
 } from "../domain/whatsappGatewayStore.ts";
 import { isEntryPoint, jsonLine } from "./cliOutput.ts";
+import { assertDeploymentEnvironment } from "../runtime/deploymentEnvironment.ts";
+import { HEALTH_PATH } from "../runtime/healthServer.ts";
 
 export const GATEWAY_DATABASE_URL = "OPS_GATEWAY_DATABASE_URL";
 export const DEFAULT_GATEWAY_PATH = "/webhooks/whatsapp";
@@ -88,6 +90,21 @@ export interface GatewayServerOptions {
 export function createGatewayServer(options: GatewayServerOptions): Server {
   const limit = options.maxBodyBytes ?? WEBHOOK_MAX_BODY_BYTES;
   const server = createServer((request, response) => {
+    // Liveness for the platform's health check: a status, nothing else, and
+    // answered before any body is read or any database is touched.
+    if (
+      request.method === "GET" &&
+      (request.url ?? "").split("?")[0] === HEALTH_PATH
+    ) {
+      response
+        .writeHead(200, {
+          "Content-Type": "text/plain; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        })
+        .end("ok");
+      return;
+    }
     void (async () => {
       let status = 500;
       let body = "";
@@ -176,6 +193,8 @@ export async function startWhatsAppGateway(
   env: Readonly<Record<string, string | undefined>>,
   write: (line: string) => void,
 ): Promise<{ readonly server: Server; readonly close: () => Promise<void> }> {
+  // Production Hosting (SI-77): refused before any secret is read.
+  const deployment = assertDeploymentEnvironment(env, "gateway");
   const connectionString = required(env, GATEWAY_DATABASE_URL);
   const config: GatewayConfig = Object.freeze({
     appSecret: required(env, "WHATSAPP_APP_SECRET"),
@@ -204,8 +223,18 @@ export async function startWhatsAppGateway(
       event: "gateway.started",
       host,
       port,
+      environment: deployment.environment,
     }),
   );
+  for (const finding of deployment.advisories) {
+    write(
+      jsonLine({
+        at: new Date().toISOString(),
+        event: "gateway.environment_advisory",
+        detail: finding.detail,
+      }),
+    );
+  }
   return {
     server,
     close: async () => {
