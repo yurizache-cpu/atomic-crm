@@ -91,6 +91,24 @@ export function hostedSecurityHeaders({ supabaseUrl } = {}) {
   };
 }
 
+/** A policy's directives, by lower-cased name, each with its source list. */
+export function parsePolicy(policy) {
+  return new Map(
+    policy
+      .split(";")
+      .map((part) => part.trim().split(/\s+/))
+      .filter((tokens) => tokens[0])
+      .map(([name, ...sources]) => [name.toLowerCase(), sources]),
+  );
+}
+
+/** The policy a host must send, by directive: the declared header's, frame-ancestors included. */
+export function hostedPolicy({ supabaseUrl } = {}) {
+  return parsePolicy(
+    hostedSecurityHeaders({ supabaseUrl })["Content-Security-Policy"],
+  );
+}
+
 const escapeAttribute = (value) =>
   value.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
 
@@ -104,6 +122,14 @@ export function securityMetaTags({ supabaseUrl } = {}) {
 
 const CSP_META =
   /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"\s*\/?>/i;
+
+/** The Content-Security-Policy a page carries in its <meta>, or null. */
+export function pageContentSecurityPolicy(html) {
+  const meta = CSP_META.exec(html);
+  return meta === null
+    ? null
+    : meta[1].replaceAll("&quot;", '"').replaceAll("&amp;", "&");
+}
 
 /**
  * What a built page must satisfy, as findings in the build scan's shape: the

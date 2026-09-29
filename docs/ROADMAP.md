@@ -612,6 +612,14 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
+### Production Hosting Gate B (2026-09-28) — PROVIDER-NEUTRAL WORK IMPLEMENTED; OWNER HOSTING DECISION REQUIRED
+
+Built on `feature/production-hosting-gate-b` from `feature/clinical-phase-1` at `afcb7224`. Read [PRODUCTION_HOSTING_DECISION_PACKET.md](PRODUCTION_HOSTING_DECISION_PACKET.md) and [PRODUCTION_HOSTING_GATE_B_REPORT.md](PRODUCTION_HOSTING_GATE_B_REPORT.md).
+
+- **No host is chosen** (no accepted decision exists; GitHub Pages is upstream's inherited deploy, insufficient by measurement and by its terms). Three candidates are compared from official documentation: Cloudflare Workers static assets (preferred technical fit, not a decision), Netlify, Vercel. **OWNER ACTION REQUIRED**; nothing paid or provider-specific was created.
+- **Built, provider-neutral (SI-76):** the host contract; `production:preflight` in the production deploy job; `verify:production-host`; `verify:hosted-supabase`; `production:headers`; the production and staging environment contract.
+- **Next:** on the owner's host decision, the provider-specific step (header file, prebuilt-directory deploy behind the preflight, a post-deploy host check, a synthetic-only staging project), about half a day of engineering. Hosting of the worker and the WhatsApp gateway is a separate decision. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
 ### Production Security Gate A.1 (2026-09-28) — INTEGRATED (PR #20, merge `afcb7224`); PRODUCTION SECURITY GATE A: COMPLETE
 
 Gate A is integrated in two PRs into `feature/clinical-phase-1`, neither into `main`: PR #19 (merge `234f7a89`, source retained at `f17c306e`) and its A.1 correction PR #20 (normal merge `afcb722435026f745536caef3f7b167b52195da5`, parents `234f7a89` and `c81f1cba`, source `feature/production-security-gate-a1` retained at `c81f1cba`; `main` unchanged at `a863e2a0`). Post-merge CI: Test, Build, Typecheck, ESLint and Database PASS, with only the historical e2e (9 failed, 1 skipped) and Prettier (2 errors) red. Read [PRODUCTION_SECURITY_GATE_A_REPORT.md](PRODUCTION_SECURITY_GATE_A_REPORT.md) §7. **PRODUCTION SECURITY GATE A: COMPLETE.** It includes PUBLIC helper hardening, AAL2 for the Company OS and for the CRM protected data surface, no automatic Gravatar or favicon enrichment, the CSP and build policy, the local-only assurance exemption, and no AAL1 real-data browser bypass.

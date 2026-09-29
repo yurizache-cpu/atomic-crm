@@ -4220,6 +4220,69 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "style-src admits 'unsafe-inline' because the UI libraries insert <style> elements at runtime; it admits styles, never scripts. The committed deploy target (GitHub Pages) cannot send response headers, so frame-ancestors, HSTS, nosniff and the permissions policy depend on a host that sends the declared set: a real-data Company OS must not be served from one that does not.",
   },
+  {
+    id: "SI-76",
+    statement:
+      "A production deployment is refused unless one declared contract holds: the build environment is not a demo, names a hosted https API with a publishable key that is not the local stack's, and carries no privileged or model-provider VITE_ variable; the build carries no local endpoint, no published registry, no credential class and a page policy made for that API, checked by scripts/production-preflight.mjs, which the production deploy job runs unconditionally after the build and before any database push or publish; a deployed origin is accepted only if its actual response is https on a public host and carries a Content-Security-Policy equal to the declared one (frame-ancestors 'none' included), Strict-Transport-Security of at least a year, nosniff, a strict referrer policy and a Permissions-Policy denying camera, microphone and geolocation (scripts/verify-production-host.mjs); a hosted project holds no assurance-exemption row, no development seed, exactly the repository's migrations and closed self-registration (scripts/verify-hosted-supabase.mjs); and a production worker environment selects no fake provider, no synthetic ingress and no local database.",
+    provenBy: ["unit test", "static guard"],
+    enforcedBy: [
+      {
+        file: "scripts/production-preflight.mjs",
+        marker: /export function preflightFindings/,
+      },
+      {
+        file: "scripts/production-contract-host.mjs",
+        marker: /export function auditHostResponse/,
+      },
+      {
+        file: "scripts/production-contract-env.mjs",
+        marker: /export function auditClientEnvironment/,
+      },
+      {
+        file: "scripts/production-contract-env.mjs",
+        marker: /export function auditHostedSupabase/,
+      },
+      {
+        file: ".github/workflows/deploy.yml",
+        marker: /run: node scripts\/production-preflight\.mjs --dist dist/,
+      },
+      {
+        file: "scripts/test/production-preflight.test.mjs",
+        marker:
+          /in the production job, after the build and before any database push or publish/,
+      },
+      {
+        file: "scripts/test/production-preflight.test.mjs",
+        marker: /as a step that always runs and can never be waved through/,
+      },
+      {
+        file: "scripts/test/production-contract-host.test.mjs",
+        marker: /passes exactly what scripts\/security-headers\.mjs declares/,
+      },
+      {
+        file: "scripts/test/production-contract-host.test.mjs",
+        marker: /refuses a third-party cosmetic source, however small/,
+      },
+      {
+        file: "scripts/test/production-contract-env.test.mjs",
+        marker: /refuses a demo build/,
+      },
+      {
+        file: "scripts/test/production-contract-env.test.mjs",
+        marker: /refuses the local exemption row and the development seed/,
+      },
+      {
+        file: "scripts/test/production-contract-env.test.mjs",
+        marker: /refuses %s=fake/,
+      },
+      {
+        file: "scripts/test/verify-production-host.test.mjs",
+        marker: /finds a missing header in what was actually sent/,
+      },
+    ],
+    caveat:
+      "The commands are a contract and a check, not a host: no production host is chosen, so none is verified, and the deploy workflow's only host today, GitHub Pages, cannot send response headers, so the host check fails against it by design (measured once on a public Pages site). The preflight's ordering is proven by a test of the workflow text, so a chosen host's deploy step must sit behind the same preflight, the way publish-pages runs the scan in the same command. TOTP enablement, the redirect URLs and the custody of the service-role key are account actions the hosted-Supabase command lists as not verified, never assumes. The hosted-project and worker-environment checks run where an owner runs them; CI proves their logic, not a hosted project. --local-self-test exists to exercise the header logic against a local server and is never a sign-off.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {
