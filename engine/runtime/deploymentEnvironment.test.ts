@@ -107,6 +107,41 @@ describe("what each environment refuses", () => {
     );
   });
 
+  it("knows a private IPv6 literal, in the forms a URL writes it, from a public one", () => {
+    for (const host of [
+      "[::1]",
+      "[::]",
+      "[fc00::1]",
+      "[fd12:3456::1]",
+      "[fe80::1]",
+      "[febf::1]",
+      // A URL serialises an IPv4-mapped address in hex: ::ffff:127.0.0.1.
+      new URL("postgresql://u:p@[::ffff:127.0.0.1]:5432/x").hostname,
+      "[::ffff:c0a8:101]",
+      "100.64.0.1",
+    ]) {
+      expect(isNonPublicHost(host), host).toBe(true);
+    }
+    for (const host of [
+      "[2600:1f18::1]",
+      "[fec0::1]",
+      "[::ffff:808:808]",
+      "100.128.0.1",
+    ]) {
+      expect(isNonPublicHost(host), host).toBe(false);
+    }
+    expect(
+      blocking(
+        serviceEnvironmentFindings(
+          {
+            OPS_WORKER_DATABASE_URL: `postgresql://w:${SECRET}@[fd00::5]:5432/postgres`,
+          },
+          "production",
+        ),
+      ),
+    ).toEqual(["local-database"]);
+  });
+
   it("knows a private host from a public one", () => {
     for (const host of [
       "localhost",

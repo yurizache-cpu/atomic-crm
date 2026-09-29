@@ -26,13 +26,22 @@
 // Exit 0 published and verified, 1 refused or not verified, 2 could not run.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { cloudflareWorkerConfig } from "./cloudflare-config.mjs";
 import { HEADERS_FILE, renderHeadersFile } from "./host-headers-file.mjs";
-import { auditHostResponse } from "./production-contract-host.mjs";
+import {
+  auditHostResponse,
+  pageAssetPaths,
+} from "./production-contract-host.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 import { preflightFindings } from "./production-preflight.mjs";
 import { readDeployedOrigin } from "./verify-production-host.mjs";
@@ -110,13 +119,34 @@ export async function publish({
     return 1;
   }
 
-  // 4. The deployed origin's actual response, held to the contract.
+  // 4. The deployed origin's actual response, held to the contract, and
+  // bound to THIS build: its page must load the hashed scripts of the build
+  // just uploaded, or a previous release (or a cached one) would pass for it.
   const url = `https://${hostname}/`;
+  const uploaded = pageAssetPaths(
+    readFileSync(join(dist, "index.html"), "utf8"),
+  )
+    .sort()
+    .join(" ");
   let findings = [];
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
       const facts = await readOrigin(url);
-      findings = auditHostResponse(facts.response, { supabaseUrl });
+      findings = auditHostResponse(facts.response, {
+        supabaseUrl,
+        expectedHost: hostname,
+      });
+      const live = pageAssetPaths(facts.response.html ?? "")
+        .sort()
+        .join(" ");
+      if (live !== uploaded) {
+        findings.push({
+          rule: "stale-release",
+          severity: "blocking",
+          detail:
+            "the live page does not load the scripts of the build just uploaded (a previous or cached release, or not yet propagated)",
+        });
+      }
     } catch (error) {
       findings = [
         {

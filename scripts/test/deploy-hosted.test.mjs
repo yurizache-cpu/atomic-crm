@@ -269,6 +269,61 @@ describe("the publish sequence", () => {
     expect(read).toBe(false);
   });
 
+  it("does not accept the previous release: the live page must load this build's scripts", async () => {
+    const previous = PAGE.replace("index-abc.js", "index-OLD.js");
+    const served = async (url, html) => {
+      const facts = await goodOrigin(url);
+      return { ...facts, response: { ...facts.response, html } };
+    };
+    let calls = 0;
+    const stale = await publish({
+      dist: build(),
+      environment: "production",
+      hostname: HOST,
+      env: ENV,
+      run: () => 0,
+      readOrigin: async (url) => {
+        calls += 1;
+        return served(url, previous);
+      },
+      attempts: 3,
+      ...quiet,
+    });
+    expect(stale).toBe(1);
+    expect(calls).toBe(3);
+
+    let attempt = 0;
+    const propagated = await publish({
+      dist: build(),
+      environment: "production",
+      hostname: HOST,
+      env: ENV,
+      run: () => 0,
+      readOrigin: async (url) => {
+        attempt += 1;
+        return served(url, attempt < 2 ? previous : PAGE);
+      },
+      attempts: 3,
+      ...quiet,
+    });
+    expect(propagated).toBe(0);
+  });
+
+  it("does not accept a custom domain that redirects to another origin", async () => {
+    const status = await publish({
+      dist: build(),
+      environment: "production",
+      hostname: HOST,
+      env: ENV,
+      run: () => 0,
+      readOrigin: async () =>
+        goodOrigin("https://elsewhere.clinic-example.org/"),
+      attempts: 1,
+      ...quiet,
+    });
+    expect(status).toBe(1);
+  });
+
   it("retries while the new version propagates, then passes", async () => {
     let attempts = 0;
     const status = await publish({

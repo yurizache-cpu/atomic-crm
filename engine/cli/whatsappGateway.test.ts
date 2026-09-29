@@ -177,4 +177,19 @@ describe("starting the gateway", () => {
       "WHATSAPP_GATEWAY_PORT is not a port",
     );
   });
+
+  it("refuses the health path as the webhook path, which would swallow Meta's handshake", async () => {
+    const error = await startWhatsAppGateway(
+      {
+        OPS_GATEWAY_DATABASE_URL: "postgres://x:y@127.0.0.1:1/postgres",
+        WHATSAPP_APP_SECRET: "s",
+        WHATSAPP_VERIFY_TOKEN: "t",
+        WHATSAPP_GATEWAY_PATH: "/healthz",
+      },
+      () => {},
+    ).catch((e: unknown) => e);
+    expect((error as Error).message).toMatch(
+      /WHATSAPP_GATEWAY_PATH cannot be \/healthz/,
+    );
+  });
 });

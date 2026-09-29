@@ -201,6 +201,13 @@ export async function startWhatsAppGateway(
     verifyToken: required(env, "WHATSAPP_VERIFY_TOKEN"),
     path: env.WHATSAPP_GATEWAY_PATH ?? DEFAULT_GATEWAY_PATH,
   });
+  // /healthz is answered before the webhook handler, so a webhook there would
+  // never see Meta's subscription handshake.
+  if (config.path.split("?")[0] === HEALTH_PATH) {
+    throw new Error(
+      `WHATSAPP_GATEWAY_PATH cannot be ${HEALTH_PATH}, which the gateway keeps for its health check`,
+    );
+  }
   const port = Number(env.WHATSAPP_GATEWAY_PORT ?? DEFAULT_GATEWAY_PORT);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
     throw new Error("WHATSAPP_GATEWAY_PORT is not a port");

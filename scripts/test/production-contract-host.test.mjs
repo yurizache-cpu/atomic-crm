@@ -361,6 +361,27 @@ describe("a deployed response", () => {
     expect(capped.map((f) => f.rule)).toEqual(["assets-not-all-checked"]);
   });
 
+  it("refuses a final origin other than the one asked for, only when one is named", () => {
+    const moved = {
+      ...goodResponse(),
+      url: "https://other.example-domain.org/",
+    };
+    expect(
+      blockingRules(
+        auditHostResponse(moved, {
+          supabaseUrl: API,
+          expectedHost: "clinic.example-domain.org",
+        }),
+      ),
+    ).toEqual(["unexpected-final-origin"]);
+    expect(
+      auditHostResponse(goodResponse(), {
+        supabaseUrl: API,
+        expectedHost: "clinic.example-domain.org",
+      }),
+    ).toEqual([]);
+  });
+
   it("rejects an unreadable address as not https", () => {
     expect(
       blockingRules(

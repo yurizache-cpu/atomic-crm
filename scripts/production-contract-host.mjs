@@ -243,7 +243,7 @@ export function pageAssetPaths(html) {
  */
 export function auditHostResponse(
   response,
-  { supabaseUrl, allowLocal = false } = {},
+  { supabaseUrl, allowLocal = false, expectedHost } = {},
 ) {
   const findings = [];
   let url;
@@ -251,6 +251,16 @@ export function auditHostResponse(
     url = new URL(response.url);
   } catch {
     return [blocking("https-required", "the checked address is not a URL")];
+  }
+  // A redirect elsewhere means users land on an origin nobody checked, and the
+  // auth redirect URLs name the configured one.
+  if (expectedHost !== undefined && url.host !== expectedHost) {
+    findings.push(
+      blocking(
+        "unexpected-final-origin",
+        "the configured address redirected to another origin: the application must be served on the configured one",
+      ),
+    );
   }
   if (
     url.protocol !== "https:" &&

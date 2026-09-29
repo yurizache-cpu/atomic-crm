@@ -52,9 +52,44 @@ const NON_PUBLIC_HOST =
 const PRIVATE_IPV4 =
   /^(127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|169\.254\.\d+\.\d+)$/;
 
+/** A private or reserved IPv4 address beyond the dotted forms above: CGNAT. */
+const SHARED_IPV4 = /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d+\.\d+$/;
+
+/**
+ * An IPv6 literal that is not a public address: unspecified, loopback,
+ * unique-local (fc00::/7), link-local (fe80::/10), or an IPv4-mapped address
+ * whose IPv4 part is private. A URL writes IPv6 in brackets and serialises a
+ * mapped address in hex (`[::ffff:7f00:1]`), so both spellings are read.
+ */
+function isNonPublicIpv6(hostname: string): boolean {
+  const address = hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!address.includes(":")) return false;
+  if (address === "::" || address === "::1") return true;
+  const first = Number.parseInt(address.split(":")[0] || "0", 16);
+  if (first >= 0xfc00 && first <= 0xfdff) return true; // unique-local
+  if (first >= 0xfe80 && first <= 0xfebf) return true; // link-local
+  const mapped = /^::ffff:(.+)$/.exec(address)?.[1];
+  if (mapped === undefined) return false;
+  if (mapped.includes(".")) return isNonPublicIpv4(mapped);
+  const [high, low] = mapped
+    .split(":")
+    .map((part) => Number.parseInt(part, 16));
+  if (!Number.isInteger(high) || !Number.isInteger(low)) return false;
+  return isNonPublicIpv4(
+    [high >> 8, high & 255, low >> 8, low & 255].join("."),
+  );
+}
+
+const isNonPublicIpv4 = (address: string): boolean =>
+  PRIVATE_IPV4.test(address) ||
+  SHARED_IPV4.test(address) ||
+  /^0\.\d+\.\d+\.\d+$/.test(address);
+
 /** True when a hostname cannot be a public production origin or database. */
 export const isNonPublicHost = (hostname: string): boolean =>
-  NON_PUBLIC_HOST.test(hostname) || PRIVATE_IPV4.test(hostname);
+  NON_PUBLIC_HOST.test(hostname) ||
+  isNonPublicIpv4(hostname) ||
+  isNonPublicIpv6(hostname);
 
 /** The ports a local Supabase stack publishes its database on. */
 const LOCAL_DATABASE_PORTS = /^(5432\d|5433\d|5434\d)$/;
