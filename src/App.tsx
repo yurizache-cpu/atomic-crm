@@ -44,7 +44,7 @@ const CrmWithSecondFactor = () => {
   }));
   return (
     <CrmSecondFactorGate session={gate.session} probe={gate.probe}>
-      <CRM />
+      <CRM disableTelemetry />
     </CrmSecondFactorGate>
   );
 };
@@ -83,7 +83,7 @@ const App = () => (
   <SurfaceSwitch
     crm={
       import.meta.env.VITE_IS_DEMO === "true" ? (
-        <CRM />
+        <CRM disableTelemetry />
       ) : (
         <CrmWithSecondFactor />
       )

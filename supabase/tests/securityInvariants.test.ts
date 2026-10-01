@@ -4071,6 +4071,11 @@ const INVARIANTS: Invariant[] = [
           /names no third-party avatar or favicon host in application, function or schema source/,
       },
       {
+        file: "supabase/tests/productionSecurityGateA1.test.ts",
+        marker:
+          /switches off the upstream usage beacon wherever the application renders the CRM/,
+      },
+      {
         file: "supabase/tests/whatsapp_transport.sql",
         marker:
           /K3: ops_gateway executes a SECURITY DEFINER function outside ops/,
