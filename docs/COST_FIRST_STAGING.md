@@ -1,6 +1,6 @@
 # Cost-first remote staging
 
-**Status (2026-09-29): IN PROGRESS.** The frontend is live on Netlify and verified. The Supabase staging project exists but is EMPTY: its migrations wait for the owner's Supabase CLI login. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+**Status (2026-09-29): IN PROGRESS.** The frontend is live on Netlify and verified. The Supabase staging project holds the 65 canonical migrations (no seed), with staging Auth configured and verified (2026-10-01). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
 ## 1. The owner decision
 
@@ -71,26 +71,41 @@ No source file, environment file or key leaves the machine. **Build from a clean
 
 ## 5. Supabase staging bootstrap
 
-**Pending: OWNER ACTION REQUIRED — SUPABASE (CLI login).** The CLI on this machine is not logged in. The migrations cannot be applied through the connector: it records its own version for each migration, so the history would not match the repository's files.
+**Done on 2026-10-01. No database password was used or seen.** The Supabase CLI was logged in from the owner's dashboard session through the CLI's own device flow; the CLI needs a real console, which `winpty` from Git for Windows provides. Every step named the project explicitly (`erhrochojnugszkkoqrv`); `prisma-clinico-online` was never addressed.
 
-After the owner's `npx --yes supabase@2.117.0 login`, the bootstrap runs in this order:
+1. **Signing key:** `node scripts/dev-signing-key.mjs --project-ref erhrochojnugszkkoqrv` passes: the hosted project does not trust the development key (SI-20). It still passes after the Auth push.
+2. **Migrations, never the seed:** `supabase db push`, with no `--include-seed`.
+   - Its temporary login role (`cli_login_postgres`, NOINHERIT, acting as `postgres`) applied 61 files.
+   - The four OD-8a files refuse that role on purpose: their `session_user` must be `postgres`. Each was applied as `postgres`/`postgres` through the management API with `supabase db query --linked --file <file>`, which runs one atomic transaction (measured).
+   - Each was then recorded with `supabase migration repair --status applied <version> --linked`, and the push resumed.
+3. **PostgreSQL 17:** the project runs 17.6, where those four files could not apply as written. See PHASE_2C_REPORT.md §3.2 and SI-54 on the automatic creator membership of PostgreSQL 16+. The repository now pins and tests 17.
+4. **Auth and API:** `supabase config push`, using the `[remotes.staging]` override in `supabase/config.toml`. Each section's diff was read before it was accepted. The push set:
+   - the Company OS RPC schema exposed (and not `storage`);
+   - the site URL and the one redirect URL on the Netlify origin;
+   - self-registration closed;
+   - the email provider kept on, and email confirmation kept on;
+   - TOTP enrolment and verification on, which was already the hosted default.
 
-1. **Link:** `supabase link --project-ref erhrochojnugszkkoqrv`.
-2. **Signing-key check:** confirm the hosted project does not trust the development signing key (SI-20).
-3. **Migrations:** `supabase db push` with the repository's canonical migrations only. **NEVER the seed** (SI-25).
-4. **Auth configuration:**
-   - site URL and redirect URLs point to the Netlify site;
-   - TOTP enrolment and verification are on;
-   - self-registration is off;
-   - the Company OS API schema is exposed.
-5. **Verification:**
-   - the applied migrations equal the repository's;
-   - no seed mark is present;
-   - `ops.operator_assurance_exemption` is empty;
-   - the helper ACLs of Gate A hold, and RLS is on;
-   - the CRM and Company OS AAL2 roots are in place;
-   - the retention schema is present;
-   - no model-data authorization row exists.
+   The Free plan refuses custom email templates without custom SMTP, so staging keeps Supabase's own.
+
+**Verified (read-only, 2026-10-01):**
+
+- **Migrations:** 65 applied, and their version list hashes equal to the repository's.
+- **No seed and no data:** no seed mark, no tenant, no `ops.operator_assurance_exemption` row, no model-data authorization, no channel, no user.
+- **Row security:** RLS is on for every `public` and `ops` table.
+- **Function privileges:** `anon` and PUBLIC execute no `public` function; `authenticated` executes exactly the six row-security helpers.
+- **AAL2:** `public.current_sales_id()`, `public.is_admin()` and `ops.operator_scope()` require it.
+- **Retention:** the ledger and its capability exist.
+- **Ownership and exposure:**
+  - `ops_operator_api` holds only the automatic creator row;
+  - nothing is owned by the CLI's login role;
+  - the attachments bucket is private, and realtime publishes nothing.
+- **Hosted verifier:** `npm run verify:hosted-supabase` reports 0 blocking and 0 advisory findings.
+- **With the publishable key alone:**
+  - CRM tables answer 401;
+  - `company_os_api` answers 401;
+  - `ops` is not exposed (406);
+  - sign-up answers `signup_disabled`.
 
 ## 6. Requirements recorded for go-live (not needed for staging)
 
