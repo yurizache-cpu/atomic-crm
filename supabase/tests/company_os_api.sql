@@ -3632,16 +3632,23 @@ begin
                   and r.rolvaliduntil is null and r.rolconfig is null) then
     raise exception 'P6: ops_operator_api is missing, can log in, or carries a blanket attribute';
   end if;
+  -- The one admitted row is PostgreSQL 16+'s automatic creator membership
+  -- (ADMIN only, from the bootstrap superuser); the migrations admit exactly it.
   select string_agg(format('%s in %s', m.member::regrole, m.roleid::regrole), ', ') into v_bad
     from pg_auth_members m
-   where m.roleid = 'ops_operator_api'::regrole or m.member = 'ops_operator_api'::regrole;
+   where (m.roleid = 'ops_operator_api'::regrole or m.member = 'ops_operator_api'::regrole)
+     and not (m.member = 'postgres'::regrole and m.grantor = 10::oid and m.admin_option
+              and not m.inherit_option and not m.set_option);
   if v_bad is not null then
     raise exception 'P6: ops_operator_api has a member or a membership at rest: %', v_bad;
   end if;
   with recursive closure (login, role) as (
     select r.oid, r.oid from pg_roles r where r.rolcanlogin
     union
-    select c.login, m.roleid from closure c join pg_auth_members m on m.member = c.role)
+    select c.login, m.roleid from closure c join pg_auth_members m on m.member = c.role
+     -- The creator's automatic ADMIN-only row (PostgreSQL 16+) confers no use.
+     where not (m.roleid = 'ops_operator_api'::regrole and m.member = 'postgres'::regrole
+                and m.grantor = 10::oid and m.admin_option and not m.inherit_option and not m.set_option))
   select string_agg(distinct c.login::regrole::text, ', ') into v_bad
     from closure c where c.role = 'ops_operator_api'::regrole;
   if v_bad is not null then
@@ -3719,7 +3726,9 @@ $f$;
 --     pg_catalog, information_schema and ops, by signature, trigger functions
 --     exempt and nothing by pattern: the exposed catalogue, and the platform
 --     and CRM entries measured on this stack (S0.4), pinned as observed, not
---     approved: the six PUBLIC CRM helpers are existing debt.
+--     approved: the six PUBLIC CRM helpers are existing debt. PostgreSQL 17
+--     (2026-10-01): pg_graphql is no longer installed, so its two schema-version
+--     functions are gone from the observation.
 create function pg_temp.pin_k4() returns void
 language plpgsql as $f$
 declare
@@ -3737,8 +3746,7 @@ begin
                union all
                select unnest(array['public.is_admin()', 'public.can_access_contact(bigint)', 'public.can_access_deal(bigint)',
                                    'public.can_manage_sales_id(bigint)', 'public.current_sales_id()',
-                                   'public.is_active_sales_user()', 'graphql.get_schema_version()',
-                                   'graphql.increment_schema_version()'])) e using (s)
+                                   'public.is_active_sales_user()'])) e using (s)
    where a.s is null or e.s is null;
   if v_bad is not null then
     raise exception 'P7 (K4): the SECURITY DEFINER functions authenticated can execute drifted: %', v_bad;
@@ -3829,13 +3837,21 @@ begin
   if v_got is distinct from 'authenticator(login),postgres(login),supabase_realtime_admin,supabase_storage_admin(login)' then
     raise exception 'P10: the recursive members of authenticated drifted: %', v_got;
   end if;
+  -- Only a membership that confers use (INHERIT or SET) lets a role become
+  -- ops_operator_api. On PostgreSQL 16+ its creator keeps one ADMIN-only row
+  -- the server grants at CREATE ROLE and nobody but a superuser can revoke
+  -- (the migrations' end-state checks admit exactly that row); any other
+  -- ADMIN row is a finding.
   with recursive members (role) as (
-    select m.member from pg_auth_members m where m.roleid = 'ops_operator_api'::regrole
+    select m.member from pg_auth_members m
+     where m.roleid = 'ops_operator_api'::regrole and (m.inherit_option or m.set_option)
     union
-    select m.member from members x join pg_auth_members m on m.roleid = x.role)
+    select m.member from members x join pg_auth_members m on m.roleid = x.role
+     where m.inherit_option or m.set_option)
   select string_agg(x.role::regrole::text, ',') into v_got from members x;
   if v_got is not null
-     or exists (select 1 from pg_auth_members m where m.roleid = 'ops_operator_api'::regrole and m.admin_option) then
+     or exists (select 1 from pg_auth_members m where m.roleid = 'ops_operator_api'::regrole and m.admin_option
+                  and not (m.member = 'postgres'::regrole and m.grantor = 10::oid and m.admin_option and not m.inherit_option and not m.set_option)) then
     raise exception 'P10: a role can become or administer ops_operator_api: %', v_got;
   end if;
 end
@@ -4143,7 +4159,7 @@ begin
     raise exception 'X13: ops_operator_api reached ops data outside its gates (table: %, projection: %, exposed body: %)',
       v_table, v_fn, v_via_api;
   end if;
-  if exists (select 1 from pg_auth_members where roleid = 'ops_operator_api'::regrole)
+  if exists (select 1 from pg_auth_members m where m.roleid = 'ops_operator_api'::regrole and not (m.member = 'postgres'::regrole and m.grantor = 10::oid and m.admin_option and not m.inherit_option and not m.set_option))
      or exists (select 1 from pg_proc where proname = 'probe_tasks') then
     raise exception 'X13: the probe''s membership or function outlived its subtransaction';
   end if;
@@ -4624,7 +4640,9 @@ begin
     raise exception 'company_os_api.sql left a global sequence restarted';
   end if;
   if not exists (select 1 from pg_indexes where schemaname = 'ops' and indexname = 'tenant_memberships_one_active')
-     or exists (select 1 from pg_auth_members where roleid = 'ops_operator_api'::regrole or member = 'ops_operator_api'::regrole) then
+     or exists (select 1 from pg_auth_members m
+                 where (m.roleid = 'ops_operator_api'::regrole or m.member = 'ops_operator_api'::regrole)
+                   and not (m.member = 'postgres'::regrole and m.grantor = 10::oid and m.admin_option and not m.inherit_option and not m.set_option)) then
     raise exception 'company_os_api.sql left the membership index dropped or ops_operator_api with a member';
   end if;
 end

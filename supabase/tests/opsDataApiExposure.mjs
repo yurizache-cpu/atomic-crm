@@ -47,6 +47,7 @@
 
 import { execFileSync, execSync } from "node:child_process";
 import { pinnedSupabaseCommand } from "../../scripts/supabase-cli.mjs";
+import { graphqlChannelAbsent } from "./companyOsProbe/graphqlChannel.mjs";
 
 const CONTAINER =
   process.env.SUPABASE_DB_CONTAINER ?? "supabase_db_atomic-crm-e2e";
@@ -394,6 +395,7 @@ async function main() {
   const keys = readKeys();
   let requests = 0;
 
+  const graphqlAbsent = new Set();
   for (const [who, key] of Object.entries(keys)) {
     const control = await probe(`${rest}/${CONTROL_RELATION}?limit=0`, {
       headers: headersFor(key),
@@ -472,6 +474,11 @@ async function main() {
       body: JSON.stringify({ query: INTROSPECTION }),
     });
     requests += 1;
+    // No pg_graphql: the channel reaches nothing, which is measured, not skipped.
+    if (graphqlChannelAbsent(introspection)) {
+      graphqlAbsent.add(who);
+      continue;
+    }
     const schema = introspection.json?.data?.__schema;
     check(
       introspection.status === 200 && schema,
@@ -506,12 +513,21 @@ async function main() {
     }
   }
 
+  // pg_graphql is installed for every credential or for none.
+  check(
+    graphqlAbsent.size === 0 || graphqlAbsent.size === Object.keys(keys).length,
+    `GraphQL answered as absent for ${[...graphqlAbsent].join(", ")} only`,
+  );
   if (failures.length > 0) {
     for (const failure of failures) console.error(`  ${failure}`);
     process.exit(1);
   }
+  const graphqlNote =
+    graphqlAbsent.size > 0
+      ? " (GraphQL: pg_graphql not installed, the channel reaches nothing)"
+      : "";
   process.stdout.write(
-    `  ${relations.length} ops relations, ${functions.length} ops functions, ${Object.keys(keys).length} credentials: ${requests} Data API requests over REST and GraphQL, none reached ops\n`,
+    `  ${relations.length} ops relations, ${functions.length} ops functions, ${Object.keys(keys).length} credentials: ${requests} Data API requests over REST and GraphQL, none reached ops${graphqlNote}\n`,
   );
 }
 
