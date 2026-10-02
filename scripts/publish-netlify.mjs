@@ -40,11 +40,15 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { HEADERS_FILE, renderHeadersFile } from "./host-headers-file.mjs";
 import {
+  RELEASE_FILE,
   VERIFY_ATTEMPTS,
   VERIFY_INTERVAL_MS,
   assertPublishTarget,
+  releaseFileText,
+  releaseIdentifier,
   verifyLiveRelease,
 } from "./live-release.mjs";
+import { uploaderEnvironment } from "./publisher-environment.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 import { preflightFindings } from "./production-preflight.mjs";
 import { readDeployedOrigin } from "./verify-production-host.mjs";
@@ -65,12 +69,13 @@ const UPLOAD_GRANT =
   /^https:\/\/netlify-mcp\.netlify\.app\/proxy\/[A-Za-z0-9._-]+$/;
 const UPLOAD_TIMEOUT_MS = 15 * 60_000;
 
-const defaultUpload = ({ cwd, siteId, grant }) =>
+const defaultUpload = ({ cwd, siteId, grant, env }) =>
   spawnSync(
     "npx",
     ["--yes", NETLIFY_UPLOADER, "--site-id", siteId, "--proxy-path", grant],
     {
       cwd,
+      env,
       stdio: "inherit",
       timeout: UPLOAD_TIMEOUT_MS,
       shell: process.platform === "win32",
@@ -124,6 +129,10 @@ export async function publish({
       );
     }
     writeFileSync(join(site, REDIRECTS_FILE), SPA_FALLBACK);
+    writeFileSync(
+      join(site, RELEASE_FILE),
+      releaseFileText(releaseIdentifier(dist)),
+    );
     writeFileSync(join(staged, "netlify.toml"), STAGED_CONFIG);
 
     // 2. The preflight over exactly what would be served.
@@ -133,7 +142,14 @@ export async function publish({
     }
 
     // 3. The upload of the staged directory and nothing else.
-    status = upload({ cwd: staged, siteId, grant });
+    // The uploader is a third-party process: it gets what npx needs and
+    // nothing else from this shell, the grant only on its command line.
+    status = upload({
+      cwd: staged,
+      siteId,
+      grant,
+      env: uploaderEnvironment(env),
+    });
   } finally {
     rmSync(staged, { recursive: true, force: true });
   }

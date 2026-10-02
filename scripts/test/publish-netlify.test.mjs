@@ -12,6 +12,7 @@ import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { auditHeadersFile } from "../host-headers-file.mjs";
+import { releaseIdentifier } from "../live-release.mjs";
 import {
   NETLIFY_UPLOADER,
   SPA_FALLBACK,
@@ -67,7 +68,10 @@ const filesUnder = (dir) =>
       relative(dir, join(entry.parentPath, entry.name)).replace(/\\/g, "/"),
     )
     .sort();
+/** Every build() is the same build, so it has one release identifier. */
+const RELEASE = releaseIdentifier(build());
 const goodOrigin = async (url) => ({
+  release: RELEASE,
   response: {
     url,
     status: 200,
@@ -91,15 +95,17 @@ describe("the Netlify publish", () => {
       dist,
       ...target,
       env: ENV,
-      upload: ({ cwd, siteId, grant }) => {
+      upload: ({ cwd, siteId, grant, env }) => {
         const site = join(cwd, STAGED_SITE);
         uploads.push({
           files: filesUnder(cwd),
           config: readFileSync(join(cwd, "netlify.toml"), "utf8"),
           headers: readFileSync(join(site, "_headers"), "utf8"),
           redirects: readFileSync(join(site, "_redirects"), "utf8"),
+          release: JSON.parse(readFileSync(join(site, "release.json"), "utf8")),
           siteId,
           grant,
+          env,
           cwd,
         });
         return 0;
@@ -119,7 +125,10 @@ describe("the Netlify publish", () => {
       "site/_redirects",
       "site/assets/index-abc.js",
       "site/index.html",
+      "site/release.json",
     ]);
+    // The release file names this very build (scripts/live-release.mjs).
+    expect(uploads[0].release).toEqual({ release: releaseIdentifier(dist) });
     expect(uploads[0].config).toBe('[build]\n  publish = "site"\n');
     expect(uploads[0].config).toBe(STAGED_CONFIG);
     expect(uploads[0]).toMatchObject({ siteId: SITE, grant: GRANT });
@@ -230,6 +239,60 @@ describe("the Netlify publish", () => {
     expect(status).toBe(1);
     expect(lines.join("\n")).toContain("Publish deploy");
     expect(lines.join("\n")).not.toContain("synthetic.grant");
+  });
+
+  it("hands the third-party uploader no credential from the shell", async () => {
+    let received;
+    const status = await publish({
+      dist: build(),
+      ...target,
+      env: {
+        ...ENV,
+        PATH: "/usr/bin",
+        OPS_WORKER_DATABASE_URL: "postgresql://ops_worker_login:pw@db/x",
+        OPENAI_API_KEY: "synthetic-model-key",
+        SUPABASE_SERVICE_ROLE_KEY: "synthetic-service-role",
+      },
+      upload: ({ env }) => {
+        received = env;
+        return 0;
+      },
+      readOrigin: goodOrigin,
+      ...quiet,
+    });
+    expect(status).toBe(0);
+    expect(received).toEqual({ PATH: "/usr/bin" });
+  });
+
+  it("does not accept a previous release whose scripts did not change (a stylesheet-only change)", async () => {
+    const previous = build();
+    writeFileSync(join(previous, "assets", "index-old.css"), "a{}");
+    const status = await publish({
+      dist: build(),
+      ...target,
+      env: ENV,
+      upload: () => 0,
+      readOrigin: async (url) => ({
+        ...(await goodOrigin(url)),
+        release: releaseIdentifier(previous),
+      }),
+      attempts: 2,
+      ...quiet,
+    });
+    expect(status).toBe(1);
+  });
+
+  it("identifies a build by every path and byte, never by the files a host or publisher adds", () => {
+    const a = build();
+    const b = build();
+    expect(releaseIdentifier(a)).toBe(releaseIdentifier(b));
+    expect(releaseIdentifier(a)).toMatch(/^sha256:[0-9a-f]{64}$/);
+    for (const name of ["_headers", "_redirects", "release.json"]) {
+      writeFileSync(join(b, name), "added beside the build");
+    }
+    expect(releaseIdentifier(b)).toBe(releaseIdentifier(a));
+    writeFileSync(join(b, "assets", "index-abc.js"), "console.log('y')");
+    expect(releaseIdentifier(b)).not.toBe(releaseIdentifier(a));
   });
 
   it("pins one read and measured uploader release", () => {

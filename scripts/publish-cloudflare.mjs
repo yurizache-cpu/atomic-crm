@@ -33,10 +33,14 @@ import { pathToFileURL } from "node:url";
 import { cloudflareWorkerConfig } from "./cloudflare-config.mjs";
 import { HEADERS_FILE, renderHeadersFile } from "./host-headers-file.mjs";
 import {
+  RELEASE_FILE,
   VERIFY_ATTEMPTS,
   VERIFY_INTERVAL_MS,
+  releaseFileText,
+  releaseIdentifier,
   verifyLiveRelease,
 } from "./live-release.mjs";
+import { uploaderEnvironment } from "./publisher-environment.mjs";
 import { parseFlags, report } from "./production-contract-report.mjs";
 import { preflightFindings } from "./production-preflight.mjs";
 import { readDeployedOrigin } from "./verify-production-host.mjs";
@@ -87,6 +91,10 @@ export async function publish({
   if (typeof supabaseUrl === "string" && supabaseUrl !== "") {
     writeFileSync(join(dist, HEADERS_FILE), renderHeadersFile({ supabaseUrl }));
   }
+  writeFileSync(
+    join(dist, RELEASE_FILE),
+    releaseFileText(releaseIdentifier(dist)),
+  );
 
   // 2. The preflight: nothing is uploaded past a blocking finding.
   const preflight = preflightFindings({ dist, env });
@@ -100,7 +108,14 @@ export async function publish({
   writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
   let status;
   try {
-    status = run(["deploy", "--config", configPath], env);
+    // Wrangler is a third-party process: its own two keys, nothing else.
+    status = run(
+      ["deploy", "--config", configPath],
+      uploaderEnvironment(env, [
+        "CLOUDFLARE_API_TOKEN",
+        "CLOUDFLARE_ACCOUNT_ID",
+      ]),
+    );
   } finally {
     rmSync(configDir, { recursive: true, force: true });
   }
