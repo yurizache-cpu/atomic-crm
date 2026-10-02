@@ -34,6 +34,17 @@ import {
   type ModelErrorDetails,
 } from "./errors.ts";
 import {
+  asObject,
+  assertApiKeyShape,
+  assertMaxResponseBytes,
+  cancelled,
+  DEFAULT_MAX_RESPONSE_BYTES,
+  parseJson,
+  readCappedBody,
+  untilAborted,
+  type BodyRead,
+} from "./httpTransport.ts";
+import {
   isModelId,
   isProviderIdentifier,
   isTokenCount,
@@ -45,16 +56,7 @@ import {
 
 export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 export const OPENAI_PROVIDER_NAME = "openai";
-export const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
-
-type JsonObject = Readonly<Record<string, unknown>>;
-
-const asObject = (value: unknown): JsonObject | null =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as JsonObject)
-    : null;
-
-const cancelled = () => new ModelError("cancelled", { code: "aborted" });
+export { DEFAULT_MAX_RESPONSE_BYTES } from "./httpTransport.ts";
 
 /**
  * HTTP status -> category. The question is whether the answer PROVES the model
@@ -97,89 +99,6 @@ export function categoryForHttpStatus(status: number): ModelErrorCategory {
 
 /** `incomplete_details.reason`, before it is folded into a code. */
 const INCOMPLETE_REASON_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
-
-/**
- * Rejects when `signal` aborts, whether or not `promise` ever settles. A fetch
- * implementation or a body stream that ignores the signal must not hold the
- * caller; its late settlement is observed and discarded.
- */
-const untilAborted = <T>(
-  promise: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> =>
-  new Promise<T>((resolve, reject) => {
-    if (signal.aborted) {
-      promise.catch(() => {});
-      reject(cancelled());
-      return;
-    }
-    const onAbort = () => reject(cancelled());
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        signal.removeEventListener("abort", onAbort);
-        resolve(value);
-      },
-      (error: unknown) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(error);
-      },
-    );
-  });
-
-type BodyRead =
-  | { readonly kind: "text"; readonly text: string }
-  | { readonly kind: "too_large" };
-
-/**
- * Reads the body as UTF-8 under a byte cap. A declared Content-Length over the
- * cap is refused before reading; an undeclared or understated one is refused
- * the moment the running total crosses it. Rejects with `cancelled` on abort
- * and with the stream's own error on a read failure.
- */
-const readCappedBody = async (
-  response: Response,
-  maxBytes: number,
-  signal: AbortSignal,
-): Promise<BodyRead> => {
-  const declared = Number(response.headers.get("content-length") ?? "");
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    response.body?.cancel().catch(() => {});
-    return { kind: "too_large" };
-  }
-  if (!response.body) return { kind: "text", text: "" };
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let received = 0;
-  let text = "";
-  try {
-    for (;;) {
-      const { done, value } = await untilAborted(reader.read(), signal);
-      if (done) break;
-      received += value.byteLength;
-      if (received > maxBytes) {
-        reader.cancel().catch(() => {});
-        return { kind: "too_large" };
-      }
-      text += decoder.decode(value, { stream: true });
-    }
-  } catch (error) {
-    reader.cancel().catch(() => {});
-    throw error;
-  }
-  return { kind: "text", text: text + decoder.decode() };
-};
-
-const parseJson = (
-  text: string,
-): { readonly ok: true; readonly value: unknown } | { readonly ok: false } => {
-  try {
-    return { ok: true, value: JSON.parse(text) };
-  } catch {
-    return { ok: false };
-  }
-};
 
 const normalizeUsage = (raw: unknown): ModelUsage | null => {
   const usage = asObject(raw);
@@ -240,18 +159,11 @@ export function createOpenAiResponsesProvider(options: {
   /** Default 2_000_000. */
   readonly maxResponseBytes?: number;
 }): ModelProvider {
-  const apiKey = options.apiKey;
   // Fixed messages: the value that failed validation is the key.
-  if (typeof apiKey !== "string" || apiKey === "" || /\s/.test(apiKey)) {
-    throw new Error(
-      "the OpenAI API key must be a non-empty string without whitespace",
-    );
-  }
-  const maxResponseBytes =
-    options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
-  if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
-    throw new Error("maxResponseBytes must be a positive integer");
-  }
+  const apiKey = assertApiKeyShape(options.apiKey, "OpenAI");
+  const maxResponseBytes = assertMaxResponseBytes(
+    options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+  );
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => performance.now());
 
