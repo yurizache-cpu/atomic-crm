@@ -4371,6 +4371,62 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "No host, account or deployment exists yet: the Cloudflare and Fly.io configuration is written for the recommended option (docs/PRODUCTION_HOSTING_DECISION_PACKET.md §9) and takes effect only when the owner creates the accounts, which is the owner's acceptance. Wrangler and flyctl were not run in this repository; their releases are pinned (flyctl verified by its published checksum) and await the owner's validation under the dependency policy. A platform health check does not restart a stuck worker (Fly restarts an exited process): a stuck worker shows as failing and needs a person. The start gate judges configuration only; the database identity is still checked by the existing boot gates (assertWorkerIdentity, assertGatewayIdentity). The hosted database is not deployed by this workflow (deploy.yml, SI-40).",
   },
+  {
+    id: "SI-78",
+    statement:
+      "A model call leaves the process only as one of its run's authorized candidates: the database lists a run's candidates from its agent's pool after removing every model that is disabled, unpriced, without structured output or not authorized for the task's data class (BASELINE Q8), and ops.start_agent_run refuses any other provider and model (model_route_unavailable, model_not_authorized) before the price, the spend limits and the agent's daily ceiling, which it holds under lock; the router executes only a route it resolved itself, takes the first authorized candidate and never falls back to another after a call; OpenRouter cannot be authorized for person_text or health content; and a Jev structured decision is advice only: it is asked only about synthetic or test content, after the run is settled, counted in the same daily spend window, its answers held to the recorded question spec, and no decision function sends, decides a review, reaches the CRM, trips or clears a stop, writes a price or a limit, or moves a task or a run.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261006120000_model_gateway_registry.sql",
+        marker: /v_code := 'model_not_authorized';/,
+      },
+      {
+        file: "supabase/migrations/20261006120000_model_gateway_registry.sql",
+        marker:
+          /if new\.provider = 'openrouter' and new\.data_class in \('person_text', 'health'\) then/,
+      },
+      {
+        file: "supabase/migrations/20261007120000_structured_decisions.sql",
+        marker: /A STRUCTURED DECISION NEVER ACTS/,
+      },
+      {
+        file: "engine/models/router.ts",
+        marker: /const fromGateway = gateway !== null && issued\.has\(route\);/,
+      },
+      {
+        file: "supabase/tests/model_gateway.sql",
+        marker: /E1: a model outside the authorized candidates started/,
+      },
+      {
+        file: "supabase/tests/model_gateway.sql",
+        marker: /F1 OpenRouter authorized for/,
+      },
+      {
+        file: "supabase/tests/model_gateway.sql",
+        marker: /G7: a health task reached the decision model/,
+      },
+      {
+        file: "engine/domain/modelGatewayFlow.dbtest.ts",
+        marker:
+          /refuses health data before any request reaches a job, and no decision reaches Jev/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker: /never falls back to the next one/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.test.ts",
+        marker: /executes no route it did not resolve itself/,
+      },
+      {
+        file: "engine/models/openRouterChat.test.ts",
+        marker: /a substituted model is never a result/,
+      },
+    ],
+    caveat:
+      "OpenRouter's account settings (the training opt-out, any zero-data-retention setting, the key's credit limit) are owner account actions this repository cannot see; every request carries allow_fallbacks false and data_collection deny, but whether a provider honours them is the provider's. Jev's scores are uncalibrated and recorded as shadow advice that nothing reads to act; its routing advice never changes which model ran. Accepted response builds are owner data, so a provider serving an unrecorded build is refused (model_substituted) after the call was paid. The hosted Jev Router plugin is not used: its include list is silently ignored when nothing matches. Real-data authorization stays closed.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {
