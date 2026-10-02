@@ -184,7 +184,7 @@ A real model run with synthetic content needs a model account and its key in the
 - **Production database.** A second Free project is not taken while staging uses the last free slot. Go-live stops at **OWNER PRODUCTION DATABASE DECISION REQUIRED**.
 - **Remote runtime.** The worker and gateway run locally until a 24/7 worker or a public webhook is truly needed. That point stops at **OWNER COST APPROVAL REQUIRED — REMOTE RUNTIME**.
 
-## 11. Meta test probe (2026-10-02): PARTIAL, send blocked on the Meta account
+## 11. Meta test probe (2026-10-02): COMPLETE except two unobservable items
 
 This is ADR 0018 amendment 2's live probe, run on Meta's test number only, with synthetic text the owner typed. Nothing touched the owner's real numbers, and nothing touched the owner's earlier WhatsApp app ("whats Claude"), whose webhook points at the paused project `recepcao-clinica`.
 
@@ -215,12 +215,32 @@ This is ADR 0018 amendment 2's live probe, run on Meta's test number only, with 
 | Send request compatibility | **BLOCKED.** Eligibility passed. The outbound row committed `sending` before the one call, Meta answered error **131005** (access denied), and the row settled `failed` and was not resent (SI-50). Meta's own dashboard "Send message" failed the same way from both of the owner's apps. The token had both WhatsApp permissions and no account restriction, and the owner had full access to the test account. |
 | Provider message id; status callback format; `biz_opaque_callback_data` placement | **NOT YET VERIFIED.** All three need one successful send. |
 
-**Next:** a token of a system user. The business already has one, "Employee", with full access to the test account. Retry the send with that token, or open a Meta support case with the facts above. A retry needs a new inbound message and review, because nothing resends. The probe's evidence log is kept outside the repository; this section is its record.
+### Second run, the same day: the send works
+
+- **The token.** The owner created a system user, `atomic-crm`, with access to two things only: the app "Webhook" and two WhatsApp accounts, the test account and the future clinic number. It holds no access to "whats Claude".
+  - The existing system user "Employee" was not used, because it also reaches the owner's earlier app.
+  - Its token is a `SYSTEM_USER` token for "Webhook", expiring 2026-12-01.
+  - The first token generated carried only `whatsapp_business_management`, and the token was regenerated with `whatsapp_business_messaging` too. A send needs both.
+- **The number.** By owner decision (DECISIONS.md, "Meta probe on the future clinic number"), the send ran on **+55 27 98851-7402**. The owner states it is not the clinic's current number but its intended future one.
+  - It was subscribed to "Webhook" only for the test and unsubscribed right after; it delivers to "whats Claude" alone again.
+  - The staging test channel maps its phone number id, and the owner is registered as its test sender.
+- **The verify token was rotated before this run.** When the origin was down, `cloudflared` had logged a failed handshake's full URL, query string included, in the owner's terminal.
+
+| ADR 0018 amendment 2 item | Result |
+|---|---|
+| Send request compatibility | **PASS.** Graph v25.0, a `text` message with `recipient_type: individual`, `preview_url: false` and `biz_opaque_callback_data` in the request body. Meta accepted it. Eligibility passed, the row committed `sending` before the one call, and it settled `sent`. The reply reached the owner's phone. |
+| Provider message id | **PASS.** A `wamid.…` id, recorded on the outbound row. |
+| Status callback format | **PASS.** Two signed v26.0 status callbacks parsed. One was a no-op for the row already `sent`; none of the gateway's delivery counters records it. The other moved the row to `delivered`, matched by the provider message id. |
+| `read` status | **NOT OBSERVABLE.** The owner keeps read receipts off. |
+| `biz_opaque_callback_data` | **Accepted in the send body.** Whether Meta echoes it on the status callback is not observable here: the gateway logs no payload (SI-52), and the match used the provider message id. It matters only for a send whose answer was lost, and it stays UNVERIFIED. |
+
+The earlier 131005 was the user token, not the code: the same request went through with the system user token. The probe's evidence log is kept outside the repository; this section is its record.
 
 **Left in place:**
-- the "Webhook" app's subscription to the test account;
-- its callback URL, which points at the closed tunnel and is replaced on the next run;
+- the "Webhook" app's subscription to the test account (not to the future clinic number);
+- its callback URL, which points at a closed tunnel and is replaced on the next run;
+- the system user `atomic-crm` and its token in `%USERPROFILE%\.atomic-crm\staging.env`;
 - staging contact 7 "Yuri (teste)";
-- the test channel and the two test-sender rows.
+- the two staging test channels (the test number and the future clinic number) and their test-sender rows.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
