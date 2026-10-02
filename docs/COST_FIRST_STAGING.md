@@ -183,3 +183,44 @@ A real model run with synthetic content needs a model account and its key in the
 - **Custom SMTP.** Supabase's default sender reaches only the project's team members, about two messages an hour. Real invitations need a custom SMTP provider.
 - **Production database.** A second Free project is not taken while staging uses the last free slot. Go-live stops at **OWNER PRODUCTION DATABASE DECISION REQUIRED**.
 - **Remote runtime.** The worker and gateway run locally until a 24/7 worker or a public webhook is truly needed. That point stops at **OWNER COST APPROVAL REQUIRED — REMOTE RUNTIME**.
+
+## 11. Meta test probe (2026-10-02): PARTIAL, send blocked on the Meta account
+
+This is ADR 0018 amendment 2's live probe, run on Meta's test number only, with synthetic text the owner typed. Nothing touched the owner's real numbers, and nothing touched the owner's earlier WhatsApp app ("whats Claude"), whose webhook points at the paused project `recepcao-clinica`.
+
+**Setup:**
+- **The owner's Meta business.** It is verified and has three WhatsApp accounts:
+  - the real clinic number;
+  - a WhatsApp Business app number;
+  - Meta's test account, with the test number `+1 555-640-2728`.
+- **The app.** The developer app "Webhook" (`1340639637877252`) stayed in development mode.
+- **The gateway.** It ran locally through `scripts/with-staging.mjs --as gateway` (role `ops_gateway_login`). It was reached through an account-free `cloudflared` quick tunnel (release 2026.9.0, checksum verified), which the owner opened.
+- **The secrets.** The app secret, the verify token and a temporary access token were held only in `%USERPROFILE%\.atomic-crm\staging.env`.
+- **The staging test channel.** Owner acts through the connector:
+  - one test channel mapping the test number's phone number id to `staging-clinic` and `reception-agent`;
+  - the owner's phone registered as a test sender (`ops.register_test_sender`).
+- **The owner-only act launcher.** The acts ran through a scratch launcher that builds an owner `ADMIN_DATABASE_URL` from the local file (pooler, verify-full). It was not added to the repository: `with-staging.mjs` deliberately never builds an owner URL.
+
+**Verified:**
+
+| ADR 0018 amendment 2 item | Result |
+|---|---|
+| Webhook verification | **PASS.** Meta's handshake was accepted with the right verify token. A wrong token answered 403 and an unsigned POST answered 401, both through the tunnel. |
+| Signature behaviour | **PASS.** Meta's own signed sample and the owner's real messages were accepted by the `X-Hub-Signature-256` check over the raw bytes. |
+| Webhook payload format | **PASS.** Meta subscribed the `messages` field at **v26.0**; the send pin stays at Graph v25.0. The v26.0 payload adds `contacts[].user_id` and `messages[].from_user_id` (the business-scoped user id, BSUID), and the parser accepted them. |
+| Real inbound from the test recipient | **PASS.** It arrived even in development mode, once the app was subscribed to the test account (`POST /<test WABA>/subscribed_apps`, owner-approved). Before that, the test account delivered only to "whats Claude" and Meta's own dashboard app. |
+| Brazilian sender format | The owner's mobile arrived as 13 digits, with the leading 9. |
+| Q8 classification | The registered test sender's message became a `test` task: ADR 0020 D8 working end to end. |
+| Contact policy | **PASS, fail-closed.** The first message arrived before the owner existed as a CRM contact, so it was admitted `do_not_contact`. Its review could not be accepted, and creating the contact afterwards did not change that. The second message, after the contact existed, was accepted. |
+| Send request compatibility | **BLOCKED.** Eligibility passed. The outbound row committed `sending` before the one call, Meta answered error **131005** (access denied), and the row settled `failed` and was not resent (SI-50). Meta's own dashboard "Send message" failed the same way from both of the owner's apps. The token had both WhatsApp permissions and no account restriction, and the owner had full access to the test account. |
+| Provider message id; status callback format; `biz_opaque_callback_data` placement | **NOT YET VERIFIED.** All three need one successful send. |
+
+**Next:** a token of a system user. The business already has one, "Employee", with full access to the test account. Retry the send with that token, or open a Meta support case with the facts above. A retry needs a new inbound message and review, because nothing resends. The probe's evidence log is kept outside the repository; this section is its record.
+
+**Left in place:**
+- the "Webhook" app's subscription to the test account;
+- its callback URL, which points at the closed tunnel and is replaced on the next run;
+- staging contact 7 "Yuri (teste)";
+- the test channel and the two test-sender rows.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
