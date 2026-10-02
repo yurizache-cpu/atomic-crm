@@ -1399,11 +1399,11 @@ describe("the handler reaches the outside world only through its capabilities an
 });
 
 describe("ADR 0022: a gateway router chooses only among the database's authorized candidates", () => {
-  const gatewaySetup = (candidates: unknown) => {
-    const provider = createFakeModelProvider(
-      { type: "respond", content: VALID },
-      { name: "openrouter" },
-    );
+  const gatewaySetup = (
+    candidates: unknown,
+    behavior: FakeBehavior = { type: "respond", content: VALID },
+  ) => {
+    const provider = createFakeModelProvider(behavior, { name: "openrouter" });
     const modelRouter = createModelRouter({
       routes: new Map(),
       providers: new Map(),
@@ -1481,6 +1481,53 @@ describe("ADR 0022: a gateway router chooses only among the database's authorize
       expect(provider.calls).toHaveLength(0);
     }
   });
+
+  it.each([
+    [
+      { type: "fail", category: "provider_5xx", code: "http_503" },
+      "indeterminate",
+    ],
+    [
+      {
+        type: "fail",
+        category: "configuration",
+        code: "model_route_unavailable",
+      },
+      "failed",
+    ],
+  ] as const)(
+    "settles a failed call on the chosen candidate and never falls back to the next one: %j",
+    async (behavior, status) => {
+      const { provider, handler, caps } = gatewaySetup(
+        {
+          pool: "reception_low_cost",
+          candidates: [
+            {
+              gateway: "openrouter",
+              model: "vendor/first",
+              rank: 1,
+              acceptedBuilds: [],
+            },
+            {
+              gateway: "openrouter",
+              model: "vendor/second",
+              rank: 2,
+              acceptedBuilds: [],
+            },
+          ],
+        },
+        behavior,
+      );
+      const { detail } = await runCycle(handler, caps);
+      expect(provider.calls.map((call) => call.model)).toEqual([
+        "vendor/first",
+      ]);
+      expect(caps.startAgentRun).toHaveBeenCalledTimes(1);
+      expect(recordedFailure(caps)).toMatchObject({ code: behavior.code });
+      expect(detail).toContain(`status=${status}`);
+      expect(caps.used).not.toContain("recordAgentRunGatewayReport");
+    },
+  );
 
   it("refuses a candidate list it cannot read, starting nothing", async () => {
     const { handler, caps } = gatewaySetup({ candidates: "everything" });
