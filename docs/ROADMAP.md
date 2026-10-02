@@ -612,7 +612,17 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Production hosting and runtime (2026-09-29) — IMPLEMENTED; OWNER ACTION REQUIRED (ACCOUNTS)
+### Cost-first remote staging (2026-09-29) — WORKING (2026-10-01)
+
+Remote synthetic staging works with no new recurring cost: the Netlify frontend, Supabase Free staging on PostgreSQL 17 with the canonical migrations and no seed, AAL2 in a real browser, the CRM and the Company OS on synthetic data, and the real worker loop running locally against staging through its constrained role. Read [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md). Next, in order: the browser decision of the pending staging review; the Meta test probe (a free tunnel first); a real model run with synthetic content inside the US$5 cap (owner key). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+#### Recorded when it started
+
+PR #22 is integrated: normal merge `501e3efd2705651eb44e65a23c923e6a5b0f573c` into `feature/clinical-phase-1` (parents `889766cb` and `2eb7d337fab9b79c204666174ec66d97c3eaaea4`); the source branch `feature/production-hosting-runtime` is retained at `2eb7d337`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the live-origin check could pass on the previous release) and three P2 (a redirect elsewhere accepted, private IPv6 and CGNAT literals, a `/healthz` webhook path) were fixed before the merge in `2eb7d337`.
+
+**Owner cost-first adjustment (2026-09-29), before any infrastructure existed:** no new recurring paid infrastructure until product validation. The **Cloudflare frontend plan is SUPERSEDED BEFORE DEPLOYMENT** (nothing was created): the frontend goes to a NEW site on the owner's existing, already paid **Netlify** account. The **Fly.io deployment is DEFERRED** (nothing was created) until a validation step truly needs a 24/7 worker or a public webhook; the worker and gateway run LOCALLY against the hosted staging project meanwhile. The **remote staging database is ONE new Supabase Free project** (the organisation's one remaining free slot); the owner's existing active project `prisma-clinico-online` is **excluded: DO NOT TOUCH**, and no production project is created. Kept, as provider-neutral assets and a future runtime option: the host contract and verifier, the environment contract and start gate, the Dockerfile, the health endpoints, graceful shutdown and `fly.toml`. `scripts/publish-cloudflare.mjs` and `.github/workflows/deploy-hosted.yml` are no longer the current deployment path. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Production hosting and runtime (2026-09-29) — INTEGRATED (PR #22, merge `501e3efd`); Cloudflare SUPERSEDED before deployment, Fly DEFERRED
 
 Built on `feature/production-hosting-runtime` from `889766cb`. Read [PRODUCTION_DEPLOYMENT.md](PRODUCTION_DEPLOYMENT.md).
 

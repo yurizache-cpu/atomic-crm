@@ -77,7 +77,23 @@ export async function readDeployedOrigin(url, { allowLocal = false } = {}) {
       httpRedirect = "no answer on http";
     }
   }
+  // The release identifier a publisher uploads with the build
+  // (scripts/live-release.mjs); null when there is none. A host's
+  // single-page fallback answers HTML for a missing file, which parses as null.
+  let release = null;
+  try {
+    const answer = await get(new URL("/release.json", origin), {
+      redirect: "manual",
+    });
+    if (answer.status === 200) {
+      const value = JSON.parse(await answer.text())?.release;
+      release = typeof value === "string" ? value : null;
+    }
+  } catch {
+    release = null;
+  }
   return {
+    release,
     response: {
       url: page.url,
       status: page.status,

@@ -2,6 +2,7 @@
 // closed ops schema, GraphQL and OpenAPI, and the live catalogue itself
 // (supabase/tests/companyOsApiExposure.mjs).
 
+import { graphqlChannelAbsent } from "./graphqlChannel.mjs";
 import {
   EXPOSED,
   SCHEMA_REFUSAL,
@@ -104,6 +105,14 @@ export async function graphqlAndOpenApi(t, origin, rest) {
     },
     body: JSON.stringify({ query: INTROSPECTION }),
   });
+  // No pg_graphql: the channel reaches nothing (measured, not skipped).
+  if (!graphqlChannelAbsent(introspection)) {
+    graphqlReflectsNothing(t, introspection);
+  }
+  await openApiChecks(t, rest);
+}
+
+function graphqlReflectsNothing(t, introspection) {
   const schema = introspection.json?.data?.__schema;
   const fields = [
     ...(schema?.queryType?.fields ?? []),
@@ -140,7 +149,9 @@ export async function graphqlAndOpenApi(t, origin, rest) {
       `member: GraphQL exposes ${field}`,
     );
   }
+}
 
+async function openApiChecks(t, rest) {
   for (const [who, credential] of [
     ["none", t.keyCredentials.none],
     ["anon", t.keyCredentials.anon],

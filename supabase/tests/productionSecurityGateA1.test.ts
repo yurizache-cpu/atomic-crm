@@ -116,6 +116,21 @@ describe("no automatic third-party avatar or favicon enrichment (Gate A.1)", () 
     for (const dir of roots) if (existsSync(join(ROOT, dir))) walk(dir);
     expect(offenders).toEqual([]);
   });
+
+  // Upstream's anonymous usage beacon (an image request to a marmelab.com
+  // host) fires from <CRM> unless disableTelemetry is set. The CSP blocks it,
+  // measured on staging 2026-10-01, but the application must not attempt it.
+  it("switches off the upstream usage beacon wherever the application renders the CRM", () => {
+    const rendered = read("src/App.tsx")
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*(\*|\/\/)/.test(line))
+      .join("\n")
+      .match(/<CRM\b[^>]*>/g);
+    expect(rendered?.length).toBeGreaterThan(0);
+    for (const element of rendered ?? []) {
+      expect(element).toMatch(/\bdisableTelemetry\b(?!\s*=\s*\{\s*false)/);
+    }
+  });
 });
 
 describe("the declarative schema and the migration agree (Gate A.1)", () => {

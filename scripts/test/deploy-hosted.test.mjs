@@ -16,6 +16,7 @@ import {
   parseHeadersFile,
   renderHeadersFile,
 } from "../host-headers-file.mjs";
+import { releaseIdentifier } from "../live-release.mjs";
 import { WRANGLER_VERSION, publish } from "../publish-cloudflare.mjs";
 import {
   hostedSecurityHeaders,
@@ -57,8 +58,11 @@ const build = () => {
   );
   return dir;
 };
+/** Every build() is the same build, so it has one release identifier. */
+const RELEASE = releaseIdentifier(build());
 /** The deployed origin as a host that honours the headers file would answer. */
 const goodOrigin = async (url) => ({
+  release: RELEASE,
   response: {
     url,
     status: 200,

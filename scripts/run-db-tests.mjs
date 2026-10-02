@@ -131,7 +131,7 @@ const exposureWarning = (() => {
 // re-measure them before bumping either constant. MEASURED_SUPABASE_CLI lives in
 // scripts/supabase-cli.mjs, the one pin every database-gate and deploy path
 // shares.
-const MEASURED_POSTGRES_MAJOR = 15;
+const MEASURED_POSTGRES_MAJOR = 17;
 
 const versionMismatches = (() => {
   const found = [];

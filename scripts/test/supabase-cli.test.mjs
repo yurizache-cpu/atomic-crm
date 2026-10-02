@@ -109,6 +109,26 @@ describe("the measured Supabase CLI", () => {
   });
 });
 
+describe("the measured PostgreSQL major", () => {
+  // The S0.4 ownership mechanics were re-measured on 17 (2026-10-01), and the
+  // OD-8a end-state checks read columns PostgreSQL 16 introduced. A stack on
+  // another major fails those migrations, which is how a 15 left in
+  // config.e2e.toml silently stopped the e2e job before any test ran.
+  it("is the same in the runner and in every Supabase config a stack starts from", () => {
+    const measured = Number(
+      /const MEASURED_POSTGRES_MAJOR = (\d+);/.exec(
+        read("scripts/run-db-tests.mjs"),
+      )?.[1],
+    );
+    expect(measured).toBe(17);
+    for (const config of ["supabase/config.toml", "supabase/config.e2e.toml"]) {
+      expect(/^major_version = (\d+)$/m.exec(read(config))?.[1], config).toBe(
+        String(measured),
+      );
+    }
+  });
+});
+
 describe("no database-gate or deploy path runs an unpinned Supabase CLI", () => {
   it("database.yml calls only the measured package", () => {
     const text = read(".github/workflows/database.yml");

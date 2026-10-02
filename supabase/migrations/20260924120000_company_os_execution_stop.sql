@@ -207,8 +207,18 @@ begin
                   and not r.rolbypassrls and not r.rolinherit) then
     raise exception 'ops_operator_api is missing or carries a login or a blanket attribute';
   end if;
+  -- PostgreSQL 16 and later give the role's creator a membership at CREATE
+  -- ROLE: ADMIN OPTION without INHERIT or SET, granted by the bootstrap
+  -- superuser (OID 10), which the creator cannot revoke (measured 2026-10-01
+  -- on Supabase PostgreSQL 17.6). It lets the migration identity administer
+  -- the membership, as CREATEROLE did on 15, and confers no use of the role's
+  -- privileges. That one row is the only membership admitted at rest.
   if exists (select 1 from pg_catalog.pg_auth_members m
-              where m.roleid = 'ops_operator_api'::pg_catalog.regrole or m.member = 'ops_operator_api'::pg_catalog.regrole) then
+              where (m.roleid = 'ops_operator_api'::pg_catalog.regrole or m.member = 'ops_operator_api'::pg_catalog.regrole)
+                and not (m.roleid = 'ops_operator_api'::pg_catalog.regrole
+                         and m.member = 'postgres'::pg_catalog.regrole
+                         and m.grantor = 10::pg_catalog.oid
+                         and m.admin_option and not m.inherit_option and not m.set_option)) then
     raise exception 'ops_operator_api has a member or a membership at rest';
   end if;
   -- No CREATE on any persistent namespace or on the database; only this

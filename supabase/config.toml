@@ -24,7 +24,7 @@ port = 54322
 shadow_port = 54320
 # The database major version to use. This has to be the same as your remote database's. Run `SHOW
 # server_version;` on the remote database to check.
-major_version = 15
+major_version = 17
 
 # Registers the declarative schema with the CLI. AGENTS.md documents
 # `supabase/schemas/` as the source of truth and `supabase db diff` as the way
@@ -205,3 +205,43 @@ verify_jwt = false
 verify_jwt = false
 [functions.users]
 verify_jwt = false
+
+# Synthetic staging (docs/COST_FIRST_STAGING.md): the hosted project
+# atomic-crm-staging. When the CLI is linked to this project ref, `supabase
+# config push` merges these values over the local ones. Nothing here is a secret.
+[remotes.staging]
+project_id = "erhrochojnugszkkoqrv"
+
+[remotes.staging.api]
+# The hosted defaults plus the Company OS RPC schema. Not "storage": nothing in
+# the application reads it through the Data API, so staging does not expose it.
+schemas = ["public", "graphql_public", "company_os_api"]
+
+[remotes.staging.auth]
+site_url = "https://atomic-crm-staging.netlify.app"
+additional_redirect_urls = ["https://atomic-crm-staging.netlify.app/auth-callback.html"]
+# Self-registration stays closed; an owner makes every account.
+enable_signup = false
+
+[remotes.staging.auth.email]
+# The CLI sends [auth.email] enable_signup as the hosted EMAIL PROVIDER switch,
+# not as sign-up: false would disable email sign-in itself. Sign-up stays
+# closed through [remotes.staging.auth] enable_signup above.
+enable_signup = true
+# Addresses are confirmed, not taken on trust (the hosted verifier's advisory).
+enable_confirmations = true
+
+# The Free plan refuses custom email templates without custom SMTP (a go-live
+# requirement, docs/COST_FIRST_STAGING.md), so staging keeps Supabase's own:
+# the same subjects as the hosted defaults and no template file.
+[remotes.staging.auth.email.template.invite]
+subject = "You've been invited"
+content_path = ""
+
+[remotes.staging.auth.email.template.recovery]
+subject = "Reset your password"
+content_path = ""
+
+[remotes.staging.auth.sms]
+# Phone sign-in is off; the hosted default template is kept.
+template = "Your code is {{ .Code }}"

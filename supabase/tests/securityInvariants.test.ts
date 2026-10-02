@@ -2761,7 +2761,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-54",
     statement:
-      "company_os_api holds exactly the catalogued functions and no relation, sequence or type. Each L3 function is SECURITY DEFINER with search_path = '', owned by ops_operator_api, executable only by authenticated (and, implicitly, by its owner), and its body is exactly one call to its G function. ops_operator_api is NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS and NOINHERIT, has no members at rest and is in no login role's membership closure, holds USAGE on ops and EXECUTE on exactly the G set (and, outside ops, pg_catalog and information_schema, in a schema where it holds USAGE, only a pinned measured list), and holds no table, column or sequence privilege outside the catalogue reads PUBLIC gives every role and no CREATE on any schema or on the database. ops stays off the Data API.",
+      "company_os_api holds exactly the catalogued functions and no relation, sequence or type. Each L3 function is SECURITY DEFINER with search_path = '', owned by ops_operator_api, executable only by authenticated (and, implicitly, by its owner), and its body is exactly one call to its G function. ops_operator_api is NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS and NOINHERIT, has no member at rest but the automatic creator membership PostgreSQL 16 and later give the migration identity (ADMIN OPTION without INHERIT or SET, granted by the bootstrap superuser, which no non-superuser can revoke and which confers no use of the role), and is in no login role's membership closure through any other membership, holds USAGE on ops and EXECUTE on exactly the G set (and, outside ops, pg_catalog and information_schema, in a schema where it holds USAGE, only a pinned measured list), and holds no table, column or sequence privilege outside the catalogue reads PUBLIC gives every role and no CREATE on any schema or on the database. ops stays off the Data API.",
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
       {
@@ -4071,6 +4071,11 @@ const INVARIANTS: Invariant[] = [
           /names no third-party avatar or favicon host in application, function or schema source/,
       },
       {
+        file: "supabase/tests/productionSecurityGateA1.test.ts",
+        marker:
+          /switches off the upstream usage beacon wherever the application renders the CRM/,
+      },
+      {
         file: "supabase/tests/whatsapp_transport.sql",
         marker:
           /K3: ops_gateway executes a SECURITY DEFINER function outside ops/,
@@ -4286,7 +4291,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-77",
     statement:
-      "A deployed worker or WhatsApp gateway runs from one container image that defaults to DEPLOYMENT_ENVIRONMENT=production, runs as a non-root user and admits only the dependency manifests and the engine into its build (no environment file, key, schema or seed); at start, before any secret is read or connection opened, a staging or production process refuses a local or private database, a production one also a fake decision or calendar provider and synthetic ingress, and a misspelt environment is refused rather than read as local, each refusal naming variables and never values; its health endpoints answer a status and nothing else; and the frontend reaches its host only through scripts/publish-cloudflare.mjs, which writes the declared headers file, runs the production preflight before the upload and holds the deployed origin's actual response to the host contract after it, from a manually dispatched workflow whose deploy jobs directly need the gate and the live-database suites.",
+      "A deployed worker or WhatsApp gateway runs from one container image that defaults to DEPLOYMENT_ENVIRONMENT=production, runs as a non-root user and admits only the dependency manifests and the engine into its build (no environment file, key, schema or seed); at start, before any secret is read or connection opened, a staging or production process refuses a local or private database, a production one also a fake decision or calendar provider and synthetic ingress, and a misspelt environment is refused rather than read as local, each refusal naming variables and never values; its health endpoints answer a status and nothing else; and the frontend reaches its host only through a publish command that writes the declared headers file, runs the production preflight over what it uploads before the upload, and after it holds the deployed origin's actual response to the host contract, bound to the build just uploaded (scripts/live-release.mjs): scripts/publish-netlify.mjs, which uploads only a staged copy of the build with a configuration that builds nothing, or scripts/publish-cloudflare.mjs, from a manually dispatched workflow whose deploy jobs directly need the gate and the live-database suites.",
     provenBy: ["unit test", "static guard"],
     enforcedBy: [
       {
@@ -4318,6 +4323,19 @@ const INVARIANTS: Invariant[] = [
       {
         file: "scripts/publish-cloudflare.mjs",
         marker: /export async function publish/,
+      },
+      {
+        file: "scripts/publish-netlify.mjs",
+        marker: /const preflight = preflightFindings\(\{ dist: site, env \}\);/,
+      },
+      {
+        file: "scripts/live-release.mjs",
+        marker: /export async function verifyLiveRelease/,
+      },
+      {
+        file: "scripts/test/publish-netlify.test.mjs",
+        marker:
+          /uploads only a staged copy of the build with a publish-only configuration/,
       },
       {
         file: ".github/workflows/deploy-hosted.yml",
