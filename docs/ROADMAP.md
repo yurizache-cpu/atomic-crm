@@ -618,7 +618,7 @@ Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directiv
 
 - **Records:** DIRECT OPENAI/LUNA PRIMARY ARCHITECTURE: SUPERSEDED; OPENROUTER MULTI-MODEL GATEWAY: SELECTED; JEV BUSINESS DECISION LAYER: SELECTED; JEV ROUTING: SHADOW-FIRST.
 - **Built:** agent profiles (an agent is not a model); the model registry and pools as owner data; Q8 filtering candidates before any router, re-checked at the run's start, with the agent's daily ceiling; the OpenRouter chat adapter (one exact model, no fallback); Jev on the Decisions API for the business route, lead intelligence and model-route advice, shadow only, on one ledger after settlement; cost and quality reads; `npm run models`; `npm run staging:gateway-worker`. SI-78.
-- **Staging:** 67 migrations; five models, four pools and the Receptionist profile configured.
+- **Staging:** 68 migrations (the third, `20261008120000_model_gateway_hardening.sql`, carries the pre-PR review's corrections); five models, four pools and the Receptionist profile configured.
 - **WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02)** on `feature/staging-model-and-meta` at `9a4b234a` (pushed, not merged), with its own pause record. It resumes automatically after this milestone is merged and verified: that branch is brought onto the new head and WhatsApp is routed through the Company OS, Jev and the authorized pools on OpenRouter.
 - **Next:** the owner's OpenRouter key; the synthetic real-model run on staging (two demands); the PR into `feature/clinical-phase-1`; then WhatsApp. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 

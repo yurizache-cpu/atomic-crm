@@ -134,7 +134,7 @@ An independent review of the whole branch, before the pull request, found no P0 
 
 **Configured (2026-10-02),** on the staging project only, by owner acts through the connector:
 
-- the 67 canonical migrations;
+- the 68 canonical migrations, the hardening included;
 - five models in the registry, each with a price valid until 2026-12-31: `openai/gpt-6-luna`, `qwen/qwen3.5-flash-02-23`, `anthropic/claude-haiku-4.5`, `anthropic/claude-sonnet-5.5`, `typesafe/jev-1.13`, with their dated builds as accepted builds;
 - pools: `reception_low_cost` (Luna, Qwen, Haiku), `general_fast` (Luna), `reasoning_medium` (Sonnet), `structured_decision` (Jev);
 - the Receptionist profile above;
