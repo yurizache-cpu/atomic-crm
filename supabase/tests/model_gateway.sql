@@ -555,4 +555,148 @@ begin
 end
 $$;
 
+
+-- ===========================================================================
+-- H. Hardening (20261008120000): answers held NULL-safely to exactly the spec,
+--    an answered decision never charged zero, the reaper, the profile's pool
+--    tier, the agent's definition enforced, the ceiling's contention.
+-- ===========================================================================
+
+do $$
+declare
+  v_spec jsonb := '{"intent": {"type": "choice", "options": ["new_lead", "unknown"]},
+                    "complexity": {"type": "score", "levels": 3},
+                    "human_review": {"type": "noul"}}'::jsonb;
+  v_ok   jsonb := '{"intent": {"type": "choice", "choice": "new_lead"},
+                    "complexity": {"type": "score", "score": 1},
+                    "human_review": {"type": "noul", "noul": 0.2}}'::jsonb;
+begin
+  if not ops.structured_decision_answers_valid(v_spec, v_ok)
+     or ops.structured_decision_answers_valid(v_spec, jsonb_set(v_ok, '{intent}', '{"type": "choice"}'))
+     or ops.structured_decision_answers_valid(v_spec, jsonb_set(v_ok, '{complexity}', '{"type": "score"}'))
+     or ops.structured_decision_answers_valid(v_spec, jsonb_set(v_ok, '{human_review}', '{"type": "noul"}'))
+     or ops.structured_decision_answers_valid(v_spec, jsonb_set(v_ok, '{intent}', '{"type": "choice", "choice": 1}'))
+     or ops.structured_decision_answers_valid(v_spec, v_ok || '{"diagnosis": {"type": "noul", "noul": 0.9}}'::jsonb) then
+    raise exception 'H1: answers missing a value, or carrying an unasked key, were accepted';
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_dec  uuid;
+  v_job  uuid;
+  d      ops.structured_decisions;
+  k      text;
+  served text;
+begin
+  perform ops.set_model_enabled('openrouter', 'mg/decider-1', true, 'mg test: back on', 'mg-suite');
+  -- H2 a failed call that named a served model keeps its reservation; one with
+  -- no response at all is charged nothing.
+  foreach k in array array['answered', 'silent'] loop
+    insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                          decision_kind, question_set, idempotency_key, status)
+    values (pg_temp.id('tenant'), pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'),
+            pg_temp.id('task.e-cheap'), pg_temp.id('run.e-cheap'), 'business_route', 'business_routing.v1',
+            'mg:h2:' || k, 'pending')
+    returning id into v_dec;
+    v_job := ops.enqueue_job(pg_temp.id('tenant'), 'decision.structured_evaluate',
+                             jsonb_build_object('structured_decision_id', v_dec), 100, now(), 3, 'mg:h2:' || k);
+    update ops.structured_decisions set job_id = v_job where id = v_dec;
+    perform pg_temp.lease(v_job);
+    served := case when k = 'answered' then 'mg/decider-1-20260917' end;
+    execute 'set local role ops_worker';
+    perform ops.start_structured_decision('openrouter');
+    perform ops.settle_structured_decision('failed', null, served, null, null, null, 120, null, 'answers_missing');
+    execute 'reset role';
+    select * into d from ops.structured_decisions where id = v_dec;
+    if d.status <> 'failed'
+       or (k = 'answered' and d.charged_cost_micros <> d.reserved_cost_micros)
+       or (k = 'silent' and d.charged_cost_micros <> 0) then
+      raise exception 'H2: a failed decision (%) was charged % of its reservation %', k, d.charged_cost_micros, d.reserved_cost_micros;
+    end if;
+  end loop;
+
+  -- H3 a decision whose attempt died is settled by the reaper, at its reservation.
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status)
+  values (pg_temp.id('tenant'), pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'),
+          pg_temp.id('task.e-cheap'), pg_temp.id('run.e-cheap'), 'business_route', 'business_routing.v1',
+          'mg:h3', 'pending')
+  returning id into v_dec;
+  v_job := ops.enqueue_job(pg_temp.id('tenant'), 'decision.structured_evaluate',
+                           jsonb_build_object('structured_decision_id', v_dec), 100, now(), 3, 'mg:h3');
+  update ops.structured_decisions set job_id = v_job where id = v_dec;
+  perform pg_temp.lease(v_job);
+  execute 'set local role ops_worker';
+  perform ops.start_structured_decision('openrouter');
+  execute 'reset role';
+  update ops.jobs set lease_expires_at = clock_timestamp() - interval '1 minute' where id = v_job;
+  execute 'set local role ops_worker';
+  perform ops.settle_stale_agent_runs();
+  execute 'reset role';
+  select * into d from ops.structured_decisions where id = v_dec;
+  if d.status <> 'indeterminate' or d.error_code <> 'execution_interrupted'
+     or d.charged_cost_micros <> d.reserved_cost_micros or d.settled_at is null then
+    raise exception 'H3: the reaper did not settle a dead decision at its reservation (%, %)', d.status, d.charged_cost_micros;
+  end if;
+end
+$$;
+
+do $$
+declare
+  v_price    uuid;
+  v_reserved bigint;
+  v_spend    record;
+begin
+  -- H4 a capability's pool must be on its own route tier.
+  perform pg_temp.expect('H4 a pool on another tier', 'OS400', format($q$select ops.record_agent_profile(%L, %L, 'x',
+    array['lead_triage'], array['synthetic'], 10, 'UTC', '{"lead_triage": "reasoning_medium"}'::jsonb, 'mg-suite')$q$,
+    pg_temp.id('tenant'), pg_temp.id('agent')));
+  perform pg_temp.expect('H4 the decision pool', 'OS400', format($q$select ops.record_agent_profile(%L, %L, 'x',
+    array['lead_triage'], array['synthetic'], 10, 'UTC', '{"lead_triage": "structured_decision"}'::jsonb, 'mg-suite')$q$,
+    pg_temp.id('tenant'), pg_temp.id('agent')));
+
+  -- H5 an agent runs only its own capabilities on its own data classes.
+  perform ops.record_agent_profile(pg_temp.id('tenant'), pg_temp.id('agent'), 'Triage test enquiries only.',
+                                   array['lead_triage'], array['test'], 100000000, 'UTC', '{}'::jsonb, 'mg-suite');
+  perform pg_temp.task('h-class', 'synthetic');
+  perform pg_temp.request('h-class');
+  if pg_temp.start('h-class', 'fake', 'mg-fake') <> 'cancelled'
+     or (pg_temp.run('h-class')).error_code <> 'agent_not_permitted' then
+    raise exception 'H5: a data class outside the agent''s definition started (%)', (pg_temp.run('h-class')).error_code;
+  end if;
+  perform ops.record_agent_profile(pg_temp.id('tenant'), pg_temp.id('agent'), 'Assess tasks only.',
+                                   array['task_assessment'], array['synthetic', 'test'], 100000000, 'UTC',
+                                   '{}'::jsonb, 'mg-suite');
+  perform pg_temp.task('h-capability', 'synthetic');
+  perform pg_temp.request('h-capability');
+  if pg_temp.start('h-capability', 'openrouter', 'mg/cheap') <> 'cancelled'
+     or (pg_temp.run('h-capability')).error_code <> 'agent_not_permitted' then
+    raise exception 'H5: a capability outside the agent''s definition started (%)', (pg_temp.run('h-capability')).error_code;
+  end if;
+
+  -- H6 room taken only by calls in flight is contention (OS429, retried), never
+  -- a refusal: settled spend plus this run fits, in-flight spend tips it over.
+  perform pg_temp.task('h-contended', 'synthetic');
+  perform pg_temp.request('h-contended');
+  v_price := ops.current_model_price('openrouter', 'mg/cheap', now());
+  v_reserved := ops.agent_run_reservation_for(pg_temp.id('tenant'), pg_temp.id('company'),
+                                              pg_temp.id('task.h-contended'), pg_temp.id('agent'), 'standard', v_price);
+  select * into v_spend from ops.agent_spend_window(pg_temp.id('tenant'), pg_temp.id('agent'), 'UTC');
+  if v_spend.p_in_flight < 1 then
+    raise exception 'H6 setup: no call in flight for the agent';
+  end if;
+  perform ops.record_agent_profile(pg_temp.id('tenant'), pg_temp.id('agent'), 'Triage synthetic enquiries.',
+                                   array['lead_triage'], array['synthetic', 'test'],
+                                   v_spend.p_settled + v_reserved + v_spend.p_in_flight - 1, 'UTC',
+                                   '{}'::jsonb, 'mg-suite');
+  perform pg_temp.expect('H6 contention with calls in flight', 'OS429',
+    $q$select pg_temp.start('h-contended', 'openrouter', 'mg/cheap')$q$);
+  if (pg_temp.run('h-contended')).status <> 'pending' then
+    raise exception 'H6: contention recorded an outcome instead of leaving the run pending';
+  end if;
+end
+$$;
+
 rollback;

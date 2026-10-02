@@ -85,7 +85,7 @@ event / message / task
 - **The pools.** `ops.model_pools` names a pool, its purpose and its route tier (output ceiling and timeout); its members are `ops.model_pool_members` (pool, gateway, model, rank).
   - The pool definitions are architecture and ship in a migration. Members are owner data.
   - Only the pools used now exist: `reception_low_cost` (lead triage), `general_fast` (task assessment) and `reasoning_medium` (reserved for escalation; empty until used).
-- **Which pool a run uses.** A capability names its default pool, and an agent profile (§G) may name another pool for a capability. **A run's pool is fixed when it is requested,** so the evidence cannot move afterwards.
+- **Which pool a run uses.** A capability names its default pool, and an agent profile (§G) may name another pool for a capability, on that capability's own route tier (a profile naming a pool on another tier is refused). **The pool is resolved when the run starts,** from the profile current at that moment, and the start records it with the candidates and the model in `ops.agent_run_routes`, so the evidence of what was allowed cannot move afterwards.
 
 ## D. Q8 removes candidates before any router sees them
 
@@ -111,7 +111,7 @@ Both are rows of one provider-neutral ledger, `ops.structured_decisions`, with a
    - **What it records:** the answers with their probabilities and confidence, the exact Jev build, and the route the deterministic path actually took, for comparison.
    - **Deterministic rules can still force human review**, whatever Jev says.
 2. **Model-routing advice** (kind `model_route`):
-   - **When:** after the business decision settles, so its complexity is known.
+   - **When:** requested with the business decision, after the run settles, and queued behind it (a lower priority). It reads the business decision's complexity when it starts; if that decision has not settled by then (several workers, or a held job), the complexity is sent as `unknown`.
    - **What it asks:** Jev chooses among *that run's authorized candidates*, described by their registry classes, given the capability and the business decision's complexity when one exists.
    - **What it records:** the candidates, the model the deterministic policy executed and Jev's choice. Because execution is deterministic during shadow, there is no extra call before the run and no fallback question.
 
@@ -130,7 +130,7 @@ Kind `lead_intelligence` (question set `lead_intelligence.v1`) is a third row ki
 
 **Its state is built from an allowlist of operational fields only:**
 - the triage's intent and priority enums;
-- the CRM funnel state;
+- the CRM funnel state: the stage and whether an open opportunity exists. Today an inbound message is not linked to a deal, so both are sent as `unknown`, never as a guessed `none` or `no`;
 - counts and intervals of interactions.
 
 **It never includes** the message text, a summary, a diagnosis, a condition, medication, the severity of suffering or any clinical record. The builder is tested to refuse anything else. Sensitive health information is never a lever for commercial pressure.
@@ -149,7 +149,9 @@ Each output is stored with its probabilities, the model build and the time. Outc
 - a daily cost ceiling;
 - a model pool per capability.
 
-**The ceiling is enforced.** `ops.start_agent_run` refuses `agent_budget_exhausted` when the agent's settled and running charges for today, plus the run's reservation, would exceed it. This applies in addition to the global, tenant and company limits.
+**The definition is enforced.** With a current profile, `ops.start_agent_run` refuses `agent_not_permitted` when the run's capability or the task's data class is not in it. The tools list must stay empty.
+
+**The ceiling is enforced.** Under a per-agent lock, `ops.start_agent_run` refuses `agent_budget_exhausted` when the agent's settled charges for today plus the run's reservation exceed it. When only calls still in flight leave no room, the start raises `OS429` and the run is retried after they settle, the split `ops.spend_admission` makes for the global and tenant limits. The ceiling covers the agent's own runs. Its shadow decisions count in the global and tenant windows and are reported per agent by `ops.model_economics`; they never consume the agent's ceiling, so evaluation cannot starve the agent's work.
 
 The staging tenant's `reception-agent` becomes the **Receptionist**: lead triage, the `reception_low_cost` pool, human review required, and a small ceiling. Any authorized model in its pool can execute it without redefining the agent.
 
@@ -175,6 +177,9 @@ Prompts are not stored for analytics. Retention (ADR 0020 §I) is unchanged.
 | **Jev unavailable, invalid, an unexpected answer type or a missing key** | The decision row settles `failed`, `invalid` or `indeterminate`; nothing downstream changes. |
 | **Low confidence or unknown intent** | Recorded as such. When the decision becomes authoritative later, these route to human review. |
 | **Budget exhausted** (global, tenant, company or agent), **kill switch, data class not authorized** | The existing codes. |
+| **A run outside the agent's definition** (a capability or data class its profile lacks) | Refused `agent_not_permitted`; no call. |
+| **Calls in flight fill the agent's ceiling** | `OS429`: the run stays pending and is retried after they settle; only settled spend refuses it. |
+| **A decision's attempt dies** | The reaper settles it `indeterminate`, charged at its reservation; it is never asked again. |
 | **A forbidden fallback** | Impossible by construction: one exact model, `allow_fallbacks: false`, and no `models` list. |
 
 ## J. What this record does NOT do

@@ -219,8 +219,8 @@ describe("model_route.v1", () => {
 const signals: LeadSignals = {
   intent: "pricing",
   priority: "normal",
-  funnel_stage: "none",
-  has_open_opportunity: false,
+  funnel_stage: "unknown",
+  has_open_opportunity: "unknown",
   inbound_messages: 1,
   days_since_first_contact: 0,
   hours_since_last_inbound: 0,
@@ -261,6 +261,12 @@ describe("lead_intelligence.v1: clinical content is never a commercial signal", 
       buildLeadIntelligenceRequest(JEV, {
         ...signals,
         intent: "self_harm" as never,
+      }),
+    ).toThrow(/out of range/);
+    expect(() =>
+      buildLeadIntelligenceRequest(JEV, {
+        ...signals,
+        has_open_opportunity: false as never,
       }),
     ).toThrow(/out of range/);
   });

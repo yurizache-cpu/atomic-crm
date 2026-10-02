@@ -8,11 +8,13 @@
 //
 // It is the deployable worker's registry, built from the same environment
 // (createModelRouterFromEnv, structuredDecisionsFromEnv), under every gate of
-// runOneJob, with three differences that bound a paid test:
+// runOneJob, with these differences that bound a paid test:
 //   * it refuses every environment but staging, and a worker with no gateway;
 //   * it works the queue until it is idle or STAGING_MAX_JOBS jobs (default 10,
 //     at most 20) have run, then exits;
-//   * it prints one JSON line per job: ids, kinds and outcomes, never content.
+//   * it prints one JSON line per job: ids, kinds and outcomes, never content;
+//   * the reaper tick's maintenance runs once before and once after the loop,
+//     and the lease is sized to the longest configured route.
 // Which model is called is the database's choice among the authorized
 // candidates; the spend limits and the agent's ceiling still apply.
 
@@ -25,8 +27,15 @@ import type { WorkerDatabase } from "../db/types.ts";
 import { structuredDecisionsFromEnv } from "../decision/structured/gatewayFromEnv.ts";
 import { createModelRouterFromEnv } from "../models/routingConfig.ts";
 import { assertDeploymentEnvironment } from "../runtime/deploymentEnvironment.ts";
+import {
+  assertLeaseFitsModelRoutes,
+  LEASE_PREPARE_ALLOWANCE_MS,
+} from "../worker/main.ts";
 import { createHandlerRegistry } from "../worker/registry.ts";
-import { runOneJob } from "../worker/runOneJob.ts";
+import {
+  DEFAULT_LEASE_SAFETY_MARGIN_MS,
+  runOneJob,
+} from "../worker/runOneJob.ts";
 import {
   EXIT_OK,
   EXIT_REFUSED,
@@ -38,6 +47,38 @@ import {
 const WORKER_DATABASE_URL = "OPS_WORKER_DATABASE_URL";
 export const DEFAULT_MAX_JOBS = 10;
 export const MAX_JOBS_CEILING = 20;
+const MIN_LEASE_SECONDS = 60;
+
+/**
+ * The maintenance the deployable worker runs on its reaper tick, once: expired
+ * leases recovered, runs and decisions a dead attempt left running settled,
+ * and the spend ceiling enforced. Each step is its own transaction and a
+ * failure is reported, never fatal, as in runWorker.
+ */
+async function maintain(
+  db: WorkerDatabase,
+  stdout: (line: string) => void,
+): Promise<void> {
+  for (const [step, sql] of [
+    ["reap_expired_leases", "select ops.reap_expired_leases() as n"],
+    ["settle_stale_agent_runs", "select ops.settle_stale_agent_runs() as n"],
+    [
+      "enforce_spend_ceiling",
+      "select ops.enforce_spend_ceiling() is not null as n",
+    ],
+  ] as const) {
+    try {
+      const value = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ n: unknown }>(sql);
+        return rows[0]?.n ?? null;
+      });
+      stdout(jsonLine({ step, result: String(value) }));
+    } catch {
+      stdout(jsonLine({ step, result: "failed" }));
+    }
+  }
+}
 
 export interface StagingGatewayWorkerDependencies {
   readonly env: Readonly<Record<string, string | undefined>>;
@@ -94,10 +135,27 @@ export async function runStagingGatewayWorker({
   }
 
   let registry;
+  let leaseSeconds: number;
   try {
     const structured = structuredDecisionsFromEnv(env);
+    const modelRouter = createModelRouterFromEnv(env);
+    // Sized like the smoke run's lease: the longest configured route, the
+    // prepare allowance and the safety margin always fit inside it.
+    leaseSeconds = Math.max(
+      MIN_LEASE_SECONDS,
+      Math.ceil(
+        (LEASE_PREPARE_ALLOWANCE_MS +
+          modelRouter.maxConfiguredTimeoutMs +
+          DEFAULT_LEASE_SAFETY_MARGIN_MS) /
+          1000,
+      ),
+    );
+    assertLeaseFitsModelRoutes(
+      leaseSeconds,
+      modelRouter.maxConfiguredTimeoutMs,
+    );
     registry = createHandlerRegistry({
-      modelRouter: createModelRouterFromEnv(env),
+      modelRouter,
       structuredDecisionGateway: structured.gateway,
       requestsStructuredDecisions: structured.requestsStructuredDecisions,
     });
@@ -110,9 +168,10 @@ export async function runStagingGatewayWorker({
   try {
     assertWorkerIdentity(await db.identity());
     const workerId = `staging-gateway-${hostname()}-${process.pid}`;
+    await maintain(db, stdout);
     let jobs = 0;
     for (; jobs < maxJobs; jobs += 1) {
-      const result = await runOneJob(db, { workerId, registry });
+      const result = await runOneJob(db, { workerId, registry, leaseSeconds });
       if (result.outcome === "idle") break;
       stdout(
         jsonLine({
@@ -129,6 +188,7 @@ export async function runStagingGatewayWorker({
     stdout(
       jsonLine({ step: jobs < maxJobs ? "idle" : "stopped_at_limit", jobs }),
     );
+    await maintain(db, stdout);
     return EXIT_OK;
   } finally {
     await db.close();

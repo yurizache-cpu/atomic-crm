@@ -4374,7 +4374,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-78",
     statement:
-      "A model call leaves the process only as one of its run's authorized candidates: the database lists a run's candidates from its agent's pool after removing every model that is disabled, unpriced, without structured output or not authorized for the task's data class (BASELINE Q8), and ops.start_agent_run refuses any other provider and model (model_route_unavailable, model_not_authorized) before the price, the spend limits and the agent's daily ceiling, which it holds under lock; the router executes only a route it resolved itself, takes the first authorized candidate and never falls back to another after a call; OpenRouter cannot be authorized for person_text or health content; and a Jev structured decision is advice only: it is asked only about synthetic or test content, after the run is settled, counted in the same daily spend window, its answers held to the recorded question spec, and no decision function sends, decides a review, reaches the CRM, trips or clears a stop, writes a price or a limit, or moves a task or a run.",
+      "A model call leaves the process only as one of its run's authorized candidates: the database lists a run's candidates from its agent's pool after removing every model that is disabled, unpriced, without structured output or not authorized for the task's data class (BASELINE Q8), and ops.start_agent_run refuses any other provider and model (model_route_unavailable, model_not_authorized) before the price, the spend limits and the agent's daily ceiling, which it holds under lock, and refuses a run whose capability or data class is outside the agent's current profile (agent_not_permitted); the router executes only a route it resolved itself, takes the first authorized candidate and never falls back to another after a call; OpenRouter cannot be authorized for person_text or health content; and a Jev structured decision is advice only: it is asked only about synthetic or test content, after the run is settled, counted in the same daily spend window, its answers held by the database to exactly the recorded question spec, and no decision function sends, decides a review, reaches the CRM, trips or clears a stop, writes a price or a limit, or moves a task or a run.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4422,6 +4422,19 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/models/openRouterChat.test.ts",
         marker: /a substituted model is never a result/,
+      },
+      {
+        file: "supabase/migrations/20261008120000_model_gateway_hardening.sql",
+        marker: /v_code := 'agent_not_permitted';/,
+      },
+      {
+        file: "supabase/tests/model_gateway.sql",
+        marker:
+          /H1: answers missing a value, or carrying an unasked key, were accepted/,
+      },
+      {
+        file: "supabase/tests/model_gateway.sql",
+        marker: /H5: a data class outside the agent''s definition started/,
       },
     ],
     caveat:

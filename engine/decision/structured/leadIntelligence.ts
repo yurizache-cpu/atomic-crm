@@ -41,7 +41,8 @@ export interface LeadSignals {
   readonly priority: "low" | "normal" | "high";
   /** A configured CRM stage code, or `none`. */
   readonly funnel_stage: string;
-  readonly has_open_opportunity: boolean;
+  /** Whether the contact has an open deal; `unknown` until the CRM link exists, never a guessed `no`. */
+  readonly has_open_opportunity: "yes" | "no" | "unknown";
   readonly inbound_messages: number;
   readonly days_since_first_contact: number;
   readonly hours_since_last_inbound: number;
@@ -55,6 +56,7 @@ const INTENTS = new Set([
   "other",
 ]);
 const PRIORITIES = new Set(["low", "normal", "high"]);
+const TRI_STATE = new Set(["yes", "no", "unknown"]);
 const STAGE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const isCount = (value: unknown, max: number) =>
   typeof value === "number" &&
@@ -80,7 +82,7 @@ export function leadSignalsState(
     !INTENTS.has(signals.intent) ||
     !PRIORITIES.has(signals.priority) ||
     !STAGE.test(signals.funnel_stage) ||
-    typeof signals.has_open_opportunity !== "boolean" ||
+    !TRI_STATE.has(signals.has_open_opportunity) ||
     !isCount(signals.inbound_messages, 10_000) ||
     !isCount(signals.days_since_first_contact, 36_500) ||
     !isCount(signals.hours_since_last_inbound, 876_000)

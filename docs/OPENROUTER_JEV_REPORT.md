@@ -50,6 +50,7 @@ inbound (synthetic or test) → admission → task (data class from provenance)
 | Router | `engine/models/router.ts`, `engine/models/routingConfig.ts` | A gateway mode, exclusive with the static routes: the router resolves only a candidate the database listed, and executes only a route it resolved itself. `AGENT_MODEL_GATEWAY=openrouter` with `OPENROUTER_API_KEY`. |
 | Database | `20261006120000_model_gateway_registry.sql` | `ops.model_registry`, `ops.model_pools`, `ops.model_pool_members`, `ops.agent_profiles`, `ops.agent_run_routes`; the candidate gate and the agent ceiling in `ops.start_agent_run`; OpenRouter refused for `person_text` and `health` authorizations; owner acts. |
 | Database | `20261007120000_structured_decisions.sql` | `ops.structured_decisions` (one ledger for both Jev uses), its job kind `decision.structured_evaluate`, the decision's own reservation inside the daily spend window, `ops.decision_outcomes`, and the reads `ops.structured_decision_summary` and `ops.model_economics`. |
+| Database | `20261008120000_model_gateway_hardening.sql` | The pre-PR review's corrections (§7a): answers held NULL-safely to exactly the asked questions; an answered decision never charged zero; a profile's pool on its capability's own tier; the agent's definition enforced (`agent_not_permitted`); the ceiling's settled spend refusing and calls in flight retried (`OS429`); the reaper settling a decision whose attempt died; no current OpenRouter authorization for protected content. |
 | Worker | `engine/handlers/agentRunExecute.ts`, `engine/handlers/structuredDecisionEvaluate.ts`, `engine/worker/*` | Four new lease-bound capabilities; the after-settlement step that requests the decisions; the decision handler, which builds its questions, holds them to the recorded spec and calls Jev once. |
 | Owner tool | `engine/cli/models.ts` (`npm run models`) | Reads: `list`, `profiles`, `decisions`, `economics`. Acts: `record`, `enable`, `disable`, `pool add`, `pool remove`, `profile record`, `outcome record`. |
 | Staging run | `engine/cli/stagingGatewayWorker.ts` (`npm run staging:gateway-worker`) | The real worker registry on the real gateway, staging only, at most 20 jobs, one JSON line per job and never content. |
@@ -90,11 +91,44 @@ Every failure is closed and recorded; ADR 0022 §I has the table. Proven cases:
 | A served build that was not requested | `model_substituted`, cost kept | `openRouterChat.test.ts`, `model_gateway.sql` G5 |
 | A failed call on the first candidate | settled; the second candidate is never called | `agentRunExecute.test.ts` |
 | Agent ceiling reached | `agent_budget_exhausted` | `model_gateway.sql` E8 |
+| Ceiling filled only by calls in flight | `OS429`, the run stays pending | `model_gateway.sql` H6 |
+| A capability or data class outside the agent's profile | `agent_not_permitted` | `model_gateway.sql` H5 |
+| A profile pool on another route tier | refused OS400 | `model_gateway.sql` H4 |
+| Answers missing a value or adding an unasked key | refused by the database too | `model_gateway.sql` H1 |
+| A failed decision the model answered | charged its reservation, never zero | `model_gateway.sql` H2 |
+| A decision whose attempt died | the reaper settles it `indeterminate` | `model_gateway.sql` H3 |
 | Jev answers outside the spec | `answers_rejected` | `structuredDecisionEvaluate.test.ts`, `model_gateway.sql` G2 |
 
 ## 7. Evidence
 
-To be completed by the broad validation at the end of the milestone.
+The broad local validation, on 2026-10-02, after a clean `db reset` of the isolated e2e stack:
+
+- **`test:db`:** 25 of 26 suites pass, including the new `model_gateway.sql` (sections A to G). The one red is `ownerSessionPool.mjs`, which fails locally on this machine only: the edge runtime and the antivirus's HTTPS interception (CLAUDE.md, Known issues). CI is its judge.
+- **`test:db:engine`:** 409 of 409 driver-backed tests in 55 files, including the new end-to-end `modelGatewayFlow.dbtest.ts`, which runs the real worker loop and database with scripted gateways: cases A and B and four failure cases.
+- **`test:db:upgrade`:** PASS. Legacy data keeps its meaning across the two new migrations.
+- **Unit projects:** 3830 passed and 30 skipped. The only reds are local false reds:
+  - an untracked, stale `.claude/worktrees/` copy of the hooks;
+  - two `scripts/` tests that cannot be collected from a CRLF checkout of a hashbang script. Converted to LF, as git stores them and CI checks them out, they pass 22 of 22.
+- **Security invariants:** 85 of 85, SI-78 included.
+- **Typecheck and lint:** 0 errors.
+- **Mutation-tested guards:** the candidate gate (E1, two mutations), the OpenRouter refusal for protected classes (F1), the agent ceiling (E8), the decision's answer and substitution checks (G5), its spend window (G4) and its Q8 refusal (G7); after the pre-PR review (§7a), eight more: the NULL-safe answer check and the unasked key (H1), the charge of an answered failure (H2), the reaper (H3), the profile tier (H4), the agent's definition (H5) and both halves of the ceiling split (H6). Each mutation turned its named assertion red.
+
+## 7a. Pre-PR review
+
+An independent review of the whole branch, before the pull request, found no P0 and no P1, and ten P2. Eight were fixed in `20261008120000_model_gateway_hardening.sql` and the code; two were corrected in the documentation:
+
+| # | Finding | Resolution |
+|---|---|---|
+| 1 | The database's answer check was NULL-unsafe and accepted unasked keys | Fixed; H1 |
+| 2 | A failed decision the model answered could be charged zero | Fixed: zero only without a served model; H2 |
+| 3 | Calls in flight could permanently refuse a run under the agent ceiling | Fixed: settled spend refuses, in-flight spend is OS429; H6 |
+| 4 | Decision spend is outside the agent ceiling | Documented: the ceiling covers the agent's own runs; decisions count in the global and tenant windows (ADR §G) |
+| 5 | Lead intelligence sent `has_open_opportunity: false` without knowing it | Fixed: `unknown`, a three-valued signal |
+| 6 | The ADR said the pool is fixed at request and the advice runs after the business decision | Corrected to what the code does (ADR §C, §E) |
+| 7 | A profile pool on the wrong tier silently refused every run; capabilities and data classes were not enforced | Fixed; H4, H5 |
+| 8 | A decision whose job died stayed running | Fixed: the reaper settles it; H3 |
+| 9 | The OpenRouter ban covered new authorizations only | The end state asserts none exists |
+| 10 | The staging worker skipped the lease check and the reaper | Fixed: the lease is sized to the longest route, and the maintenance runs before and after the loop |
 
 ## 8. Staging
 
