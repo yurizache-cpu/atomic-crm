@@ -891,7 +891,7 @@ $$;
 -- ---------------------------------------------------------------------------
 
 revoke all on table ops.structured_decisions, ops.decision_outcomes
-  from public, anon, authenticated, service_role, ops_worker, ops_gateway, ops_operator_api;
+  from public, anon, authenticated, service_role, ops_worker, ops_gateway;
 
 revoke all on function
   ops.guard_structured_decision_change(),
@@ -908,7 +908,7 @@ revoke all on function
   ops.record_decision_outcome(uuid, uuid, text, bigint, timestamptz, text),
   ops.structured_decision_summary(uuid),
   ops.model_economics(uuid, timestamptz)
-  from public, anon, authenticated, service_role, ops_worker, ops_gateway, ops_operator_api;
+  from public, anon, authenticated, service_role, ops_worker, ops_gateway;
 
 grant execute on function
   ops.request_structured_decisions_for_settled_job(text, uuid),

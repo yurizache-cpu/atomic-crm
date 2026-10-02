@@ -122,7 +122,7 @@ comment on table ops.model_pools is
   'ADR 0022: a named set of candidate models a capability or an agent asks for, with the route tier (output ceiling and timeout) its runs use. Definitions ship here; members are owner data (ops.model_pool_members).';
 
 insert into ops.model_pools (name, purpose, model_route) values
-  ('reception_low_cost', 'Reception work: triage of inbound enquiries at the lowest cost that handles it.', 'standard'),
+  ('reception_low_cost', 'Front-desk work: triage of inbound enquiries at the lowest cost that handles it.', 'standard'),
   ('general_fast', 'General internal assessments: fast and inexpensive.', 'standard'),
   ('reasoning_medium', 'Escalation for complex work that needs extended reasoning. Unused until a rule escalates to it.', 'reasoning');
 
@@ -838,7 +838,7 @@ $$;
 
 revoke all on table ops.model_registry, ops.model_pools, ops.model_pool_members, ops.agent_profiles,
                     ops.agent_run_routes
-  from public, anon, authenticated, service_role, ops_worker, ops_gateway, ops_operator_api;
+  from public, anon, authenticated, service_role, ops_worker, ops_gateway;
 
 revoke all on function
   ops.guard_model_registry_change(),
@@ -860,7 +860,7 @@ revoke all on function
   ops.add_model_pool_member(text, text, text, integer, text),
   ops.remove_model_pool_member(text, text, text, text, text),
   ops.record_agent_profile(uuid, uuid, text, text[], text[], bigint, text, jsonb, text)
-  from public, anon, authenticated, service_role, ops_worker, ops_gateway, ops_operator_api;
+  from public, anon, authenticated, service_role, ops_worker, ops_gateway;
 
 grant execute on function
   ops.start_agent_run(text, text, text, text, integer),
