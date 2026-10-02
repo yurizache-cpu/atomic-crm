@@ -612,7 +612,29 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Staging real model and Meta test probe (2026-10-02) — IN PROGRESS
+### Staging real model and Meta test probe (2026-10-02) — PAUSED BY OWNER
+
+**WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02).** The owner moved the priority to OpenRouter + Jev + a multi-model Company OS. WhatsApp resumes automatically once that milestone is implemented, reviewed, merged and verified after the merge.
+
+- **Branch and head.** `feature/staging-model-and-meta` from `6da21fbd`, kept as is: the head is this commit, with nothing discarded and nothing merged.
+- **Done:**
+  - the Meta live probe (ADR 0018 amendment 2), complete except two unobservable items ([docs/COST_FIRST_STAGING.md](docs/COST_FIRST_STAGING.md) §11);
+  - ADR 0021 Proposed, the production WhatsApp gate's decisions W1 to W8;
+  - `with-staging --pass`.
+- **Superseded before it ran:** the planned real-model run on a direct OpenAI `gpt-6-luna` key. The model path becomes OpenRouter.
+- **Next step on resume:**
+  1. Bring this branch onto the new `feature/clinical-phase-1`, the safest strategy for its commits.
+  2. Route WhatsApp events through the Company OS, the Jev routing and the authorized model pool to OpenRouter, never coupled to one model.
+  3. Open this milestone's PR.
+- **External dependencies:**
+  - the owner's and counsel's decisions W1 to W8 in ADR 0021;
+  - a production webhook host (W7);
+  - the system-user token, which expires 2026-12-01 and is kept in `%USERPROFILE%\.atomic-crm\staging.env`;
+  - a fresh quick tunnel and verify token for each probe run.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.** ~~WhatsApp milestone text follows.~~ 
+
+**Earlier status: IN PROGRESS.**
 
 PR #23 is integrated: normal merge `6da21fbd5640555c220de4300248de182fcc4a73` into `feature/clinical-phase-1` (parents `501e3efd` and `53bf6d47b5993255d6a402785bc373d65e87e742`); the source branch `feature/cost-first-staging` is retained at `53bf6d47`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS, now on PostgreSQL 17; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the uploader inherited the whole shell environment) and P2 (the live check bound the release only to its script paths) were fixed before the merge in `53bf6d47` (`scripts/publisher-environment.mjs`; `release.json`, a hash of every path and byte of the build, checked live).
 
