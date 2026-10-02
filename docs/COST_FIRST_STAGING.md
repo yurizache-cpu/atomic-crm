@@ -1,6 +1,6 @@
 # Cost-first remote staging
 
-**Status (2026-10-01): REMOTE SYNTHETIC STAGING WORKING.** Netlify frontend live and verified; Supabase Free staging with the 65 canonical migrations, no seed, Auth configured; AAL1 refused and AAL2 admitted in a real browser; the CRM and the Company OS usable on synthetic data; the real worker loop running locally against staging through its constrained role; no new recurring cost. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+**Status (2026-10-02): INTEGRATED by PR #23 (normal merge `6da21fbd` into `feature/clinical-phase-1`).** **(2026-10-01) REMOTE SYNTHETIC STAGING WORKING.** Netlify frontend live and verified; Supabase Free staging with the 65 canonical migrations, no seed, Auth configured; AAL1 refused and AAL2 admitted in a real browser; the CRM and the Company OS usable on synthetic data; the real worker loop running locally against staging through its constrained role; no new recurring cost. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
 ## 1. The owner decision
 

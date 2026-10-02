@@ -4,6 +4,7 @@
 //
 //   node scripts/with-staging.mjs --as worker -- npm run staging:fake-worker
 //   node scripts/with-staging.mjs --as gateway -- npm run whatsapp:gateway
+//   node scripts/with-staging.mjs --as worker --pass OPENAI_API_KEY -- npm run worker
 //
 // The file (default %USERPROFILE%\.atomic-crm\staging.env, or STAGING_ENV_FILE)
 // holds KEY=value lines: STAGING_PROJECT_REF, STAGING_POOLER_HOST,
@@ -11,8 +12,9 @@
 // password (OPS_WORKER_PASSWORD or OPS_GATEWAY_PASSWORD). The child gets
 // DEPLOYMENT_ENVIRONMENT=staging and exactly one database URL, verified TLS
 // through the session pooler; every other database URL is removed from its
-// environment, so an owner credential can never ride along. Nothing here prints
-// a secret.
+// environment, so an owner credential can never ride along. `--pass KEY` copies
+// one more named key from the file into the child alone (a model key, say),
+// never a database URL or a password. Nothing here prints a secret.
 //
 // Exit: the child's status; 2 when it could not run.
 
@@ -33,6 +35,9 @@ export const ROLES = Object.freeze({
     url: "OPS_GATEWAY_DATABASE_URL",
   },
 });
+
+// Never copied by --pass: connection strings and every password in the file.
+const NEVER_PASSED = /(_DATABASE_URL|^DATABASE_URL|^SUPABASE_DB_URL|PASSWORD)$/;
 
 const DATABASE_URLS = [
   "ADMIN_DATABASE_URL",
@@ -56,7 +61,7 @@ export function parseEnvFile(text) {
  * The child's environment for one role, or a thrown Error naming the missing
  * key (never a value).
  */
-export function stagingEnvironment(role, file, parentEnv) {
+export function stagingEnvironment(role, file, parentEnv, pass = []) {
   const spec = ROLES[role];
   if (spec === undefined) {
     throw new Error(`--as must be one of: ${Object.keys(ROLES).join(", ")}`);
@@ -83,6 +88,15 @@ export function stagingEnvironment(role, file, parentEnv) {
     `@${file.STAGING_POOLER_HOST}:5432/postgres` +
     `?sslmode=verify-full&sslrootcert=${encodeURIComponent(file.STAGING_ROOT_CA)}`;
   env.DEPLOYMENT_ENVIRONMENT = "staging";
+  for (const key of pass) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(key) || NEVER_PASSED.test(key)) {
+      throw new Error(
+        `--pass refuses ${key}: only a named key that is not a database URL or a password`,
+      );
+    }
+    if (!file[key]) throw new Error(`${key} is missing from the staging file`);
+    env[key] = file[key];
+  }
   return env;
 }
 
@@ -96,7 +110,7 @@ if (isEntryPoint) {
   const asIndex = args.indexOf("--as");
   if (separator === -1 || asIndex === -1 || separator === args.length - 1) {
     console.error(
-      "usage: node scripts/with-staging.mjs --as worker|gateway -- <command...>",
+      "usage: node scripts/with-staging.mjs --as worker|gateway [--pass KEY]... -- <command...>",
     );
     process.exit(2);
   }
@@ -117,6 +131,11 @@ if (isEntryPoint) {
       args[asIndex + 1],
       parseEnvFile(readFileSync(path, "utf8")),
       process.env,
+      args
+        .slice(0, separator)
+        .flatMap((arg, index, all) =>
+          arg === "--pass" ? [all[index + 1]] : [],
+        ),
     );
   } catch (error) {
     console.error(error.message);

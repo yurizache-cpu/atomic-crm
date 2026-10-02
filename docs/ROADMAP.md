@@ -612,7 +612,11 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Cost-first remote staging (2026-09-29) — WORKING (2026-10-01)
+### Staging real model and Meta test probe (2026-10-02) — IN PROGRESS
+
+PR #23 is integrated: normal merge `6da21fbd5640555c220de4300248de182fcc4a73` into `feature/clinical-phase-1` (parents `501e3efd` and `53bf6d47b5993255d6a402785bc373d65e87e742`); the source branch `feature/cost-first-staging` is retained at `53bf6d47`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS, now on PostgreSQL 17; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the uploader inherited the whole shell environment) and P2 (the live check bound the release only to its script paths) were fixed before the merge in `53bf6d47` (`scripts/publisher-environment.mjs`; `release.json`, a hash of every path and byte of the build, checked live).
+
+### Cost-first remote staging (2026-09-29) — INTEGRATED (PR #23, merge `6da21fbd`)
 
 Remote synthetic staging works with no new recurring cost: the Netlify frontend, Supabase Free staging on PostgreSQL 17 with the canonical migrations and no seed, AAL2 in a real browser, the CRM and the Company OS on synthetic data, and the real worker loop running locally against staging through its constrained role. Read [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md). Next, in order: the browser decision of the pending staging review; the Meta test probe (a free tunnel first); a real model run with synthetic content inside the US$5 cap (owner key). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
