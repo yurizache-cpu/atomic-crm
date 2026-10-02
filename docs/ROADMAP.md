@@ -612,7 +612,11 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Cost-first remote staging (2026-09-29) — IN PROGRESS
+### Cost-first remote staging (2026-09-29) — WORKING (2026-10-01)
+
+Remote synthetic staging works with no new recurring cost: the Netlify frontend, Supabase Free staging on PostgreSQL 17 with the canonical migrations and no seed, AAL2 in a real browser, the CRM and the Company OS on synthetic data, and the real worker loop running locally against staging through its constrained role. Read [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md). Next, in order: the browser decision of the pending staging review; the Meta test probe (a free tunnel first); a real model run with synthetic content inside the US$5 cap (owner key). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+#### Recorded when it started
 
 PR #22 is integrated: normal merge `501e3efd2705651eb44e65a23c923e6a5b0f573c` into `feature/clinical-phase-1` (parents `889766cb` and `2eb7d337fab9b79c204666174ec66d97c3eaaea4`); the source branch `feature/production-hosting-runtime` is retained at `2eb7d337`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; e2e exactly 9 failed and 1 skipped and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the live-origin check could pass on the previous release) and three P2 (a redirect elsewhere accepted, private IPv6 and CGNAT literals, a `/healthz` webhook path) were fixed before the merge in `2eb7d337`.
 
