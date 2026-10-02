@@ -39,6 +39,8 @@ export interface StructuredDecisionRequest {
   /** Allowlisted, already-minimised state. Data, never instructions. */
   readonly state: Readonly<Record<string, unknown>>;
   readonly questions: DecisionQuestions;
+  /** Dated builds that count as `model` (the registry's accepted builds). */
+  readonly acceptedResponseModels?: readonly string[];
 }
 
 export type DecisionAnswer =

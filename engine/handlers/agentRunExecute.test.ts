@@ -129,6 +129,8 @@ interface CapabilityScript {
   readonly refuse?: string;
   readonly complete?: string;
   readonly fail?: string;
+  /** ops.agent_run_model_candidates() (ADR 0022). */
+  readonly candidates?: unknown;
 }
 
 /** Fake capabilities that record the order they were used in. */
@@ -147,6 +149,21 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     used.push("refuseAgentRun");
     return script.refuse ?? "failed";
   });
+  const agentRunModelCandidates = vi.fn(async () => {
+    used.push("agentRunModelCandidates");
+    return "candidates" in script
+      ? script.candidates
+      : { pool: null, candidates: [] };
+  });
+  const recordAgentRunGatewayReport = vi.fn(
+    async (_report: {
+      providerRoute: string | null;
+      reportedCostMicros: number | null;
+    }) => {
+      used.push("recordAgentRunGatewayReport");
+      return "recorded";
+    },
+  );
   const completeAgentRun = vi.fn(async (_completion: AgentRunCompletion) => {
     used.push("completeAgentRun");
     return script.complete ?? "succeeded";
@@ -165,8 +182,15 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     refuseAgentRun,
     completeAgentRun,
     failAgentRun,
-    prepare: { claimAgentRun, startAgentRun, refuseAgentRun },
-    settle: { completeAgentRun, failAgentRun },
+    agentRunModelCandidates,
+    recordAgentRunGatewayReport,
+    prepare: {
+      claimAgentRun,
+      startAgentRun,
+      refuseAgentRun,
+      agentRunModelCandidates,
+    },
+    settle: { completeAgentRun, failAgentRun, recordAgentRunGatewayReport },
   };
 };
 
@@ -266,10 +290,12 @@ describe("the handler declares its shape and is registered", () => {
       "claimAgentRun",
       "startAgentRun",
       "refuseAgentRun",
+      "agentRunModelCandidates",
     ]);
     expect([...handler.settleCapabilities]).toEqual([
       "completeAgentRun",
       "failAgentRun",
+      "recordAgentRunGatewayReport",
     ]);
     expect(Object.isFrozen(handler)).toBe(true);
   });
@@ -1369,5 +1395,125 @@ describe("the handler reaches the outside world only through its capabilities an
       /process\.env|console\.|\bimport\s*\(|require\s*\(/,
     );
     expect(code).not.toMatch(/createLogger|WorkerLogger/);
+  });
+});
+
+describe("ADR 0022: a gateway router chooses only among the database's authorized candidates", () => {
+  const gatewaySetup = (candidates: unknown) => {
+    const provider = createFakeModelProvider(
+      { type: "respond", content: VALID },
+      { name: "openrouter" },
+    );
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    const handler = createAgentRunExecuteHandler({ modelRouter });
+    return { provider, handler, caps: fakeCapabilities({ candidates }) };
+  };
+
+  it("starts the lowest-rank candidate on its gateway, and reports the gateway's audit before completing", async () => {
+    const { provider, handler, caps } = gatewaySetup({
+      pool: "general_fast",
+      candidates: [
+        {
+          gateway: "openrouter",
+          model: "vendor/strong",
+          rank: 2,
+          acceptedBuilds: [],
+        },
+        {
+          gateway: "other_gateway",
+          model: "vendor/elsewhere",
+          rank: 0,
+          acceptedBuilds: [],
+        },
+        {
+          gateway: "openrouter",
+          model: "vendor/cheap",
+          rank: 1,
+          acceptedBuilds: ["vendor/cheap-20260101"],
+        },
+      ],
+    });
+    const result = await runCycle(handler, caps);
+    expect(result.called).toBe(true);
+    expect(caps.startAgentRun.mock.calls[0][0]).toMatchObject({
+      provider: "openrouter",
+      model: "vendor/cheap",
+    });
+    expect(provider.calls[0].model).toBe("vendor/cheap");
+    expect(provider.calls[0].acceptedResponseModels).toEqual([
+      "vendor/cheap-20260101",
+    ]);
+    expect(caps.used).toEqual([
+      "claimAgentRun",
+      "agentRunModelCandidates",
+      "startAgentRun",
+      "recordAgentRunGatewayReport",
+      "completeAgentRun",
+    ]);
+  });
+
+  it("refuses the run, calling nothing, when no authorized candidate is on its gateway", async () => {
+    for (const candidates of [
+      { pool: null, candidates: [] },
+      {
+        pool: "general_fast",
+        candidates: [
+          {
+            gateway: "other_gateway",
+            model: "x/y",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+    ]) {
+      const { provider, handler, caps } = gatewaySetup(candidates);
+      const result = await runCycle(handler, caps);
+      expect(result.called).toBe(false);
+      expect(caps.refuseAgentRun).toHaveBeenCalledWith(
+        "gateway_candidate_unavailable",
+      );
+      expect(caps.startAgentRun).not.toHaveBeenCalled();
+      expect(provider.calls).toHaveLength(0);
+    }
+  });
+
+  it("refuses a candidate list it cannot read, starting nothing", async () => {
+    const { handler, caps } = gatewaySetup({ candidates: "everything" });
+    await expect(runCycle(handler, caps)).rejects.toThrow(/does not accept/);
+    expect(caps.startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it("executes no route it did not resolve itself: a hand-built route naming another model is refused", async () => {
+    const provider = createFakeModelProvider(
+      { type: "respond", content: VALID },
+      { name: "openrouter" },
+    );
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    await expect(
+      modelRouter.executeStructured(
+        {
+          route: "standard",
+          provider: "openrouter",
+          model: "vendor/unauthorized",
+          policy: MODEL_ROUTE_POLICIES.standard,
+        },
+        { instructions: "x", input: "y" },
+        { name: "t", jsonSchema: {}, parse: (v: unknown) => v },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      category: "configuration",
+      code: "route_not_configured",
+    });
+    expect(provider.calls).toHaveLength(0);
   });
 });

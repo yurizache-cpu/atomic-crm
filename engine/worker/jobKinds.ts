@@ -30,6 +30,8 @@ export const EXTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "calendar.create",
   "calendar.update",
   "calendar.cancel",
+  // ADR 0022: the structured decision (Jev), one call at most, kill switch.
+  "decision.structured_evaluate",
 ]);
 
 export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([

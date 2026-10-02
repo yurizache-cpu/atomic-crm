@@ -105,6 +105,26 @@ export interface CalendarSyncSettlement {
   readonly errorCode: string | null;
 }
 
+/** What a gateway reported about the call it served (ADR 0022 §H). Audit only. */
+export interface AgentRunGatewayReport {
+  readonly providerRoute: string | null;
+  readonly reportedCostMicros: number | null;
+}
+
+/** A structured decision's settlement (ADR 0022 §E): what this attempt's one call did. */
+export interface StructuredDecisionSettlement {
+  readonly outcome: "completed" | "indeterminate" | "invalid" | "failed";
+  /** The typed answers, on completion only. Validated again by the database. */
+  readonly answers: unknown;
+  readonly servedModel: string | null;
+  readonly inputTokens: number | null;
+  readonly outputTokens: number | null;
+  readonly reportedCostMicros: number | null;
+  readonly latencyMs: number | null;
+  readonly providerRoute: string | null;
+  readonly errorCode: string | null;
+}
+
 /** The complete set of capabilities that exist. Adding one is a review event. */
 export interface Capabilities {
   /**
@@ -164,6 +184,25 @@ export interface Capabilities {
   startCalendarSync(providerKind: string): Promise<unknown>;
   /** Stores this attempt's call outcome. `not_running` means it is not this attempt's to settle. */
   settleCalendarSync(settlement: CalendarSyncSettlement): Promise<string>;
+  /**
+   * ADR 0022. The pool and the AUTHORIZED candidates of the run bound to the
+   * leased job, in rank order: enabled, priced, structured, and allowed by Q8
+   * for its data class. The worker chooses only among them.
+   */
+  agentRunModelCandidates(): Promise<unknown>;
+  /** ADR 0022. Records once what the gateway reported for the running run. Audit only. */
+  recordAgentRunGatewayReport(report: AgentRunGatewayReport): Promise<string>;
+  /**
+   * ADR 0022. Starts the structured decision bound to the leased job on this
+   * gateway: answers its kind, the decision model the database chose, the
+   * allowlisted input and the question spec, recorded `running` BEFORE the
+   * call; or `refused` (protected data, no model, budget) or `stopped`.
+   */
+  startStructuredDecision(gateway: string): Promise<unknown>;
+  /** Stores this attempt's decision outcome. `not_running` means it is not this attempt's to settle. */
+  settleStructuredDecision(
+    settlement: StructuredDecisionSettlement,
+  ): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -181,6 +220,10 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "redactDueContent",
   "startCalendarSync",
   "settleCalendarSync",
+  "agentRunModelCandidates",
+  "recordAgentRunGatewayReport",
+  "startStructuredDecision",
+  "settleStructuredDecision",
 ]);
 
 /**
@@ -334,6 +377,50 @@ function allCapabilities(tx: TxClient): Capabilities {
         [settlement.outcome, settlement.externalEventId, settlement.errorCode],
       );
       return statusOf(rows, "ops.settle_calendar_sync");
+    },
+
+    async agentRunModelCandidates() {
+      const { rows } = await tx.query<{ candidates: unknown }>(
+        "select ops.agent_run_model_candidates() as candidates",
+      );
+      return rows[0]?.candidates;
+    },
+
+    async recordAgentRunGatewayReport(report) {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.record_agent_run_gateway_report($1, $2) as status",
+        [report.providerRoute, report.reportedCostMicros],
+      );
+      return statusOf(rows, "ops.record_agent_run_gateway_report");
+    },
+
+    async startStructuredDecision(gateway) {
+      const { rows } = await tx.query<{ start: unknown }>(
+        "select ops.start_structured_decision($1) as start",
+        [gateway],
+      );
+      return rows[0]?.start;
+    },
+
+    async settleStructuredDecision(settlement) {
+      // The answers are model output: ONE bound jsonb parameter, never spliced.
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.settle_structured_decision($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9) as status",
+        [
+          settlement.outcome,
+          settlement.outcome === "completed"
+            ? JSON.stringify(settlement.answers)
+            : null,
+          settlement.servedModel,
+          settlement.inputTokens,
+          settlement.outputTokens,
+          settlement.reportedCostMicros,
+          settlement.latencyMs,
+          settlement.providerRoute,
+          settlement.errorCode,
+        ],
+      );
+      return statusOf(rows, "ops.settle_structured_decision");
     },
   };
 }

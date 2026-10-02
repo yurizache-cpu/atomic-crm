@@ -438,6 +438,23 @@ language sql stable security invoker set search_path = '' as $$
      and r.started_at >= ops.spend_window_start(p_timezone, now());
 $$;
 
+-- The codes only the database decides. A worker's refusal naming one is
+-- recorded as `configuration` instead (ops.refuse_agent_run), so a worker
+-- cannot dress its own refusal up as one of these gates.
+create or replace function ops.agent_run_reserved_error_codes()
+returns text[]
+language sql
+immutable
+set search_path to ''
+as $function$
+  select array['execution_stopped', 'execution_interrupted', 'database_contract',
+               'job_failed', 'job_ended_before_start',
+               'price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
+               'budget_unconfigured', 'budget_exhausted', 'data_not_authorized',
+               'route_provider_mismatch',
+               'model_route_unavailable', 'model_not_authorized', 'agent_budget_exhausted']::text[];
+$function$;
+
 -- ---------------------------------------------------------------------------
 -- 5. The start: the candidate gate and the agent ceiling. The 20261001120000
 --    function, with two gates added and the route recorded; nothing removed.
@@ -818,6 +835,7 @@ revoke all on function
   ops.agent_run_model_candidates(),
   ops.record_agent_run_gateway_report(text, bigint),
   ops.agent_spend_today(uuid, uuid, text),
+  ops.agent_run_reserved_error_codes(),
   ops.start_agent_run(text, text, text, text, integer),
   ops.guard_model_data_authorization_insert(),
   ops.record_model(text, text, text, text[], boolean, boolean, boolean, text, text, text, text, text),

@@ -40,6 +40,12 @@ import {
   type DecisionPort,
 } from "../decision/decisionPort.ts";
 import type { ModelRouter } from "../models/router.ts";
+import {
+  createStructuredDecisionEvaluateHandler,
+  STRUCTURED_DECISION_EVALUATE_KIND,
+} from "../handlers/structuredDecisionEvaluate.ts";
+import { UNCONFIGURED_DECISION_GATEWAY } from "../decision/structured/gatewayFromEnv.ts";
+import type { StructuredDecisionGateway } from "../decision/structured/types.ts";
 import { createRegistry, type HandlerRegistry } from "./handlerRegistry.ts";
 import { assertRegistryClassified } from "./jobKinds.ts";
 
@@ -56,6 +62,12 @@ export interface HandlerRegistryDependencies {
    * Absent: none, and a calendar job settles failed without calling anything.
    */
   readonly calendarPort?: CalendarPort;
+  /**
+   * ADR 0022: the structured decision gateway (Jev), and whether a settled run
+   * requests its structured decisions. Absent: none, and no request.
+   */
+  readonly structuredDecisionGateway?: StructuredDecisionGateway;
+  readonly requestsStructuredDecisions?: boolean;
 }
 
 export function createHandlerRegistry(
@@ -66,6 +78,8 @@ export function createHandlerRegistry(
     createAgentRunExecuteHandler({
       modelRouter: dependencies.modelRouter,
       requestsShadowDecisions: dependencies.requestsShadowDecisions === true,
+      requestsStructuredDecisions:
+        dependencies.requestsStructuredDecisions === true,
     }),
     createDecisionShadowEvaluateHandler({
       decisionPort: dependencies.decisionPort ?? UNCONFIGURED_DECISION_PORT,
@@ -74,6 +88,10 @@ export function createHandlerRegistry(
     contentRetentionDue,
     ...createCalendarSyncHandlers({
       calendarPort: dependencies.calendarPort ?? UNCONFIGURED_CALENDAR_PORT,
+    }),
+    createStructuredDecisionEvaluateHandler({
+      gateway:
+        dependencies.structuredDecisionGateway ?? UNCONFIGURED_DECISION_GATEWAY,
     }),
   ]);
   // Every kind here is external, governed or internal, with the matching shape
@@ -98,4 +116,5 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   CALENDAR_CREATE_KIND,
   CALENDAR_UPDATE_KIND,
   CALENDAR_CANCEL_KIND,
+  STRUCTURED_DECISION_EVALUATE_KIND,
 ]);

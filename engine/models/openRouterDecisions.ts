@@ -76,6 +76,7 @@ export function createOpenRouterDecisionsGateway(options: {
     const startedAt = now();
     const elapsed = () => Math.max(0, Math.round(now() - startedAt));
 
+    // Picked, never spread: acceptedResponseModels is ours and never sent.
     const body = JSON.stringify({
       model: request.model,
       state: request.state,
@@ -171,6 +172,7 @@ export function createOpenRouterDecisionsGateway(options: {
     const accepted = new Set([
       request.model,
       ...(acceptedBuilds[request.model] ?? []),
+      ...(request.acceptedResponseModels ?? []),
     ]);
     if (served === null || !accepted.has(served)) {
       throw new ModelError("invalid_response", {
