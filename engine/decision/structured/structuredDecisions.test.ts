@@ -275,14 +275,14 @@ describe("lead_intelligence.v1: clinical content is never a commercial signal", 
       scheduling_readiness: { type: "score", score: 0.4 },
       follow_up_priority: { type: "score", score: 2 },
       objection: { type: "choice", choice: "price" },
-      next_best_action: { type: "choice", choice: "send_pricing_information" },
+      next_best_action: { type: "choice", choice: "share_pricing_information" },
     });
     expect(answers.commercial_readiness).toMatchObject({
       type: "score",
       level: 1,
     });
     expect(answers.next_best_action).toMatchObject({
-      choice: "send_pricing_information",
+      choice: "share_pricing_information",
     });
   });
 });

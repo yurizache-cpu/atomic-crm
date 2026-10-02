@@ -507,7 +507,7 @@ begin
   --     shadow decision, and Phase 3A the follow-up's governed kind and the
   --     three calendar kinds, and the Q8 D6/D7 batch one internal retention
   --     kind, none of which a task can request: G3 above.)
-  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel']::text[]
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate']::text[]
      or ops.governed_job_kinds() is distinct from array['follow_up.due']::text[]
      or ops.internal_job_kinds() is distinct from array['postmark.ledger_retention', 'content.retention_due']::text[] then
     raise exception 'G4: the job kinds changed';

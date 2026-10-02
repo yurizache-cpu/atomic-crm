@@ -107,7 +107,7 @@ export const OBJECTIONS = Object.freeze({
 
 export const NEXT_ACTIONS = Object.freeze({
   offer_slots: "Offer available appointment times.",
-  send_pricing_information: "Send prices and package information.",
+  share_pricing_information: "Share prices and package information.",
   answer_question: "Answer the open question before anything else.",
   follow_up_later: "Wait and follow up later.",
   human_review: "A person should decide the next step.",
