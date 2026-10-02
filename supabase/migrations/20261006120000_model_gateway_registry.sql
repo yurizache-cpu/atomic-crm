@@ -66,8 +66,14 @@ create function ops.guard_model_registry_change()
 returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
+  -- Only a disabled model no active pool member offers is history the owner may delete.
   if tg_op = 'DELETE' then
-    raise exception using errcode = 'OS409', message = 'ops.model_registry: a model is disabled, never deleted';
+    if old.enabled or exists (select 1 from ops.model_pool_members m
+                               where m.registry_id = old.id and m.removed_at is null) then
+      raise exception using errcode = 'OS409',
+        message = 'ops.model_registry: a model is disabled and removed from every pool before it may be deleted';
+    end if;
+    return old;
   end if;
   if tg_op = 'INSERT' then
     if new.changed_at is not null or new.changed_by is not null then
@@ -163,7 +169,10 @@ returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
   if tg_op = 'DELETE' then
-    raise exception using errcode = 'OS409', message = 'ops.model_pool_members: a member is removed, never deleted';
+    if old.removed_at is null then
+      raise exception using errcode = 'OS409', message = 'ops.model_pool_members: an active member is removed before it may be deleted';
+    end if;
+    return old;
   end if;
   if tg_op = 'INSERT' then
     if new.removed_at is not null then
@@ -240,7 +249,10 @@ declare
   v_value pg_catalog.jsonb;
 begin
   if tg_op = 'DELETE' then
-    raise exception using errcode = 'OS409', message = 'ops.agent_profiles: a profile is superseded, never deleted';
+    if old.superseded_at is null then
+      raise exception using errcode = 'OS409', message = 'ops.agent_profiles: the current profile is superseded before it may be deleted';
+    end if;
+    return old;
   end if;
   if tg_op = 'UPDATE' then
     if old.superseded_at is not null
@@ -351,8 +363,13 @@ create function ops.guard_agent_run_route_change()
 returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
+  -- The route of a run still running is evidence in use; a finished run's is
+  -- history the owner may delete with the run.
   if tg_op = 'DELETE' then
-    raise exception using errcode = 'OS409', message = 'ops.agent_run_routes: a route is history';
+    if exists (select 1 from ops.agent_runs r where r.id = old.agent_run_id and r.status in ('pending', 'running')) then
+      raise exception using errcode = 'OS409', message = 'ops.agent_run_routes: the route of a run in progress is kept';
+    end if;
+    return old;
   end if;
   if tg_op = 'INSERT' then
     if new.provider_route is not null or new.reported_cost_micros is not null or new.reported_at is not null then

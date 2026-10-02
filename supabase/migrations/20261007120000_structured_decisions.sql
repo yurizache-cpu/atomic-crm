@@ -96,8 +96,13 @@ create function ops.guard_structured_decision_change()
 returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
+  -- A decision pending or running is work in progress; a settled one is
+  -- history the owner may delete.
   if tg_op = 'DELETE' then
-    raise exception using errcode = 'OS409', message = 'ops.structured_decisions: a decision is history';
+    if old.status in ('pending', 'running') then
+      raise exception using errcode = 'OS409', message = 'ops.structured_decisions: a decision in progress is kept';
+    end if;
+    return old;
   end if;
   if tg_op = 'INSERT' then
     if new.status not in ('pending', 'refused') or new.job_id is not null or new.started_at is not null
@@ -742,8 +747,11 @@ create function ops.guard_decision_outcome_change()
 returns trigger
 language plpgsql security invoker set search_path = '' as $$
 begin
+  if tg_op = 'DELETE' then
+    return old;
+  end if;
   if tg_op <> 'INSERT' then
-    raise exception using errcode = 'OS409', message = 'ops.decision_outcomes: an observed outcome is history';
+    raise exception using errcode = 'OS409', message = 'ops.decision_outcomes: an observed outcome is never rewritten';
   end if;
   if not exists (select 1 from ops.structured_decisions d
                   where d.id = new.structured_decision_id and d.tenant_id = new.tenant_id) then

@@ -211,7 +211,9 @@ begin
     $q$update ops.model_registry set cost_class = 'high', changed_by = 'mg-suite', change_reason = 'x' where model = 'mg/cheap'$q$);
   perform pg_temp.expect('B2 a switch with nobody named', 'OS409',
     $q$update ops.model_registry set enabled = false where model = 'mg/cheap'$q$);
-  perform pg_temp.expect('B3 a model deleted', 'OS409', $q$delete from ops.model_registry where model = 'mg/cheap'$q$);
+  perform pg_temp.expect('B3 an enabled model deleted', 'OS409', $q$delete from ops.model_registry where model = 'mg/cheap'$q$);
+  perform pg_temp.expect('B3 a disabled model still in a pool deleted', 'OS409',
+    $q$delete from ops.model_registry where model = 'mg/disabled'$q$);
   perform pg_temp.expect('B4 an alias registered', '23514', $q$select ops.record_model('openrouter', '~mg/latest', 'mgfam',
     null, true, false, false, 'long', 'fast', 'low', 'x', 'mg-suite')$q$);
   perform pg_temp.expect('B5 the in-process gateway registered', '23514', $q$select ops.record_model('fake', 'mg/x', 'mgfam',
@@ -230,7 +232,7 @@ begin
   perform pg_temp.expect('C1 a pool redefined', 'OS409',
     $q$update ops.model_pools set model_route = 'reasoning' where name = 'reception_low_cost'$q$);
   perform pg_temp.expect('C2 a pool deleted', 'OS409', $q$delete from ops.model_pools where name = 'general_fast'$q$);
-  perform pg_temp.expect('C3 a member deleted', 'OS409',
+  perform pg_temp.expect('C3 an active member deleted', 'OS409',
     $q$delete from ops.model_pool_members where pool = 'reception_low_cost'$q$);
   perform pg_temp.expect('C4 a member added twice', '23505',
     $q$select ops.add_model_pool_member('reception_low_cost', 'openrouter', 'mg/cheap', 9, 'mg-suite')$q$);
@@ -320,6 +322,8 @@ begin
   end if;
   perform pg_temp.expect('E5 a route rewritten', 'OS409',
     format($q$update ops.agent_run_routes set model = 'mg/strong' where agent_run_id = %L$q$, r.id));
+  perform pg_temp.expect('E5 the route of a running run deleted', 'OS409',
+    format($q$delete from ops.agent_run_routes where agent_run_id = %L$q$, r.id));
 
   -- E6 the in-process fake is not a gateway: unaffected, no route row.
   perform pg_temp.task('e-fake', 'synthetic');
@@ -357,8 +361,8 @@ begin
   -- E9 a profile is superseded, never edited or deleted, and names no unknown pool.
   perform pg_temp.expect('E9 a profile edited', 'OS409',
     format($q$update ops.agent_profiles set objective = 'x' where agent_id = %L and superseded_at is null$q$, pg_temp.id('agent')));
-  perform pg_temp.expect('E9 a profile deleted', 'OS409',
-    format($q$delete from ops.agent_profiles where agent_id = %L$q$, pg_temp.id('agent')));
+  perform pg_temp.expect('E9 the current profile deleted', 'OS409',
+    format($q$delete from ops.agent_profiles where agent_id = %L and superseded_at is null$q$, pg_temp.id('agent')));
   perform pg_temp.expect('E9 an unknown pool', 'OS400', format($q$select ops.record_agent_profile(%L, %L, 'x',
     array['lead_triage'], array['synthetic'], 10, 'UTC', '{"lead_triage": "no_such_pool"}'::jsonb, 'mg-suite')$q$,
     pg_temp.id('tenant'), pg_temp.id('agent')));
@@ -494,7 +498,12 @@ begin
   end if;
   perform pg_temp.expect('G6 a settled decision rewritten', 'OS409',
     format($q$update ops.structured_decisions set error_code = 'x' where id = %L$q$, v_dec));
-  perform pg_temp.expect('G6 a decision deleted', 'OS409',
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status)
+  values (pg_temp.id('tenant'), pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'),
+          pg_temp.id('task.e-cheap'), v_run, 'lead_intelligence', 'lead_intelligence.v1', 'mg:pending', 'pending')
+  returning id into v_dec;
+  perform pg_temp.expect('G6 a decision in progress deleted', 'OS409',
     format($q$delete from ops.structured_decisions where id = %L$q$, v_dec));
 end
 $$;
