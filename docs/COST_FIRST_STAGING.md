@@ -262,4 +262,17 @@ PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
 4. **The worker:** `AGENT_MODEL_GATEWAY=openrouter STRUCTURED_DECISIONS_GATEWAY=openrouter node scripts/with-staging.mjs --as worker --pass OPENROUTER_API_KEY -- npm run staging:gateway-worker`.
 5. **Verify:** the `test` class, the pool and candidates, the model served, the provider and the cost, the three Jev decisions, and the pending review. Nothing is sent unless the owner accepts the review and runs `npm run messaging -- send`.
 
+**The live pass, 2026-10-03: PASS.**
+- **Webhook:** a fresh quick tunnel and a rotated verify token. The gateway was up before Meta was touched, so no failed handshake could be logged. Meta's verification was accepted.
+- **The message:** the owner sent "oi" from the registered test device to the Meta test number. One delivery was admitted: class `test`, the staging contact found, not do-not-contact.
+- **The run:**
+  - agent `reception-agent`, capability `lead_triage`;
+  - Q8 candidates Luna, Qwen and Haiku in `reception_low_cost`;
+  - `openai/gpt-6-luna` requested and served, provider `OpenAI` from the documented metadata;
+  - 842 in / 167 out tokens, 11.9 s;
+  - **168 micro-dollars**, equal to OpenRouter's reported cost.
+- **The triage:** intent `other`, priority low, outcome `needs_input` (a bare greeting says nothing). The review is pending for a person.
+- **Jev, in shadow:** intent `unknown` and department `no_action` (0.59), human escalation 0.30; lead intelligence's next action `human_review`; model advice Qwen. Three calls on the pinned build, 93 micro-dollars, each equal to OpenRouter's report.
+- **Nothing was sent:** no outbound message, no data authorization. The gateway was stopped afterwards.
+
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
