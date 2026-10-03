@@ -274,5 +274,8 @@ PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
 - **The triage:** intent `other`, priority low, outcome `needs_input` (a bare greeting says nothing). The review is pending for a person.
 - **Jev, in shadow:** intent `unknown` and department `no_action` (0.59), human escalation 0.30; lead intelligence's next action `human_review`; model advice Qwen. Three calls on the pinned build, 93 micro-dollars, each equal to OpenRouter's report.
 - **Nothing was sent:** no outbound message, no data authorization. The gateway was stopped afterwards.
+- **The browser decision (2026-10-03): DONE.** The owner opened that review on the Netlify site, signed in with password and TOTP (AAL2), and chose Aceitar → Confirmar. The review is `accepted`, recorded under the owner's own principal (`auth.uid()`), and the page and the database both show that no message was sent.
+  - This closes the step left open on 2026-10-01: a person deciding a staging review in a real browser.
+  - A gap observed on that page: "Inteligência de decisão" shows only the 2D shadow engine (off on staging). The ADR 0022 Jev decisions for the same task are stored but not yet shown there. That is a candidate UI follow-up.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**

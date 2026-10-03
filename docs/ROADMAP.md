@@ -624,7 +624,7 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
   - nothing is sent until a person accepts the review and runs the separate send act.
 - **Q8 is unchanged:** a message from any other number is `health`, refused before any model or decision.
 - **Proof:** `engine/domain/whatsappGatewayRouting.dbtest.ts` runs through the gateway's own login and the real worker runtime.
-- **Live staging pass (2026-10-03): PASS.** The owner's "oi" from the registered test device was admitted as `test`, triaged by `reception-agent` on `openai/gpt-6-luna` through OpenRouter (provider OpenAI, 168 micro-dollars, equal to OpenRouter's report), and followed by three Jev decisions in shadow. The review is pending and nothing was sent ([COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12).
+- **Live staging pass (2026-10-03): PASS.** The owner's "oi" from the registered test device was admitted as `test`, triaged by `reception-agent` on `openai/gpt-6-luna` through OpenRouter (provider OpenAI, 168 micro-dollars, equal to OpenRouter's report), and followed by three Jev decisions in shadow. The owner then accepted that review in the browser (AAL2); it is `accepted` under the owner's principal, and nothing was sent ([COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12).
 - **Next:**
   - this milestone's PR;
   - a live staging pass with the owner's test device (a fresh tunnel and verify token, the gateway, and the bounded gateway worker);
