@@ -30,6 +30,9 @@ export type FakeBehavior =
       readonly content: unknown;
       readonly usage?: ModelUsage | null;
       readonly model?: string;
+      /** A gateway's audit report (ADR 0022 §H). */
+      readonly providerRoute?: string;
+      readonly reportedCostMicros?: number;
     }
   | {
       readonly type: "fail";
@@ -125,6 +128,12 @@ export function createFakeModelProvider(
           providerRequestId: `fake-req-${callNumber}`,
           providerResponseId: `fake-resp-${callNumber}`,
           latencyMs: Math.max(0, Math.round(now() - startedAt)),
+          ...(behavior.providerRoute === undefined
+            ? {}
+            : { providerRoute: behavior.providerRoute }),
+          ...(behavior.reportedCostMicros === undefined
+            ? {}
+            : { reportedCostMicros: behavior.reportedCostMicros }),
         });
       case "fail":
         throw new ModelError(behavior.category, {

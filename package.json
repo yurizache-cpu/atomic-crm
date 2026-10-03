@@ -42,6 +42,7 @@
     "agent-runtime:smoke": "node engine/cli/agentRunSmoke.ts",
     "lead-triage:demo": "node engine/cli/leadTriageDemo.ts",
     "staging:fake-worker": "node engine/cli/stagingFakeWorker.ts",
+    "staging:gateway-worker": "node engine/cli/stagingGatewayWorker.ts",
     "observability:demo": "node engine/cli/observabilityDemo.ts",
     "scheduling": "node engine/cli/scheduling.ts",
     "scheduling:demo": "node engine/cli/schedulingDemo.ts",
@@ -49,7 +50,8 @@
     "funnel:operations-demo": "node engine/cli/funnelOperationsDemo.ts",
     "gateway:provision": "node scripts/provision-gateway-role.mjs",
     "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
-    "messaging": "node engine/cli/messaging.ts"
+    "messaging": "node engine/cli/messaging.ts",
+    "models": "node engine/cli/models.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

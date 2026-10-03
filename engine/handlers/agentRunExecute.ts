@@ -90,8 +90,15 @@ export const MIN_CALL_BUDGET_MS = 5_000;
 /** Details are metadata, and bounded like one. */
 const DETAIL_MAX_LENGTH = 400;
 
-type PrepareCapability = "claimAgentRun" | "startAgentRun" | "refuseAgentRun";
-type SettleCapability = "completeAgentRun" | "failAgentRun";
+type PrepareCapability =
+  | "claimAgentRun"
+  | "startAgentRun"
+  | "refuseAgentRun"
+  | "agentRunModelCandidates";
+type SettleCapability =
+  | "completeAgentRun"
+  | "failAgentRun"
+  | "recordAgentRunGatewayReport";
 
 export interface AgentRunExecuteDependencies {
   readonly modelRouter: ModelRouter;
@@ -102,6 +109,12 @@ export interface AgentRunExecuteDependencies {
    * (engine/decision/providerFromEnv.ts). Off unless a provider is configured.
    */
   readonly requestsShadowDecisions?: boolean;
+  /**
+   * ADR 0022: whether a settled run also requests its structured decisions
+   * (business route, lead intelligence, model-route advice). Off unless a
+   * decision gateway is configured.
+   */
+  readonly requestsStructuredDecisions?: boolean;
 }
 
 /** What prepare hands the call. Frozen; nothing in it reaches the database. */
@@ -156,7 +169,27 @@ const claimSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-type RefusalCode = "capability_unsupported" | "route_unavailable";
+type RefusalCode =
+  | "capability_unsupported"
+  | "route_unavailable"
+  | "gateway_candidate_unavailable";
+
+/**
+ * The database's answer to ops.agent_run_model_candidates(): the run's pool and
+ * its AUTHORIZED candidates (ADR 0022 §D). Only the fields the router needs are
+ * read; everything else is ignored.
+ */
+const candidatesSchema = z.object({
+  pool: z.string().nullable(),
+  candidates: z.array(
+    z.object({
+      gateway: z.string(),
+      model: z.string(),
+      rank: z.number().int(),
+      acceptedBuilds: z.array(z.string()).max(8),
+    }),
+  ),
+});
 
 /** A database status token as it may appear in a detail, or a marker that it was not one. */
 const statusToken = (status: string): string =>
@@ -343,20 +376,26 @@ export function createAgentRunExecuteHandler(
       "claimAgentRun",
       "startAgentRun",
       "refuseAgentRun",
+      "agentRunModelCandidates",
     ]),
     settleCapabilities: Object.freeze<SettleCapability[]>([
       "completeAgentRun",
       "failAgentRun",
+      "recordAgentRunGatewayReport",
     ]),
     // Never inside the settlement: a review that cannot be opened must not be
     // able to take a paid answer down with it (docs/PHASE_2A_REPORT.md §16).
     // The shadow decision request follows the review it evaluates, in its own
     // transaction, and only when this worker has a decision provider.
-    afterSettlement: Object.freeze<AfterSettlementStep[]>(
-      dependencies.requestsShadowDecisions === true
-        ? ["openRunReview", "requestShadowDecision"]
-        : ["openRunReview"],
-    ),
+    afterSettlement: Object.freeze<AfterSettlementStep[]>([
+      "openRunReview",
+      ...(dependencies.requestsShadowDecisions === true
+        ? (["requestShadowDecision"] as const)
+        : []),
+      ...(dependencies.requestsStructuredDecisions === true
+        ? (["requestStructuredDecisions"] as const)
+        : []),
+    ]),
 
     async prepare(job, capabilities, budget) {
       const parsed = claimSchema.safeParse(await capabilities.claimAgentRun());
@@ -395,9 +434,39 @@ export function createAgentRunExecuteHandler(
           "capability_unsupported",
         );
       }
-      const route = modelRouter.resolve(claim.model_route);
-      if (!route) {
-        return refuse(capabilities, claim.agent_run_id, "route_unavailable");
+      let route: ResolvedModelRoute | undefined;
+      if (modelRouter.gatewayName !== null) {
+        // ADR 0022: the database lists the run's AUTHORIZED candidates; this
+        // worker never names a model of its own. The deterministic policy is
+        // the lowest-rank candidate its gateway serves on the run's tier; the
+        // database re-checks the choice at the start (model_not_authorized).
+        const listed = candidatesSchema.safeParse(
+          await capabilities.agentRunModelCandidates(),
+        );
+        if (!listed.success) {
+          throw new PermanentError(
+            "ops.agent_run_model_candidates returned a shape this handler does not accept; nothing was started",
+          );
+        }
+        const ordered = [...listed.data.candidates].sort(
+          (a, b) => a.rank - b.rank,
+        );
+        for (const candidate of ordered) {
+          route = modelRouter.resolveCandidate(claim.model_route, candidate);
+          if (route) break;
+        }
+        if (!route) {
+          return refuse(
+            capabilities,
+            claim.agent_run_id,
+            "gateway_candidate_unavailable",
+          );
+        }
+      } else {
+        route = modelRouter.resolve(claim.model_route);
+        if (!route) {
+          return refuse(capabilities, claim.agent_run_id, "route_unavailable");
+        }
       }
       if (budget.remainingMs() < MIN_CALL_BUDGET_MS) {
         throw new TransientError("lease too short to start a model call");
@@ -498,6 +567,14 @@ export function createAgentRunExecuteHandler(
     ) {
       if (outcome.ok) {
         const response = outcome.value;
+        if (state.route.acceptedResponseModels !== undefined) {
+          // A gateway route: its audit report, before the settlement that
+          // ends the run (ADR 0022 §H). Never the charged cost.
+          await capabilities.recordAgentRunGatewayReport({
+            providerRoute: response.providerRoute ?? null,
+            reportedCostMicros: response.reportedCostMicros ?? null,
+          });
+        }
         const status = await capabilities.completeAgentRun({
           result: response.value,
           responseModel: response.model,
@@ -516,6 +593,18 @@ export function createAgentRunExecuteHandler(
       }
 
       const failure = failureToRecord(outcome.error);
+      if (
+        state.route.acceptedResponseModels !== undefined &&
+        (failure.error.providerRoute !== null ||
+          failure.error.reportedCostMicros !== null)
+      ) {
+        // A billed answer that was unusable keeps its gateway report too, so
+        // reconciliation counts the paid calls that failed (ADR 0022 §H).
+        await capabilities.recordAgentRunGatewayReport({
+          providerRoute: failure.error.providerRoute,
+          reportedCostMicros: failure.error.reportedCostMicros,
+        });
+      }
       const status = await capabilities.failAgentRun({
         category: failure.category,
         code: failure.code,

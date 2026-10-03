@@ -25,8 +25,9 @@ import {
   createOpenAiResponsesProvider,
   OPENAI_PROVIDER_NAME,
 } from "./openaiResponses.ts";
+import { createOpenRouterChatProvider } from "./openRouterChat.ts";
 import { createModelRouter, type ModelRouter } from "./router.ts";
-import { isModelId, type ModelRouteName } from "./types.ts";
+import { isModelId, MODEL_ROUTE_NAMES, type ModelRouteName } from "./types.ts";
 
 export interface ModelRoutingEnv {
   readonly [name: string]: string | undefined;
@@ -44,6 +45,56 @@ export function createModelRouterFromEnv(
   env: ModelRoutingEnv,
   dependencies: { readonly fetch?: typeof fetch } = {},
 ): ModelRouter {
+  // ADR 0022: the primary path. The gateway's routes are the database's
+  // authorized candidates; no model id is configured here at all.
+  const gatewayName = env.AGENT_MODEL_GATEWAY;
+  if (gatewayName !== undefined && gatewayName !== "") {
+    if (
+      env.AGENT_MODEL_PROVIDER !== undefined &&
+      env.AGENT_MODEL_PROVIDER !== ""
+    ) {
+      throw new Error(
+        "AGENT_MODEL_GATEWAY and AGENT_MODEL_PROVIDER are exclusive: one model path per worker.",
+      );
+    }
+    if (gatewayName !== "openrouter") {
+      throw new Error(
+        'AGENT_MODEL_GATEWAY must be unset, empty or "openrouter".',
+      );
+    }
+    const key = env.OPENROUTER_API_KEY;
+    if (typeof key !== "string" || key === "" || /\s/.test(key)) {
+      throw new Error(
+        "OPENROUTER_API_KEY is required when AGENT_MODEL_GATEWAY is openrouter, and must not contain whitespace.",
+      );
+    }
+    const listed = (env.AGENT_MODEL_GATEWAY_ROUTES ?? "standard")
+      .split(",")
+      .map((tier) => tier.trim())
+      .filter((tier) => tier !== "");
+    if (
+      listed.length === 0 ||
+      !listed.every((tier) =>
+        (MODEL_ROUTE_NAMES as readonly string[]).includes(tier),
+      )
+    ) {
+      throw new Error(
+        `AGENT_MODEL_GATEWAY_ROUTES must list tiers among ${MODEL_ROUTE_NAMES.join(", ")}.`,
+      );
+    }
+    return createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: {
+        provider: createOpenRouterChatProvider({
+          apiKey: key,
+          fetch: dependencies.fetch,
+        }),
+        tiers: listed as ModelRouteName[],
+      },
+    });
+  }
+
   const providerName = env.AGENT_MODEL_PROVIDER;
   if (providerName === undefined || providerName === "") {
     return createModelRouter({ routes: new Map(), providers: new Map() });

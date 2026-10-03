@@ -303,6 +303,16 @@ begin
     -- takes a tenant, booking or sync, and neither writes a booking.
     ('ops_worker',   'ops.start_calendar_sync(text)'::regprocedure),
     ('ops_worker',   'ops.settle_calendar_sync(text, text, text)'::regprocedure),
+    -- ADR 0022 (20261006120000_model_gateway_registry.sql): two lease-bound
+    -- capabilities, the run's authorized candidates and the gateway's audit
+    -- report; (20261007120000_structured_decisions.sql) the structured
+    -- decision's runtime step and its two lease-bound capabilities
+    -- (supabase/tests/model_gateway.sql).
+    ('ops_worker',   'ops.agent_run_model_candidates()'::regprocedure),
+    ('ops_worker',   'ops.record_agent_run_gateway_report(text, bigint)'::regprocedure),
+    ('ops_worker',   'ops.request_structured_decisions_for_settled_job(text, uuid)'::regprocedure),
+    ('ops_worker',   'ops.start_structured_decision(text)'::regprocedure),
+    ('ops_worker',   'ops.settle_structured_decision(text, jsonb, text, integer, integer, bigint, integer, text, text)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -403,6 +413,10 @@ begin
                            'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
                            'mark_follow_up_due', 'start_calendar_sync', 'settle_calendar_sync',
                            'redact_due_content', 'session_assurance_satisfied',
+                           -- ADR 0022: the worker's model-gateway and structured-decision capabilities.
+                           'agent_run_model_candidates', 'record_agent_run_gateway_report',
+                           'request_structured_decisions_for_settled_job', 'start_structured_decision',
+                           'settle_structured_decision',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

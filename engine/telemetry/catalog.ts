@@ -60,7 +60,14 @@ const JOB_OUTCOME = oneOf(
 /** The operations that make an external call, by what they call. */
 const OPERATION = oneOf(...EXTERNAL_JOB_KINDS, "whatsapp.send");
 const CALL_OUTCOME = oneOf("ok", "error", "timeout", "cancelled");
-const PROVIDER_KIND = oneOf("fake", "openai", "jev", "meta", "none");
+const PROVIDER_KIND = oneOf(
+  "fake",
+  "openai",
+  "openrouter",
+  "jev",
+  "meta",
+  "none",
+);
 const AGENT_RUN_OUTCOME = oneOf(
   "succeeded",
   "failed",

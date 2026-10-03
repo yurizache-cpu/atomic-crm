@@ -27,6 +27,9 @@ const MODEL_PROVIDER_NAME_PARTS = [
   "CLAUDE",
   "AGENT_MODEL",
   "MODEL_PROVIDER",
+  // ADR 0022: the model gateway and the decision model it serves.
+  "OPENROUTER",
+  "TYPESAFE",
 ];
 
 /**
@@ -47,6 +50,7 @@ const SERVER_SECRET_NAMES = [
   "OPS_WORKER_DATABASE_URL",
   "OPENAI_API_KEY",
   "ANTHROPIC_API_KEY",
+  "OPENROUTER_API_KEY",
   // Phase 2C: the owner CLI's database, the gateway's login and the WhatsApp
   // Cloud API credentials.
   "ADMIN_DATABASE_URL",

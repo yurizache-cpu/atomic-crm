@@ -612,7 +612,38 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Staging real model and Meta test probe (2026-10-02) — PAUSED BY OWNER
+### WhatsApp / Meta milestone (2026-10-03) — RESUMED on the integrated model layer
+
+**WHATSAPP / META MILESTONE: RESUMED (2026-10-03).** It resumed automatically once PR #24 was integrated, as the owner's plan directs.
+- **Branch:** `feature/staging-model-and-meta` brought onto `feature/clinical-phase-1` at `8ac08c87` by a normal merge. No history was rewritten and nothing was lost.
+- **Routing:** a WhatsApp event goes through the Company OS, the agent's authorized pool and OpenRouter, with Jev in shadow. It is never coupled to one model:
+  - a registered test device's message is `test` data;
+  - the triage agent's profile and pool decide the model;
+  - the gateway records the provider and the cost;
+  - the three Jev decisions follow in shadow;
+  - nothing is sent until a person accepts the review and runs the separate send act.
+- **Q8 is unchanged:** a message from any other number is `health`, refused before any model or decision.
+- **Proof:** `engine/domain/whatsappGatewayRouting.dbtest.ts` runs through the gateway's own login and the real worker runtime.
+- **Next:**
+  - this milestone's PR;
+  - a live staging pass with the owner's test device (a fresh tunnel and verify token, the gateway, and the bounded gateway worker);
+  - the owner's and counsel's decisions W1 to W8 (ADR 0021) before any production WhatsApp.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### OpenRouter + Jev + multi-model Company OS (2026-10-02) — INTEGRATED (PR #24, merge `8ac08c87`)
+
+Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directive (the priority moved from WhatsApp on 2026-10-02). Read [adr/0022-openrouter-gateway-and-jev-intelligence.md](adr/0022-openrouter-gateway-and-jev-intelligence.md) and [OPENROUTER_JEV_REPORT.md](OPENROUTER_JEV_REPORT.md).
+
+- **Records:** DIRECT OPENAI/LUNA PRIMARY ARCHITECTURE: SUPERSEDED; OPENROUTER MULTI-MODEL GATEWAY: SELECTED; JEV BUSINESS DECISION LAYER: SELECTED; JEV ROUTING: SHADOW-FIRST.
+- **Built:** agent profiles (an agent is not a model); the model registry and pools as owner data; Q8 filtering candidates before any router, re-checked at the run's start, with the agent's daily ceiling; the OpenRouter chat adapter (one exact model, no fallback); Jev on the Decisions API for the business route, lead intelligence and model-route advice, shadow only, on one ledger after settlement; cost and quality reads; `npm run models`; `npm run staging:gateway-worker`. SI-78.
+- **Staging:** 68 migrations (the third, `20261008120000_model_gateway_hardening.sql`, carries the pre-PR review's corrections); five models, four pools and the Receptionist profile configured.
+- **WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02)** on `feature/staging-model-and-meta` at `9a4b234a` (pushed, not merged), with its own pause record. It resumes automatically after this milestone is merged and verified: that branch is brought onto the new head and WhatsApp is routed through the Company OS, Jev and the authorized pools on OpenRouter.
+- **Real-model run (2026-10-03): PASS.** Two synthetic demands on `openai/gpt-6-luna` through OpenRouter, six Jev decisions on the pinned build, US$0.000616 in all, our charge equal to OpenRouter's reported cost; for the administrative demand Jev would route to operations, a recorded shadow disagreement. See the report, §8. Repeated on the reviewed head with the provider from the documented metadata, plus a controlled paid-but-unusable call (failed, audit and 164 micro-dollars kept, no fallback); see §8a.
+- **Integrated:** PR #24, normal merge `8ac08c87fa98f2d3424f33a3af238f18e69a7182` into `feature/clinical-phase-1` (parents `6da21fbd` and `0c962c41d21bce4d072b6f5ab749d4edd6c80624`); the source branch is retained at `0c962c41`; `main` is unchanged at `a863e2a0`. Before the merge, CI on the head was at the historical baseline (e2e exactly 9 failed and 1 skipped, the same ids; Prettier exactly the two files), and both automated-review P2s were fixed.
+- **Next:** WhatsApp resumed (above). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Staging real model and Meta test probe (2026-10-02) — PAUSED BY OWNER; RESUMED 2026-10-03 (above)
 
 **WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02).** The owner moved the priority to OpenRouter + Jev + a multi-model Company OS. WhatsApp resumes automatically once that milestone is implemented, reviewed, merged and verified after the merge.
 

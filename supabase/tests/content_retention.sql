@@ -250,6 +250,9 @@ begin
                                  now() + interval '1 day', 'cr price source', 'cr-suite');
   perform ops.record_model_price('fake', 'cr-fake', 1.25, 2.5, true, now() - interval '1 minute',
                                  now() + interval '1 day', 'cr price source', 'cr-suite');
+  -- ADR 0022: a provider that leaves the process must be an authorized pool candidate.
+  perform ops.record_model('openai', 'cr-model', 'cr', null, true, false, false, 'long', 'fast', 'low', 'cr registry', 'cr-suite');
+  perform ops.add_model_pool_member('reception_low_cost', 'openai', 'cr-model', 1, 'cr-suite');
   perform ops.set_spend_limit('global', 900000000000, 'UTC', 'cr ceiling', 'cr-suite');
   perform ops.set_spend_limit('tenant', 900000000000, 'UTC', 'cr budget', 'cr-suite', ta);
   perform ops.set_spend_limit('tenant', 900000000000, 'UTC', 'cr budget', 'cr-suite', tb);

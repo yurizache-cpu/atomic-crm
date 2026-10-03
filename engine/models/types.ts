@@ -44,6 +44,11 @@ export interface ModelRequest {
     readonly schema: Readonly<Record<string, unknown>>;
   };
   readonly maxOutputTokens: number;
+  /**
+   * Served model ids that count as `model` itself: the dated builds a gateway
+   * may report for it (ADR 0022 §B). Any other served id is a substitution.
+   */
+  readonly acceptedResponseModels?: readonly string[];
 }
 
 export interface ModelResponse {
@@ -61,6 +66,16 @@ export interface ModelResponse {
   /** e.g. resp_…; matches PROVIDER_IDENTIFIER_PATTERN or is null. */
   readonly providerResponseId: string | null;
   readonly latencyMs: number;
+  /**
+   * The upstream provider a gateway routed to ("OpenAI", "DeepInfra"), when the
+   * gateway reports one. Audit only: Q8 never trusts it (ADR 0022 §D).
+   */
+  readonly providerRoute?: string | null;
+  /**
+   * The gateway's own cost report, in whole micro-dollars, kept for
+   * reconciliation. The charged cost always comes from the owner's price.
+   */
+  readonly reportedCostMicros?: number | null;
 }
 
 export interface ModelProvider {

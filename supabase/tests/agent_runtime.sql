@@ -3185,7 +3185,10 @@ declare
                                       'job_failed', 'job_ended_before_start',
                                       'price_unavailable', 'route_policy_mismatch', 'spend_ceiling_unconfigured',
                                       'budget_unconfigured', 'budget_exhausted', 'data_not_authorized',
-                                      'route_provider_mismatch'];
+                                      'route_provider_mismatch',
+                                      -- ADR 0022: the model gateway's database gates.
+                                      'model_route_unavailable', 'model_not_authorized', 'agent_budget_exhausted',
+                                      'agent_not_permitted'];
   -- Not reserved: it only begins like a reserved code, so it is kept.
   c_lookalike constant text := 'execution_stopped_upstream';
   v_code text;

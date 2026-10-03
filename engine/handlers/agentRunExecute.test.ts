@@ -28,6 +28,8 @@ import type {
   AgentRunFailure,
   AgentRunStart,
 } from "../worker/capabilities.ts";
+import { createOpenRouterChatProvider } from "../models/openRouterChat.ts";
+import { TEST_API_KEY } from "../models/testSupport/openAiFakeFetch.ts";
 import { settlementDetail } from "../worker/handlerRegistry.ts";
 import {
   PermanentError,
@@ -129,6 +131,8 @@ interface CapabilityScript {
   readonly refuse?: string;
   readonly complete?: string;
   readonly fail?: string;
+  /** ops.agent_run_model_candidates() (ADR 0022). */
+  readonly candidates?: unknown;
 }
 
 /** Fake capabilities that record the order they were used in. */
@@ -147,6 +151,21 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     used.push("refuseAgentRun");
     return script.refuse ?? "failed";
   });
+  const agentRunModelCandidates = vi.fn(async () => {
+    used.push("agentRunModelCandidates");
+    return "candidates" in script
+      ? script.candidates
+      : { pool: null, candidates: [] };
+  });
+  const recordAgentRunGatewayReport = vi.fn(
+    async (_report: {
+      providerRoute: string | null;
+      reportedCostMicros: number | null;
+    }) => {
+      used.push("recordAgentRunGatewayReport");
+      return "recorded";
+    },
+  );
   const completeAgentRun = vi.fn(async (_completion: AgentRunCompletion) => {
     used.push("completeAgentRun");
     return script.complete ?? "succeeded";
@@ -165,8 +184,15 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     refuseAgentRun,
     completeAgentRun,
     failAgentRun,
-    prepare: { claimAgentRun, startAgentRun, refuseAgentRun },
-    settle: { completeAgentRun, failAgentRun },
+    agentRunModelCandidates,
+    recordAgentRunGatewayReport,
+    prepare: {
+      claimAgentRun,
+      startAgentRun,
+      refuseAgentRun,
+      agentRunModelCandidates,
+    },
+    settle: { completeAgentRun, failAgentRun, recordAgentRunGatewayReport },
   };
 };
 
@@ -266,10 +292,12 @@ describe("the handler declares its shape and is registered", () => {
       "claimAgentRun",
       "startAgentRun",
       "refuseAgentRun",
+      "agentRunModelCandidates",
     ]);
     expect([...handler.settleCapabilities]).toEqual([
       "completeAgentRun",
       "failAgentRun",
+      "recordAgentRunGatewayReport",
     ]);
     expect(Object.isFrozen(handler)).toBe(true);
   });
@@ -1370,4 +1398,348 @@ describe("the handler reaches the outside world only through its capabilities an
     );
     expect(code).not.toMatch(/createLogger|WorkerLogger/);
   });
+});
+
+describe("ADR 0022: a gateway router chooses only among the database's authorized candidates", () => {
+  const gatewaySetup = (
+    candidates: unknown,
+    behavior: FakeBehavior = { type: "respond", content: VALID },
+  ) => {
+    const provider = createFakeModelProvider(behavior, { name: "openrouter" });
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    const handler = createAgentRunExecuteHandler({ modelRouter });
+    return { provider, handler, caps: fakeCapabilities({ candidates }) };
+  };
+
+  it("starts the lowest-rank candidate on its gateway, and reports the gateway's audit before completing", async () => {
+    const { provider, handler, caps } = gatewaySetup({
+      pool: "general_fast",
+      candidates: [
+        {
+          gateway: "openrouter",
+          model: "vendor/strong",
+          rank: 2,
+          acceptedBuilds: [],
+        },
+        {
+          gateway: "other_gateway",
+          model: "vendor/elsewhere",
+          rank: 0,
+          acceptedBuilds: [],
+        },
+        {
+          gateway: "openrouter",
+          model: "vendor/cheap",
+          rank: 1,
+          acceptedBuilds: ["vendor/cheap-20260101"],
+        },
+      ],
+    });
+    const result = await runCycle(handler, caps);
+    expect(result.called).toBe(true);
+    expect(caps.startAgentRun.mock.calls[0][0]).toMatchObject({
+      provider: "openrouter",
+      model: "vendor/cheap",
+    });
+    expect(provider.calls[0].model).toBe("vendor/cheap");
+    expect(provider.calls[0].acceptedResponseModels).toEqual([
+      "vendor/cheap-20260101",
+    ]);
+    expect(caps.used).toEqual([
+      "claimAgentRun",
+      "agentRunModelCandidates",
+      "startAgentRun",
+      "recordAgentRunGatewayReport",
+      "completeAgentRun",
+    ]);
+  });
+
+  it("refuses the run, calling nothing, when no authorized candidate is on its gateway", async () => {
+    for (const candidates of [
+      { pool: null, candidates: [] },
+      {
+        pool: "general_fast",
+        candidates: [
+          {
+            gateway: "other_gateway",
+            model: "x/y",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+    ]) {
+      const { provider, handler, caps } = gatewaySetup(candidates);
+      const result = await runCycle(handler, caps);
+      expect(result.called).toBe(false);
+      expect(caps.refuseAgentRun).toHaveBeenCalledWith(
+        "gateway_candidate_unavailable",
+      );
+      expect(caps.startAgentRun).not.toHaveBeenCalled();
+      expect(provider.calls).toHaveLength(0);
+    }
+  });
+
+  it.each([
+    [
+      { type: "fail", category: "provider_5xx", code: "http_503" },
+      "indeterminate",
+    ],
+    [
+      {
+        type: "fail",
+        category: "configuration",
+        code: "model_route_unavailable",
+      },
+      "failed",
+    ],
+  ] as const)(
+    "settles a failed call on the chosen candidate and never falls back to the next one: %j",
+    async (behavior, status) => {
+      const { provider, handler, caps } = gatewaySetup(
+        {
+          pool: "reception_low_cost",
+          candidates: [
+            {
+              gateway: "openrouter",
+              model: "vendor/first",
+              rank: 1,
+              acceptedBuilds: [],
+            },
+            {
+              gateway: "openrouter",
+              model: "vendor/second",
+              rank: 2,
+              acceptedBuilds: [],
+            },
+          ],
+        },
+        behavior,
+      );
+      const { detail } = await runCycle(handler, caps);
+      expect(provider.calls.map((call) => call.model)).toEqual([
+        "vendor/first",
+      ]);
+      expect(caps.startAgentRun).toHaveBeenCalledTimes(1);
+      expect(recordedFailure(caps)).toMatchObject({ code: behavior.code });
+      expect(detail).toContain(`status=${status}`);
+      expect(caps.used).not.toContain("recordAgentRunGatewayReport");
+    },
+  );
+
+  it("records the gateway report of a billed answer that fails the contract, before the failure", async () => {
+    const { handler, caps } = gatewaySetup(
+      {
+        pool: "reception_low_cost",
+        candidates: [
+          {
+            gateway: "openrouter",
+            model: "vendor/first",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+      {
+        type: "respond",
+        content: { not: "the contract" },
+        providerRoute: "OpenAI",
+        reportedCostMicros: 216,
+      },
+    );
+    await runCycle(handler, caps);
+    expect(recordedFailure(caps)).toMatchObject({
+      category: "schema_validation",
+    });
+    expect(caps.recordAgentRunGatewayReport).toHaveBeenCalledWith({
+      providerRoute: "OpenAI",
+      reportedCostMicros: 216,
+    });
+    expect(caps.used.slice(-2)).toEqual([
+      "recordAgentRunGatewayReport",
+      "failAgentRun",
+    ]);
+  });
+
+  it("refuses a candidate list it cannot read, starting nothing", async () => {
+    const { handler, caps } = gatewaySetup({ candidates: "everything" });
+    await expect(runCycle(handler, caps)).rejects.toThrow(/does not accept/);
+    expect(caps.startAgentRun).not.toHaveBeenCalled();
+  });
+
+  it("executes no route it did not resolve itself: a hand-built route naming another model is refused", async () => {
+    const provider = createFakeModelProvider(
+      { type: "respond", content: VALID },
+      { name: "openrouter" },
+    );
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    await expect(
+      modelRouter.executeStructured(
+        {
+          route: "standard",
+          provider: "openrouter",
+          model: "vendor/unauthorized",
+          policy: MODEL_ROUTE_POLICIES.standard,
+        },
+        { instructions: "x", input: "y" },
+        { name: "t", jsonSchema: {}, parse: (v: unknown) => v },
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({
+      category: "configuration",
+      code: "route_not_configured",
+    });
+    expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe("ADR 0022 §H: a call the gateway served and billed keeps its audit when its answer is unusable", () => {
+  // The real OpenRouter adapter behind the gateway router, over a stubbed
+  // network: what the database records is what a live billed failure gives.
+  const billed = (
+    overrides: Readonly<Record<string, unknown>> = {},
+    choice: Readonly<Record<string, unknown>> = {},
+  ) => ({
+    id: "gen-billed-1",
+    model: "vendor/first",
+    openrouter_metadata: {
+      endpoints: {
+        available: [{ provider: "OpenAI", selected: true }],
+        total: 1,
+      },
+    },
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: JSON.stringify(VALID), refusal: null },
+        ...choice,
+      },
+    ],
+    usage: {
+      prompt_tokens: 858,
+      completion_tokens: 259,
+      total_tokens: 1117,
+      cost: 0.000216,
+    },
+    ...overrides,
+  });
+
+  const cycle = async (body: unknown) => {
+    const provider = createOpenRouterChatProvider({
+      apiKey: TEST_API_KEY,
+      fetch: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    const handler = createAgentRunExecuteHandler({ modelRouter });
+    const caps = fakeCapabilities({
+      candidates: {
+        pool: "general_fast",
+        candidates: [
+          {
+            gateway: "openrouter",
+            model: "vendor/first",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+          {
+            gateway: "openrouter",
+            model: "vendor/second",
+            rank: 2,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+    });
+    await runCycle(handler, caps);
+    return caps;
+  };
+
+  it.each([
+    [
+      "output that is not JSON",
+      billed({}, { message: { content: "not json", refusal: null } }),
+      "invalid_response",
+      "output_not_json",
+      "vendor/first",
+    ],
+    [
+      "a refused finish reason",
+      billed({}, { finish_reason: "length" }),
+      "invalid_response",
+      "incomplete_max_output_tokens",
+      "vendor/first",
+    ],
+    [
+      "a refused model substitution",
+      billed({ model: "other/model" }),
+      "invalid_response",
+      "model_substituted",
+      "other/model",
+    ],
+    [
+      "a refusal",
+      billed({}, { message: { content: null, refusal: "no" } }),
+      "invalid_response",
+      "refusal",
+      "vendor/first",
+    ],
+    [
+      "output that fails the structured contract",
+      billed(
+        {},
+        {
+          message: {
+            content: JSON.stringify({ not: "the contract" }),
+            refusal: null,
+          },
+        },
+      ),
+      "schema_validation",
+      null,
+      "vendor/first",
+    ],
+  ] as const)(
+    "%s: the run fails, the gateway report and the usage are kept, nothing else is called",
+    async (_label, body, category, code, responseModel) => {
+      const caps = await cycle(body);
+      expect(caps.recordAgentRunGatewayReport).toHaveBeenCalledWith({
+        providerRoute: "OpenAI",
+        reportedCostMicros: 216,
+      });
+      expect(caps.used.slice(-2)).toEqual([
+        "recordAgentRunGatewayReport",
+        "failAgentRun",
+      ]);
+      const failure = recordedFailure(caps);
+      expect(failure).toMatchObject({
+        category,
+        responseModel,
+        providerResponseId: "gen-billed-1",
+        usage: { inputTokens: 858, outputTokens: 259, totalTokens: 1117 },
+      });
+      if (code !== null) expect(failure.code).toBe(code);
+      expect(failure.latencyMs).toEqual(expect.any(Number));
+      // One call, on the first candidate: a failed answer never falls back.
+      expect(caps.startAgentRun).toHaveBeenCalledTimes(1);
+      expect(caps.startAgentRun.mock.calls[0][0]).toMatchObject({
+        model: "vendor/first",
+      });
+    },
+  );
 });

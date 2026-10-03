@@ -174,6 +174,11 @@ begin
                                  now() + interval '1 day', 'q8 price source', 'q8-suite');
   perform ops.record_model_price('fake', 'q8-fake', 1.25, 2.5, true, now() - interval '1 minute',
                                  now() + interval '1 day', 'q8 price source', 'q8-suite');
+  -- ADR 0022: a provider that leaves the process must be an authorized pool candidate.
+  perform ops.record_model('openai', 'q8-model-a', 'q8', null, true, false, false, 'long', 'fast', 'low', 'q8 registry', 'q8-suite');
+  perform ops.record_model('openai', 'q8-model-b', 'q8', null, true, false, false, 'long', 'fast', 'low', 'q8 registry', 'q8-suite');
+  perform ops.add_model_pool_member('reception_low_cost', 'openai', 'q8-model-a', 1, 'q8-suite');
+  perform ops.add_model_pool_member('reception_low_cost', 'openai', 'q8-model-b', 2, 'q8-suite');
   perform ops.set_spend_limit('global', 900000000000, 'UTC', 'q8 ceiling', 'q8-suite');
   perform ops.set_spend_limit('tenant', 900000000000, 'UTC', 'q8 budget', 'q8-suite', ta);
   perform ops.set_spend_limit('tenant', 900000000000, 'UTC', 'q8 budget', 'q8-suite', tb);
