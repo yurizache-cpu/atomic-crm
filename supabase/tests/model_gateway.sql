@@ -15,6 +15,9 @@
 --   G  the structured decision ledger: born pending, answers held to the spec,
 --      start refuses protected data and missing models, the cost counts in the
 --      daily window, a settled decision is history.
+--   R  the review page's read (20261009120000): a browser-decidable review
+--      shows its own task's business route and lead intelligence and its own
+--      run's model advice, minimised; any other review reads unavailable.
 --
 -- ONE TRANSACTION, ROLLED BACK. Synthetic data only.
 
@@ -738,6 +741,151 @@ begin
         k, r.charged_cost_micros, r.reserved_cost_micros, r.estimated_cost_micros;
     end if;
   end loop;
+end
+$$;
+
+
+-- ===========================================================================
+-- R. The review page's read of the structured decisions (20261009120000).
+-- ===========================================================================
+
+do $$
+declare
+  ta     uuid := pg_temp.id('tenant');
+  v      jsonb;
+  v_rev  uuid;
+  v_out  uuid;
+  v_task uuid;
+  v_run  uuid;
+  v_dec  uuid;
+  v_spec jsonb := '{"intent": {"type": "choice", "options": ["new_lead", "pricing_question", "unknown"]},
+                    "department": {"type": "choice", "options": ["reception", "human_review", "no_action"]},
+                    "capability": {"type": "choice", "options": ["lead_triage", "none"]},
+                    "complexity": {"type": "score", "levels": 3},
+                    "human_review": {"type": "noul"}}'::jsonb;
+  c_keys constant text[] := array['answer', 'chargedCost', 'decisionModel', 'errorCode', 'questionSet', 'refusal',
+                                  'requestedAt', 'routeTaken', 'settledAt', 'status'];
+begin
+  -- A synthetic admission and the review a person decides in the browser.
+  v := ops.admit_inbound_message(ta, pg_temp.id('company'), pg_temp.id('agent'), 'synthetic', 'mg-ext-r1',
+                                 'synthetic:mg-r1@example.test', 'Synthetic enquiry r1 about prices', 'mg-suite',
+                                 false, now());
+  v_task := (v ->> 'task_id')::uuid;
+  v_run := (v ->> 'agent_run_id')::uuid;
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed)
+  values (ta, pg_temp.id('company'), v_task, v_run, 'lead_triage', '{}'::jsonb)
+  returning id into v_rev;
+
+  if ops.read_review_detail(ta, v_rev) -> 'structuredDecisions'
+     <> '{"status": "available", "businessRoute": null, "leadIntelligence": null, "modelRoute": null}'::jsonb then
+    raise exception 'R1: a review with no structured decision does not read available and empty: %',
+      ops.read_review_detail(ta, v_rev) -> 'structuredDecisions';
+  end if;
+
+  -- The business route: born pending, started, completed (Jev's stand-in).
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status, deterministic_route)
+  values (ta, pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'), v_task, v_run,
+          'business_route', 'business_routing.v1', 'mg:r:business', 'pending',
+          jsonb_build_object('department', 'reception', 'capability', 'lead_triage',
+                             'agentId', pg_temp.id('agent'), 'humanReview', true))
+  returning id into v_dec;
+  update ops.structured_decisions
+     set status = 'running', started_at = now(), gateway = 'openrouter', model = 'mg/decider-1',
+         input_fingerprint = 'sha256:' || repeat('2', 64), question_spec = v_spec, reserved_cost_micros = 40,
+         price_id = (select p.id from ops.model_prices p where p.provider = 'openrouter' and p.model = 'mg/decider-1'
+                      order by p.effective_from desc limit 1)
+   where id = v_dec;
+  v := ops.read_review_detail(ta, v_rev) #> '{structuredDecisions,businessRoute}';
+  if v ->> 'status' <> 'pending' or v -> 'answer' <> 'null'::jsonb or v -> 'settledAt' <> 'null'::jsonb
+     or v ->> 'decisionModel' is not null then
+    raise exception 'R2: a running decision does not read pending with nothing answered: %', v;
+  end if;
+  update ops.structured_decisions
+     set status = 'completed', served_model = 'mg/decider-1-20260917', charged_cost_micros = 31, settled_at = now(),
+         answers = '{"intent": {"type": "choice", "choice": "pricing_question", "confidence": 0.93,
+                                "probabilities": {"pricing_question": 0.93, "unknown": 0.07}},
+                     "department": {"type": "choice", "choice": "human_review", "confidence": 0.61},
+                     "capability": {"type": "choice", "choice": "lead_triage", "confidence": null},
+                     "complexity": {"type": "score", "score": 1.4, "level": 1, "confidence": 0.5},
+                     "human_review": {"type": "noul", "noul": 0.72}}'::jsonb
+   where id = v_dec;
+  v := ops.read_review_detail(ta, v_rev) #> '{structuredDecisions,businessRoute}';
+  if (select array_agg(k order by k) from jsonb_object_keys(v) k) <> c_keys then
+    raise exception 'R3: a decision carries keys beyond the minimised set: %', v;
+  end if;
+  if v - 'requestedAt' - 'settledAt' <> jsonb_build_object(
+       'status', 'completed', 'questionSet', 'business_routing.v1', 'refusal', null, 'errorCode', null,
+       'decisionModel', 'mg/decider-1-20260917', 'chargedCost', ops.cos_money(31),
+       'routeTaken', jsonb_build_object('department', jsonb_build_object('slug', 'reception', 'name', 'Reception'),
+                                        'capability', 'lead_triage'),
+       'answer', jsonb_build_object('intent', 'pricing_question', 'intentConfidence', 0.93,
+                                    'department', jsonb_build_object('slug', 'human_review', 'name', null),
+                                    'departmentConfidence', 0.61, 'capability', 'lead_triage',
+                                    'capabilityConfidence', null, 'complexity', 'medium',
+                                    'humanReviewProbability', 0.72))
+     or v ->> 'settledAt' is null then
+    raise exception 'R3: the completed business route does not read as recorded: %', v;
+  end if;
+  if v::text ~* '"probabilities"|fingerprint|mg:r:business|question_?spec|sha256' then
+    raise exception 'R3: the projection leaks a probability map, the spec, the key or the fingerprint: %', v;
+  end if;
+
+  -- A refused lead intelligence for the same task; a model advice for another
+  -- run and a lead intelligence of another task stay out.
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status, refusal_code, settled_at)
+  values (ta, pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'), v_task, v_run,
+          'lead_intelligence', 'lead_intelligence.v1', 'mg:r:lead', 'refused', 'data_not_authorized', now());
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status, deterministic_route)
+  values (ta, pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'),
+          pg_temp.id('task.e-cheap'), pg_temp.id('run.e-cheap'), 'model_route', 'model_route.v1', 'mg:r:model-other',
+          'pending', '{"executedModel": "mg/cheap"}'::jsonb),
+         (ta, pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'),
+          pg_temp.id('task.e-cheap'), pg_temp.id('run.e-cheap'), 'lead_intelligence', 'lead_intelligence.v1',
+          'mg:r:lead-other', 'pending', null);
+  v := ops.read_review_detail(ta, v_rev) -> 'structuredDecisions';
+  if v #>> '{leadIntelligence,status}' <> 'refused' or v #>> '{leadIntelligence,refusal}' <> 'data_not_authorized'
+     or v #> '{leadIntelligence,answer}' <> 'null'::jsonb or v #> '{leadIntelligence,routeTaken}' <> 'null'::jsonb
+     or v -> 'modelRoute' <> 'null'::jsonb then
+    raise exception 'R4: the review reads another task''s or run''s decisions, or the refusal wrongly: %', v;
+  end if;
+
+  -- Its own run's model advice, completed, beside the model that executed.
+  insert into ops.structured_decisions (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id,
+                                        decision_kind, question_set, idempotency_key, status, deterministic_route)
+  values (ta, pg_temp.id('company'), pg_temp.id('department'), pg_temp.id('agent'), v_task, v_run,
+          'model_route', 'model_route.v1', 'mg:r:model', 'pending',
+          '{"executedModel": "mg/strong", "gateway": "openrouter", "pool": "reception_low_cost"}'::jsonb)
+  returning id into v_dec;
+  update ops.structured_decisions
+     set status = 'running', started_at = now(), gateway = 'openrouter', model = 'mg/decider-1',
+         input_fingerprint = 'sha256:' || repeat('3', 64),
+         question_spec = '{"model": {"type": "choice", "options": ["mg/cheap", "mg/strong"]}}'::jsonb,
+         reserved_cost_micros = 40,
+         price_id = (select p.id from ops.model_prices p where p.provider = 'openrouter' and p.model = 'mg/decider-1'
+                      order by p.effective_from desc limit 1)
+   where id = v_dec;
+  update ops.structured_decisions
+     set status = 'completed', served_model = 'mg/decider-1', settled_at = now(),
+         answers = '{"model": {"type": "choice", "choice": "mg/cheap", "confidence": 0.8}}'::jsonb
+   where id = v_dec;
+  v := ops.read_review_detail(ta, v_rev) #> '{structuredDecisions,modelRoute}';
+  if v -> 'answer' <> '{"suggestedModel": "mg/cheap", "confidence": 0.8}'::jsonb
+     or v -> 'routeTaken' <> '{"model": "mg/strong"}'::jsonb then
+    raise exception 'R5: the model advice does not read beside the model that executed: %', v;
+  end if;
+
+  -- A review outside the synthetic and test scope reads unavailable, whatever
+  -- its task holds.
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed)
+  values (ta, pg_temp.id('company'), pg_temp.id('task.e-cheap'), pg_temp.id('run.e-cheap'), 'lead_triage', '{}'::jsonb)
+  returning id into v_out;
+  if ops.read_review_detail(ta, v_out) -> 'structuredDecisions' <> '{"status": "unavailable"}'::jsonb then
+    raise exception 'R6: a review outside the test scope shows structured decisions: %',
+      ops.read_review_detail(ta, v_out) -> 'structuredDecisions';
+  end if;
 end
 $$;
 

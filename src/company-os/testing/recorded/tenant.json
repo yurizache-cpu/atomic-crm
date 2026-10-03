@@ -802,7 +802,67 @@
         "doNotContact": true,
         "outboundStatus": null,
         "shadowDecision": null,
-        "allowedDecisions": ["rejected", "needs_edit"]
+        "allowedDecisions": ["rejected", "needs_edit"],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": {
+            "answer": {
+              "confidence": 0.64,
+              "suggestedModel": "dbtest/cheaper-model"
+            },
+            "status": "completed",
+            "refusal": null,
+            "errorCode": null,
+            "settledAt": "2026-09-22T10:00:00.000000Z",
+            "routeTaken": { "model": "dbtest-cos-contract-model" },
+            "chargedCost": { "usd": "0.000031", "micros": "31" },
+            "questionSet": "model_route.v1",
+            "requestedAt": "2026-09-22T10:00:00.000000Z",
+            "decisionModel": "typesafe/jev-1.13-20260917"
+          },
+          "businessRoute": {
+            "answer": {
+              "intent": "existing_client_admin",
+              "capability": "lead_triage",
+              "complexity": "low",
+              "department": { "name": "Night Desk", "slug": "night-desk" },
+              "intentConfidence": 0.91,
+              "capabilityConfidence": 0.7,
+              "departmentConfidence": 0.99,
+              "humanReviewProbability": 0.3
+            },
+            "status": "completed",
+            "refusal": null,
+            "errorCode": null,
+            "settledAt": "2026-09-22T10:00:00.000000Z",
+            "routeTaken": {
+              "capability": "lead_triage",
+              "department": { "name": "Intake", "slug": "intake" }
+            },
+            "chargedCost": { "usd": "0.000031", "micros": "31" },
+            "questionSet": "business_routing.v1",
+            "requestedAt": "2026-09-22T10:00:00.000000Z",
+            "decisionModel": "typesafe/jev-1.13-20260917"
+          },
+          "leadIntelligence": {
+            "answer": {
+              "objection": "price",
+              "nextBestAction": "share_pricing_information",
+              "followUpPriority": "high",
+              "commercialReadiness": "medium",
+              "schedulingReadiness": "low"
+            },
+            "status": "completed",
+            "refusal": null,
+            "errorCode": null,
+            "settledAt": "2026-09-22T10:00:00.000000Z",
+            "routeTaken": null,
+            "chargedCost": { "usd": "0.000031", "micros": "31" },
+            "questionSet": "lead_intelligence.v1",
+            "requestedAt": "2026-09-22T10:00:00.000000Z",
+            "decisionModel": "typesafe/jev-1.13-20260917"
+          }
+        }
       }
     },
     {
@@ -823,7 +883,38 @@
         "doNotContact": false,
         "outboundStatus": "failed",
         "shadowDecision": null,
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": null,
+          "businessRoute": {
+            "answer": null,
+            "status": "refused",
+            "refusal": "stopped",
+            "errorCode": null,
+            "settledAt": "2026-09-22T10:00:00.000000Z",
+            "routeTaken": {
+              "capability": "lead_triage",
+              "department": { "name": "Intake", "slug": "intake" }
+            },
+            "chargedCost": null,
+            "questionSet": "business_routing.v1",
+            "requestedAt": "2026-09-22T10:00:00.000000Z",
+            "decisionModel": null
+          },
+          "leadIntelligence": {
+            "answer": null,
+            "status": "pending",
+            "refusal": null,
+            "errorCode": null,
+            "settledAt": null,
+            "routeTaken": null,
+            "chargedCost": null,
+            "questionSet": "lead_intelligence.v1",
+            "requestedAt": "2026-09-22T10:00:00.000000Z",
+            "decisionModel": null
+          }
+        }
       }
     },
     {
@@ -844,7 +935,13 @@
         "doNotContact": false,
         "outboundStatus": "blocked",
         "shadowDecision": null,
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": null,
+          "businessRoute": null,
+          "leadIntelligence": null
+        }
       }
     },
     {
@@ -865,7 +962,13 @@
         "doNotContact": false,
         "outboundStatus": "indeterminate",
         "shadowDecision": null,
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": null,
+          "businessRoute": null,
+          "leadIntelligence": null
+        }
       }
     },
     {
@@ -886,7 +989,8 @@
         "doNotContact": false,
         "outboundStatus": null,
         "shadowDecision": { "status": "unavailable" },
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": { "status": "unavailable" }
       }
     },
     {
@@ -907,7 +1011,13 @@
         "doNotContact": false,
         "outboundStatus": null,
         "shadowDecision": null,
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": null,
+          "businessRoute": null,
+          "leadIntelligence": null
+        }
       }
     },
     {
@@ -928,7 +1038,8 @@
         "doNotContact": false,
         "outboundStatus": null,
         "shadowDecision": { "status": "unavailable" },
-        "allowedDecisions": []
+        "allowedDecisions": [],
+        "structuredDecisions": { "status": "unavailable" }
       }
     },
     {
@@ -965,7 +1076,13 @@
           "policyVersion": "decision_shadow.v2",
           "recommendation": "accept"
         },
-        "allowedDecisions": ["accepted", "rejected", "needs_edit"]
+        "allowedDecisions": ["accepted", "rejected", "needs_edit"],
+        "structuredDecisions": {
+          "status": "available",
+          "modelRoute": null,
+          "businessRoute": null,
+          "leadIntelligence": null
+        }
       }
     },
     {

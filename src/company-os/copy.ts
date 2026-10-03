@@ -171,6 +171,90 @@ export const SHADOW_REASON_LABELS = {
 /** A code outside the current vocabulary: stored history (policy v1). */
 export const SHADOW_REASON_UNKNOWN = "Motivo de uma versão anterior";
 
+// ADR 0022: the structured decisions on a review (the decision model, Jev
+// today), in shadow mode. Advisory only: they perform nothing, and the
+// person's decision stays required.
+export const STRUCTURED_TITLE = "Decisões estruturadas";
+
+export const STRUCTURED_NOTE =
+  "O que o modelo de decisão responderia sobre esta demanda. Não executa nenhuma ação e não substitui sua decisão.";
+
+export const STRUCTURED_EMPTY =
+  "Nenhuma decisão estruturada foi pedida para esta revisão.";
+
+export const STRUCTURED_BLOCK_TITLES = {
+  businessRoute: "Roteamento da demanda",
+  leadIntelligence: "Sinais do contato",
+  modelRoute: "Modelo para esta tarefa",
+} as const;
+
+export const STRUCTURED_INTENT_LABELS = {
+  new_lead: "Primeiro contato",
+  pricing_question: "Pergunta sobre valores",
+  scheduling: "Quer agendar",
+  rescheduling: "Quer remarcar",
+  cancellation: "Quer cancelar",
+  existing_client_admin: "Pedido administrativo de cliente",
+  payment_question: "Pagamento",
+  follow_up: "Continuação de conversa",
+  unknown: "Não identificada",
+} as const;
+
+/** The two routes every business decision may name besides a department. */
+export const STRUCTURED_SPECIAL_DEPARTMENTS: Readonly<Record<string, string>> =
+  {
+    human_review: "Revisão humana",
+    no_action: "Nenhuma ação",
+  };
+
+export const STRUCTURED_CAPABILITY_LABELS: Readonly<Record<string, string>> = {
+  lead_triage: "Triagem de contato",
+  none: "Nenhuma (uma pessoa cuida)",
+};
+
+export const STRUCTURED_LEVEL_LABELS = {
+  low: "Baixa",
+  medium: "Média",
+  high: "Alta",
+} as const;
+
+export const STRUCTURED_OBJECTION_LABELS = {
+  price: "Preço ou forma de pagamento",
+  schedule: "Horários",
+  modality: "Formato (sessões online)",
+  trust_or_fit: "Confiança ou adequação",
+  none: "Nenhuma aparente",
+  unknown: "Não dá para saber",
+} as const;
+
+export const STRUCTURED_NEXT_ACTION_LABELS = {
+  offer_slots: "Oferecer horários",
+  share_pricing_information: "Enviar valores e pacotes",
+  answer_question: "Responder a dúvida primeiro",
+  follow_up_later: "Retomar mais tarde",
+  human_review: "Uma pessoa decide o próximo passo",
+} as const;
+
+export const STRUCTURED_STATE_TEXT = {
+  none: "Não pedida para esta revisão.",
+  pending: "Em andamento. Nenhuma resposta ainda.",
+  indeterminate: "O resultado é incerto. Nenhuma resposta foi registrada.",
+  invalid:
+    "A resposta foi recusada (fora do formato ou de outro modelo). Nenhuma resposta foi registrada.",
+  failed: "O modelo de decisão não respondeu. Nenhuma resposta foi registrada.",
+} as const;
+
+export const STRUCTURED_REFUSAL_TEXT = {
+  stopped: "Não pedida: uma pausa estava ativa.",
+  not_eligible: "Não pedida: fora do escopo.",
+  data_not_authorized: "Não pedida: os dados não são sintéticos nem de teste.",
+  model_route_unavailable:
+    "Não pedida: nenhum modelo de decisão autorizado e com preço.",
+  spend_ceiling_unconfigured: "Não pedida: falta o teto global de gastos.",
+  budget_unconfigured: "Não pedida: falta o orçamento.",
+  budget_exhausted: "Não pedida: o orçamento do dia acabou.",
+} as const;
+
 // Phase 2D.3: the shadow calibration view (Decisões → Inteligência).
 export const DECISION_INTELLIGENCE_TAB = "Inteligência";
 

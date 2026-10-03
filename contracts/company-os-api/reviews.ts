@@ -24,6 +24,7 @@ import {
   ShadowPolicyVersionSchema,
   ShadowProviderSchema,
 } from "./decisions.ts";
+import { ReviewStructuredDecisionsSchema } from "./structuredDecisions.ts";
 import {
   AdviceWithheldReasonSchema,
   LEAD_TRIAGE_FLAGS,
@@ -139,6 +140,8 @@ export const ReviewDetailSchema = z
     allowedDecisions: z.array(ReviewDecisionSchema).max(3),
     // null: in scope, and no shadow decision was requested.
     shadowDecision: ShadowDecisionSchema.nullable(),
+    // ADR 0022: the structured decisions (Jev) for this review, advisory.
+    structuredDecisions: ReviewStructuredDecisionsSchema,
   })
   .superRefine((review, ctx) => {
     if (review.hasNote !== (review.decisionNote !== null)) {

@@ -23,13 +23,15 @@ import { AdviceView } from "./AdviceView";
 import { DecisionPanel } from "./DecisionPanel";
 import { ReviewSummaryFields } from "./ReviewSummaryFields";
 import { ShadowDecisionSection } from "./ShadowDecisionSection";
+import { StructuredDecisionsSection } from "./StructuredDecisionsSection";
 
 // One review (get_review): its summary, the decision note and, while it is
 // open, the one browser act (S7.1): the member's decision, confirmed, which
 // sends nothing. The structured advice is a separate read, made only when the
 // operator opens it and dropped from memory when they close it
 // (docs/PHASE_2C_BRIEF.md §13 item 3). The reply draft is never shown. The
-// shadow decision (Phase 2D.1) is shown read only, and decides nothing.
+// shadow decision (Phase 2D.1) and the structured decisions (ADR 0022) are
+// shown read only, and decide nothing.
 
 const Decision = ({ review }: { review: ReviewDetailData }) => (
   <Section title="Decisão">
@@ -89,6 +91,8 @@ const ReviewDetailBody = ({ review }: { review: ReviewDetailData }) => (
     <Decision review={review} />
     {/* Phase 2D.1: advisory, read only; it changes nothing above. */}
     <ShadowDecisionSection review={review} />
+    {/* ADR 0022: the decision model's answers, advisory and read only. */}
+    <StructuredDecisionsSection review={review} />
     {/* Keyed by review: the route keeps this element when only :reviewId
         changes (Back, a typed address), and an advice view opened on one
         review must never read or show another's without its own open. */}

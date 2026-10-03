@@ -29,5 +29,6 @@ export * from "./primitives.ts";
 export * from "./reviews.ts";
 export * from "./runs.ts";
 export * from "./stops.ts";
+export * from "./structuredDecisions.ts";
 export * from "./tasks.ts";
 export * from "./vocabulary.ts";

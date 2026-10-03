@@ -184,7 +184,16 @@ Prompts are not stored for analytics. Retention (ADR 0020 §I) is unchanged.
 | **A decision's attempt dies** | The reaper settles it `indeterminate`, charged at its reservation; it is never asked again. |
 | **A forbidden fallback** | Impossible by construction: one exact model, `allow_fallbacks: false`, and no `models` list. |
 
-## J. What this record does NOT do
+## I.1 The review page shows the decisions, read only (2026-10-03)
+
+The owner reviews a triage in the browser; the structured decisions for the same demand were stored but not shown. Migration `20261009120000_review_structured_decisions.sql` adds them to the existing `get_review` read as `structuredDecisions`. No exposed function changes, so this is not an OD-8a migration.
+
+- **Scope:** the same as the Phase 2D shadow decision. A browser-decidable review (`lead_triage`, synthetic or test data) shows its task's business route and lead intelligence and its run's model-route advice. Any other review reads `unavailable`.
+- **Minimised:** each decision shows its state, refusal or error code, the build that answered, its charged cost and its instants. Once completed it also shows the chosen options, their levels and confidences, beside the route the deterministic path took. Never the question spec, the input fingerprint, the idempotency key, the job, the raw answers or a probability map.
+- **Tenant data, not code:** a department the decision names is shown with the name its company gives it. Only `human_review` and `no_action` have labels in the interface.
+- **Advisory:** nothing about it changes the decisions a person may make. The page says it is shadow mode and that human review is required. Lead intelligence is shown as levels (low, medium, high), never as a percentage, until calibration exists (§F).
+- **Pinned:** the strict contract (`contracts/company-os-api/structuredDecisions.ts`) and its option lists equal the question sets'. The read graph and the projection's key set are pinned in `company_os_api.sql`. Section R of `model_gateway.sql` covers the scope, the per-task and per-run selection and the leak check, each mutation-verified.
+
 
 - It opens no real-data path, records no authorization for protected data, and keeps the production WhatsApp gate closed.
 - It makes no business decision automatic: Jev runs in shadow only.
