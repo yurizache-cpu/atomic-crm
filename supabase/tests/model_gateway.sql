@@ -699,4 +699,46 @@ begin
 end
 $$;
 
+do $$
+declare
+  r  ops.agent_runs;
+  rr ops.agent_run_routes;
+  k  text;
+begin
+  -- H7 a call the gateway served and billed but whose answer was unusable: the
+  -- run fails, the gateway report stays, and it is never charged zero (its
+  -- usage estimate, or its reservation when no usage came back). The failure
+  -- of the run and the fact of the paid call are recorded separately.
+  perform ops.record_agent_profile(pg_temp.id('tenant'), pg_temp.id('agent'), 'Triage synthetic enquiries.',
+                                   array['lead_triage'], array['synthetic', 'test'], 100000000, 'UTC',
+                                   '{}'::jsonb, 'mg-suite');
+  foreach k in array array['h-billed-usage', 'h-billed-nousage'] loop
+    perform pg_temp.task(k, 'synthetic');
+    perform pg_temp.request(k);
+    if pg_temp.start(k, 'openrouter', 'mg/cheap') <> 'running' then
+      raise exception 'H7 setup: % did not start', k;
+    end if;
+    execute 'set local role ops_worker';
+    perform ops.record_agent_run_gateway_report('OpenAI', 216);
+    if k = 'h-billed-usage' then
+      perform ops.fail_agent_run('invalid_response', 'model_substituted', 'other/model', null, 'gen-billed-1',
+                                 858, 259, 1117, null, null, 4100);
+    else
+      perform ops.fail_agent_run('invalid_response', 'output_not_json', 'mg/cheap', null, 'gen-billed-2',
+                                 null, null, null, null, null, 4100);
+    end if;
+    execute 'reset role';
+    r := pg_temp.run(k);
+    select * into rr from ops.agent_run_routes where agent_run_id = r.id;
+    if r.status <> 'failed' or rr.provider_route is distinct from 'OpenAI' or rr.reported_cost_micros is distinct from 216
+       or coalesce(r.charged_cost_micros, 0) <= 0
+       or (k = 'h-billed-usage' and r.charged_cost_micros is distinct from r.estimated_cost_micros)
+       or (k = 'h-billed-nousage' and r.charged_cost_micros is distinct from r.reserved_cost_micros) then
+      raise exception 'H7: a billed failure (%) lost its audit or was charged % (reserved %, estimated %)',
+        k, r.charged_cost_micros, r.reserved_cost_micros, r.estimated_cost_micros;
+    end if;
+  end loop;
+end
+$$;
+
 rollback;

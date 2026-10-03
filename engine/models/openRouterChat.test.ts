@@ -5,6 +5,7 @@ import { agentRunStatusForCategory, ModelError } from "./errors.ts";
 import {
   createOpenRouterChatProvider,
   OPENROUTER_CHAT_URL,
+  OPENROUTER_METADATA_HEADER,
   OPENROUTER_PROVIDER_CONSTRAINTS,
   openRouterStatus,
   reportedCostMicros,
@@ -48,8 +49,16 @@ const completion = (
   choice: Readonly<Record<string, unknown>> = {},
 ) => ({
   id: "gen-1790000000-abc",
-  provider: "DeepInfra",
   model: MODEL,
+  openrouter_metadata: {
+    endpoints: {
+      available: [
+        { model: MODEL, provider: "Together", selected: false },
+        { model: MODEL, provider: "DeepInfra", selected: true },
+      ],
+      total: 2,
+    },
+  },
   object: "chat.completion",
   choices: [
     {
@@ -123,6 +132,11 @@ describe("the request names one exact model and forbids every fallback", () => {
     expect((init.headers as Record<string, string>).authorization).toBe(
       `Bearer ${TEST_API_KEY}`,
     );
+    expect(init.headers).toEqual({
+      "content-type": "application/json",
+      authorization: `Bearer ${TEST_API_KEY}`,
+      [OPENROUTER_METADATA_HEADER]: "enabled",
+    });
     expect(Object.keys(body).sort()).toEqual(
       [
         "max_tokens",
@@ -192,6 +206,55 @@ describe("a usable answer", () => {
     });
   });
 
+  it("takes the provider from the documented metadata's selected endpoint, over the undocumented field", async () => {
+    const result = await run(() =>
+      jsonResponse(200, completion({ provider: "Undocumented" })),
+    );
+    expect(result.providerRoute).toBe("DeepInfra");
+  });
+
+  it.each([
+    ["no endpoint selected", [{ provider: "DeepInfra", selected: false }]],
+    [
+      "two endpoints selected",
+      [
+        { provider: "DeepInfra", selected: true },
+        { provider: "Together", selected: true },
+      ],
+    ],
+    ["a malformed provider name", [{ provider: "bad;name", selected: true }]],
+    [
+      "the key echoed as a provider",
+      [{ provider: TEST_API_KEY, selected: true }],
+    ],
+  ])(
+    "records no route for %s, never the undocumented field instead",
+    async (_label, available) => {
+      const result = await run(() =>
+        jsonResponse(
+          200,
+          completion({
+            provider: "Undocumented",
+            openrouter_metadata: {
+              endpoints: { available, total: available.length },
+            },
+          }),
+        ),
+      );
+      expect(result.providerRoute).toBeNull();
+    },
+  );
+
+  it("reads the observed top-level provider only when the metadata is missing altogether", async () => {
+    const result = await run(() =>
+      jsonResponse(
+        200,
+        completion({ openrouter_metadata: undefined, provider: "Observed" }),
+      ),
+    );
+    expect(result.providerRoute).toBe("Observed");
+  });
+
   it("rounds the reported cost up to whole micro-dollars and drops a nonsense value", () => {
     expect(reportedCostMicros({ cost: 0.000001 })).toBe(1);
     expect(reportedCostMicros({ cost: 0.0000271 })).toBe(28);
@@ -210,7 +273,12 @@ describe("a billed but unusable answer keeps its gateway report", () => {
           JSON.stringify({
             id: "gen-1",
             model: "other/model",
-            provider: "DeepInfra",
+            openrouter_metadata: {
+              endpoints: {
+                available: [{ provider: "DeepInfra", selected: true }],
+                total: 1,
+              },
+            },
             usage: {
               prompt_tokens: 10,
               completion_tokens: 5,

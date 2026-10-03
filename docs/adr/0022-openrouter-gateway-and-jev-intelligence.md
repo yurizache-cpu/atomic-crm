@@ -161,6 +161,8 @@ Every run records:
 - the gateway, the model, the provider route, the tokens and the latency;
 - our charged cost, from the owner's price (authoritative, ADR 0017), and OpenRouter's reported cost, kept separately for reconciliation.
 
+**Where the provider route comes from:** OpenRouter's documented routing metadata. The adapter sends `X-OpenRouter-Metadata: enabled` and keeps only the provider of the endpoint marked `selected`. A call the gateway served and billed keeps this audit even when its answer is unusable, and it is never charged zero.
+
 Every Jev decision records its own usage and cost under the same daily budget, through a price row for the Jev build.
 
 A read model reports cost by run, agent, department, capability, model and tenant, plus the routing economics: actual cost against the cost the strongest authorized candidate would have had at the same tokens.

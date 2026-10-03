@@ -106,7 +106,7 @@ The broad local validation, on 2026-10-02, after a clean `db reset` of the isola
 - **`test:db`:** 25 of 26 suites pass, including the new `model_gateway.sql` (sections A to G). The one red is `ownerSessionPool.mjs`, which fails locally on this machine only: the edge runtime and the antivirus's HTTPS interception (CLAUDE.md, Known issues). CI is its judge.
 - **`test:db:engine`:** 409 of 409 driver-backed tests in 55 files, including the new end-to-end `modelGatewayFlow.dbtest.ts`, which runs the real worker loop and database with scripted gateways: cases A and B and four failure cases.
 - **`test:db:upgrade`:** PASS. Legacy data keeps its meaning across the two new migrations.
-- **Unit projects:** 3830 passed and 30 skipped. The only reds are local false reds:
+- **Unit projects:** 3845 passed and 30 skipped, after the PR #24 review fixes (3830 before them). The only reds are local false reds:
   - an untracked, stale `.claude/worktrees/` copy of the hooks;
   - two `scripts/` tests that cannot be collected from a CRLF checkout of a hashbang script. Converted to LF, as git stores them and CI checks them out, they pass 22 of 22.
 - **Security invariants:** 85 of 85, SI-78 included.
@@ -132,10 +132,24 @@ An independent review of the whole branch, before the pull request, found no P0 
 
 ## 7b. Automated review on PR #24
 
-The automated review left two P2 comments:
+The automated review left two P2 comments. The owner ruled both in scope (2026-10-03), and both are fixed:
 
-1. **Read the upstream route from `openrouter_metadata` instead of `provider`.** Not applied: the live run disproves it. Both chat calls and all six Decisions calls returned `provider` without any opt-in header, and the ledger holds `OpenAI` and `TypeSafe` from those responses (§8).
-2. **Keep the gateway report when a billed answer is unusable.** Fixed. `ModelError` now carries the provider route and the reported cost, well formed or null. They are set wherever a billed answer turns out unusable: the chat adapter, the router's contract check and the Decisions adapter. The agent run's failure branch then records the report before the failure, and a failed decision settles with it. A mutation that skips the record turns the new handler test red.
+1. **Take the upstream provider from the documented metadata.** OpenRouter documents the served provider only as opt-in routing metadata: the request header `X-OpenRouter-Metadata: enabled`, and `openrouter_metadata.endpoints.available[]` on the response, where the endpoint marked `selected` served the call. The top-level `provider` field it had returned in the first live run is not documented.
+   - **What the adapter does now:** it sends the header on every chat call and records the provider of the one selected endpoint. With no endpoint selected, more than one, a malformed name, or the key echoed back, it records no route; it never substitutes the undocumented field. That field is read only when the metadata is missing altogether, which the header should never allow.
+   - **Only the selected provider's name is kept,** never the list of endpoints.
+   - **Routing does not change:** the header adds metadata and nothing else. The request still names one exact model with `allow_fallbacks: false`.
+   - **Proof:** five adapter tests and four mutations. Removing the header, ignoring `selected`, preferring the undocumented field, or accepting two selected endpoints each turned a test red.
+2. **A call the gateway served and billed keeps its audit when its answer is unusable.**
+   - **The audit travels with the error:** `ModelError` now carries the provider route and the reported cost, well formed or null. They are set wherever a billed answer turns out unusable: the chat adapter, the router's contract check and the Decisions adapter.
+   - **The agent run's failure branch** records the gateway report before the failure. The failure keeps the served model, the response id, the usage and the latency, as it did before. A failed decision settles with the same audit.
+   - **The run's failure is kept apart from the paid call:** the run is `failed`, while `ops.agent_run_routes` keeps the provider and OpenRouter's reported cost.
+   - **The database charges the usage estimate, or the reservation when no usage came back; never zero.** Only a refusal with no response at all is charged nothing, a rule that predates this milestone.
+   - **Proof:**
+     - five handler tests through the real adapter: output that is not JSON, a refused finish reason (`length`), a refused model substitution, a refusal, and output failing the structured contract. Each keeps the report before the failure, and each makes one call on the first candidate, with no fallback;
+     - SQL case H7: a billed failure with usage is charged its estimate, one without usage its reservation, and the route keeps its report;
+     - mutations, each caught by name: the adapter, the router or the handler dropping the report, a paid failure charged zero, and the usage estimate ignored.
+
+**Q8 and fallback are unchanged.** The database still decides the candidates before any router (SI-78); OpenRouter still cannot be authorized for `person_text` or `health`; the recorded provider route is audit only and authorizes nothing; and no change here calls a second model or a second provider.
 
 CI on the PR head: Test, Build, Typecheck, ESLint and Database pass. e2e is exactly 9 failed and 1 skipped, the same ids, and Prettier is exactly the two baseline files. No new regression.
 

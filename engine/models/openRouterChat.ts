@@ -101,6 +101,15 @@ export function openRouterStatus(status: number): {
 /** An upstream provider name as OpenRouter reports it ("OpenAI", "Google AI Studio"). */
 export const PROVIDER_ROUTE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$/;
 
+/**
+ * OpenRouter's documented opt-in for routing metadata on a chat completion:
+ * the response then carries `openrouter_metadata.endpoints.available[]`, and
+ * the endpoint marked `selected` is the one that served the call. Audit only:
+ * it changes no routing, and the request still names one exact model with
+ * fallbacks off.
+ */
+export const OPENROUTER_METADATA_HEADER = "x-openrouter-metadata";
+
 const FINISH_REASON_FAILURES: ReadonlyMap<string, string> = new Map([
   ["length", "incomplete_max_output_tokens"],
   ["content_filter", "content_filter"],
@@ -164,6 +173,16 @@ export function createOpenRouterChatProvider(options: {
     typeof value === "string" && PROVIDER_ROUTE_PATTERN.test(value)
       ? withoutKey(value)
       : null;
+  // The provider of the ONE endpoint the metadata marks selected; none, or
+  // more than one, is no answer. Only that name is kept, never the list.
+  const selectedEndpointProvider = (metadata: unknown): string | null => {
+    const available = asObject(asObject(metadata)?.endpoints)?.available;
+    if (!Array.isArray(available)) return null;
+    const selected = available
+      .map((entry) => asObject(entry))
+      .filter((entry) => entry !== null && entry.selected === true);
+    return selected.length === 1 ? providerRoute(selected[0]?.provider) : null;
+  };
 
   const execute = async (
     request: ModelRequest,
@@ -202,6 +221,7 @@ export function createOpenRouterChatProvider(options: {
           headers: {
             "content-type": "application/json",
             authorization: `Bearer ${apiKey}`,
+            [OPENROUTER_METADATA_HEADER]: "enabled",
           },
           body,
           signal,
@@ -276,7 +296,14 @@ export function createOpenRouterChatProvider(options: {
       isModelId(root?.model) && withoutKey(root.model) !== null
         ? root.model
         : null;
-    const route = providerRoute(root?.provider);
+    // ADR 0022 §H: the upstream provider from the documented metadata. The
+    // top-level `provider` is observed but undocumented, so it is read only
+    // when the metadata is missing altogether, never over it.
+    const metadata = root?.openrouter_metadata;
+    const route =
+      metadata !== undefined && metadata !== null
+        ? selectedEndpointProvider(metadata)
+        : providerRoute(root?.provider);
     const costMicros = reportedCostMicros(root?.usage);
     const latencyMs = elapsed();
 

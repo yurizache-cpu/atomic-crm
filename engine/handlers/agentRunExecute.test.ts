@@ -28,6 +28,8 @@ import type {
   AgentRunFailure,
   AgentRunStart,
 } from "../worker/capabilities.ts";
+import { createOpenRouterChatProvider } from "../models/openRouterChat.ts";
+import { TEST_API_KEY } from "../models/testSupport/openAiFakeFetch.ts";
 import { settlementDetail } from "../worker/handlerRegistry.ts";
 import {
   PermanentError,
@@ -1597,4 +1599,147 @@ describe("ADR 0022: a gateway router chooses only among the database's authorize
     });
     expect(provider.calls).toHaveLength(0);
   });
+});
+
+describe("ADR 0022 §H: a call the gateway served and billed keeps its audit when its answer is unusable", () => {
+  // The real OpenRouter adapter behind the gateway router, over a stubbed
+  // network: what the database records is what a live billed failure gives.
+  const billed = (
+    overrides: Readonly<Record<string, unknown>> = {},
+    choice: Readonly<Record<string, unknown>> = {},
+  ) => ({
+    id: "gen-billed-1",
+    model: "vendor/first",
+    openrouter_metadata: {
+      endpoints: {
+        available: [{ provider: "OpenAI", selected: true }],
+        total: 1,
+      },
+    },
+    choices: [
+      {
+        finish_reason: "stop",
+        message: { content: JSON.stringify(VALID), refusal: null },
+        ...choice,
+      },
+    ],
+    usage: {
+      prompt_tokens: 858,
+      completion_tokens: 259,
+      total_tokens: 1117,
+      cost: 0.000216,
+    },
+    ...overrides,
+  });
+
+  const cycle = async (body: unknown) => {
+    const provider = createOpenRouterChatProvider({
+      apiKey: TEST_API_KEY,
+      fetch: async () =>
+        new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    });
+    const modelRouter = createModelRouter({
+      routes: new Map(),
+      providers: new Map(),
+      gateway: { provider, tiers: ["standard"] },
+    });
+    const handler = createAgentRunExecuteHandler({ modelRouter });
+    const caps = fakeCapabilities({
+      candidates: {
+        pool: "general_fast",
+        candidates: [
+          {
+            gateway: "openrouter",
+            model: "vendor/first",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+          {
+            gateway: "openrouter",
+            model: "vendor/second",
+            rank: 2,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+    });
+    await runCycle(handler, caps);
+    return caps;
+  };
+
+  it.each([
+    [
+      "output that is not JSON",
+      billed({}, { message: { content: "not json", refusal: null } }),
+      "invalid_response",
+      "output_not_json",
+      "vendor/first",
+    ],
+    [
+      "a refused finish reason",
+      billed({}, { finish_reason: "length" }),
+      "invalid_response",
+      "incomplete_max_output_tokens",
+      "vendor/first",
+    ],
+    [
+      "a refused model substitution",
+      billed({ model: "other/model" }),
+      "invalid_response",
+      "model_substituted",
+      "other/model",
+    ],
+    [
+      "a refusal",
+      billed({}, { message: { content: null, refusal: "no" } }),
+      "invalid_response",
+      "refusal",
+      "vendor/first",
+    ],
+    [
+      "output that fails the structured contract",
+      billed(
+        {},
+        {
+          message: {
+            content: JSON.stringify({ not: "the contract" }),
+            refusal: null,
+          },
+        },
+      ),
+      "schema_validation",
+      null,
+      "vendor/first",
+    ],
+  ] as const)(
+    "%s: the run fails, the gateway report and the usage are kept, nothing else is called",
+    async (_label, body, category, code, responseModel) => {
+      const caps = await cycle(body);
+      expect(caps.recordAgentRunGatewayReport).toHaveBeenCalledWith({
+        providerRoute: "OpenAI",
+        reportedCostMicros: 216,
+      });
+      expect(caps.used.slice(-2)).toEqual([
+        "recordAgentRunGatewayReport",
+        "failAgentRun",
+      ]);
+      const failure = recordedFailure(caps);
+      expect(failure).toMatchObject({
+        category,
+        responseModel,
+        providerResponseId: "gen-billed-1",
+        usage: { inputTokens: 858, outputTokens: 259, totalTokens: 1117 },
+      });
+      if (code !== null) expect(failure.code).toBe(code);
+      expect(failure.latencyMs).toEqual(expect.any(Number));
+      // One call, on the first candidate: a failed answer never falls back.
+      expect(caps.startAgentRun).toHaveBeenCalledTimes(1);
+      expect(caps.startAgentRun.mock.calls[0][0]).toMatchObject({
+        model: "vendor/first",
+      });
+    },
+  );
 });
