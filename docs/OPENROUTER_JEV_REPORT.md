@@ -149,6 +149,10 @@ The automated review left two P2 comments. The owner ruled both in scope (2026-1
      - SQL case H7: a billed failure with usage is charged its estimate, one without usage its reservation, and the route keeps its report;
      - mutations, each caught by name: the adapter, the router or the handler dropping the report, a paid failure charged zero, and the usage estimate ignored.
 
+**An independent review of the fix (2026-10-03)** found no P0 and no P1, and two minor notes:
+- **The Jev adapter keeps the top-level `provider`.** The Decisions API documents that field in its response (research of 2026-10-02), unlike chat completions, so no change is needed.
+- **Open, minor, predates the fix:** a response with no readable model is stored as `model_substituted` with the requested id as its served model. The charge stays non-zero, the safe direction, but the audit field is not confirmed by the response. The follow-up: classify it as `unknown` (indeterminate) with no served model, in chat and in decisions.
+
 **Q8 and fallback are unchanged.** The database still decides the candidates before any router (SI-78); OpenRouter still cannot be authorized for `person_text` or `health`; the recorded provider route is audit only and authorizes nothing; and no change here calls a second model or a second provider.
 
 CI on the PR head: Test, Build, Typecheck, ESLint and Database pass. e2e is exactly 9 failed and 1 skipped, the same ids, and Prettier is exactly the two baseline files. No new regression.
@@ -193,11 +197,65 @@ CI on the PR head: Test, Build, Typecheck, ESLint and Database pass. e2e is exac
   - Jev's routing advice preferred the cheaper Qwen over the executed Luna both times. Promoting that advice to authority is a later, owner-approved step after evaluation.
 - **OpenRouter's own key usage** still read 0 right after the run, while our ledger holds US$0.000616. Its meter is delayed or rounds below a cent; the per-request cost it reported matched ours exactly.
 
+### 8a. The real end-to-end run on the reviewed head (2026-10-03)
+
+This second run used PR head `b9eb3a99`, with both review fixes, after CI on that head was confirmed at the historical baseline. The same two synthetic demands were admitted again.
+
+**Q8 before any router (staging, read-only):**
+- `ops.model_pool_candidates` for pool `reception_low_cost` returned `synthetic` → Luna, Qwen, Haiku in rank order.
+- The same call returned `health` → none and `person_text` → none: no authorization exists, and OpenRouter can never hold one for those classes.
+
+| Checked | Case A2 (new lead, prices) | Case B2 (existing client, billing document) |
+|---|---|---|
+| Synthetic input | "Oi, vi seu site e queria saber como funcionam os atendimentos e valores." | "Olá, já sou cliente e preciso da segunda via da nota fiscal do pagamento de setembro." |
+| Data class | `synthetic` | `synthetic` |
+| Agent / department / capability (deterministic) | `reception-agent` / `reception` / `lead_triage` (tier `standard`) | the same |
+| Pool and Q8 candidates | `reception_low_cost`: Luna, Qwen, Haiku | the same |
+| Model requested → served | `openai/gpt-6-luna` → `openai/gpt-6-luna` | the same |
+| Provider (documented metadata, `selected`) | `OpenAI` | `OpenAI` |
+| Finish reason | completed (`stop`) | completed (`stop`) |
+| Usage | 858 in / 210 out / 1068 total | 859 in / 252 out / 1111 total |
+| Latency | 4.42 s | 5.02 s |
+| Reserved → charged; OpenRouter reported | 4849 → **191**; reported 191 | 4851 → **212**; reported 212 |
+| Gateway audit (`ops.agent_run_routes`) | pool, 3 candidates, model, provider and reported cost recorded | the same |
+| Settlement | `succeeded`; triage intent `pricing`, priority normal | `succeeded`; triage intent `support`, priority normal |
+| Review | opened, `pending` (human review required) | opened, `pending` |
+| Audit trail (events) | requested, execution requested, started, succeeded, review pending | the same |
+| **Jev business decision** | intent `pricing_question` (0.62); department `reception` (1.00); capability `lead_triage`; complexity low; human escalation 0.18 | intent `existing_client_admin` (1.00); department **`operations`** (0.99); capability `lead_triage`; complexity low; human escalation 0.21 |
+| Against the deterministic route | agrees | **disagrees on department** (shadow; execution stayed at `reception`) |
+| **Jev model-route advice** | `qwen/qwen3.5-flash-02-23` (0.89); executed Luna | `qwen/qwen3.5-flash-02-23` (0.91); executed Luna |
+| Jev lead intelligence | objection `price`, next action `share_pricing_information` | objection `unknown`, next action `answer_question` |
+| Jev calls | 3, completed, pinned build `typesafe/jev-1.13-20260917`, upstream TypeSafe, 0.30 to 0.31 s, 94 micro-dollars, each equal to OpenRouter's report | 3, completed, 0.31 to 0.40 s, 94 micro-dollars |
+
+**A controlled paid-but-unusable call.** A tiny diagnostic showed that OpenRouter serves a request for the dated id `openai/gpt-6-luna-20260922` as `openai/gpt-6-luna`. The setup, by recorded owner acts:
+- that id was registered with no accepted builds and a one-day price;
+- it was placed at rank 1 of `general_fast`, with Luna at rank 2;
+- the `marketing-analyst` agent was given a profile routing `lead_triage` there;
+- one synthetic message was admitted to that agent: "Oi, gostaria de saber se vocês têm horários disponíveis na próxima semana."
+
+The result:
+- **The run failed:** `invalid_response` / `model_substituted`. Requested `openai/gpt-6-luna-20260922`, served `openai/gpt-6-luna`, and no result was stored.
+- **The paid call stayed recorded:** response id present, 855 in / 156 out / 1011 tokens, 3.64 s. The charge was **164 micro-dollars, its usage estimate, equal to OpenRouter's reported 164 and not zero**. The route row keeps provider `OpenAI`, the reported cost and both candidates.
+- **No fallback and no second call:** one job, one run for the task, and the route names the probe; Luna at rank 2 was never called. There was no review, since a failed run proposes nothing, and the events read requested, execution requested, started, failed.
+- **The shadow decisions still ran:** the business route and model-route advice completed for the settled run. Lead intelligence needs a successful triage, so it was not asked.
+- **Afterwards, by owner acts:** the probe left the pool and was disabled (its price expires in a day), Luna is back at rank 1, and the probe agent's profile now has a 1 micro-dollar ceiling and no pool.
+
+**Diagnostics outside the ledger.** Three one-line synthetic calls with the metadata header cost about 12 micro-dollars in all. Each returned `openrouter_metadata` with exactly one `selected` endpoint (`OpenAI`), which confirms live that the adapter's route now comes from the documented mechanism.
+
+**The day's totals** (`ops.model_economics`, both runs and the controlled case):
+- 5 runs, 995 micro-dollars charged, equal to the 995 OpenRouter reported per call;
+- 14 Jev decisions, 433 micro-dollars;
+- the same tokens on the strongest authorized candidate: 8458;
+- nothing sent (no outbound message today) and no data authorization recorded.
+
+OpenRouter's account meter read US$0.001197 at the end, against our ledger's US$0.001428 plus about US$0.000012 of diagnostics. That fits a meter lagging the latest calls and our rounding up to whole micro-dollars per call; the ledger errs high, never low.
+
 ## 9. Costs
 
 - **New recurring infrastructure:** none.
 - **OpenRouter:** prepaid credit chosen by the owner (about US$5), with a key credit limit of US$5; our own limits apply first, because an OpenRouter budget does not replace ours.
 - **Model spend in the synthetic run:** 616 micro-dollars (US$0.000616): 428 for the two runs and 188 for the six Jev decisions.
+- **Model spend on 2026-10-03, both runs and the controlled failure:** 1428 micro-dollars in the ledger (995 runs, 433 decisions), plus about 12 for diagnostics: US$0.0014 of the US$5 credit.
 
 ## 10. Not done, by design
 
