@@ -201,6 +201,41 @@ describe("a usable answer", () => {
   });
 });
 
+describe("a billed but unusable answer keeps its gateway report", () => {
+  it("carries the provider route and the reported cost on the error", async () => {
+    const provider = createOpenRouterChatProvider({
+      apiKey: TEST_API_KEY,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            id: "gen-1",
+            model: "other/model",
+            provider: "DeepInfra",
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 5,
+              total_tokens: 15,
+              cost: 0.000033,
+            },
+            choices: [{ finish_reason: "stop", message: { content: "{}" } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+    const error = await provider
+      .execute(REQUEST, new AbortController().signal)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toMatchObject({
+      code: "model_substituted",
+      providerRoute: "DeepInfra",
+      reportedCostMicros: 33,
+    });
+  });
+});
+
 describe("a substituted model is never a result", () => {
   it.each([
     ["another model", "other/model-large"],

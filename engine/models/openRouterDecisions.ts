@@ -156,6 +156,12 @@ export function createOpenRouterDecisionsGateway(options: {
         ? root.model
         : null;
     const latencyMs = elapsed();
+    const route =
+      typeof root.provider === "string" &&
+      PROVIDER_ROUTE_PATTERN.test(root.provider)
+        ? withoutKey(root.provider)
+        : null;
+    const costMicros = reportedCostMicros(root.usage);
     const details = {
       code: "",
       usage: Object.freeze({
@@ -167,6 +173,9 @@ export function createOpenRouterDecisionsGateway(options: {
       }),
       model: served ?? request.model,
       latencyMs,
+      // Billed even when unusable: the audit report travels with the error.
+      providerRoute: route,
+      reportedCostMicros: costMicros,
     } satisfies ModelErrorDetails;
 
     const accepted = new Set([
@@ -190,16 +199,12 @@ export function createOpenRouterDecisionsGateway(options: {
     return Object.freeze({
       gateway: OPENROUTER_DECISIONS_GATEWAY,
       model: served,
-      providerRoute:
-        typeof root.provider === "string" &&
-        PROVIDER_ROUTE_PATTERN.test(root.provider)
-          ? withoutKey(root.provider)
-          : null,
+      providerRoute: route,
       responseId: isProviderIdentifier(root.id) ? withoutKey(root.id) : null,
       answers: root.answers,
       inputTokens,
       outputTokens,
-      reportedCostMicros: reportedCostMicros(root.usage),
+      reportedCostMicros: costMicros,
       latencyMs,
     });
   };

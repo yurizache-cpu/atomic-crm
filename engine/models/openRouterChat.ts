@@ -288,6 +288,9 @@ export function createOpenRouterChatProvider(options: {
         providerResponseId,
         model: servedModel ?? request.model,
         latencyMs,
+        // Billed even when unusable: the audit report travels with the error.
+        providerRoute: route,
+        reportedCostMicros: costMicros,
       } satisfies ModelErrorDetails);
 
     const choices = Array.isArray(root?.choices) ? root.choices : null;

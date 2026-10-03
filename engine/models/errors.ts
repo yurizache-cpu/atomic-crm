@@ -114,7 +114,16 @@ export interface ModelErrorDetails {
   readonly providerResponseId?: string | null;
   readonly model?: string | null;
   readonly latencyMs?: number | null;
+  /**
+   * ADR 0022 §H: a gateway's report about an answer it served and billed but
+   * that was unusable. Audit only; dropped to null unless well formed.
+   */
+  readonly providerRoute?: string | null;
+  readonly reportedCostMicros?: number | null;
 }
+
+const PROVIDER_ROUTE = /^[A-Za-z0-9][A-Za-z0-9 ._()-]{0,63}$/;
+const MAX_REPORTED_COST_MICROS = 1_000_000_000;
 
 const FIXED_MESSAGES: Readonly<Record<ModelErrorCategory, string>> =
   Object.freeze({
@@ -139,6 +148,8 @@ export class ModelError extends Error {
   readonly providerResponseId: string | null;
   readonly model: string | null;
   readonly latencyMs: number | null;
+  readonly providerRoute: string | null;
+  readonly reportedCostMicros: number | null;
 
   constructor(category: ModelErrorCategory, details: ModelErrorDetails = {}) {
     const safeCategory = isCategory(category) ? category : "unknown";
@@ -162,6 +173,18 @@ export class ModelError extends Error {
       : null;
     this.model = isModelId(details.model) ? details.model : null;
     this.latencyMs = normalizeLatencyMs(details.latencyMs);
+    this.providerRoute =
+      typeof details.providerRoute === "string" &&
+      PROVIDER_ROUTE.test(details.providerRoute)
+        ? details.providerRoute
+        : null;
+    this.reportedCostMicros =
+      typeof details.reportedCostMicros === "number" &&
+      Number.isInteger(details.reportedCostMicros) &&
+      details.reportedCostMicros >= 0 &&
+      details.reportedCostMicros <= MAX_REPORTED_COST_MICROS
+        ? details.reportedCostMicros
+        : null;
   }
 }
 

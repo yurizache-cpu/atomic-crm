@@ -99,6 +99,41 @@ describe("the Decisions API request", () => {
 });
 
 describe("Decisions API failures", () => {
+  it("keeps the provider route and the reported cost of a billed but unusable answer", async () => {
+    const gateway = createOpenRouterDecisionsGateway({
+      apiKey: TEST_API_KEY,
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            id: "dec-1",
+            model: "typesafe/jev-1.13-20260917",
+            provider: "TypeSafe",
+            usage: { input_tokens: 933, output_tokens: 226, cost: 0.00004 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    });
+    const error = await gateway
+      .decide(
+        {
+          model: "typesafe/jev-1.13",
+          state: { a: 1 },
+          questions: {},
+          acceptedResponseModels: ["typesafe/jev-1.13-20260917"],
+        },
+        new AbortController().signal,
+      )
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(error).toMatchObject({
+      code: "answers_missing",
+      providerRoute: "TypeSafe",
+      reportedCostMicros: 40,
+    });
+  });
+
   it("refuses a substituted build and a missing answers object", async () => {
     for (const [body, code] of [
       [answer({ model: "other/decider-2" }), "model_substituted"],

@@ -593,6 +593,18 @@ export function createAgentRunExecuteHandler(
       }
 
       const failure = failureToRecord(outcome.error);
+      if (
+        state.route.acceptedResponseModels !== undefined &&
+        (failure.error.providerRoute !== null ||
+          failure.error.reportedCostMicros !== null)
+      ) {
+        // A billed answer that was unusable keeps its gateway report too, so
+        // reconciliation counts the paid calls that failed (ADR 0022 §H).
+        await capabilities.recordAgentRunGatewayReport({
+          providerRoute: failure.error.providerRoute,
+          reportedCostMicros: failure.error.reportedCostMicros,
+        });
+      }
       const status = await capabilities.failAgentRun({
         category: failure.category,
         code: failure.code,

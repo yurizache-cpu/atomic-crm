@@ -302,9 +302,9 @@ export function createStructuredDecisionEvaluateHandler(dependencies: {
           servedModel: error.model ?? null,
           inputTokens: error.usage?.inputTokens ?? null,
           outputTokens: error.usage?.outputTokens ?? null,
-          reportedCostMicros: null,
+          reportedCostMicros: error.reportedCostMicros,
           latencyMs: normalizeLatencyMs(error.latencyMs ?? outcome.durationMs),
-          providerRoute: null,
+          providerRoute: error.providerRoute,
           errorCode: /^[a-z][a-z0-9_]{0,63}$/.test(error.code ?? "")
             ? error.code
             : error.category,

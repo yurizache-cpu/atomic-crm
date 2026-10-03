@@ -460,6 +460,8 @@ export function createModelRouter(options: {
           providerResponseId: response.providerResponseId,
           model: response.model,
           latencyMs: response.latencyMs,
+          providerRoute: response.providerRoute ?? null,
+          reportedCostMicros: response.reportedCostMicros ?? null,
         });
       }
       return Object.freeze({ ...response, value });

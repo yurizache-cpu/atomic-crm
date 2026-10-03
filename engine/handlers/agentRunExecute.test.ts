@@ -1529,6 +1529,40 @@ describe("ADR 0022: a gateway router chooses only among the database's authorize
     },
   );
 
+  it("records the gateway report of a billed answer that fails the contract, before the failure", async () => {
+    const { handler, caps } = gatewaySetup(
+      {
+        pool: "reception_low_cost",
+        candidates: [
+          {
+            gateway: "openrouter",
+            model: "vendor/first",
+            rank: 1,
+            acceptedBuilds: [],
+          },
+        ],
+      },
+      {
+        type: "respond",
+        content: { not: "the contract" },
+        providerRoute: "OpenAI",
+        reportedCostMicros: 216,
+      },
+    );
+    await runCycle(handler, caps);
+    expect(recordedFailure(caps)).toMatchObject({
+      category: "schema_validation",
+    });
+    expect(caps.recordAgentRunGatewayReport).toHaveBeenCalledWith({
+      providerRoute: "OpenAI",
+      reportedCostMicros: 216,
+    });
+    expect(caps.used.slice(-2)).toEqual([
+      "recordAgentRunGatewayReport",
+      "failAgentRun",
+    ]);
+  });
+
   it("refuses a candidate list it cannot read, starting nothing", async () => {
     const { handler, caps } = gatewaySetup({ candidates: "everything" });
     await expect(runCycle(handler, caps)).rejects.toThrow(/does not accept/);
