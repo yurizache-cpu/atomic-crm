@@ -28,7 +28,10 @@ import type { LeasedJob } from "./job.ts";
 import type { WorkerLogger } from "./log.ts";
 
 /** The complete set of post-settlement steps. Adding one is a review event. */
-export type AfterSettlementStep = "openRunReview" | "requestShadowDecision";
+export type AfterSettlementStep =
+  | "openRunReview"
+  | "requestShadowDecision"
+  | "requestStructuredDecisions";
 
 /**
  * One statement per step, bound to ($1 worker id, $2 job id) and nothing else.
@@ -44,6 +47,13 @@ const STEP_SQL: ReadonlyMap<string, string> = new Map([
   [
     "requestShadowDecision",
     "select ops.request_shadow_decision_for_settled_job($1, $2)",
+  ],
+  // ADR 0022: the business decision, lead intelligence and model-routing advice
+  // of the settled run, each recorded once and queued (synthetic or test data
+  // only; anything else is refused on the record). They decide nothing.
+  [
+    "requestStructuredDecisions",
+    "select ops.request_structured_decisions_for_settled_job($1, $2)",
   ],
 ]);
 

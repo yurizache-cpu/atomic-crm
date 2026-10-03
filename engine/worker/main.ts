@@ -31,6 +31,7 @@ import { createLogger } from "./log.ts";
 import { createHandlerRegistry } from "./registry.ts";
 import { calendarPortFromEnv } from "../calendar/providerFromEnv.ts";
 import { decisionShadowFromEnv } from "../decision/providerFromEnv.ts";
+import { structuredDecisionsFromEnv } from "../decision/structured/gatewayFromEnv.ts";
 import { DEFAULT_LEASE_SAFETY_MARGIN_MS } from "./runOneJob.ts";
 import { runWorker } from "./runWorker.ts";
 import { startWorkerObservability } from "../telemetry/fromEnv.ts";
@@ -147,6 +148,8 @@ export async function main(): Promise<void> {
   const leaseSeconds = readInt("OPS_WORKER_LEASE_SECONDS", 60);
   const modelRouter = createModelRouterFromEnv(process.env);
   const decisionShadow = decisionShadowFromEnv(process.env);
+  // ADR 0022: unset means no structured decisions are requested or asked.
+  const structuredDecisions = structuredDecisionsFromEnv(process.env);
   // Phase 3A.2: unset means no calendar; the database decides which bookings
   // a connected company mirrors, and only a fake connection can exist.
   const calendarPort = calendarPortFromEnv(process.env);
@@ -201,6 +204,9 @@ export async function main(): Promise<void> {
         modelRouter,
         decisionPort: decisionShadow.port,
         requestsShadowDecisions: decisionShadow.requestsShadowDecisions,
+        structuredDecisionGateway: structuredDecisions.gateway,
+        requestsStructuredDecisions:
+          structuredDecisions.requestsStructuredDecisions,
         calendarPort,
       }),
       signal: controller.signal,

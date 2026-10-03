@@ -21,7 +21,12 @@ import {
   LEAD_TRIAGE_PROMPT_VERSION,
   type LeadTriage,
 } from "../models/leadTriage.ts";
-import { resetFixtures, TENANT_A } from "../worker/testSupport/dbFixture.ts";
+import {
+  registerFixtureModel,
+  removeFixtureModels,
+  resetFixtures,
+  TENANT_A,
+} from "../worker/testSupport/dbFixture.ts";
 import { requestAgentRun } from "./agentRuns.ts";
 import type { DataClass } from "./dataClasses.ts";
 import {
@@ -70,7 +75,10 @@ beforeAll(() => {
   ({ admin, owner, db } = openAgentRuntimeDatabases());
 }, 60_000);
 
-afterAll(() => closeAgentRuntimeDatabases({ admin, owner, db }));
+afterAll(async () => {
+  await removeFixtureModels(admin, [{ gateway: PROVIDER, model: MODEL }]);
+  await closeAgentRuntimeDatabases({ admin, owner, db });
+});
 
 const { countJobs, runAgentJob } = agentRuntimeProbes(() => ({
   admin,
@@ -231,6 +239,9 @@ beforeEach(async () => {
                                    now() + interval '1 day', 'dbtest q8 price', 'dbtest')`,
     [PROVIDER, MODEL],
   );
+  // ADR 0022: a provider that leaves the process runs only as an authorized
+  // pool candidate; the gate this suite measures is Q8, before that one.
+  await registerFixtureModel(admin, { gateway: PROVIDER, model: MODEL });
 });
 
 describe("the model boundary (SI-70)", () => {

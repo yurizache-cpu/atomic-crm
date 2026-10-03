@@ -19,6 +19,7 @@
 // is ignored, so a hung vendor SDK cannot hold a worker past its lease.
 
 import { ModelError, toModelError } from "./errors.ts";
+import { PROVIDER_ROUTE_PATTERN } from "./openRouterChat.ts";
 import type { OutputContract } from "./outputContract.ts";
 import {
   isModelId,
@@ -56,6 +57,15 @@ export interface ResolvedModelRoute {
   readonly provider: string;
   readonly model: string;
   readonly policy: ModelRoutePolicy;
+  /** Served builds that count as `model` (ADR 0022 §B); gateway routes only. */
+  readonly acceptedResponseModels?: readonly string[];
+}
+
+/** One authorized candidate, as the database lists it for a run (ADR 0022 §D). */
+export interface RouteCandidateRef {
+  readonly gateway: string;
+  readonly model: string;
+  readonly acceptedBuilds: readonly string[];
 }
 
 export interface StructuredModelResult<T> extends ModelResponse {
@@ -65,6 +75,21 @@ export interface StructuredModelResult<T> extends ModelResponse {
 export interface ModelRouter {
   /** Unknown or unconfigured route -> undefined. Never a default, never a fallback route. */
   resolve(route: string): ResolvedModelRoute | undefined;
+  /**
+   * The configured gateway's name, or null when this router has none. With a
+   * gateway, routes come from the database's authorized candidates, never from
+   * configuration (ADR 0022 §D).
+   */
+  readonly gatewayName: string | null;
+  /**
+   * A route for ONE authorized candidate on the configured gateway, or
+   * undefined when the candidate is not on it or the tier is not configured.
+   * The router executes only routes it resolved itself.
+   */
+  resolveCandidate(
+    route: string,
+    candidate: RouteCandidateRef,
+  ): ResolvedModelRoute | undefined;
   /** Largest timeout among CONFIGURED routes, 0 when none. Used by main.ts to refuse a lease shorter than a call. */
   readonly maxConfiguredTimeoutMs: number;
   /**
@@ -114,6 +139,9 @@ export function buildModelRequest(
       schema: contract.jsonSchema,
     }),
     maxOutputTokens: route.policy.maxOutputTokens,
+    ...(route.acceptedResponseModels && route.acceptedResponseModels.length > 0
+      ? { acceptedResponseModels: route.acceptedResponseModels }
+      : {}),
   });
 }
 
@@ -164,6 +192,18 @@ const normalizeResponse = (
       ? response.providerResponseId
       : null,
     latencyMs: normalizeLatencyMs(response.latencyMs) ?? 0,
+    providerRoute:
+      typeof response.providerRoute === "string" &&
+      PROVIDER_ROUTE_PATTERN.test(response.providerRoute)
+        ? response.providerRoute
+        : null,
+    reportedCostMicros:
+      typeof response.reportedCostMicros === "number" &&
+      Number.isSafeInteger(response.reportedCostMicros) &&
+      response.reportedCostMicros >= 0 &&
+      response.reportedCostMicros <= 1_000_000_000
+        ? response.reportedCostMicros
+        : null,
   };
   if (normalized.content === undefined) {
     throw new ModelError("unknown", {
@@ -252,8 +292,32 @@ export function createModelRouter(options: {
     { readonly provider: string; readonly model: string }
   >;
   readonly providers: ReadonlyMap<string, ModelProvider>;
+  /**
+   * ADR 0022: a gateway whose routes are the database's authorized candidates,
+   * on these tiers only. Exclusive with static routes.
+   */
+  readonly gateway?: {
+    readonly provider: ModelProvider;
+    readonly tiers: readonly ModelRouteName[];
+  };
 }): ModelRouter {
   const configured = new Map<ModelRouteName, ConfiguredRoute>();
+  const gateway = options.gateway ?? null;
+  if (gateway) {
+    if (options.routes.size > 0) {
+      throw new Error("a router takes static routes or a gateway, never both");
+    }
+    if (!isProviderName(gateway.provider.name)) {
+      throw new Error("the gateway does not carry a valid provider name");
+    }
+    if (gateway.tiers.length === 0 || !gateway.tiers.every(isRouteName)) {
+      throw new Error(
+        `gateway tiers must be one or more of ${MODEL_ROUTE_NAMES.join(", ")}`,
+      );
+    }
+  }
+  // The gateway routes this router resolved: executeStructured runs only these.
+  const issued = new WeakSet<ResolvedModelRoute>();
 
   // Construction errors are boot errors. They name the ROUTE, which is one of
   // three fixed words, and never echo a provider name or model id: those come
@@ -296,13 +360,43 @@ export function createModelRouter(options: {
     ...[...configured.values()].map(
       ({ resolved }) => resolved.policy.timeoutMs,
     ),
+    ...(gateway?.tiers ?? []).map(
+      (tier) => MODEL_ROUTE_POLICIES[tier].timeoutMs,
+    ),
   );
 
   return Object.freeze({
     maxConfiguredTimeoutMs,
 
+    gatewayName: gateway?.provider.name ?? null,
+
     resolve(route: string): ResolvedModelRoute | undefined {
       return isRouteName(route) ? configured.get(route)?.resolved : undefined;
+    },
+
+    resolveCandidate(
+      route: string,
+      candidate: RouteCandidateRef,
+    ): ResolvedModelRoute | undefined {
+      if (
+        !gateway ||
+        !isRouteName(route) ||
+        !gateway.tiers.includes(route) ||
+        candidate.gateway !== gateway.provider.name ||
+        !isModelId(candidate.model) ||
+        !candidate.acceptedBuilds.every(isModelId)
+      ) {
+        return undefined;
+      }
+      const resolved: ResolvedModelRoute = Object.freeze({
+        route,
+        provider: gateway.provider.name,
+        model: candidate.model,
+        policy: MODEL_ROUTE_POLICIES[route],
+        acceptedResponseModels: Object.freeze([...candidate.acceptedBuilds]),
+      });
+      issued.add(resolved);
+      return resolved;
     },
 
     async executeStructured<T>(
@@ -317,14 +411,21 @@ export function createModelRouter(options: {
       const entry = isRouteName(route?.route)
         ? configured.get(route.route)
         : undefined;
+      // A gateway route counts only if THIS router issued that exact object:
+      // a hand-built route naming another model is refused like any other.
+      const fromGateway = gateway !== null && issued.has(route);
       if (
-        !entry ||
-        entry.resolved.provider !== route.provider ||
-        entry.resolved.model !== route.model
+        !fromGateway &&
+        (!entry ||
+          entry.resolved.provider !== route.provider ||
+          entry.resolved.model !== route.model)
       ) {
         throw new ModelError("configuration", { code: "route_not_configured" });
       }
-      const { resolved, provider } = entry;
+      const { resolved, provider } =
+        fromGateway && gateway
+          ? { resolved: route, provider: gateway.provider }
+          : (entry as ConfiguredRoute);
 
       // Already cancelled: no request is issued at all, so nothing is billed.
       if (signal.aborted) {
@@ -359,6 +460,8 @@ export function createModelRouter(options: {
           providerResponseId: response.providerResponseId,
           model: response.model,
           latencyMs: response.latencyMs,
+          providerRoute: response.providerRoute ?? null,
+          reportedCostMicros: response.reportedCostMicros ?? null,
         });
       }
       return Object.freeze({ ...response, value });

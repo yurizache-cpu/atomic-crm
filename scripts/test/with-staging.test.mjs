@@ -41,6 +41,28 @@ describe("the staging launcher", () => {
     expect(env.PATH).toBe("/bin");
   });
 
+  it("passes a named key from the file to the child alone, and never a URL or a password", () => {
+    const file = { ...FILE, OPENAI_API_KEY: "sk-synthetic-never-printed" };
+    const env = stagingEnvironment("worker", file, PARENT, ["OPENAI_API_KEY"]);
+    expect(env.OPENAI_API_KEY).toBe("sk-synthetic-never-printed");
+    expect(
+      stagingEnvironment("worker", file, PARENT).OPENAI_API_KEY,
+    ).toBeUndefined();
+    for (const key of [
+      "OPS_GATEWAY_PASSWORD",
+      "STAGING_DB_PASSWORD",
+      "ADMIN_DATABASE_URL",
+      "lowercase",
+    ]) {
+      expect(() => stagingEnvironment("worker", file, PARENT, [key])).toThrow(
+        /--pass refuses/,
+      );
+    }
+    expect(() =>
+      stagingEnvironment("worker", FILE, PARENT, ["OPENAI_API_KEY"]),
+    ).toThrow(/^OPENAI_API_KEY is missing/);
+  });
+
   it("refuses an unknown role, a missing key or a foreign host, naming keys and never values", () => {
     expect(() => stagingEnvironment("owner", FILE, PARENT)).toThrow(/--as/);
     expect(() =>

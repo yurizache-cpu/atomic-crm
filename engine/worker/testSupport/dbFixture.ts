@@ -217,6 +217,17 @@ export async function deleteCompanyOsRows(
     "delete from ops.outbound_messages where tenant_id = any($1::uuid[])",
     // Phase 2D.1's shadow decisions reference the reviews they evaluated.
     "delete from ops.decision_evaluations where tenant_id = any($1::uuid[])",
+    // ADR 0022: structured decisions in progress are settled first (pending is
+    // refused, running indeterminate), the way the runtime would; then they,
+    // their outcomes, the runs' routes and the agents' profiles are history.
+    `update ops.structured_decisions
+        set status = 'refused', refusal_code = 'not_eligible', settled_at = now()
+      where tenant_id = any($1::uuid[]) and status = 'pending'`,
+    `update ops.structured_decisions
+        set status = 'indeterminate', error_code = 'dbtest_cleanup', settled_at = now()
+      where tenant_id = any($1::uuid[]) and status = 'running'`,
+    "delete from ops.decision_outcomes where tenant_id = any($1::uuid[])",
+    "delete from ops.structured_decisions where tenant_id = any($1::uuid[])",
     // Q8 D6/D7: the retention ledger references its task, its anchoring
     // review, the authorization relied on and its job.
     "delete from ops.content_retention where tenant_id = any($1::uuid[])",
@@ -230,6 +241,7 @@ export async function deleteCompanyOsRows(
       where tenant_id = any($1::uuid[]) and retired_at is null`,
     "delete from ops.communication_test_senders where tenant_id = any($1::uuid[])",
     "delete from ops.communication_channels where tenant_id = any($1::uuid[])",
+    "delete from ops.agent_run_routes where tenant_id = any($1::uuid[])",
     "delete from ops.agent_runs where tenant_id = any($1::uuid[])",
     // BASELINE Q8: an authorization in force is never deleted (an ENABLE ALWAYS
     // trigger refuses it), so it is retired first, the way an owner retires
@@ -249,6 +261,9 @@ export async function deleteCompanyOsRows(
       where tenant_id = any($1::uuid[]) and ended_at is null`,
     "delete from ops.spend_limits where tenant_id = any($1::uuid[])",
     "delete from ops.tasks where tenant_id = any($1::uuid[])",
+    `update ops.agent_profiles set superseded_at = now()
+      where tenant_id = any($1::uuid[]) and superseded_at is null`,
+    "delete from ops.agent_profiles where tenant_id = any($1::uuid[])",
     "delete from ops.agents where tenant_id = any($1::uuid[])",
     "delete from ops.departments where tenant_id = any($1::uuid[])",
     "delete from ops.companies where tenant_id = any($1::uuid[])",
@@ -443,4 +458,77 @@ export async function countLedger(admin: Pool): Promise<number> {
     `select count(*)::text as n from public.inbound_emails where message_id like 'dbtest-%'`,
   );
   return Number(rows[0].n);
+}
+
+/**
+ * ADR 0022: a registered model in a pool, so a run on a provider that leaves
+ * the process (not the in-process fake) has an authorized candidate. Global
+ * owner data, not tenant data: a suite that registers one removes it in
+ * afterAll with removeFixtureModels, or every later suite sees it.
+ */
+export async function registerFixtureModel(
+  admin: Pool,
+  options: {
+    readonly gateway: string;
+    readonly model: string;
+    readonly pool?: string;
+    readonly rank?: number;
+  },
+): Promise<void> {
+  const pool = options.pool ?? "reception_low_cost";
+  await admin.query(
+    `insert into ops.model_registry (gateway, model, family, structured_output, reasoning, tools,
+                                     context_class, latency_class, cost_class, source, recorded_by)
+     values ($1, $2, 'dbtest', true, false, false, 'long', 'fast', 'low', 'dbtest fixture', 'dbtest')
+     on conflict (gateway, model) do nothing`,
+    [options.gateway, options.model],
+  );
+  await admin.query(
+    `update ops.model_registry set enabled = true, changed_by = 'dbtest', change_reason = 'dbtest fixture'
+      where gateway = $1 and model = $2 and not enabled`,
+    [options.gateway, options.model],
+  );
+  await admin.query(
+    `insert into ops.model_pool_members (pool, registry_id, rank, added_by)
+     select $3, r.id,
+            coalesce($4, (select coalesce(max(m.rank), 0) + 1 from ops.model_pool_members m
+                           where m.pool = $3 and m.removed_at is null)),
+            'dbtest'
+       from ops.model_registry r
+      where r.gateway = $1 and r.model = $2
+        and not exists (select 1 from ops.model_pool_members m
+                         where m.pool = $3 and m.registry_id = r.id and m.removed_at is null)`,
+    [options.gateway, options.model, pool, options.rank ?? null],
+  );
+}
+
+/** Removes the models registerFixtureModel recorded, the way an owner would. */
+export async function removeFixtureModels(
+  admin: Pool | undefined,
+  models: readonly { readonly gateway: string; readonly model: string }[],
+): Promise<void> {
+  if (!admin) return;
+  for (const { gateway, model } of models) {
+    await admin.query(
+      `update ops.model_pool_members m
+          set removed_by = 'dbtest', remove_reason = 'dbtest cleanup'
+         from ops.model_registry r
+        where m.registry_id = r.id and r.gateway = $1 and r.model = $2 and m.removed_at is null`,
+      [gateway, model],
+    );
+    await admin.query(
+      `delete from ops.model_pool_members m using ops.model_registry r
+        where m.registry_id = r.id and r.gateway = $1 and r.model = $2`,
+      [gateway, model],
+    );
+    await admin.query(
+      `update ops.model_registry set enabled = false, changed_by = 'dbtest', change_reason = 'dbtest cleanup'
+        where gateway = $1 and model = $2 and enabled`,
+      [gateway, model],
+    );
+    await admin.query(
+      `delete from ops.model_registry where gateway = $1 and model = $2`,
+      [gateway, model],
+    );
+  }
 }

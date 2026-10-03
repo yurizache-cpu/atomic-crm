@@ -612,7 +612,22 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### Cost-first remote staging (2026-09-29) — WORKING (2026-10-01)
+### OpenRouter + Jev + multi-model Company OS (2026-10-02) — IMPLEMENTED; PR #24 open; synthetic real-model run on staging PASS (2026-10-03)
+
+Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directive (the priority moved from WhatsApp on 2026-10-02). Read [adr/0022-openrouter-gateway-and-jev-intelligence.md](adr/0022-openrouter-gateway-and-jev-intelligence.md) and [OPENROUTER_JEV_REPORT.md](OPENROUTER_JEV_REPORT.md).
+
+- **Records:** DIRECT OPENAI/LUNA PRIMARY ARCHITECTURE: SUPERSEDED; OPENROUTER MULTI-MODEL GATEWAY: SELECTED; JEV BUSINESS DECISION LAYER: SELECTED; JEV ROUTING: SHADOW-FIRST.
+- **Built:** agent profiles (an agent is not a model); the model registry and pools as owner data; Q8 filtering candidates before any router, re-checked at the run's start, with the agent's daily ceiling; the OpenRouter chat adapter (one exact model, no fallback); Jev on the Decisions API for the business route, lead intelligence and model-route advice, shadow only, on one ledger after settlement; cost and quality reads; `npm run models`; `npm run staging:gateway-worker`. SI-78.
+- **Staging:** 68 migrations (the third, `20261008120000_model_gateway_hardening.sql`, carries the pre-PR review's corrections); five models, four pools and the Receptionist profile configured.
+- **WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02)** on `feature/staging-model-and-meta` at `9a4b234a` (pushed, not merged), with its own pause record. It resumes automatically after this milestone is merged and verified: that branch is brought onto the new head and WhatsApp is routed through the Company OS, Jev and the authorized pools on OpenRouter.
+- **Real-model run (2026-10-03): PASS.** Two synthetic demands on `openai/gpt-6-luna` through OpenRouter, six Jev decisions on the pinned build, US$0.000616 in all, our charge equal to OpenRouter's reported cost; for the administrative demand Jev would route to operations, a recorded shadow disagreement. See the report, §8. Repeated on the reviewed head with the provider from the documented metadata, plus a controlled paid-but-unusable call (failed, audit and 164 micro-dollars kept, no fallback); see §8a.
+- **Next:** PR #24's review and integration; then WhatsApp. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### Staging real model and Meta test probe (2026-10-02) — IN PROGRESS
+
+PR #23 is integrated: normal merge `6da21fbd5640555c220de4300248de182fcc4a73` into `feature/clinical-phase-1` (parents `501e3efd` and `53bf6d47b5993255d6a402785bc373d65e87e742`); the source branch `feature/cost-first-staging` is retained at `53bf6d47`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS, now on PostgreSQL 17; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the uploader inherited the whole shell environment) and P2 (the live check bound the release only to its script paths) were fixed before the merge in `53bf6d47` (`scripts/publisher-environment.mjs`; `release.json`, a hash of every path and byte of the build, checked live).
+
+### Cost-first remote staging (2026-09-29) — INTEGRATED (PR #23, merge `6da21fbd`)
 
 Remote synthetic staging works with no new recurring cost: the Netlify frontend, Supabase Free staging on PostgreSQL 17 with the canonical migrations and no seed, AAL2 in a real browser, the CRM and the Company OS on synthetic data, and the real worker loop running locally against staging through its constrained role. Read [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md). Next, in order: the browser decision of the pending staging review; the Meta test probe (a free tunnel first); a real model run with synthetic content inside the US$5 cap (owner key). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 

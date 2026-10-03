@@ -356,7 +356,9 @@ describe("the capability list", () => {
     // capabilities were that review event for Phase 1D: each is a lease-bound
     // SECURITY DEFINER function that takes no id (ADR 0016). Phase 2D.1 adds
     // the shadow decision's two, on the same terms: they reach only the
-    // evaluation bound to the leased job, and decide nothing.
+    // evaluation bound to the leased job, and decide nothing. ADR 0022 adds
+    // four, on the same terms: the run's authorized candidates, the gateway's
+    // audit report, and the structured decision's start and settlement.
     expect([...CAPABILITY_NAMES]).toEqual([
       "purgeInboundEmailLedger",
       "claimAgentRun",
@@ -370,6 +372,10 @@ describe("the capability list", () => {
       "redactDueContent",
       "startCalendarSync",
       "settleCalendarSync",
+      "agentRunModelCandidates",
+      "recordAgentRunGatewayReport",
+      "startStructuredDecision",
+      "settleStructuredDecision",
     ]);
   });
 });

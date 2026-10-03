@@ -67,6 +67,8 @@ const PROVIDER_NAME_PARTS = [
   "CLAUDE",
   "AGENT_MODEL",
   "MODEL_PROVIDER",
+  "OPENROUTER",
+  "TYPESAFE",
 ];
 const anyCase = (part: string): string =>
   part.replace(/[A-Z]/g, (c) => `[${c}${c.toLowerCase()}]`);
