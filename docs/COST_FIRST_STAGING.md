@@ -221,7 +221,7 @@ This is ADR 0018 amendment 2's live probe, run on Meta's test number only, with 
   - The existing system user "Employee" was not used, because it also reaches the owner's earlier app.
   - Its token is a `SYSTEM_USER` token for "Webhook", expiring 2026-12-01.
   - The first token generated carried only `whatsapp_business_management`, and the token was regenerated with `whatsapp_business_messaging` too. A send needs both.
-- **The number.** By owner decision (DECISIONS.md, "Meta probe on the future clinic number"), the send ran on **+55 27 98851-7402**. The owner states it is not the clinic's current number but its intended future one.
+- **The number.** By owner decision (DECISIONS.md, "Meta probe on the future clinic number"), the send ran on **+55 27 9XXXX-7402 (masked; the full number is kept in the external evidence log)**. The owner states it is not the clinic's current number but its intended future one.
   - It was subscribed to "Webhook" only for the test and unsubscribed right after; it delivers to "whats Claude" alone again.
   - The staging test channel maps its phone number id, and the owner is registered as its test sender.
 - **The verify token was rotated before this run.** When the origin was down, `cloudflared` had logged a failed handshake's full URL, query string included, in the owner's terminal.
