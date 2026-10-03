@@ -1,6 +1,6 @@
 # OpenRouter + Jev + multi-model Company OS — report
 
-**Status (2026-10-02): IMPLEMENTED on `feature/openrouter-jev-intelligence` from `feature/clinical-phase-1` at `6da21fbd`.** The decisions are [ADR 0022](adr/0022-openrouter-gateway-and-jev-intelligence.md); this report records what was built, how it was proven and what is still open.
+**Status (2026-10-03): INTEGRATED.** PR #24, normal merge `8ac08c87fa98f2d3424f33a3af238f18e69a7182` into `feature/clinical-phase-1` (parents `6da21fbd` and `0c962c41`); `main` is unchanged at `a863e2a0`. Post-merge CI (run 37120944340 on `8ac08c87`): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly the two baseline files; no new regression. It was built on `feature/openrouter-jev-intelligence` from `6da21fbd`, a branch that is retained. The decisions are [ADR 0022](adr/0022-openrouter-gateway-and-jev-intelligence.md); this report records what was built, how it was proven and what is still open.
 
 | Record | State |
 |---|---|
@@ -8,7 +8,7 @@
 | OPENROUTER MULTI-MODEL GATEWAY | **SELECTED** |
 | JEV BUSINESS DECISION LAYER | **SELECTED**, shadow first |
 | JEV ROUTING | **SHADOW-FIRST** |
-| WHATSAPP / META MILESTONE | **PAUSED BY OWNER** (2026-10-02) on `feature/staging-model-and-meta`; it resumes after this milestone is merged and verified |
+| WHATSAPP / META MILESTONE | **RESUMED** (2026-10-03) on `feature/staging-model-and-meta`, routed through this model layer |
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -248,7 +248,7 @@ The result:
 - the same tokens on the strongest authorized candidate: 8458;
 - nothing sent (no outbound message today) and no data authorization recorded.
 
-OpenRouter's account meter read US$0.001197 at the end, against our ledger's US$0.001428 plus about US$0.000012 of diagnostics. That fits a meter lagging the latest calls and our rounding up to whole micro-dollars per call; the ledger errs high, never low.
+OpenRouter's account meter read US$0.001197 at the end, against our ledger's US$0.001428 plus about US$0.000012 of diagnostics. That fits a meter lagging the latest calls and our rounding up to whole micro-dollars per call. Minutes later it read **US$0.001429**: our ledger plus the diagnostics, to within one micro-dollar. **Reconciled.**
 
 ## 9. Costs
 

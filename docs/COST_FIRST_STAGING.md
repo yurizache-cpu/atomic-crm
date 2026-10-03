@@ -183,3 +183,99 @@ A real model run with synthetic content needs a model account and its key in the
 - **Custom SMTP.** Supabase's default sender reaches only the project's team members, about two messages an hour. Real invitations need a custom SMTP provider.
 - **Production database.** A second Free project is not taken while staging uses the last free slot. Go-live stops at **OWNER PRODUCTION DATABASE DECISION REQUIRED**.
 - **Remote runtime.** The worker and gateway run locally until a 24/7 worker or a public webhook is truly needed. That point stops at **OWNER COST APPROVAL REQUIRED — REMOTE RUNTIME**.
+
+## 11. Meta test probe (2026-10-02): COMPLETE except two unobservable items
+
+This is ADR 0018 amendment 2's live probe, run on Meta's test number only, with synthetic text the owner typed. Nothing touched the owner's real numbers, and nothing touched the owner's earlier WhatsApp app ("whats Claude"), whose webhook points at the paused project `recepcao-clinica`.
+
+**Setup:**
+- **The owner's Meta business.** It is verified and has three WhatsApp accounts:
+  - the real clinic number;
+  - a WhatsApp Business app number;
+  - Meta's test account, with the test number `+1 555-640-2728`.
+- **The app.** The developer app "Webhook" (`1340639637877252`) stayed in development mode.
+- **The gateway.** It ran locally through `scripts/with-staging.mjs --as gateway` (role `ops_gateway_login`). It was reached through an account-free `cloudflared` quick tunnel (release 2026.9.0, checksum verified), which the owner opened.
+- **The secrets.** The app secret, the verify token and a temporary access token were held only in `%USERPROFILE%\.atomic-crm\staging.env`.
+- **The staging test channel.** Owner acts through the connector:
+  - one test channel mapping the test number's phone number id to `staging-clinic` and `reception-agent`;
+  - the owner's phone registered as a test sender (`ops.register_test_sender`).
+- **The owner-only act launcher.** The acts ran through a scratch launcher that builds an owner `ADMIN_DATABASE_URL` from the local file (pooler, verify-full). It was not added to the repository: `with-staging.mjs` deliberately never builds an owner URL.
+
+**Verified:**
+
+| ADR 0018 amendment 2 item | Result |
+|---|---|
+| Webhook verification | **PASS.** Meta's handshake was accepted with the right verify token. A wrong token answered 403 and an unsigned POST answered 401, both through the tunnel. |
+| Signature behaviour | **PASS.** Meta's own signed sample and the owner's real messages were accepted by the `X-Hub-Signature-256` check over the raw bytes. |
+| Webhook payload format | **PASS.** Meta subscribed the `messages` field at **v26.0**; the send pin stays at Graph v25.0. The v26.0 payload adds `contacts[].user_id` and `messages[].from_user_id` (the business-scoped user id, BSUID), and the parser accepted them. |
+| Real inbound from the test recipient | **PASS.** It arrived even in development mode, once the app was subscribed to the test account (`POST /<test WABA>/subscribed_apps`, owner-approved). Before that, the test account delivered only to "whats Claude" and Meta's own dashboard app. |
+| Brazilian sender format | The owner's mobile arrived as 13 digits, with the leading 9. |
+| Q8 classification | The registered test sender's message became a `test` task: ADR 0020 D8 working end to end. |
+| Contact policy | **PASS, fail-closed.** The first message arrived before the owner existed as a CRM contact, so it was admitted `do_not_contact`. Its review could not be accepted, and creating the contact afterwards did not change that. The second message, after the contact existed, was accepted. |
+| Send request compatibility | **BLOCKED.** Eligibility passed. The outbound row committed `sending` before the one call, Meta answered error **131005** (access denied), and the row settled `failed` and was not resent (SI-50). Meta's own dashboard "Send message" failed the same way from both of the owner's apps. The token had both WhatsApp permissions and no account restriction, and the owner had full access to the test account. |
+| Provider message id; status callback format; `biz_opaque_callback_data` placement | **NOT YET VERIFIED.** All three need one successful send. |
+
+### Second run, the same day: the send works
+
+- **The token.** The owner created a system user, `atomic-crm`, with access to two things only: the app "Webhook" and two WhatsApp accounts, the test account and the future clinic number. It holds no access to "whats Claude".
+  - The existing system user "Employee" was not used, because it also reaches the owner's earlier app.
+  - Its token is a `SYSTEM_USER` token for "Webhook", expiring 2026-12-01.
+  - The first token generated carried only `whatsapp_business_management`, and the token was regenerated with `whatsapp_business_messaging` too. A send needs both.
+- **The number.** By owner decision (DECISIONS.md, "Meta probe on the future clinic number"), the send ran on **+55 27 9XXXX-7402 (masked; the full number is kept in the external evidence log)**. The owner states it is not the clinic's current number but its intended future one.
+  - It was subscribed to "Webhook" only for the test and unsubscribed right after; it delivers to "whats Claude" alone again.
+  - The staging test channel maps its phone number id, and the owner is registered as its test sender.
+- **The verify token was rotated before this run.** When the origin was down, `cloudflared` had logged a failed handshake's full URL, query string included, in the owner's terminal.
+
+| ADR 0018 amendment 2 item | Result |
+|---|---|
+| Send request compatibility | **PASS.** Graph v25.0, a `text` message with `recipient_type: individual`, `preview_url: false` and `biz_opaque_callback_data` in the request body. Meta accepted it. Eligibility passed, the row committed `sending` before the one call, and it settled `sent`. The reply reached the owner's phone. |
+| Provider message id | **PASS.** A `wamid.…` id, recorded on the outbound row. |
+| Status callback format | **PASS.** Two signed v26.0 status callbacks parsed. One was a no-op for the row already `sent`; none of the gateway's delivery counters records it. The other moved the row to `delivered`, matched by the provider message id. |
+| `read` status | **NOT OBSERVABLE.** The owner keeps read receipts off. |
+| `biz_opaque_callback_data` | **Accepted in the send body.** Whether Meta echoes it on the status callback is not observable here: the gateway logs no payload (SI-52), and the match used the provider message id. It matters only for a send whose answer was lost, and it stays UNVERIFIED. |
+
+The earlier 131005 was the user token, not the code: the same request went through with the system user token. The probe's evidence log is kept outside the repository; this section is its record.
+
+**Left in place:**
+- the "Webhook" app's subscription to the test account (not to the future clinic number);
+- its callback URL, which points at a closed tunnel and is replaced on the next run;
+- the system user `atomic-crm` and its token in `%USERPROFILE%\.atomic-crm\staging.env`;
+- staging contact 7 "Yuri (teste)";
+- the two staging test channels (the test number and the future clinic number) and their test-sender rows.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+## 12. WhatsApp through the model layer (2026-10-03): resumed
+
+PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
+- **Classification:** a registered test device's message is `test` data.
+- **Routing:** the triage agent's profile maps `lead_triage` to `reception_low_cost`; the database lists the authorized candidates; the worker in gateway mode calls the first one on OpenRouter.
+- **Audit and shadow:** the provider and the cost are recorded, and the three Jev decisions follow in shadow.
+- **Refusal:** any other number is `health`, and Q8 refuses it before any model or decision.
+
+`engine/domain/whatsappGatewayRouting.dbtest.ts` proves both paths through the gateway's own login and the real worker runtime.
+
+**The live staging pass, when the owner is ready:**
+1. **The owner** starts a fresh `cloudflared` quick tunnel. The verify token is rotated in `%USERPROFILE%\.atomic-crm\staging.env`, and the owner pastes the tunnel URL and the token into the "Webhook" app's callback in Meta.
+2. **The gateway:** `node scripts/with-staging.mjs --as gateway --pass WHATSAPP_APP_SECRET --pass WHATSAPP_VERIFY_TOKEN -- npm run whatsapp:gateway`.
+3. **The owner** sends a message from the registered test device to the Meta test number. No real patient content is used.
+4. **The worker:** `AGENT_MODEL_GATEWAY=openrouter STRUCTURED_DECISIONS_GATEWAY=openrouter node scripts/with-staging.mjs --as worker --pass OPENROUTER_API_KEY -- npm run staging:gateway-worker`.
+5. **Verify:** the `test` class, the pool and candidates, the model served, the provider and the cost, the three Jev decisions, and the pending review. Nothing is sent unless the owner accepts the review and runs `npm run messaging -- send`.
+
+**The live pass, 2026-10-03: PASS.**
+- **Webhook:** a fresh quick tunnel and a rotated verify token. The gateway was up before Meta was touched, so no failed handshake could be logged. Meta's verification was accepted.
+- **The message:** the owner sent "oi" from the registered test device to the Meta test number. One delivery was admitted: class `test`, the staging contact found, not do-not-contact.
+- **The run:**
+  - agent `reception-agent`, capability `lead_triage`;
+  - Q8 candidates Luna, Qwen and Haiku in `reception_low_cost`;
+  - `openai/gpt-6-luna` requested and served, provider `OpenAI` from the documented metadata;
+  - 842 in / 167 out tokens, 11.9 s;
+  - **168 micro-dollars**, equal to OpenRouter's reported cost.
+- **The triage:** intent `other`, priority low, outcome `needs_input` (a bare greeting says nothing). The review is pending for a person.
+- **Jev, in shadow:** intent `unknown` and department `no_action` (0.59), human escalation 0.30; lead intelligence's next action `human_review`; model advice Qwen. Three calls on the pinned build, 93 micro-dollars, each equal to OpenRouter's report.
+- **Nothing was sent:** no outbound message, no data authorization. The gateway was stopped afterwards.
+- **The browser decision (2026-10-03): DONE.** The owner opened that review on the Netlify site, signed in with password and TOTP (AAL2), and chose Aceitar → Confirmar. The review is `accepted`, recorded under the owner's own principal (`auth.uid()`), and the page and the database both show that no message was sent.
+  - This closes the step left open on 2026-10-01: a person deciding a staging review in a real browser.
+  - A gap observed on that page: "Inteligência de decisão" shows only the 2D shadow engine (off on staging). The ADR 0022 Jev decisions for the same task are stored but not yet shown there. That is a candidate UI follow-up.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**

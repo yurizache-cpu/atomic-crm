@@ -612,7 +612,27 @@ Built on `feature/q8-retention-fallback` from `feature/clinical-phase-1` at `c38
 - **Unchanged:** no authorization recorded; no provider-side deletion; no production WhatsApp; no Jev; no RAG.
 - **Next:** not started; the owner decides the next milestone.
 
-### OpenRouter + Jev + multi-model Company OS (2026-10-02) — IMPLEMENTED; PR #24 open; synthetic real-model run on staging PASS (2026-10-03)
+### WhatsApp / Meta milestone (2026-10-03) — RESUMED on the integrated model layer
+
+**WHATSAPP / META MILESTONE: RESUMED (2026-10-03).** It resumed automatically once PR #24 was integrated, as the owner's plan directs.
+- **Branch:** `feature/staging-model-and-meta` brought onto `feature/clinical-phase-1` at `8ac08c87` by a normal merge. No history was rewritten and nothing was lost.
+- **Routing:** a WhatsApp event goes through the Company OS, the agent's authorized pool and OpenRouter, with Jev in shadow. It is never coupled to one model:
+  - a registered test device's message is `test` data;
+  - the triage agent's profile and pool decide the model;
+  - the gateway records the provider and the cost;
+  - the three Jev decisions follow in shadow;
+  - nothing is sent until a person accepts the review and runs the separate send act.
+- **Q8 is unchanged:** a message from any other number is `health`, refused before any model or decision.
+- **Proof:** `engine/domain/whatsappGatewayRouting.dbtest.ts` runs through the gateway's own login and the real worker runtime.
+- **Live staging pass (2026-10-03): PASS.** The owner's "oi" from the registered test device was admitted as `test`, triaged by `reception-agent` on `openai/gpt-6-luna` through OpenRouter (provider OpenAI, 168 micro-dollars, equal to OpenRouter's report), and followed by three Jev decisions in shadow. The owner then accepted that review in the browser (AAL2); it is `accepted` under the owner's principal, and nothing was sent ([COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12).
+- **Next:**
+  - this milestone's PR;
+  - a live staging pass with the owner's test device (a fresh tunnel and verify token, the gateway, and the bounded gateway worker);
+  - the owner's and counsel's decisions W1 to W8 (ADR 0021) before any production WhatsApp.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+### OpenRouter + Jev + multi-model Company OS (2026-10-02) — INTEGRATED (PR #24, merge `8ac08c87`)
 
 Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directive (the priority moved from WhatsApp on 2026-10-02). Read [adr/0022-openrouter-gateway-and-jev-intelligence.md](adr/0022-openrouter-gateway-and-jev-intelligence.md) and [OPENROUTER_JEV_REPORT.md](OPENROUTER_JEV_REPORT.md).
 
@@ -621,9 +641,32 @@ Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directiv
 - **Staging:** 68 migrations (the third, `20261008120000_model_gateway_hardening.sql`, carries the pre-PR review's corrections); five models, four pools and the Receptionist profile configured.
 - **WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02)** on `feature/staging-model-and-meta` at `9a4b234a` (pushed, not merged), with its own pause record. It resumes automatically after this milestone is merged and verified: that branch is brought onto the new head and WhatsApp is routed through the Company OS, Jev and the authorized pools on OpenRouter.
 - **Real-model run (2026-10-03): PASS.** Two synthetic demands on `openai/gpt-6-luna` through OpenRouter, six Jev decisions on the pinned build, US$0.000616 in all, our charge equal to OpenRouter's reported cost; for the administrative demand Jev would route to operations, a recorded shadow disagreement. See the report, §8. Repeated on the reviewed head with the provider from the documented metadata, plus a controlled paid-but-unusable call (failed, audit and 164 micro-dollars kept, no fallback); see §8a.
-- **Next:** PR #24's review and integration; then WhatsApp. **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+- **Integrated:** PR #24, normal merge `8ac08c87fa98f2d3424f33a3af238f18e69a7182` into `feature/clinical-phase-1` (parents `6da21fbd` and `0c962c41d21bce4d072b6f5ab749d4edd6c80624`); the source branch is retained at `0c962c41`; `main` is unchanged at `a863e2a0`. Before the merge, CI on the head was at the historical baseline (e2e exactly 9 failed and 1 skipped, the same ids; Prettier exactly the two files), and both automated-review P2s were fixed. Post-merge CI (run 37120944340 on `8ac08c87`): Test, Build, Typecheck, ESLint and Database security & reproducibility PASS; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly the two baseline files; no new regression.
+- **Next:** WhatsApp resumed (above). **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
-### Staging real model and Meta test probe (2026-10-02) — IN PROGRESS
+### Staging real model and Meta test probe (2026-10-02) — PAUSED BY OWNER; RESUMED 2026-10-03 (above)
+
+**WHATSAPP / META MILESTONE: PAUSED BY OWNER (2026-10-02).** The owner moved the priority to OpenRouter + Jev + a multi-model Company OS. WhatsApp resumes automatically once that milestone is implemented, reviewed, merged and verified after the merge.
+
+- **Branch and head.** `feature/staging-model-and-meta` from `6da21fbd`, kept as is: the head is this commit, with nothing discarded and nothing merged.
+- **Done:**
+  - the Meta live probe (ADR 0018 amendment 2), complete except two unobservable items ([docs/COST_FIRST_STAGING.md](docs/COST_FIRST_STAGING.md) §11);
+  - ADR 0021 Proposed, the production WhatsApp gate's decisions W1 to W8;
+  - `with-staging --pass`.
+- **Superseded before it ran:** the planned real-model run on a direct OpenAI `gpt-6-luna` key. The model path becomes OpenRouter.
+- **Next step on resume:**
+  1. Bring this branch onto the new `feature/clinical-phase-1`, the safest strategy for its commits.
+  2. Route WhatsApp events through the Company OS, the Jev routing and the authorized model pool to OpenRouter, never coupled to one model.
+  3. Open this milestone's PR.
+- **External dependencies:**
+  - the owner's and counsel's decisions W1 to W8 in ADR 0021;
+  - a production webhook host (W7);
+  - the system-user token, which expires 2026-12-01 and is kept in `%USERPROFILE%\.atomic-crm\staging.env`;
+  - a fresh quick tunnel and verify token for each probe run.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.** ~~WhatsApp milestone text follows.~~ 
+
+**Earlier status: IN PROGRESS.**
 
 PR #23 is integrated: normal merge `6da21fbd5640555c220de4300248de182fcc4a73` into `feature/clinical-phase-1` (parents `501e3efd` and `53bf6d47b5993255d6a402785bc373d65e87e742`); the source branch `feature/cost-first-staging` is retained at `53bf6d47`; `main` is unchanged at `a863e2a0`. Post-merge CI: Test, Build, Typecheck, ESLint and Database security & reproducibility PASS, now on PostgreSQL 17; e2e exactly 9 failed and 1 skipped (the same ids) and Prettier exactly 2 errors, the historical baseline; no new regression. The automated review's P1 (the uploader inherited the whole shell environment) and P2 (the live check bound the release only to its script paths) were fixed before the merge in `53bf6d47` (`scripts/publisher-environment.mjs`; `release.json`, a hash of every path and byte of the build, checked live).
 
