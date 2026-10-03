@@ -130,6 +130,15 @@ An independent review of the whole branch, before the pull request, found no P0 
 | 9 | The OpenRouter ban covered new authorizations only | The end state asserts none exists |
 | 10 | The staging worker skipped the lease check and the reaper | Fixed: the lease is sized to the longest route, and the maintenance runs before and after the loop |
 
+## 7b. Automated review on PR #24
+
+The automated review left two P2 comments:
+
+1. **Read the upstream route from `openrouter_metadata` instead of `provider`.** Not applied: the live run disproves it. Both chat calls and all six Decisions calls returned `provider` without any opt-in header, and the ledger holds `OpenAI` and `TypeSafe` from those responses (§8).
+2. **Keep the gateway report when a billed answer is unusable.** Fixed. `ModelError` now carries the provider route and the reported cost, well formed or null. They are set wherever a billed answer turns out unusable: the chat adapter, the router's contract check and the Decisions adapter. The agent run's failure branch then records the report before the failure, and a failed decision settles with it. A mutation that skips the record turns the new handler test red.
+
+CI on the PR head: Test, Build, Typecheck, ESLint and Database pass. e2e is exactly 9 failed and 1 skipped, the same ids, and Prettier is exactly the two baseline files. No new regression.
+
 ## 8. Staging
 
 **Configured (2026-10-02),** on the staging project only, by owner acts through the connector:
@@ -140,12 +149,41 @@ An independent review of the whole branch, before the pull request, found no P0 
 - the Receptionist profile above;
 - the existing US$0.16 daily global ceiling and tenant budget, unchanged.
 
-**The real-model run waits on the owner's OpenRouter key** (OWNER ACTION REQUIRED — OPENROUTER). It runs two synthetic demands: a new lead asking how the service works and what it costs (case A), and an existing client asking for a billing document (case B).
+**Owner setup (2026-10-03):**
+- the account's Data Policies: every data-training option off (one, "Allow free endpoints that train on request data", was on and was turned off), the 1% data discount off, and Zero Data Retention left off for now because it could exclude a test model;
+- the key `atomic-crm-staging`, credit limit US$5, kept only in `%USERPROFILE%\.atomic-crm\staging.env`.
+
+**The synthetic real-model run: PASS (2026-10-03).**
+- Two synthetic messages were admitted on staging:
+  - **case A:** a new lead asking how the service works and what it costs;
+  - **case B:** an existing client asking for a second copy of a billing document.
+- The bounded gateway worker ran 8 jobs, each on its first attempt: 2 agent runs and 6 Jev decisions. It then found the queue idle and stopped.
+- Nothing was sent: no outbound row today, and both reviews are pending for a person.
+
+| | Case A | Case B |
+|---|---|---|
+| Pool, candidates | `reception_low_cost`, 3 | `reception_low_cost`, 3 |
+| Model executed (rank 1) | `openai/gpt-6-luna`, upstream OpenAI | `openai/gpt-6-luna`, upstream OpenAI |
+| Run | succeeded, 858 in / 259 out tokens, 5.96 s | succeeded, 859 in / 251 out tokens, 3.84 s |
+| Charged / OpenRouter reported | 216 / 216 micro-dollars | 212 / 212 micro-dollars |
+| Triage | intent `pricing`, priority normal | intent `support`, priority normal |
+| Jev business route | intent `pricing_question` (0.63), department `reception` (1.00), complexity low, human review 0.17 | intent `existing_client_admin` (1.00), department **`operations`** (0.99), complexity low, human review 0.22 |
+| Agreement with the deterministic route | department agrees (`reception`) | department **disagrees**: Jev would send it to operations; execution stayed with `reception` (shadow) |
+| Jev lead intelligence | objection `price`, next action `share_pricing_information`, follow-up priority high, commercial readiness medium | objection `unknown`, next action `answer_question`, follow-up priority high, commercial readiness low |
+| Jev model-route advice | `qwen/qwen3.5-flash-02-23` (0.88) | `qwen/qwen3.5-flash-02-23` (0.90) |
+
+- **Jev:** every decision completed on the pinned build `typesafe/jev-1.13-20260917`, upstream TypeSafe, in 0.28 to 0.33 s. Each cost 20 to 40 micro-dollars, and our charge equals OpenRouter's reported cost every time.
+- **Routing economics** (`ops.model_economics`): 428 micro-dollars actual. The same tokens on the strongest authorized candidate would have cost 4267, about ten times more.
+- **What the run showed:**
+  - Case B is exactly the shadow comparison the milestone asked for. The deterministic route sent an administrative request to the front desk; Jev, with 0.99, would send it to operations. Nothing changed, and the disagreement is on record.
+  - Jev's routing advice preferred the cheaper Qwen over the executed Luna both times. Promoting that advice to authority is a later, owner-approved step after evaluation.
+- **OpenRouter's own key usage** still read 0 right after the run, while our ledger holds US$0.000616. Its meter is delayed or rounds below a cent; the per-request cost it reported matched ours exactly.
 
 ## 9. Costs
 
 - **New recurring infrastructure:** none.
-- **OpenRouter:** prepaid credit chosen by the owner (about US$5), with a key credit limit; our own limits apply first, because an OpenRouter budget does not replace ours.
+- **OpenRouter:** prepaid credit chosen by the owner (about US$5), with a key credit limit of US$5; our own limits apply first, because an OpenRouter budget does not replace ours.
+- **Model spend in the synthetic run:** 616 micro-dollars (US$0.000616): 428 for the two runs and 188 for the six Jev decisions.
 
 ## 10. Not done, by design
 
@@ -157,7 +195,7 @@ An independent review of the whole branch, before the pull request, found no P0 
 
 ## 11. Next
 
-1. The real-model synthetic run on staging, once the key exists.
+1. ~~The real-model synthetic run on staging.~~ PASS (2026-10-03), §8.
 2. The pull request into `feature/clinical-phase-1`, its review and its integration.
 3. **Resume WhatsApp automatically:** bring `feature/staging-model-and-meta` onto the new head and route WhatsApp through the Company OS, Jev and the authorized pools on OpenRouter.
 
