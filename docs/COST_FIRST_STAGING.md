@@ -244,3 +244,22 @@ The earlier 131005 was the user token, not the code: the same request went throu
 - the two staging test channels (the test number and the future clinic number) and their test-sender rows.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+## 12. WhatsApp through the model layer (2026-10-03): resumed
+
+PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
+- **Classification:** a registered test device's message is `test` data.
+- **Routing:** the triage agent's profile maps `lead_triage` to `reception_low_cost`; the database lists the authorized candidates; the worker in gateway mode calls the first one on OpenRouter.
+- **Audit and shadow:** the provider and the cost are recorded, and the three Jev decisions follow in shadow.
+- **Refusal:** any other number is `health`, and Q8 refuses it before any model or decision.
+
+`engine/domain/whatsappGatewayRouting.dbtest.ts` proves both paths through the gateway's own login and the real worker runtime.
+
+**The live staging pass, when the owner is ready:**
+1. **The owner** starts a fresh `cloudflared` quick tunnel. The verify token is rotated in `%USERPROFILE%\.atomic-crm\staging.env`, and the owner pastes the tunnel URL and the token into the "Webhook" app's callback in Meta.
+2. **The gateway:** `node scripts/with-staging.mjs --as gateway --pass WHATSAPP_APP_SECRET --pass WHATSAPP_VERIFY_TOKEN -- npm run whatsapp:gateway`.
+3. **The owner** sends a message from the registered test device to the Meta test number. No real patient content is used.
+4. **The worker:** `AGENT_MODEL_GATEWAY=openrouter STRUCTURED_DECISIONS_GATEWAY=openrouter node scripts/with-staging.mjs --as worker --pass OPENROUTER_API_KEY -- npm run staging:gateway-worker`.
+5. **Verify:** the `test` class, the pool and candidates, the model served, the provider and the cost, the three Jev decisions, and the pending review. Nothing is sent unless the owner accepts the review and runs `npm run messaging -- send`.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
