@@ -8,7 +8,8 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 
 // Saúde operacional (Phase 2E.2), fed with the overview the real projection
 // returned for the recorded tenant (testing/recorded/tenant.json): 5 jobs
-// ready, 1 running, 1 scheduled and 1 past its lease; runs that failed, ended
+// ready, 1 running, 2 scheduled (one of them the WhatsApp conversation's
+// identifier retention job, 12 months on: ADR 0021 W5) and 1 past its lease; runs that failed, ended
 // uncertain and wait; a failed, a blocked and an uncertain send; 3 pending
 // reviews and 3 active stops. Every number is the server's, every control is
 // a link, and nothing is a score.
@@ -69,7 +70,7 @@ describe("the Saúde operacional screen", () => {
       .element(screen.getByRole("heading", { name: "Saúde operacional" }))
       .toBeVisible();
     await expect
-      .element(screen.getByText("Prontos para executar · mais 1 agendados"))
+      .element(screen.getByText("Prontos para executar · mais 2 agendados"))
       .toBeVisible();
     await expect.element(screen.getByText("1 passaram do prazo")).toBeVisible();
     for (const [name, href] of [

@@ -1,6 +1,6 @@
 # ADR 0021 — Opening WhatsApp to real patients: the decisions the gate needs
 
-**Status:** Proposed (2026-10-02). **Nothing is opened by this record.** Owner decisions W1 to W8 are required. **W1 is decided (owner, 2026-10-04).** There is no external counsel: the owner decides W2 to W8 (owner, 2026-10-04). The repository records decisions and references, never legal analysis. **Date:** 2026-10-02.
+**Status:** Accepted in part (2026-10-04). **W1 decided by the owner; W2 to W6 decided by owner delegation** ("apply the LGPD minimum that comparable systems apply, with a disclaimer"); W7 and W8 pending. See "Decisions recorded" below. **Nothing is opened by this record**: the production gate stays closed. There is no external counsel: the owner decides (owner, 2026-10-04). The repository records decisions and references, never legal analysis. **Date:** 2026-10-02.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -128,7 +128,31 @@ These are owner actions, not code:
 
 The ADR 0018 amendment 2 Meta live probe remains mandatory before any production enablement, and it is run on a test number with synthetic content only.
 
+## Decisions recorded (2026-10-04)
+
+W1 is the owner's own. W2 to W6 were delegated: the owner asked for the minimum that systems of this kind apply, with a disclaimer, and these are the common market practice for a health service answering on WhatsApp. They record a practice, not a legal opinion.
+
+| Item | Decision | How the system holds it |
+| --- | --- | --- |
+| W1 | (a): no health information is ever fed to AI through OpenRouter; people triage real messages. | Unchanged code (SI-78). |
+| W2 | Replying and keeping the contact: procedures preliminary to a contract at the person's request (LGPD art. 7 V). Health content a person shares: health protection by a health service (art. 11 II f). Legal or regulatory duties: art. 7 II and art. 11 II a. Consent only for marketing, which the system does not send. | The basis is an opaque `lawful_basis_ref` on the tenant's privacy notice (owner data). |
+| W3 | (b): no consent record now, because no part of the flow rests on consent. A marketing send would need (a) first. | The opt-out flag stays the gate (SI-49). |
+| W4 | (a): the D6/D7 lifecycle, at most 30 days. | Unchanged code (SI-72). |
+| W5 | (c), with a tombstone instead of a keyed hash: the number is erased 12 months after the sender's last message, or at once on the owner's act; a returning sender opens a new conversation. | Migration `20261010120000_whatsapp_privacy_and_identifier_retention.sql`, `npm run ops -- identifiers` (SI-79). |
+| Notice | The disclaimer the owner asked for: the first reply of a conversation carries the tenant's privacy notice (a short text with the link to the full notice), once per version, and the send records the version. | Same migration; `npm run messaging -- notice record` (SI-79). |
+| W6 | (a): no reply to a number outside the CRM. | Unchanged code (SI-49). |
+| W7 | Recommended: a function on the existing Netlify account (no new recurring cost); not built. | Pending. |
+| W8 | Owner actions in Meta's console. | Pending. |
+
+**What still stands between this record and a production channel:**
+- **A reply a person writes.** With W1, a real message produces no AI draft, and today the send path only sends an accepted review's draft. Production needs a way for a person to write the reply; it is built with W7.
+- **W7** (the always-on webhook endpoint) and **W8** (business verification, display name, the production number, a permanent token in a secret store).
+- **The notice itself:** the owner publishes the full notice and records its URL, its short text and the basis reference.
+- **Then** a reviewed migration may open the production gate for exactly the channel the owner names, requiring a current privacy notice for its tenant (SI-47 amended).
+
 ## After the decisions
+
+*(2026-10-04: the batch below was built as recorded above: W3 is (b), so no consent ledger; W5 and the notice by migration `20261010120000`.)*
 
 There is one batch, behind its own review, and the owner's Accepted status on this record precedes it:
 

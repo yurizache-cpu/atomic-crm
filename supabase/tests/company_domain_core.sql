@@ -299,6 +299,10 @@ begin
     -- leased retention job once it is due; no argument, no call
     -- (supabase/tests/content_retention.sql).
     ('ops_worker',   'ops.redact_due_content()'::regprocedure),
+    -- ADR 0021 W5: one lease-bound capability that erases the phone number of
+    -- the conversation bound to the leased identifier job once it is due; no
+    -- argument, no call (supabase/tests/whatsapp_transport.sql, section P).
+    ('ops_worker',   'ops.erase_due_contact_identifier()'::regprocedure),
     -- Phase 3A.2: the calendar sync's two lease-bound capabilities; neither
     -- takes a tenant, booking or sync, and neither writes a booking.
     ('ops_worker',   'ops.start_calendar_sync(text)'::regprocedure),
@@ -413,6 +417,9 @@ begin
                            'start_shadow_decision', 'settle_shadow_decision', 'worker_queue_depth',
                            'mark_follow_up_due', 'start_calendar_sync', 'settle_calendar_sync',
                            'redact_due_content', 'session_assurance_satisfied',
+                           -- ADR 0021 W5: argument-free and lease-bound, it erases only the
+                           -- number of the conversation bound to the live lease's job, once due.
+                           'erase_due_contact_identifier',
                            -- ADR 0022: the worker's model-gateway and structured-decision capabilities.
                            'agent_run_model_candidates', 'record_agent_run_gateway_report',
                            'request_structured_decisions_for_settled_job', 'start_structured_decision',

@@ -243,3 +243,109 @@ describe("running the messaging tool", () => {
     expect(out.join("\n")).not.toMatch(/SENTINEL/);
   });
 });
+
+describe("recording the privacy notice (ADR 0021)", () => {
+  const NOTICE_ID = "00000000-0000-4000-8000-00000000000c";
+  const RECORD = [
+    "notice",
+    "record",
+    "--tenant",
+    TENANT,
+    "--version",
+    "v1",
+    "--url",
+    "https://clinic.example.test/privacy",
+    "--text-file",
+    "notice.txt",
+    "--basis",
+    "lgpd:art7-v+art11-ii-f",
+    "--actor",
+    "owner",
+  ];
+
+  function recordingDatabase() {
+    const queries: { sql: string; params: readonly unknown[] }[] = [];
+    const tx = {
+      async query(sql: string, params: readonly unknown[] = []) {
+        queries.push({ sql, params });
+        return {
+          rows: sql.includes("ops.record_privacy_notice")
+            ? [{ id: NOTICE_ID }]
+            : [],
+        };
+      },
+    } as unknown as TxClient;
+    const database = {
+      withTransaction: (fn: (client: TxClient) => Promise<unknown>) => fn(tx),
+      async identity() {
+        throw new Error("unused");
+      },
+      async close() {},
+    } as unknown as WorkerDatabase;
+    return { queries, database };
+  }
+
+  it("requires every field, the text coming from a file", () => {
+    expect(parseMessagingArgs(RECORD).kind).toBe("notice record");
+    for (const flag of [
+      "--tenant",
+      "--version",
+      "--url",
+      "--text-file",
+      "--basis",
+      "--actor",
+    ]) {
+      const at = RECORD.indexOf(flag);
+      const argv = [...RECORD.slice(0, at), ...RECORD.slice(at + 2)];
+      expect(parseMessagingArgs(argv).kind, flag).toBe("usage_error");
+    }
+    expect(parseMessagingArgs([...RECORD, "--text", "inline"]).kind).toBe(
+      "usage_error",
+    );
+  });
+
+  it("refuses an unreadable file before any connection opens", async () => {
+    const { out, opened, deps } = harness();
+    const code = await runMessagingCli(RECORD, {
+      ...deps({ ADMIN_DATABASE_URL: ADMIN }),
+      readTextFile: () => {
+        throw new Error("ENOENT SENTINEL-PATH");
+      },
+    });
+    expect(code).toBe(2);
+    expect(opened.databases).toBe(0);
+    expect(out.join("\n")).toContain("--text-file could not be read");
+    expect(out.join("\n")).not.toMatch(/SENTINEL/);
+  });
+
+  it("records the file's words as one parameterised call, Windows line breaks and the final break folded", async () => {
+    const { queries, database } = recordingDatabase();
+    const out: string[] = [];
+    const code = await runMessagingCli(RECORD, {
+      env: { ADMIN_DATABASE_URL: ADMIN },
+      stdout: (line) => out.push(line),
+      stderr: (line) => out.push(line),
+      openDatabase: () => database,
+      readTextFile: () =>
+        "\uFEFFAviso de privacidade.\r\nSeus direitos: link.\r\n",
+    });
+    expect(code).toBe(0);
+    const call = queries.find(({ sql }) =>
+      sql.includes("ops.record_privacy_notice"),
+    );
+    expect(call?.sql).toMatch(/\(\$1, \$2, \$3, \$4, \$5, \$6\)/);
+    expect(call?.params).toEqual([
+      TENANT,
+      "v1",
+      "https://clinic.example.test/privacy",
+      "Aviso de privacidade.\nSeus direitos: link.",
+      "lgpd:art7-v+art11-ii-f",
+      "owner",
+    ]);
+    expect(JSON.parse(out[0])).toEqual({
+      noticeId: NOTICE_ID,
+      version: "v1",
+      current: true,
+    });
+  });
+});

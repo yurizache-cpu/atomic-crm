@@ -370,6 +370,7 @@ describe("the capability list", () => {
       "settleShadowDecision",
       "markFollowUpDue",
       "redactDueContent",
+      "eraseDueContactIdentifier",
       "startCalendarSync",
       "settleCalendarSync",
       "agentRunModelCandidates",

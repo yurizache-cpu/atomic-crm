@@ -34,6 +34,9 @@ import {
   REVIEW,
   RETENTION_ERASE,
   RETENTION_SWEEP,
+  ERASED_NUMBER,
+  IDENTIFIERS_ERASE,
+  IDENTIFIERS_SWEEP,
   RUNS_WITH_OPTIONS,
   TASK,
   TENANT,
@@ -101,6 +104,12 @@ const idle = (sql: string, params: readonly unknown[] = []): unknown[] => {
   }
   if (sql.includes("ops.sweep_content_retention")) {
     return [{ result: { redacted: 3, in_progress: 1 } }];
+  }
+  if (sql.includes("ops.erase_contact_by_number")) {
+    return [{ count: 2 }];
+  }
+  if (sql.includes("ops.sweep_contact_identifier_retention")) {
+    return [{ count: 4 }];
   }
   if (sql.includes("ops.record_review_decision")) {
     // The decision is params[2]: the subcommand chose it, and it reaches the
@@ -225,6 +234,12 @@ describe("running the operator tool", () => {
     ],
     ["retention erase", RETENTION_ERASE, "ops.erase_task_content"],
     ["retention sweep", RETENTION_SWEEP, "ops.sweep_content_retention"],
+    ["identifiers erase", IDENTIFIERS_ERASE, "ops.erase_contact_by_number"],
+    [
+      "identifiers sweep",
+      IDENTIFIERS_SWEEP,
+      "ops.sweep_contact_identifier_retention",
+    ],
   ])(
     "runs %s as one parameterised function call in a writable transaction",
     async (_name, argv, fn) => {
@@ -265,7 +280,20 @@ describe("running the operator tool", () => {
       { result: "retired", authorizationId: DATA_AUTHORIZATION },
       { result: "redacted", taskId: TASK },
       { result: "swept", redacted: 3, inProgress: 1 },
+      { result: "erased", conversationsErased: 2 },
+      { result: "swept", erased: 4 },
     ]);
+  });
+
+  it("never prints the number a person asked to erase", async () => {
+    const { state, run } = harness();
+
+    expect(await run(IDENTIFIERS_ERASE)).toBe(EXIT_OK);
+
+    expect(state.queries[0]?.params).toContain(ERASED_NUMBER);
+    expect([...state.stdout, ...state.stderr].join("\n")).not.toContain(
+      ERASED_NUMBER,
+    );
   });
 
   it("changes state only through SI-39's act allowlist, and every other command is a read", () => {
@@ -284,6 +312,8 @@ describe("running the operator tool", () => {
       "data-auth retire",
       "retention erase",
       "retention sweep",
+      "identifiers erase",
+      "identifiers sweep",
     ]);
     const actKinds = ACTS.map((argv) => {
       const command = parseOperatorArgs(argv);

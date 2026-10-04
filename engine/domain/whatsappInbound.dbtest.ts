@@ -115,13 +115,16 @@ describe("a signed delivery to a configured test channel", () => {
       type: "lead_triage",
       company_id: clinic.companyId,
     });
-    expect(
-      await countRows(
-        admin,
-        "select count(*)::text as count from ops.jobs where tenant_id = $1",
-        [TENANT_A],
-      ),
-    ).toBe(1);
+    // One agent run to execute, and (ADR 0021 W5) the conversation's one
+    // identifier retention job, scheduled 12 months on; nothing else.
+    const { rows: jobs } = await admin.query<{ kind: string; ready: boolean }>(
+      "select kind, available_at <= now() as ready from ops.jobs where tenant_id = $1 order by kind",
+      [TENANT_A],
+    );
+    expect(jobs).toEqual([
+      { kind: "agent_run.execute", ready: true },
+      { kind: "contact.identifier_retention_due", ready: false },
+    ]);
   });
 
   it("converges when Meta redelivers it, sequentially or at once", async () => {

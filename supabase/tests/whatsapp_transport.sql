@@ -14,6 +14,9 @@
 --     login, a real worker, a counting transport, fresh consent, crashes and
 --     status reconciliation.
 --
+-- ADR 0021 (sections P and N): the privacy notice on the first reply of a
+-- conversation, and the sender number's retention clock and erasure.
+--
 -- ONE TRANSACTION, ROLLED BACK.
 
 \set ON_ERROR_STOP on
@@ -778,6 +781,333 @@ begin
      and has_function_privilege('ops_gateway', p.oid, 'EXECUTE');
   if v_bad is not null then
     raise exception 'K3: ops_gateway executes a SECURITY DEFINER function outside ops: %', v_bad;
+  end if;
+end
+$$;
+
+
+-- ---------------------------------------------------------------------------
+-- P. ADR 0021: the privacy notice is versioned owner data, and the first reply
+--    of a conversation carries it, recording which version.
+-- ---------------------------------------------------------------------------
+
+create function pg_temp.accepted_reply(p_wamid text, p_from text, p_draft text) returns uuid
+language plpgsql as $f$
+declare
+  v_admitted jsonb;
+  v_review   uuid;
+begin
+  v_admitted := ops.receive_whatsapp_message('300000000000001', p_wamid, p_from, 'synthetic question', now());
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed,
+                                do_not_contact, status, reviewer, reviewed_at)
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), (v_admitted ->> 'task_id')::uuid, gen_random_uuid(),
+          'lead_triage', jsonb_build_object('response_draft', p_draft), false, 'accepted', 'p2b', now())
+  returning id into v_review;
+  return ops.request_outbound_send(pg_temp.id('tenant_a'), v_review, 'p2b-owner', 'operator-cli') ->> 'outbound_message_id';
+end
+$f$;
+
+do $$
+declare
+  v_n1   uuid;
+  v_n2   uuid;
+  v_out  uuid;
+  v_ans  jsonb;
+  c_text constant text := 'Privacy notice: synthetic clinic. Details: https://clinic.example.test/privacy';
+  c_nl2  constant text := repeat(chr(10), 2);
+begin
+  -- P1. Recorded only as owner data, with its shape held by the table.
+  begin
+    perform ops.record_privacy_notice(gen_random_uuid(), 'v1', 'https://clinic.example.test/privacy', c_text,
+                                      'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+    raise exception 'P1: a notice was recorded for an unknown tenant';
+  exception when sqlstate 'OS404' then null;
+  end;
+  begin
+    perform ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v1', 'http://clinic.example.test/privacy', c_text,
+                                      'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+    raise exception 'P1: a notice without https was recorded';
+  exception when check_violation then null;
+  end;
+  begin
+    perform ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v1', 'https://clinic.example.test/privacy',
+                                      repeat('x', 1001), 'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+    raise exception 'P1: a notice longer than 1000 characters was recorded';
+  exception when check_violation then null;
+  end;
+  begin
+    perform ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v1', 'https://clinic.example.test/privacy',
+                                      'notice' || chr(7), 'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+    raise exception 'P1: a notice with a control character was recorded';
+  exception when check_violation then null;
+  end;
+  v_n1 := ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v1', 'https://clinic.example.test/privacy', c_text,
+                                    'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+  begin
+    perform ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v1', 'https://clinic.example.test/privacy', c_text,
+                                      'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+    raise exception 'P1: a version was recorded twice';
+  exception when sqlstate 'OS409' then null;
+  end;
+
+  -- P2. A notice is history: never rewritten, deleted, revived or truncated.
+  begin
+    update ops.privacy_notices set whatsapp_text = 'rewritten' where id = v_n1;
+    raise exception 'P2: a notice''s text was rewritten';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.privacy_notices where id = v_n1;
+    raise exception 'P2: the current notice was deleted';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    truncate ops.privacy_notices cascade;
+    raise exception 'P2: the notices were truncated';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- P3. The first reply of a conversation carries the current notice, and the
+  --     send records its version; the text is the draft and the notice only.
+  v_out := pg_temp.accepted_reply('wamid.P3', '5511900000111', 'First synthetic reply');
+  v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
+  if v_ans ->> 'state' <> 'send' or v_ans ->> 'body' <> 'First synthetic reply' || c_nl2 || c_text
+     or (select privacy_notice_id from ops.outbound_messages where id = v_out) is distinct from v_n1 then
+    raise exception 'P3: the first reply did not carry the notice and record it: %', v_ans;
+  end if;
+  -- The version is attached once, as the send begins, and never changes.
+  begin
+    update ops.outbound_messages set privacy_notice_id = null where id = v_out;
+    raise exception 'P3: a send''s notice was removed';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- P4. Until it reached the person, the next reply carries it again; once a
+  --     reply with that version was sent, the next one does not.
+  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'indeterminate', null, null, 'ambiguous');
+  v_out := pg_temp.accepted_reply('wamid.P4a', '5511900000111', 'Second synthetic reply');
+  v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
+  if v_ans ->> 'body' <> 'Second synthetic reply' || c_nl2 || c_text then
+    raise exception 'P4: a reply after an unknown outcome did not carry the notice again: %', v_ans;
+  end if;
+  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4a.out', null, null);
+  v_out := pg_temp.accepted_reply('wamid.P4b', '5511900000111', 'Third synthetic reply');
+  v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
+  if v_ans ->> 'body' <> 'Third synthetic reply'
+     or (select privacy_notice_id from ops.outbound_messages where id = v_out) is not null then
+    raise exception 'P4: a reply after the notice reached the person carried it again: %', v_ans;
+  end if;
+  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4b.out', null, null);
+
+  -- P5. A new version supersedes the old one, exactly one is current, and the
+  --     next reply carries the new version.
+  v_n2 := ops.record_privacy_notice(pg_temp.id('tenant_a'), 'v2', 'https://clinic.example.test/privacy-v2',
+                                    'Updated synthetic notice', 'lgpd:art7-v+art11-ii-f', 'p2b-owner');
+  if (select count(*) from ops.privacy_notices where tenant_id = pg_temp.id('tenant_a') and superseded_at is null) <> 1
+     or (select superseded_at from ops.privacy_notices where id = v_n1) is null then
+    raise exception 'P5: a new version did not supersede the old one';
+  end if;
+  begin
+    update ops.privacy_notices set superseded_at = null where id = v_n1;
+    raise exception 'P5: a superseded notice was revived';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- A version a send carried is never deleted, superseded or not.
+  begin
+    delete from ops.privacy_notices where id = v_n1;
+    raise exception 'P5: a notice a send carried was deleted';
+  exception when foreign_key_violation then null;
+  end;
+  v_out := pg_temp.accepted_reply('wamid.P5', '5511900000111', 'Fourth synthetic reply');
+  v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
+  if v_ans ->> 'body' <> 'Fourth synthetic reply' || c_nl2 || 'Updated synthetic notice'
+     or (select privacy_notice_id from ops.outbound_messages where id = v_out) is distinct from v_n2 then
+    raise exception 'P5: the next reply did not carry the new version: %', v_ans;
+  end if;
+
+  -- P6. Another tenant's notice never reaches this tenant's send, and a send
+  --     cannot be pointed at it.
+  perform ops.record_privacy_notice(pg_temp.id('tenant_b'), 'v1', 'https://other.example.test/privacy',
+                                    'Other tenant notice', 'lgpd:art7-v', 'p2b-owner');
+  v_out := pg_temp.accepted_reply('wamid.P6', '5511900000111', 'Fifth synthetic reply');
+  begin
+    update ops.outbound_messages
+       set status = 'sending', sending_at = now(),
+           privacy_notice_id = (select id from ops.privacy_notices where tenant_id = pg_temp.id('tenant_b'))
+     where id = v_out;
+    raise exception 'P6: a send carried another tenant''s notice';
+  exception when sqlstate 'OS403' then null;
+  end;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- N. ADR 0021 W5: a sender's number is erased 12 months after their last
+--    message, or at once on the owner's act; erasure leaves a tombstone.
+-- ---------------------------------------------------------------------------
+
+create function pg_temp.lease(p_job uuid) returns void
+language plpgsql as $f$
+begin
+  update ops.jobs
+     set status = 'leased', lease_owner = 'p2b-worker', leased_at = now(),
+         lease_expires_at = now() + interval '10 minutes', attempts = attempts + 1, updated_at = now()
+   where id = p_job and status = 'queued';
+  if not found then
+    raise exception 'setup: job % is not queued', p_job;
+  end if;
+  insert into ops.job_events (job_id, tenant_id, event, worker_id, attempt, detail)
+  select j.id, j.tenant_id, 'leased', 'p2b-worker', j.attempts, j.kind from ops.jobs j where j.id = p_job;
+  perform set_config('app.worker_id', 'p2b-worker', true);
+  perform set_config('app.job_id', p_job::text, true);
+end
+$f$;
+
+do $$
+declare
+  v_admitted jsonb;
+  v_conv     uuid;
+  v_conv2    uuid;
+  v_old      uuid;
+  v_row      ops.contact_identifier_retention;
+  v_job      uuid;
+  v_status   text;
+  v_swept    integer;
+begin
+  -- No run may be left in progress for these synthetic senders: the company's
+  -- budget is zero, so each admitted run is refused at its request.
+  perform ops.set_spend_limit('company', 0, 'UTC', 'p2b-test: no runs for section N', 'p2b-owner',
+                              pg_temp.id('tenant_a'), pg_temp.id('company_a'));
+
+  -- N1. A conversation is born with its clock and one queued internal job.
+  v_admitted := ops.receive_whatsapp_message('300000000000001', 'wamid.N1', '5511900000858', 'synthetic', now());
+  v_conv := (v_admitted ->> 'conversation_id')::uuid;
+  select r.* into v_row from ops.contact_identifier_retention r where r.conversation_id = v_conv;
+  if not found or v_row.due_at <> (select c.last_inbound_at from ops.conversations c where c.id = v_conv) + interval '12 months'
+     or not exists (select 1 from ops.jobs j where j.id = v_row.job_id and j.status = 'queued'
+                      and j.kind = 'contact.identifier_retention_due' and j.available_at = v_row.due_at)
+     or 'contact.identifier_retention_due' = any (ops.task_executable_kinds()) then
+    raise exception 'N1: a new conversation has no clock with its one queued internal job';
+  end if;
+  v_job := v_row.job_id;
+  if v_row::text ~ '5511900000858' then
+    raise exception 'N1: the ledger holds the number';
+  end if;
+
+  -- N2. A later message moves the clock forward and the same queued job with it.
+  perform ops.receive_whatsapp_message('300000000000001', 'wamid.N2', '5511900000858', 'synthetic',
+                                       now() + interval '1 hour');
+  select r.* into v_row from ops.contact_identifier_retention r where r.conversation_id = v_conv;
+  if v_row.job_id <> v_job or v_row.due_at < now() + interval '12 months'
+     or (select j.available_at from ops.jobs j where j.id = v_job) <> v_row.due_at then
+    raise exception 'N2: a later message did not move the clock and its job forward';
+  end if;
+
+  -- N3. Before its due time, expiry erases nothing.
+  if ops.erase_contact_identifier(pg_temp.id('tenant_a'), v_conv, 'retention_expired', 'p2b-owner') <> 'not_due'
+     or (select contact_ref from ops.conversations where id = v_conv) <> '5511900000858' then
+    raise exception 'N3: a number was erased before its due time';
+  end if;
+
+  -- N4. Without a recorded erasure, nothing rewrites the number or its marker.
+  begin
+    update ops.conversations set contact_ref = '5511900000898' where id = v_conv;
+    raise exception 'N4: a conversation''s number was rewritten';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    update ops.conversations set contact_ref = 'erased:' || id::text, contact_erased_at = now() where id = v_conv;
+    raise exception 'N4: a number was erased with no recorded erasure';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    update ops.inbound_messages set contact_ref = 'erased:' || conversation_id::text, contact_erased_at = now()
+     where conversation_id = v_conv;
+    raise exception 'N4: an admission''s number was erased with no recorded erasure';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.contact_identifier_retention where conversation_id = v_conv;
+    raise exception 'N4: a clock was deleted while its conversation exists';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- N5. The owner's act erases the number everywhere it is held, at once,
+  --     leaving the conversation's tombstone, and reports how many.
+  if ops.erase_contact_by_number(pg_temp.id('tenant_a'), '5511900000858', 'p2b-owner') <> 1 then
+    raise exception 'N5: the owner''s erasure did not erase the one conversation';
+  end if;
+  if (select contact_ref from ops.conversations where id = v_conv) <> 'erased:' || v_conv::text
+     or exists (select 1 from ops.conversations where contact_ref = '5511900000858')
+     or exists (select 1 from ops.inbound_messages where contact_ref = '5511900000858')
+     or (select count(*) from ops.inbound_messages
+          where conversation_id = v_conv and contact_ref = 'erased:' || v_conv::text and contact_erased_at is not null) <> 2
+     or (select erasure_reason from ops.contact_identifier_retention where conversation_id = v_conv) <> 'erasure' then
+    raise exception 'N5: the number survived the owner''s erasure somewhere';
+  end if;
+  -- Its content went with it: the D7 erasure of every protected flow it admitted.
+  if exists (select 1 from ops.inbound_messages i
+               join ops.content_retention r on r.tenant_id = i.tenant_id and r.task_id = i.task_id
+              where i.conversation_id = v_conv and r.redacted_at is null) then
+    raise exception 'N5: a flow the number admitted kept its content';
+  end if;
+  -- Repeating it changes nothing; an erasure is final.
+  if ops.erase_contact_by_number(pg_temp.id('tenant_a'), '5511900000858', 'p2b-owner') <> 0 then
+    raise exception 'N5: a repeated erasure reported a conversation';
+  end if;
+  begin
+    update ops.contact_identifier_retention set erased_at = null, erasure_reason = null, erased_by = null
+     where conversation_id = v_conv;
+    raise exception 'N5: an erasure was undone';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- An erased conversation can never be sent to.
+  if ops.whatsapp_send_eligibility(pg_temp.id('tenant_a'), v_conv) ->> 'eligible' <> 'false' then
+    raise exception 'N5: an erased conversation stayed sendable';
+  end if;
+
+  -- N6. The same number writing again opens a new conversation with its own clock.
+  v_admitted := ops.receive_whatsapp_message('300000000000001', 'wamid.N6', '5511900000858', 'synthetic', now());
+  v_conv2 := (v_admitted ->> 'conversation_id')::uuid;
+  if v_conv2 = v_conv or not exists (select 1 from ops.contact_identifier_retention r
+                                       where r.conversation_id = v_conv2 and r.erased_at is null) then
+    raise exception 'N6: a returning sender did not get a new conversation with its own clock';
+  end if;
+
+  -- N7. A number whose last message is past the retention is erased by the
+  --     worker's capability, through the leased job alone.
+  v_admitted := ops.receive_whatsapp_message('300000000000001', 'wamid.N7', '5511900000868', 'synthetic',
+                                             now() - interval '13 months');
+  v_old := (v_admitted ->> 'conversation_id')::uuid;
+  select r.job_id into v_job from ops.contact_identifier_retention r where r.conversation_id = v_old;
+  perform pg_temp.lease(v_job);
+  execute 'set local role ops_worker';
+  v_status := ops.erase_due_contact_identifier();
+  execute 'reset role';
+  if v_status <> 'erased' or (select contact_ref from ops.conversations where id = v_old) <> 'erased:' || v_old::text
+     or (select erasure_reason from ops.contact_identifier_retention where conversation_id = v_old) <> 'retention_expired' then
+    raise exception 'N7: the worker did not erase a number past its retention (%)', v_status;
+  end if;
+  -- The capability refuses any other leased job.
+  perform pg_temp.lease((select r.job_id from ops.contact_identifier_retention r where r.conversation_id = v_conv2));
+  update ops.jobs set kind = 'content.retention_due' where id = current_setting('app.job_id')::uuid;
+  begin
+    execute 'set local role ops_worker';
+    perform ops.erase_contact_identifier(pg_temp.id('tenant_a'), v_conv2, 'erasure', 'p2b');
+    raise exception 'N7: the worker executed the owner''s erasure';
+  exception when insufficient_privilege then execute 'reset role';
+  end;
+  execute 'reset role';
+
+  -- N8. The owner's sweep erases what is already due, and nothing else.
+  perform ops.receive_whatsapp_message('300000000000001', 'wamid.N8', '5511900000878', 'synthetic',
+                                       now() - interval '13 months');
+  -- The sweep runs first: an OR's terms may be evaluated in any order.
+  v_swept := ops.sweep_contact_identifier_retention(100, 'p2b-owner');
+  if v_swept <> 1
+     or exists (select 1 from ops.conversations where contact_ref = '5511900000878')
+     or (select contact_ref from ops.conversations where id = v_conv2) <> '5511900000858' then
+    raise exception 'N8: the sweep did not erase exactly the due number';
   end if;
 end
 $$;

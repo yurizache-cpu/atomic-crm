@@ -8,6 +8,15 @@
 //   npm run messaging -- outbound list [--tenant <uuid>] [--status <status>] [--limit <n>]
 //   npm run messaging -- outbound show --id <uuid> [--tenant <uuid>]
 //   npm run messaging -- outbound mark-indeterminate --id <uuid> --tenant <uuid> --operator <label>
+//   npm run messaging -- notice list --tenant <uuid>
+//   npm run messaging -- notice record --tenant <uuid> --version <label> --url <https URL>
+//                                      --text-file <path> --basis <reference> --actor <label>
+//
+// NOTICE (ADR 0021) records the tenant's privacy notice: the URL of the full
+// notice, the short text the first reply of each conversation carries (read
+// from a UTF-8 file, so the clinic's own words never pass through a shell),
+// and the lawful basis reference. A new version supersedes the current one;
+// nothing is deleted. `outbound show` names the version each send carried.
 //
 // `send` IS THE ONLY WAY A MESSAGE LEAVES. Accepting a review (`npm run ops --
 // triage accept`) sends nothing; `send` is the separate, deliberate act that
@@ -23,6 +32,7 @@
 // OUTPUT. One JSON object per line on stdout. Exit 0 on success, 2 on a usage
 // error, 1 when the database or the domain refused: one JSON line on stderr.
 
+import { readFileSync } from "node:fs";
 import type { WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
 import type { OutboundTransport } from "../communication/types.ts";
@@ -42,6 +52,10 @@ import {
 } from "../domain/outboundMessages.ts";
 import { sendApprovedReview } from "../domain/outboundSend.ts";
 import {
+  listPrivacyNotices,
+  recordPrivacyNotice,
+} from "../domain/privacyNotices.ts";
+import {
   describeFailure,
   EXIT_OK,
   EXIT_REFUSED,
@@ -59,7 +73,7 @@ import {
 export const ACCESS_TOKEN_VARIABLE = "WHATSAPP_ACCESS_TOKEN";
 
 export const MESSAGING_SYNOPSIS =
-  "npm run messaging -- channels list [--tenant <uuid>] | channels set --tenant <uuid> --company <uuid> --agent <uuid> --target <phone number id> --mode test|production --label <text> --actor <label> [--inactive] | send --review <uuid> --tenant <uuid> --operator <label> | outbound list [--tenant <uuid>] [--status <status>] [--limit <n>] | outbound show --id <uuid> [--tenant <uuid>] | outbound mark-indeterminate --id <uuid> --tenant <uuid> --operator <label>";
+  "npm run messaging -- channels list [--tenant <uuid>] | channels set --tenant <uuid> --company <uuid> --agent <uuid> --target <phone number id> --mode test|production --label <text> --actor <label> [--inactive] | send --review <uuid> --tenant <uuid> --operator <label> | outbound list [--tenant <uuid>] [--status <status>] [--limit <n>] | outbound show --id <uuid> [--tenant <uuid>] | outbound mark-indeterminate --id <uuid> --tenant <uuid> --operator <label> | notice list --tenant <uuid> | notice record --tenant <uuid> --version <label> --url <https URL> --text-file <path> --basis <reference> --actor <label>";
 
 type CommandName =
   | "channels list"
@@ -67,7 +81,9 @@ type CommandName =
   | "send"
   | "outbound list"
   | "outbound show"
-  | "outbound mark-indeterminate";
+  | "outbound mark-indeterminate"
+  | "notice list"
+  | "notice record";
 
 const v = (...names: string[]): [string, FlagArity][] =>
   names.map((name) => [name, "value"]);
@@ -86,6 +102,11 @@ const FLAGS: ReadonlyMap<CommandName, ReadonlyMap<string, FlagArity>> = new Map(
     ["outbound list", new Map(v("tenant", "status", "limit"))],
     ["outbound show", new Map(v("id", "tenant"))],
     ["outbound mark-indeterminate", new Map(v("id", "tenant", "operator"))],
+    ["notice list", new Map(v("tenant"))],
+    [
+      "notice record",
+      new Map(v("tenant", "version", "url", "text-file", "basis", "actor")),
+    ],
   ],
 );
 
@@ -99,6 +120,11 @@ const REQUIRED: ReadonlyMap<CommandName, readonly string[]> = new Map([
   ["outbound list", []],
   ["outbound show", ["id"]],
   ["outbound mark-indeterminate", ["id", "tenant", "operator"]],
+  ["notice list", ["tenant"]],
+  [
+    "notice record",
+    ["tenant", "version", "url", "text-file", "basis", "actor"],
+  ],
 ]);
 
 export type MessagingCommand =
@@ -180,7 +206,19 @@ export interface MessagingCliDependencies {
   readonly openDatabase: (connectionString: string) => WorkerDatabase;
   /** Builds the provider transport for `send`. Production: the Meta Cloud API. */
   readonly openTransport?: (accessToken: string) => OutboundTransport;
+  /** Reads the notice text file for `notice record`. Production: the file system, UTF-8. */
+  readonly readTextFile?: (path: string) => string;
 }
+
+/**
+ * A notice file as the table holds it: Windows line breaks folded to one line
+ * break and the final line break dropped, so the text is the file's words.
+ */
+export const noticeTextFromFile = (contents: string): string =>
+  contents
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n?/g, "\n")
+    .replace(/\s+$/, "");
 
 export async function runMessagingCli(
   argv: readonly string[],
@@ -264,12 +302,49 @@ export async function runMessagingCli(
     }
   }
 
+  // The notice text is read before any connection opens: a missing file is
+  // the operator's mistake, never a half-made act.
+  let noticeText: string | undefined;
+  if (command.kind === "notice record") {
+    try {
+      noticeText = noticeTextFromFile(
+        (
+          dependencies.readTextFile ??
+          ((path: string) => readFileSync(path, "utf8"))
+        )(get("text-file") as string),
+      );
+    } catch {
+      stderr(
+        jsonLine({
+          error: "usage",
+          message: "--text-file could not be read as a UTF-8 file",
+        }),
+      );
+      return EXIT_USAGE;
+    }
+  }
+
   return runOwnerTransaction({
     connectionString,
     openDatabase: dependencies.openDatabase,
     streams: { stdout, stderr },
     work: async (tx) => {
       switch (command.kind) {
+        case "notice list":
+          return listPrivacyNotices(tx, { tenantId: get("tenant") as string });
+        case "notice record": {
+          const recorded = await recordPrivacyNotice(tx, {
+            tenantId: get("tenant") as string,
+            version: get("version") as string,
+            noticeUrl: get("url") as string,
+            whatsappText: noticeText as string,
+            lawfulBasisRef: get("basis") as string,
+            actor: get("actor") as string,
+          });
+          return [
+            { noticeId: recorded.id, version: recorded.version, current: true },
+          ];
+        }
         case "channels list":
           return listChannels(tx, { tenantId: get("tenant") });
         case "channels set":

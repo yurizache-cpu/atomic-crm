@@ -28,6 +28,10 @@ import {
   contentRetentionDue,
 } from "../handlers/contentRetentionDue.ts";
 import {
+  CONTACT_IDENTIFIER_RETENTION_DUE_KIND,
+  contactIdentifierRetentionDue,
+} from "../handlers/contactIdentifierRetentionDue.ts";
+import {
   UNCONFIGURED_CALENDAR_PORT,
   type CalendarPort,
 } from "../calendar/calendarPort.ts";
@@ -86,6 +90,7 @@ export function createHandlerRegistry(
     }),
     followUpDue,
     contentRetentionDue,
+    contactIdentifierRetentionDue,
     ...createCalendarSyncHandlers({
       calendarPort: dependencies.calendarPort ?? UNCONFIGURED_CALENDAR_PORT,
     }),
@@ -113,6 +118,7 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   DECISION_SHADOW_EVALUATE_KIND,
   FOLLOW_UP_DUE_KIND,
   CONTENT_RETENTION_DUE_KIND,
+  CONTACT_IDENTIFIER_RETENTION_DUE_KIND,
   CALENDAR_CREATE_KIND,
   CALENDAR_UPDATE_KIND,
   CALENDAR_CANCEL_KIND,
