@@ -175,6 +175,14 @@ export interface Capabilities {
    */
   redactDueContent(): Promise<string>;
   /**
+   * ADR 0021 W5. Erases the phone number of the conversation bound to the
+   * leased identifier retention job once it is due: `erased`, or on a replay
+   * `already_erased` or `superseded`, or `deferred` when the sender wrote
+   * again and the clock moved, having bound the conversation's next job. It
+   * calls nothing and returns no number.
+   */
+  eraseDueContactIdentifier(): Promise<string>;
+  /**
    * Phase 3A.2. Starts the calendar sync bound to the leased job for a worker
    * whose calendar provider is `providerKind`: records `running` BEFORE the
    * provider is called and answers the minimised request, or settles it
@@ -218,6 +226,7 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "settleShadowDecision",
   "markFollowUpDue",
   "redactDueContent",
+  "eraseDueContactIdentifier",
   "startCalendarSync",
   "settleCalendarSync",
   "agentRunModelCandidates",
@@ -361,6 +370,13 @@ function allCapabilities(tx: TxClient): Capabilities {
         "select ops.redact_due_content() as status",
       );
       return statusOf(rows, "ops.redact_due_content");
+    },
+
+    async eraseDueContactIdentifier() {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.erase_due_contact_identifier() as status",
+      );
+      return statusOf(rows, "ops.erase_due_contact_identifier");
     },
 
     async startCalendarSync(providerKind) {

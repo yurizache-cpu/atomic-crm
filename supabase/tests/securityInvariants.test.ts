@@ -1921,7 +1921,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-39",
     statement:
-      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; and, from BASELINE Q8 D6/D7 (owner decisions D6 and D7, 2026-09-28), erasing one task's AI working content now and sweeping, bounded, the flows whose retention has ended (retention erase and sweep), both redacting content in place and deleting nothing; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; and, from BASELINE Q8 D6/D7 (owner decisions D6 and D7, 2026-09-28), erasing one task's AI working content now and sweeping, bounded, the flows whose retention has ended (retention erase and sweep), both redacting content in place and deleting nothing; and, from ADR 0021 W5 (decided 2026-10-04 by owner delegation), erasing a person's WhatsApp number now on their request, with the AI working content it admitted, and sweeping, bounded, the numbers whose retention has ended (identifiers erase and sweep), both leaving the conversation's tombstone, deleting nothing and printing no number; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -4439,6 +4439,67 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "OpenRouter's account settings (the training opt-out, any zero-data-retention setting, the key's credit limit) are owner account actions this repository cannot see; every request carries allow_fallbacks false and data_collection deny, but whether a provider honours them is the provider's. Jev's scores are uncalibrated and recorded as shadow advice that nothing reads to act; its routing advice never changes which model ran. Accepted response builds are owner data, so a provider serving an unrecorded build is refused (model_substituted) after the call was paid. The hosted Jev Router plugin is not used: its include list is silently ignored when nothing matches. Real-data authorization stays closed.",
+  },
+  {
+    id: "SI-79",
+    statement:
+      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
+        marker:
+          /message = 'contact erasure: no recorded erasure of this conversation at that instant'/,
+      },
+      {
+        file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
+        marker:
+          /o\.privacy_notice_id = v_notice\.id and o\.status in \('delivered', 'read'\)/,
+      },
+      {
+        file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
+        marker:
+          /raise exception 'a live conversation has no identifier clock with a queued job';/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /N4: a number was erased with no recorded erasure/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /N7: the worker did not erase a number past its retention/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker:
+          /P4: a reply after the notice reached the person carried it again/,
+      },
+      {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /N9: a redelivery restored an erased number/,
+      },
+      {
+        file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
+        marker:
+          /if v_prior\.conversation_id is not null then\s+v_conv := v_prior\.conversation_id;/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /rides on every reply of a conversation until one carrying it is delivered, recording its version, and then stops/,
+      },
+      {
+        file: "engine/handlers/contactIdentifierRetentionDue.test.ts",
+        marker:
+          /declares exactly the one capability that erases the leased conversation's number/,
+      },
+      {
+        file: "engine/cli/operator.test.ts",
+        marker: /never prints the number a person asked to erase/,
+      },
+    ],
+    caveat:
+      "The notice text, its URL and the lawful basis reference are the owner's data, and the full notice is published by the owner outside this repository; until a notice is recorded, a reply carries none (only test channels can send today). A sender's number also lives in the CRM contact the owner keeps: erasing it there is a CRM act, not this one. After an erasure, a status callback no longer matches a send by its recipient. Real-data authorization stays closed and the production WhatsApp gate is unchanged.",
   },
 ];
 

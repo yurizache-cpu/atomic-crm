@@ -505,11 +505,12 @@ begin
 
   -- G4. And no new job kind at all. (Phase 2D.1 adds one external kind, the
   --     shadow decision, and Phase 3A the follow-up's governed kind and the
-  --     three calendar kinds, and the Q8 D6/D7 batch one internal retention
-  --     kind, none of which a task can request: G3 above.)
+  --     three calendar kinds, the Q8 D6/D7 batch one internal retention
+  --     kind and ADR 0021 W5 one internal identifier retention kind, none of
+  --     which a task can request: G3 above.)
   if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate']::text[]
      or ops.governed_job_kinds() is distinct from array['follow_up.due']::text[]
-     or ops.internal_job_kinds() is distinct from array['postmark.ledger_retention', 'content.retention_due']::text[] then
+     or ops.internal_job_kinds() is distinct from array['postmark.ledger_retention', 'content.retention_due', 'contact.identifier_retention_due']::text[] then
     raise exception 'G4: the job kinds changed';
   end if;
 end

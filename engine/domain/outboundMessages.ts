@@ -96,6 +96,8 @@ export interface OutboundRow {
   readonly settledAt: string | null;
   readonly deliveredAt: string | null;
   readonly readAt: string | null;
+  /** ADR 0021: the privacy notice version this send carried, if it carried one. */
+  readonly privacyNoticeVersion: string | null;
 }
 
 export const MAX_LISTED_OUTBOUND = 200;
@@ -330,6 +332,7 @@ interface OutboundRecord {
   settled_at: string | null;
   delivered_at: string | null;
   read_at: string | null;
+  privacy_notice_version: string | null;
 }
 
 const UTC = (column: string): string =>
@@ -341,7 +344,8 @@ const COLUMNS = `o.id, o.tenant_id, o.company_id, o.channel_id, o.conversation_i
        o.provider_message_id, o.error_code, o.error_class,
        ${UTC("o.authorized_at")} as authorized_at, ${UTC("o.sending_at")} as sending_at,
        ${UTC("o.settled_at")} as settled_at, ${UTC("o.delivered_at")} as delivered_at,
-       ${UTC("o.read_at")} as read_at`;
+       ${UTC("o.read_at")} as read_at,
+       (select n.version from ops.privacy_notices n where n.id = o.privacy_notice_id) as privacy_notice_version`;
 
 const LIST_SQL = `select ${COLUMNS}
     from ops.outbound_messages o
@@ -374,6 +378,7 @@ const toRow = (record: OutboundRecord): OutboundRow =>
     settledAt: record.settled_at,
     deliveredAt: record.delivered_at,
     readAt: record.read_at,
+    privacyNoticeVersion: record.privacy_notice_version,
   });
 
 export async function listOutbound(

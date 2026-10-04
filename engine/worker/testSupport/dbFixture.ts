@@ -215,6 +215,11 @@ export async function deleteCompanyOsRows(
     // Phase 2A's two tables reference companies and tasks, all with ON DELETE
     // RESTRICT, so they go before the runs whose settlement derived them.
     "delete from ops.outbound_messages where tenant_id = any($1::uuid[])",
+    // ADR 0021: the current notice is never deleted, so it is superseded first;
+    // the sends that carried one are gone by now.
+    `update ops.privacy_notices set superseded_at = now()
+      where tenant_id = any($1::uuid[]) and superseded_at is null`,
+    "delete from ops.privacy_notices where tenant_id = any($1::uuid[])",
     // Phase 2D.1's shadow decisions reference the reviews they evaluated.
     "delete from ops.decision_evaluations where tenant_id = any($1::uuid[])",
     // ADR 0022: structured decisions in progress are settled first (pending is

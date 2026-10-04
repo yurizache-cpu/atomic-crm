@@ -452,7 +452,7 @@
           "queue": {
             "ready": 5,
             "running": 1,
-            "scheduled": 1,
+            "scheduled": 2,
             "expiredLeases": 1,
             "oldestReadyAt": "2026-09-22T10:00:00.000000Z",
             "failedInWindow": 0,
@@ -508,6 +508,15 @@
               "expiredLeases": 1,
               "failedInWindow": 0,
               "succeededInWindow": 4
+            },
+            {
+              "kind": "contact.identifier_retention_due",
+              "ready": 0,
+              "running": 0,
+              "scheduled": 1,
+              "expiredLeases": 0,
+              "failedInWindow": 0,
+              "succeededInWindow": 0
             }
           ],
           "windowHours": 24

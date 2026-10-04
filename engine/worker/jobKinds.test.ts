@@ -10,6 +10,7 @@ import {
 import { DECISION_SHADOW_EVALUATE_KIND } from "../handlers/decisionShadowEvaluate.ts";
 import { FOLLOW_UP_DUE_KIND } from "../handlers/followUpDue.ts";
 import { CONTENT_RETENTION_DUE_KIND } from "../handlers/contentRetentionDue.ts";
+import { CONTACT_IDENTIFIER_RETENTION_DUE_KIND } from "../handlers/contactIdentifierRetentionDue.ts";
 import { POSTMARK_LEDGER_RETENTION_KIND } from "../handlers/postmarkLedgerRetention.ts";
 import { createModelRouter } from "../models/router.ts";
 import {
@@ -88,6 +89,7 @@ describe("the worker's registry classifies every job kind for the kill switch", 
     expect([...INTERNAL_JOB_KINDS]).toEqual([
       POSTMARK_LEDGER_RETENTION_KIND,
       CONTENT_RETENTION_DUE_KIND,
+      CONTACT_IDENTIFIER_RETENTION_DUE_KIND,
     ]);
   });
 

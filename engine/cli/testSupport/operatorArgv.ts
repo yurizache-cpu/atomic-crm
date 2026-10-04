@@ -57,6 +57,8 @@ export const READS: readonly (readonly string[])[] = [
   ["data-auth", "list", "--tenant", TENANT, "--all"],
   ["retention", "list"],
   ["retention", "list", "--tenant", TENANT],
+  ["identifiers", "list"],
+  ["identifiers", "list", "--tenant", TENANT],
 ];
 
 /** READS[RUNS_WITH_OPTIONS] is `runs` with a tenant, a status and a limit. */
@@ -171,6 +173,20 @@ export const RETENTION_SWEEP = argv("retention sweep", {
   limit: "50",
 });
 
+/** A synthetic number: an input to the erasure act, never printed. */
+export const ERASED_NUMBER = "5511900000858";
+
+export const IDENTIFIERS_ERASE = argv("identifiers erase", {
+  tenant: TENANT,
+  number: ERASED_NUMBER,
+  actor: "owner",
+});
+
+export const IDENTIFIERS_SWEEP = argv("identifiers sweep", {
+  actor: "owner",
+  limit: "50",
+});
+
 /**
  * Every mutation the tool offers, SI-39's act allowlist in its order: the price
  * and spend-limit acts, Phase 2A's three review decisions and the review
@@ -193,6 +209,8 @@ export const ACTS: readonly (readonly string[])[] = [
   DATA_AUTH_RETIRE,
   RETENTION_ERASE,
   RETENTION_SWEEP,
+  IDENTIFIERS_ERASE,
+  IDENTIFIERS_SWEEP,
 ];
 
 /** `args` without the flag `--name` and the value after it. */

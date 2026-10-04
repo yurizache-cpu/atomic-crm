@@ -41,6 +41,8 @@ export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([
 export const INTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "postmark.ledger_retention",
   "content.retention_due",
+  // ADR 0021 W5: a sender's number erased at the end of its retention.
+  "contact.identifier_retention_due",
 ]);
 
 /** Whether the kill switch re-checks this kind before its transactional handler runs. */
