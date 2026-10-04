@@ -51,7 +51,8 @@
     "gateway:provision": "node scripts/provision-gateway-role.mjs",
     "whatsapp:gateway": "node engine/cli/whatsappGateway.ts",
     "messaging": "node engine/cli/messaging.ts",
-    "models": "node engine/cli/models.ts"
+    "models": "node engine/cli/models.ts",
+    "front-desk": "node engine/cli/frontDesk.ts"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.2.8",

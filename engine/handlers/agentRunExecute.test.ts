@@ -133,6 +133,10 @@ interface CapabilityScript {
   readonly fail?: string;
   /** ops.agent_run_model_candidates() (ADR 0022). */
   readonly candidates?: unknown;
+  /** ops.front_desk_policy_for_run() (ADR 0023). */
+  readonly frontDesk?: unknown;
+  /** ops.record_inbound_screening() (ADR 0023). */
+  readonly screening?: unknown;
 }
 
 /** Fake capabilities that record the order they were used in. */
@@ -156,6 +160,14 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     return "candidates" in script
       ? script.candidates
       : { pool: null, candidates: [] };
+  });
+  const frontDeskPolicy = vi.fn(async () => {
+    used.push("frontDeskPolicy");
+    return "frontDesk" in script ? script.frontDesk : { applies: false };
+  });
+  const recordInboundScreening = vi.fn(async (_screening: unknown) => {
+    used.push("recordInboundScreening");
+    return script.screening;
   });
   const recordAgentRunGatewayReport = vi.fn(
     async (_report: {
@@ -186,11 +198,15 @@ const fakeCapabilities = (script: CapabilityScript = {}) => {
     failAgentRun,
     agentRunModelCandidates,
     recordAgentRunGatewayReport,
+    frontDeskPolicy,
+    recordInboundScreening,
     prepare: {
       claimAgentRun,
       startAgentRun,
       refuseAgentRun,
       agentRunModelCandidates,
+      frontDeskPolicy,
+      recordInboundScreening,
     },
     settle: { completeAgentRun, failAgentRun, recordAgentRunGatewayReport },
   };
@@ -293,6 +309,8 @@ describe("the handler declares its shape and is registered", () => {
       "startAgentRun",
       "refuseAgentRun",
       "agentRunModelCandidates",
+      "frontDeskPolicy",
+      "recordInboundScreening",
     ]);
     expect([...handler.settleCapabilities]).toEqual([
       "completeAgentRun",

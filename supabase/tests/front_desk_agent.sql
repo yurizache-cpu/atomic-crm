@@ -1,0 +1,411 @@
+-- ADR 0023 — attacks on the front-desk agent's database half.
+--
+-- The question: can any application role read or change the agent's
+-- configuration, a conversation's state or a screening; can a published
+-- configuration be edited or an autonomous send mode be written; can a
+-- screening carry text it must not, or change after the fact; can a front-desk
+-- run start without a screening that sent it to the model; and does a
+-- screening's text leave with its task's content?
+--
+-- WHAT THIS SUITE PROVES, and what it leaves to the driver-backed suite:
+--   * Here: the access posture, the configuration and screening guards, the
+--     run trigger, the redaction trigger, the owner acts on a conversation.
+--   * There (engine/domain/frontDeskPipeline.dbtest.ts): signed deliveries
+--     through the gateway's own login, the real worker, the local screen, the
+--     dispositions, the bounded context, and the proof that an omitted clause
+--     reaches neither the model nor Jev.
+--
+-- ONE TRANSACTION, ROLLED BACK.
+
+\set ON_ERROR_STOP on
+
+begin;
+
+create temporary table fd_ids (name text primary key, id uuid not null) on commit drop;
+
+create function pg_temp.remember(p_name text, p_id uuid) returns uuid
+language sql as $$
+  insert into fd_ids (name, id) values (p_name, p_id) returning id;
+$$;
+
+create function pg_temp.id(p_name text) returns uuid
+language sql stable as $$
+  select id from fd_ids where name = p_name;
+$$;
+
+create function pg_temp.policy(p_send_mode text) returns jsonb
+language sql immutable as $$
+  select jsonb_build_object('sendMode', p_send_mode, 'sanitizerPack', 'health_pt_br.v1', 'contextTurns', 4,
+                            'aiDisclosure', 'Synthetic virtual assistant.');
+$$;
+
+create function pg_temp.fixed() returns jsonb
+language sql immutable as $$
+  select jsonb_build_object('messages', (select jsonb_object_agg(k, 'Synthetic fixed text ' || k)
+                                           from unnest(ops.fixed_message_keys()) k));
+$$;
+
+do $$
+declare
+  c_source constant text := 'front-desk-suite';
+  ta uuid;
+  tb uuid;
+  ca uuid;
+  da uuid;
+begin
+  update ops.tenants set owns_local_crm = false where owns_local_crm;
+  insert into ops.tenants (slug, name, owns_local_crm) values ('fd-test-alpha', 'FD Alpha', true) returning id into ta;
+  insert into ops.tenants (slug, name) values ('fd-test-beta', 'FD Beta') returning id into tb;
+  perform pg_temp.remember('tenant_a', ta);
+  perform pg_temp.remember('tenant_b', tb);
+  ca := pg_temp.remember('company_a', ops.create_company(ta, 'desk-a', 'Desk A', c_source));
+  da := ops.create_department(ta, ca, 'intake', 'Intake', c_source);
+  perform pg_temp.remember('agent_a', ops.create_agent(ta, ca, da, 'front-desk', 'Front Desk', 'Desk assistant', c_source));
+  perform ops.record_model_price(
+    'fake', 'fake-model-1', 1.25, 2.5, true, now() - interval '1 minute', now() + interval '1 day',
+    'sql suite synthetic price', 'fd-owner', 0.125);
+  perform ops.set_spend_limit('global', 1000000000000, 'UTC', 'fd-test: sql suite ceiling', 'fd-owner');
+  perform ops.set_spend_limit('tenant', 1000000000000, 'UTC', 'fd-test: budget', 'fd-owner', ta);
+  perform pg_temp.remember('chan_a', ops.configure_whatsapp_channel(
+    ta, ca, pg_temp.id('agent_a'), '300000000000071', 'test', 'A test', 'fd-owner'));
+  perform ops.register_test_sender(ta, pg_temp.id('chan_a'), '5511900000071', 'fd-owner');
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F1. Access.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_bad text;
+begin
+  select string_agg(format('%s on %s to %s', v.p, v.t, v.r), ', ') into v_bad
+    from (select t, r, p
+            from unnest(array['ops.agent_configuration_versions', 'ops.conversation_states',
+                              'ops.conversation_transitions', 'ops.inbound_screenings']) t,
+                 unnest(array['public', 'anon', 'authenticated', 'service_role', 'ops_worker', 'ops_gateway',
+                              'ops_operator_api']) r,
+                 unnest(array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger']) p) v
+   where has_table_privilege(v.r, v.t, v.p);
+  if v_bad is not null then
+    raise exception 'F1: a front-desk table is reachable: %', v_bad;
+  end if;
+
+  -- The worker executes exactly its two new capabilities among the new functions.
+  select string_agg(p.oid::regprocedure::text, ', ') into v_bad
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'ops'
+     and p.proname in ('agent_configuration_kinds', 'fixed_message_keys', 'configured_text_valid',
+                       'agent_configuration_valid', 'published_agent_configuration', 'draft_agent_configuration',
+                       'publish_agent_configuration', 'move_conversation_state', 'crm_contact_is_client',
+                       'open_scripted_review', 'take_over_conversation', 'release_conversation',
+                       'record_person_reply', 'redact_task_screenings', 'require_inbound_screening')
+     and (has_function_privilege('ops_worker', p.oid, 'execute') or has_function_privilege('ops_gateway', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('ops_operator_api', p.oid, 'execute'));
+  if v_bad is not null then
+    raise exception 'F1: an application role executes an owner act or a helper: %', v_bad;
+  end if;
+  if not has_function_privilege('ops_worker', 'ops.front_desk_policy_for_run()', 'execute')
+     or not has_function_privilege('ops_worker', 'ops.record_inbound_screening(jsonb)', 'execute')
+     or has_function_privilege('ops_gateway', 'ops.record_inbound_screening(jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'ops.record_inbound_screening(jsonb)', 'execute') then
+    raise exception 'F1: the two worker capabilities are not exactly the worker''s';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F2. Configuration versions.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v1      uuid;
+  v2      uuid;
+  v_state jsonb;
+  v_ok    boolean;
+begin
+  -- An autonomous send mode is not a policy: neither the act nor the table takes it.
+  begin
+    perform ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
+                                          pg_temp.policy('autonomous'), 'fd-owner');
+    raise exception 'F2: an autonomous send mode was drafted';
+  exception when sqlstate 'OS400' then null;
+  end;
+  begin
+    insert into ops.agent_configuration_versions (tenant_id, company_id, agent_id, kind, version, content,
+                                                  content_sha256, drafted_by)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), pg_temp.id('agent_a'), 'operating_policy', 99,
+            pg_temp.policy('autonomous'), repeat('a', 64), 'fd-owner');
+    raise exception 'F2: an autonomous send mode was inserted';
+  exception when check_violation then null;
+  end;
+  -- A fixed set missing one text is refused.
+  begin
+    perform ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'fixed_messages',
+                                          jsonb_build_object('messages', (pg_temp.fixed() -> 'messages') - 'safety'::text),
+                                          'fd-owner');
+    raise exception 'F2: a fixed set without the safety text was drafted';
+  exception when sqlstate 'OS400' then null;
+  end;
+
+  v1 := ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
+                                      pg_temp.policy('supervised'), 'fd-owner');
+  -- A draft is not read by anyone.
+  if (ops.published_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy')).id is not null then
+    raise exception 'F2: a draft was read as published';
+  end if;
+  v_state := ops.publish_agent_configuration(pg_temp.id('tenant_a'), v1, 'fd-owner');
+  if v_state ->> 'state' <> 'published' then
+    raise exception 'F2: publishing a draft answered %', v_state;
+  end if;
+  if ops.publish_agent_configuration(pg_temp.id('tenant_a'), v1, 'fd-owner') ->> 'state' <> 'already_published' then
+    raise exception 'F2: publishing twice was not idempotent';
+  end if;
+  -- A published version is never edited, never set back to draft, never deleted.
+  begin
+    update ops.agent_configuration_versions set content = pg_temp.policy('staging') where id = v1;
+    raise exception 'F2: a published version was edited';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    update ops.agent_configuration_versions set status = 'draft', published_at = null, published_by = null where id = v1;
+    raise exception 'F2: a published version went back to draft';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.agent_configuration_versions where id = v1;
+    raise exception 'F2: a version was deleted while its agent exists';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- A second version supersedes the first; one published per kind.
+  v2 := ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
+                                      pg_temp.policy('staging'), 'fd-owner');
+  v_state := ops.publish_agent_configuration(pg_temp.id('tenant_a'), v2, 'fd-owner');
+  if (v_state ->> 'superseded_id')::uuid is distinct from v1 then
+    raise exception 'F2: the second publication did not supersede the first: %', v_state;
+  end if;
+  select (select status from ops.agent_configuration_versions where id = v1) = 'superseded'
+     and (ops.published_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy')).id = v2
+    into v_ok;
+  if not v_ok then
+    raise exception 'F2: the published version is not exactly the second';
+  end if;
+  begin
+    perform ops.publish_agent_configuration(pg_temp.id('tenant_a'), v1, 'fd-owner');
+    raise exception 'F2: a superseded version was published again';
+  exception when sqlstate 'OS409' then null;
+  end;
+  -- Another tenant cannot publish this tenant's version.
+  begin
+    perform ops.publish_agent_configuration(pg_temp.id('tenant_b'), v2, 'fd-owner');
+    raise exception 'F2: another tenant reached this version';
+  exception when sqlstate 'OS404' then null;
+  end;
+  -- The fixed texts, for the screenings below.
+  perform ops.publish_agent_configuration(pg_temp.id('tenant_a'),
+    ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'fixed_messages', pg_temp.fixed(), 'fd-owner'),
+    'fd-owner');
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F3. A front-desk run starts only after a screening sent it to the model;
+--     a screening never carries text it must not, and never changes.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_answer jsonb;
+  v_task   uuid;
+  v_run    uuid;
+  v_policy uuid;
+begin
+  v_answer := ops.receive_whatsapp_message('300000000000071', 'wamid.FD1', '5511900000071',
+                                           'Synthetic question about prices', now());
+  if v_answer ->> 'state' <> 'admitted' then
+    raise exception 'setup: the test message was not admitted: %', v_answer;
+  end if;
+  select m.task_id, m.agent_run_id into v_task, v_run from ops.inbound_messages m where m.external_message_id = 'wamid.FD1';
+  perform pg_temp.remember('task_1', v_task);
+  perform pg_temp.remember('run_1', v_run);
+  v_policy := (ops.published_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy')).id;
+
+  -- Isolate the trigger under test from the runtime guard that would refuse a
+  -- direct update first (the transaction is rolled back).
+  alter table ops.agent_runs disable trigger agent_runs_guard_update;
+  begin
+    update ops.agent_runs
+       set status = 'running', started_at = now(), job_attempt = 1, provider = 'fake', model = 'fake-model-1',
+           prompt_version = 'lead_triage.v3', input_fingerprint = repeat('a', 64)
+     where id = v_run;
+    raise exception 'F3: a front-desk run started without a screening';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- Shapes a screening can never have.
+  begin
+    insert into ops.inbound_screenings (tenant_id, company_id, task_id, agent_run_id, screener_version, pack_id,
+      message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
+      administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
+      policy_version_id)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
+      'sensitive_only', 'none', 1, 1, 0, false, false, false, 'any text', 'prospect', 'model', v_policy);
+    raise exception 'F3: a sensitive-only screening carried text to the model';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ops.inbound_screenings (tenant_id, company_id, task_id, agent_run_id, screener_version, pack_id,
+      message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
+      administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
+      policy_version_id)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
+      'unknown', 'none', 1, 0, 1, false, false, false, null, 'prospect', 'model', v_policy);
+    raise exception 'F3: an unknown screening was sent to the model';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ops.inbound_screenings (tenant_id, company_id, task_id, agent_run_id, screener_version, pack_id,
+      message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
+      administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
+      policy_version_id)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
+      'safety', 'none', 1, 1, 0, false, false, false, null, 'prospect', 'held_for_person', v_policy);
+    raise exception 'F3: a safety class without the crisis safety class was stored';
+  exception when check_violation then null;
+  end;
+
+  -- The screening the worker records, then the start passes the trigger.
+  insert into ops.inbound_screenings (tenant_id, company_id, task_id, agent_run_id, screener_version, pack_id,
+    message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
+    administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
+    policy_version_id)
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
+    'administrative', 'none', 0, 0, 0, true, false, false, 'Synthetic question about prices', 'prospect', 'model',
+    v_policy);
+  -- Past the trigger now: only the run's own shape (cost, price) can refuse
+  -- this hand-made start, and an OS403 would not be caught here.
+  begin
+    update ops.agent_runs
+       set status = 'running', started_at = now(), job_attempt = 1, provider = 'fake', model = 'fake-model-1',
+           prompt_version = 'lead_triage.v3', input_fingerprint = repeat('a', 64)
+     where id = v_run;
+  exception when check_violation then null;
+  end;
+  alter table ops.agent_runs enable always trigger agent_runs_guard_update;
+
+  begin
+    update ops.inbound_screenings set message_class = 'mixed' where agent_run_id = v_run;
+    raise exception 'F3: a screening changed';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    update ops.inbound_screenings set model_input = null, content_redacted_at = now() where agent_run_id = v_run;
+    raise exception 'F3: a screening''s text was redacted without its task';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.inbound_screenings where agent_run_id = v_run;
+    raise exception 'F3: a screening was deleted while its task exists';
+  exception when sqlstate 'OS403' then null;
+  end;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F4. The screened text leaves with its task's content.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_at timestamptz := now();
+begin
+  -- The recorded redaction of the task, as the retention ledger would stamp it.
+  alter table ops.tasks disable trigger tasks_guard_update;
+  alter table ops.tasks disable trigger tasks_request_identity_update;
+  update ops.tasks set description = null, request_fingerprint = null, content_redacted_at = v_at
+   where id = pg_temp.id('task_1');
+  alter table ops.tasks enable always trigger tasks_guard_update;
+  alter table ops.tasks enable always trigger tasks_request_identity_update;
+  if exists (select 1 from ops.inbound_screenings s
+              where s.task_id = pg_temp.id('task_1')
+                and (s.model_input is not null or s.content_redacted_at is distinct from v_at)) then
+    raise exception 'F4: the screened text outlived its task''s content';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F5. Owner acts on a conversation, and its history.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_conv uuid;
+  v_n    integer;
+begin
+  select m.conversation_id into v_conv from ops.inbound_messages m where m.external_message_id = 'wamid.FD1';
+  if ops.take_over_conversation(pg_temp.id('tenant_a'), v_conv, 'fd-person') ->> 'state' <> 'taken_over'
+     or ops.take_over_conversation(pg_temp.id('tenant_a'), v_conv, 'fd-person') ->> 'state' <> 'already_held' then
+    raise exception 'F5: take-over is not recorded once';
+  end if;
+  begin
+    perform ops.take_over_conversation(pg_temp.id('tenant_b'), v_conv, 'fd-person');
+    raise exception 'F5: another tenant took the conversation over';
+  exception when sqlstate 'OS404' then null;
+  end;
+  -- No message waits for a person's reply (the first one was screened to the model).
+  begin
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, 'Synthetic reply', 'fd-person');
+    raise exception 'F5: a reply was recorded with no message waiting';
+  exception when sqlstate 'OS409' then null;
+  end;
+  begin
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, '', 'fd-person');
+    raise exception 'F5: an empty reply was accepted';
+  exception when sqlstate 'OS400' then null;
+  end;
+  if ops.release_conversation(pg_temp.id('tenant_a'), v_conv, 'fd-person') ->> 'state' <> 'released' then
+    raise exception 'F5: the release was not recorded';
+  end if;
+  select count(*) into v_n from ops.conversation_transitions t
+   where t.conversation_id = v_conv and t.dimension = 'holder';
+  if v_n <> 2 then
+    raise exception 'F5: the holder history has % rows, expected 2', v_n;
+  end if;
+  begin
+    update ops.conversation_transitions set reason = 'rewritten' where conversation_id = v_conv;
+    raise exception 'F5: the history was rewritten';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.conversation_transitions where conversation_id = v_conv;
+    raise exception 'F5: the history was deleted while its conversation exists';
+  exception when sqlstate 'OS403' then null;
+  end;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F6. The structured-decision input reads the screened text, never the raw.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_decision ops.structured_decisions;
+  v_input    jsonb;
+begin
+  v_decision.tenant_id := pg_temp.id('tenant_a');
+  v_decision.task_id := pg_temp.id('task_1');
+  v_decision.agent_run_id := pg_temp.id('run_1');
+  v_decision.decision_kind := 'business_route';
+  -- The task's text is redacted now (F4): nothing is left to decide on.
+  if ops.structured_decision_input(v_decision) is not null then
+    raise exception 'F6: a business route was built after the screened text was redacted';
+  end if;
+end
+$$;
+
+rollback;
