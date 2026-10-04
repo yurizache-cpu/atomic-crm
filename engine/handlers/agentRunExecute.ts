@@ -31,8 +31,13 @@
 //   * The claim. It is parsed against exactly the two shapes the migration
 //     returns. Anything else is a permanent failure with a fixed message.
 //   * The model's answer. The router validates it against the output contract,
-//     the database validates it again, and here it is only ever passed through
-//     as the `result` parameter. No field of it is read, logged or acted on.
+//     the database validates it again, and here it is passed through as the
+//     `result` parameter. One exception (ADR 0023 §E): a front-desk reply is
+//     checked against the facts its run was given, and an ungrounded one is
+//     marked for a person. Nothing of it is logged or acted on.
+//   * The task's description, for a front-desk run. It is screened locally
+//     and recorded, and the prompt is built from the database's answer to
+//     that screening; the description itself never reaches the prompt.
 //
 // WHAT NEVER LEAVES THIS FILE in a detail string or an error message: the task
 // text, the prompt, the result, the summary, or a provider's error text.
@@ -61,6 +66,15 @@ import {
 } from "../models/capabilityContracts.ts";
 import type { OutputContract } from "../models/outputContract.ts";
 import type { BuiltPrompt } from "../models/promptText.ts";
+import { LEAD_TRIAGE_CAPABILITY } from "../models/leadTriage.ts";
+import { sanitizeMessage } from "../frontDesk/messageSanitizer.ts";
+import { SANITIZER_PACKS } from "../frontDesk/packs/healthPtBr.ts";
+import {
+  buildFrontDeskPrompt,
+  groundingFacts,
+  screeningAnswerSchema,
+} from "../frontDesk/prompt.ts";
+import { checkGrounding } from "../frontDesk/grounding.ts";
 import { normalizeLatencyMs, type ModelUsage } from "../models/types.ts";
 import type { Capabilities } from "../worker/capabilities.ts";
 import {
@@ -94,7 +108,9 @@ type PrepareCapability =
   | "claimAgentRun"
   | "startAgentRun"
   | "refuseAgentRun"
-  | "agentRunModelCandidates";
+  | "agentRunModelCandidates"
+  | "frontDeskPolicy"
+  | "recordInboundScreening";
 type SettleCapability =
   | "completeAgentRun"
   | "failAgentRun"
@@ -129,6 +145,11 @@ export interface AgentRunCallState {
    * whose bytes the stored fingerprint covers.
    */
   readonly contract: OutputContract<AgentRunResult>;
+  /**
+   * ADR 0023: for a front-desk run, everything its reply may state as a fact,
+   * checked against the reply before it is stored. Null for any other run.
+   */
+  readonly groundingFacts: string | null;
 }
 
 export type AgentRunExecuteHandler = ExternalCallHandlerDefinition<
@@ -172,7 +193,32 @@ const claimSchema = z.discriminatedUnion("action", [
 type RefusalCode =
   | "capability_unsupported"
   | "route_unavailable"
-  | "gateway_candidate_unavailable";
+  | "gateway_candidate_unavailable"
+  | "screening_pack_unknown";
+
+/** ops.front_desk_policy_for_run(): whether the run is a front-desk run, and its pack. */
+const frontDeskPolicySchema = z.discriminatedUnion("applies", [
+  z.strictObject({ applies: z.literal(false) }),
+  z.strictObject({ applies: z.literal(true), packId: z.string() }),
+]);
+
+/**
+ * ADR 0023 §E. A reply that states a fact its run was not given goes to a
+ * person: needs_human_review, and the flag "unclear" when there is room for
+ * it. Stricter only; nothing else of the answer changes.
+ */
+const groundReply = (
+  value: AgentRunResult,
+  facts: string | null,
+): AgentRunResult => {
+  if (facts === null || !("response_draft" in value)) return value;
+  if (checkGrounding(value.response_draft, facts).grounded) return value;
+  const flags =
+    value.flags.includes("unclear") || value.flags.length >= 5
+      ? value.flags
+      : [...value.flags, "unclear" as const];
+  return { ...value, needs_human_review: true, flags };
+};
 
 /**
  * The database's answer to ops.agent_run_model_candidates(): the run's pool and
@@ -377,6 +423,8 @@ export function createAgentRunExecuteHandler(
       "startAgentRun",
       "refuseAgentRun",
       "agentRunModelCandidates",
+      "frontDeskPolicy",
+      "recordInboundScreening",
     ]),
     settleCapabilities: Object.freeze<SettleCapability[]>([
       "completeAgentRun",
@@ -434,6 +482,54 @@ export function createAgentRunExecuteHandler(
           "capability_unsupported",
         );
       }
+
+      // ADR 0023: a front-desk run is screened HERE, locally, before a route
+      // is chosen, so a fixed reply (danger, a request for a person) never
+      // waits on a model. The prompt is then built only from the context the
+      // database answers; the task's description is never read again.
+      let frontDesk: { prompt: BuiltPrompt; facts: string } | null = null;
+      if (claim.capability === LEAD_TRIAGE_CAPABILITY) {
+        const policy = frontDeskPolicySchema.safeParse(
+          await capabilities.frontDeskPolicy(),
+        );
+        if (!policy.success) {
+          throw new PermanentError(
+            "ops.front_desk_policy_for_run returned a shape this handler does not accept; nothing was started",
+          );
+        }
+        if (policy.data.applies) {
+          const pack = Object.hasOwn(SANITIZER_PACKS, policy.data.packId)
+            ? SANITIZER_PACKS[policy.data.packId]
+            : undefined;
+          if (!pack) {
+            return refuse(
+              capabilities,
+              claim.agent_run_id,
+              "screening_pack_unknown",
+            );
+          }
+          const screening = sanitizeMessage(claim.task.description ?? "", pack);
+          const answer = screeningAnswerSchema.safeParse(
+            await capabilities.recordInboundScreening(screening),
+          );
+          if (!answer.success) {
+            throw new PermanentError(
+              "ops.record_inbound_screening returned a shape this handler does not accept; nothing was started",
+            );
+          }
+          if (answer.data.disposition !== "model") {
+            return {
+              kind: "settled",
+              detail: `${describeRun(claim.agent_run_id, "cancelled")} screening=${answer.data.disposition}`,
+            };
+          }
+          frontDesk = {
+            prompt: buildFrontDeskPrompt(claim.agent, answer.data.context),
+            facts: groundingFacts(answer.data.context),
+          };
+        }
+      }
+
       let route: ResolvedModelRoute | undefined;
       if (modelRouter.gatewayName !== null) {
         // ADR 0022: the database lists the run's AUTHORIZED candidates; this
@@ -472,20 +568,22 @@ export function createAgentRunExecuteHandler(
         throw new TransientError("lease too short to start a model call");
       }
 
-      const prompt = binding.buildPrompt({
-        agent: {
-          name: claim.agent.name,
-          role: claim.agent.role,
-          description: claim.agent.description,
-        },
-        task: {
-          type: claim.task.type,
-          title: claim.task.title,
-          description: claim.task.description,
-          priority: claim.task.priority,
-          dueAt: claim.task.due_at,
-        },
-      });
+      const prompt =
+        frontDesk?.prompt ??
+        binding.buildPrompt({
+          agent: {
+            name: claim.agent.name,
+            role: claim.agent.role,
+            description: claim.agent.description,
+          },
+          task: {
+            type: claim.task.type,
+            title: claim.task.title,
+            description: claim.task.description,
+            priority: claim.task.priority,
+            dueAt: claim.task.due_at,
+          },
+        });
       // The SAME builder the router sends with, so the stored fingerprint is a
       // fingerprint of the request the provider receives.
       const inputFingerprint = fingerprintModelRequest(
@@ -540,6 +638,7 @@ export function createAgentRunExecuteHandler(
           prompt,
           promptVersion: prompt.promptVersion,
           contract: binding.contract,
+          groundingFacts: frontDesk?.facts ?? null,
         }),
       };
     },
@@ -576,7 +675,7 @@ export function createAgentRunExecuteHandler(
           });
         }
         const status = await capabilities.completeAgentRun({
-          result: response.value,
+          result: groundReply(response.value, state.groundingFacts),
           responseModel: response.model,
           finishReason: response.finishReason,
           providerRequestId: response.providerRequestId,

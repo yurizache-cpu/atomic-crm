@@ -4501,6 +4501,71 @@ const INVARIANTS: Invariant[] = [
     caveat:
       "The notice text, its URL and the lawful basis reference are the owner's data, and the full notice is published by the owner outside this repository; until a notice is recorded, a reply carries none (only test channels can send today). A sender's number also lives in the CRM contact the owner keeps: erasing it there is a CRM act, not this one. After an erasure, a status callback no longer matches a send by its recipient. Real-data authorization stays closed and the production WhatsApp gate is unchanged.",
   },
+  {
+    id: "SI-80",
+    statement:
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names, keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
+    provenBy: ["live database", "migration assertion", "unit test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261011120000_front_desk_agent.sql",
+        marker:
+          /message = 'ops\.agent_runs: a front-desk run starts only after its screening sent it to the model'/,
+      },
+      {
+        file: "supabase/migrations/20261011120000_front_desk_agent.sql",
+        marker:
+          /raise exception 'an autonomous send mode passed the operating policy check';/,
+      },
+      {
+        file: "supabase/migrations/20261011120000_front_desk_agent.sql",
+        marker: /select s\.model_input into v_message/,
+      },
+      {
+        file: "supabase/migrations/20261011120000_front_desk_agent.sql",
+        marker:
+          /message = 'ops\.inbound_screenings: a screening is immutable; its text is only redacted with its task'/,
+      },
+      {
+        file: "engine/handlers/agentRunExecute.ts",
+        marker:
+          /const screening = sanitizeMessage\(claim\.task\.description \?\? "", pack\);/,
+      },
+      {
+        file: "engine/frontDesk/messageSanitizer.ts",
+        marker: /if \(kind === "sensitive" \|\| kind === "unrecognised"\) \{/,
+      },
+      {
+        file: "engine/frontDesk/prompt.ts",
+        marker:
+          /never from the task's description|the task's description \(the raw message\)/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F3: a front-desk run started without a screening/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F4: the screened text outlived its task''s content/,
+      },
+      {
+        file: "engine/domain/frontDeskPipeline.dbtest.ts",
+        marker:
+          /case 2: a mixed message reaches the model and Jev without its sensitive clause, and the request proceeds/,
+      },
+      {
+        file: "engine/frontDesk/messageSanitizer.test.ts",
+        marker: /leaks no omitted clause \(hard requirement\)/,
+      },
+      {
+        file: "engine/frontDesk/frontDeskModules.test.ts",
+        marker:
+          /refuses a price, a time, a date, a link or a number the agent was not given/,
+      },
+    ],
+    caveat:
+      "The screen is deterministic and lexical: a sensitive phrase fused into an administrative clause without a recognised sensitive term passes (a documented case in the corpus test), and it is not anonymisation (names stay). The model learns that something was omitted, and the party kind tells it whether the contact is a client. Q8 still decides what class of data may reach which provider: today only test and synthetic data do, and a real sender's message is refused before any model. A reply's prose is checked by the review, not by the grounding check, which recognises prices, times, dates, links, addresses and long numbers only.",
+  },
 ];
 
 describe("every security invariant still has a live enforcement point", () => {

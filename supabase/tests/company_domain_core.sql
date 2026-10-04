@@ -317,6 +317,12 @@ begin
     ('ops_worker',   'ops.request_structured_decisions_for_settled_job(text, uuid)'::regprocedure),
     ('ops_worker',   'ops.start_structured_decision(text)'::regprocedure),
     ('ops_worker',   'ops.settle_structured_decision(text, jsonb, text, integer, integer, bigint, integer, text, text)'::regprocedure),
+    -- ADR 0023 (20261011120000_front_desk_agent.sql): two lease-bound
+    -- capabilities, the run's front-desk policy and the recording of its
+    -- screening, which settles a run it does not send to a model
+    -- (supabase/tests/front_desk_agent.sql, engine/domain/frontDeskPipeline.dbtest.ts).
+    ('ops_worker',   'ops.front_desk_policy_for_run()'::regprocedure),
+    ('ops_worker',   'ops.record_inbound_screening(jsonb)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -424,6 +430,8 @@ begin
                            'agent_run_model_candidates', 'record_agent_run_gateway_report',
                            'request_structured_decisions_for_settled_job', 'start_structured_decision',
                            'settle_structured_decision',
+                           -- ADR 0023: the worker's two front-desk capabilities, lease-bound.
+                           'front_desk_policy_for_run', 'record_inbound_screening',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

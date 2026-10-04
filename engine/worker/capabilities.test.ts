@@ -358,7 +358,9 @@ describe("the capability list", () => {
     // the shadow decision's two, on the same terms: they reach only the
     // evaluation bound to the leased job, and decide nothing. ADR 0022 adds
     // four, on the same terms: the run's authorized candidates, the gateway's
-    // audit report, and the structured decision's start and settlement.
+    // audit report, and the structured decision's start and settlement. ADR
+    // 0023 adds two, on the same terms: the run's front-desk policy and the
+    // recording of its local screening, which answers the bounded context.
     expect([...CAPABILITY_NAMES]).toEqual([
       "purgeInboundEmailLedger",
       "claimAgentRun",
@@ -377,6 +379,52 @@ describe("the capability list", () => {
       "recordAgentRunGatewayReport",
       "startStructuredDecision",
       "settleStructuredDecision",
+      "frontDeskPolicy",
+      "recordInboundScreening",
+    ]);
+  });
+});
+
+describe("the front-desk capabilities send fixed SQL with one bound jsonb, and no id", () => {
+  const recorded = () => {
+    const calls: { sql: string; params: readonly unknown[] | undefined }[] = [];
+    const tx = {
+      query: async (sql: string, params?: readonly unknown[]) => {
+        calls.push({ sql, params });
+        return {
+          rows: [
+            {
+              policy: { applies: false },
+              answer: { disposition: "held_for_person" },
+            },
+          ],
+        };
+      },
+    };
+    return { calls, tx };
+  };
+
+  it("asks the run's policy with no parameter", async () => {
+    const { calls, tx } = recorded();
+    const granted = grantCapabilities(tx as never, ["frontDeskPolicy"]);
+    await granted.frontDeskPolicy();
+    expect(calls).toEqual([
+      {
+        sql: "select ops.front_desk_policy_for_run() as policy",
+        params: undefined,
+      },
+    ]);
+  });
+
+  it("records a screening as one bound jsonb parameter", async () => {
+    const { calls, tx } = recorded();
+    const granted = grantCapabilities(tx as never, ["recordInboundScreening"]);
+    await granted.recordInboundScreening({ messageClass: "administrative" });
+    expect(calls).toEqual([
+      {
+        sql: "select ops.record_inbound_screening($1::jsonb) as answer",
+        params: ['{"messageClass":"administrative"}'],
+      },
     ]);
   });
 });

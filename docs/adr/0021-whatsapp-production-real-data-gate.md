@@ -46,7 +46,7 @@ May a real patient's message reach a model at all?
 
 **Recommendation:** go live with (a). Revisit (b) only after the provider evidence is recorded and counsel signs off. (a) loses no safety and needs no new code.
 
-**Owner decision (2026-10-04): no health information is ever fed to AI through OpenRouter.** Real patient messages are triaged by people: option (a). Nothing changes in the code, which already holds it:
+**Owner decision (2026-10-04): no health information is ever fed to AI through OpenRouter.** ~~Real patient messages are triaged by people: option (a).~~ *(Owner correction, 2026-10-04: that clause was a wrong reading of the owner's words. An AI receptionist answers leads, and a message is screened locally so that health content never reaches a model; see [ADR 0023](0023-front-desk-agent.md).)* Nothing changes in the code, which already holds it:
 - a message from any number that is not a registered test sender is `health` (ADR 0020 D3, D8);
 - `ops.model_data_authorizations` refuses gateway `openrouter` for `person_text` and `health` (ADR 0022 §D, SI-78);
 - without an authorization, the run is `cancelled / data_not_authorized` before any call, and the message waits for a person.
@@ -134,7 +134,7 @@ W1 is the owner's own. W2 to W6 were delegated: the owner asked for the minimum 
 
 | Item | Decision | How the system holds it |
 | --- | --- | --- |
-| W1 | (a): no health information is ever fed to AI through OpenRouter; people triage real messages. | Unchanged code (SI-78). |
+| W1 | No health information is ever fed to AI through OpenRouter. ~~People triage real messages.~~ (Owner correction: an AI receptionist answers leads behind a local screen, [ADR 0023](0023-front-desk-agent.md).) | Unchanged Q8 (SI-78); the screen is SI-80. |
 | W2 | Replying and keeping the contact: procedures preliminary to a contract at the person's request (LGPD art. 7 V). Health content a person shares: health protection by a health service (art. 11 II f). Legal or regulatory duties: art. 7 II and art. 11 II a. Consent only for marketing, which the system does not send. | The basis is an opaque `lawful_basis_ref` on the tenant's privacy notice (owner data). |
 | W3 | (b): no consent record now, because no part of the flow rests on consent. A marketing send would need (a) first. | The opt-out flag stays the gate (SI-49). |
 | W4 | (a): the D6/D7 lifecycle, at most 30 days. | Unchanged code (SI-72). |
@@ -145,7 +145,7 @@ W1 is the owner's own. W2 to W6 were delegated: the owner asked for the minimum 
 | W8 | Owner actions in Meta's console. | Pending. |
 
 **What still stands between this record and a production channel:**
-- **A reply a person writes.** With W1, a real message produces no AI draft, and today the send path only sends an accepted review's draft. Production needs a way for a person to write the reply; it is built with W7.
+- ~~**A reply a person writes.** With W1, a real message produces no AI draft, and today the send path only sends an accepted review's draft. Production needs a way for a person to write the reply; it is built with W7.~~ *(Superseded by ADR 0023: the AI receptionist drafts, a person reviews, and a person's own reply exists for a conversation the person holds.)*
 - **W7** (the always-on webhook endpoint) and **W8** (business verification, display name, the production number, a permanent token in a secret store).
 - **The notice itself:** the owner publishes the full notice and records its URL, its short text and the basis reference.
 - **Then** a reviewed migration may open the production gate for exactly the channel the owner names, requiring a current privacy notice for its tenant (SI-47 amended).
@@ -160,4 +160,4 @@ There is one batch, behind its own review, and the owner's Accepted status on th
 - W5: the identifier clock and the erasure act;
 - W6: unchanged, if (a).
 
-Then a reviewed migration may open the production gate for exactly the channel the owner names (SI-47 amended). If W1 stays (a), real messages are triaged by people only.
+Then a reviewed migration may open the production gate for exactly the channel the owner names (SI-47 amended). ~~If W1 stays (a), real messages are triaged by people only.~~ *(Superseded by ADR 0023.)*

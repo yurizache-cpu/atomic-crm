@@ -211,6 +211,18 @@ export interface Capabilities {
   settleStructuredDecision(
     settlement: StructuredDecisionSettlement,
   ): Promise<string>;
+  /**
+   * ADR 0023. Whether the run bound to the leased job belongs to an agent with
+   * a published front-desk operating policy, and the screening pack it names.
+   */
+  frontDeskPolicy(): Promise<unknown>;
+  /**
+   * ADR 0023. Records the local screening of the run bound to the leased job
+   * and answers its disposition: `model` with the bounded context the prompt
+   * is built from (the screened text, never the raw message), or a fixed reply
+   * or a hold for a person, both of which settle the run with no call.
+   */
+  recordInboundScreening(screening: unknown): Promise<unknown>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -233,6 +245,8 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "recordAgentRunGatewayReport",
   "startStructuredDecision",
   "settleStructuredDecision",
+  "frontDeskPolicy",
+  "recordInboundScreening",
 ]);
 
 /**
@@ -437,6 +451,22 @@ function allCapabilities(tx: TxClient): Capabilities {
         ],
       );
       return statusOf(rows, "ops.settle_structured_decision");
+    },
+
+    async frontDeskPolicy() {
+      const { rows } = await tx.query<{ policy: unknown }>(
+        "select ops.front_desk_policy_for_run() as policy",
+      );
+      return rows[0]?.policy;
+    },
+
+    async recordInboundScreening(screening) {
+      // The screening is engine output: ONE bound jsonb parameter, never spliced.
+      const { rows } = await tx.query<{ answer: unknown }>(
+        "select ops.record_inbound_screening($1::jsonb) as answer",
+        [JSON.stringify(screening)],
+      );
+      return rows[0]?.answer;
     },
   };
 }
