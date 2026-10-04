@@ -4443,7 +4443,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-79",
     statement:
-      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version has reached the person, the send recording which version it carried.",
+      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4454,7 +4454,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
         marker:
-          /o\.privacy_notice_id = v_notice\.id and o\.status in \('sent', 'delivered', 'read'\)/,
+          /o\.privacy_notice_id = v_notice\.id and o\.status in \('delivered', 'read'\)/,
       },
       {
         file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
@@ -4475,9 +4475,18 @@ const INVARIANTS: Invariant[] = [
           /P4: a reply after the notice reached the person carried it again/,
       },
       {
+        file: "supabase/tests/whatsapp_transport.sql",
+        marker: /N9: a redelivery restored an erased number/,
+      },
+      {
+        file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
+        marker:
+          /if v_prior\.conversation_id is not null then\s+v_conv := v_prior\.conversation_id;/,
+      },
+      {
         file: "engine/domain/whatsappOutbound.dbtest.ts",
         marker:
-          /rides on the first reply of a conversation once, recording its version, and never on the next/,
+          /rides on every reply of a conversation until one carrying it is delivered, recording its version, and then stops/,
       },
       {
         file: "engine/handlers/contactIdentifierRetentionDue.test.ts",

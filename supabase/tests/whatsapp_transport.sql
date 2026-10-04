@@ -812,6 +812,7 @@ declare
   v_n1   uuid;
   v_n2   uuid;
   v_out  uuid;
+  v_first uuid;
   v_ans  jsonb;
   c_text constant text := 'Privacy notice: synthetic clinic. Details: https://clinic.example.test/privacy';
   c_nl2  constant text := repeat(chr(10), 2);
@@ -882,8 +883,10 @@ begin
   exception when sqlstate 'OS403' then null;
   end;
 
-  -- P4. Until it reached the person, the next reply carries it again; once a
-  --     reply with that version was sent, the next one does not.
+  -- P4. Until a reply with that version reached the person, the next reply
+  --     carries it again: an unknown outcome is not delivery, and neither is
+  --     the provider's acceptance (sent can still become failed). Once one is
+  --     delivered (or read), the next reply does not.
   perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'indeterminate', null, null, 'ambiguous');
   v_out := pg_temp.accepted_reply('wamid.P4a', '5511900000111', 'Second synthetic reply');
   v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
@@ -891,13 +894,21 @@ begin
     raise exception 'P4: a reply after an unknown outcome did not carry the notice again: %', v_ans;
   end if;
   perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4a.out', null, null);
+  v_first := v_out;
   v_out := pg_temp.accepted_reply('wamid.P4b', '5511900000111', 'Third synthetic reply');
   v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
-  if v_ans ->> 'body' <> 'Third synthetic reply'
+  if v_ans ->> 'body' <> 'Third synthetic reply' || c_nl2 || c_text then
+    raise exception 'P4: a reply after one merely accepted by the provider did not carry the notice again: %', v_ans;
+  end if;
+  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4b.out', null, null);
+  update ops.outbound_messages set status = 'delivered', delivered_at = now() where id = v_first;
+  v_out := pg_temp.accepted_reply('wamid.P4c', '5511900000111', 'Fourth synthetic reply');
+  v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
+  if v_ans ->> 'body' <> 'Fourth synthetic reply'
      or (select privacy_notice_id from ops.outbound_messages where id = v_out) is not null then
     raise exception 'P4: a reply after the notice reached the person carried it again: %', v_ans;
   end if;
-  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4b.out', null, null);
+  perform ops.settle_outbound_send(pg_temp.id('tenant_a'), v_out, 'sent', 'wamid.P4c.out', null, null);
 
   -- P5. A new version supersedes the old one, exactly one is current, and the
   --     next reply carries the new version.
@@ -918,9 +929,9 @@ begin
     raise exception 'P5: a notice a send carried was deleted';
   exception when foreign_key_violation then null;
   end;
-  v_out := pg_temp.accepted_reply('wamid.P5', '5511900000111', 'Fourth synthetic reply');
+  v_out := pg_temp.accepted_reply('wamid.P5', '5511900000111', 'Fifth synthetic reply');
   v_ans := ops.begin_outbound_send(pg_temp.id('tenant_a'), v_out);
-  if v_ans ->> 'body' <> 'Fourth synthetic reply' || c_nl2 || 'Updated synthetic notice'
+  if v_ans ->> 'body' <> 'Fifth synthetic reply' || c_nl2 || 'Updated synthetic notice'
      or (select privacy_notice_id from ops.outbound_messages where id = v_out) is distinct from v_n2 then
     raise exception 'P5: the next reply did not carry the new version: %', v_ans;
   end if;
@@ -929,7 +940,7 @@ begin
   --     cannot be pointed at it.
   perform ops.record_privacy_notice(pg_temp.id('tenant_b'), 'v1', 'https://other.example.test/privacy',
                                     'Other tenant notice', 'lgpd:art7-v', 'p2b-owner');
-  v_out := pg_temp.accepted_reply('wamid.P6', '5511900000111', 'Fifth synthetic reply');
+  v_out := pg_temp.accepted_reply('wamid.P6', '5511900000111', 'Sixth synthetic reply');
   begin
     update ops.outbound_messages
        set status = 'sending', sending_at = now(),
@@ -1003,6 +1014,11 @@ begin
     raise exception 'N2: a later message did not move the clock and its job forward';
   end if;
 
+  -- A message refused on the record (an empty body) in the same conversation.
+  if ops.receive_whatsapp_message('300000000000001', 'wamid.N2e', '5511900000858', ' ', now()) ->> 'state' <> 'refused' then
+    raise exception 'setup: an empty message was not refused on the record';
+  end if;
+
   -- N3. Before its due time, expiry erases nothing.
   if ops.erase_contact_identifier(pg_temp.id('tenant_a'), v_conv, 'retention_expired', 'p2b-owner') <> 'not_due'
      or (select contact_ref from ops.conversations where id = v_conv) <> '5511900000858' then
@@ -1064,6 +1080,21 @@ begin
   -- An erased conversation can never be sent to.
   if ops.whatsapp_send_eligibility(pg_temp.id('tenant_a'), v_conv) ->> 'eligible' <> 'false' then
     raise exception 'N5: an erased conversation stayed sendable';
+  end if;
+
+  -- N9. Meta redelivering an old message, admitted or refused, never brings
+  --     the erased number back (Codex review of PR #27, P1).
+  v_admitted := ops.receive_whatsapp_message('300000000000001', 'wamid.N1', '5511900000858', 'synthetic', now());
+  if v_admitted ->> 'state' <> 'admitted' or (v_admitted ->> 'replayed')::boolean is not true
+     or (v_admitted ->> 'conversation_id')::uuid <> v_conv then
+    raise exception 'N9: a redelivered admitted message did not replay its admission: %', v_admitted;
+  end if;
+  v_admitted := ops.receive_whatsapp_message('300000000000001', 'wamid.N2e', '5511900000858', ' ', now());
+  if v_admitted ->> 'state' <> 'refused' or v_admitted ->> 'reason' <> 'empty_body' then
+    raise exception 'N9: a redelivered refused message did not get its refusal again: %', v_admitted;
+  end if;
+  if exists (select 1 from ops.conversations where contact_ref = '5511900000858') then
+    raise exception 'N9: a redelivery restored an erased number';
   end if;
 
   -- N6. The same number writing again opens a new conversation with its own clock.

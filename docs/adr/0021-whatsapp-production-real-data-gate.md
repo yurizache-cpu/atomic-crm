@@ -139,7 +139,7 @@ W1 is the owner's own. W2 to W6 were delegated: the owner asked for the minimum 
 | W3 | (b): no consent record now, because no part of the flow rests on consent. A marketing send would need (a) first. | The opt-out flag stays the gate (SI-49). |
 | W4 | (a): the D6/D7 lifecycle, at most 30 days. | Unchanged code (SI-72). |
 | W5 | (c), with a tombstone instead of a keyed hash: the number is erased 12 months after the sender's last message, or at once on the owner's act; a returning sender opens a new conversation. | Migration `20261010120000_whatsapp_privacy_and_identifier_retention.sql`, `npm run ops -- identifiers` (SI-79). |
-| Notice | The disclaimer the owner asked for: the first reply of a conversation carries the tenant's privacy notice (a short text with the link to the full notice), once per version, and the send records the version. | Same migration; `npm run messaging -- notice record` (SI-79). |
+| Notice | The disclaimer the owner asked for: the first reply of a conversation carries the tenant's privacy notice (a short text with the link to the full notice), and every reply carries it until one carrying that version is delivered or read; the send records the version. A provider's redelivery of an old message never restores an erased number. | Same migration; `npm run messaging -- notice record` (SI-79). |
 | W6 | (a): no reply to a number outside the CRM. | Unchanged code (SI-49). |
 | W7 | Recommended: a function on the existing Netlify account (no new recurring cost); not built. | Pending. |
 | W8 | Owner actions in Meta's console. | Pending. |

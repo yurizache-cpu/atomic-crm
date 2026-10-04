@@ -8,8 +8,9 @@
 --      Recording a new version supersedes the previous one; nothing is deleted.
 --   2. THE FIRST REPLY CARRIES IT. When a send begins, the reply carries the
 --      tenant's current notice unless a reply in the same conversation already
---      reached the person with that very version. The send records which version
---      it carried. The text is never copied into the send: it is rebuilt from
+--      reached the person with that very version: delivered or read, never
+--      merely accepted by the provider (a sent message may still fail). The send
+--      records which version it carried. The text is never copied into the send: it is rebuilt from
 --      the review's draft and the notice row.
 --   3. THE PHONE IDENTIFIER HAS A CLOCK (W5). A conversation's number is erased
 --      12 months after the person's last message, or at once on the owner's act.
@@ -222,9 +223,10 @@ $function$;
 
 -- The send's one transaction that answers the text (D7 body, unchanged), plus:
 -- the reply carries the tenant's current notice unless a reply in this
--- conversation already reached the person with that version (sent, delivered
--- or read). A send whose outcome is unknown does not count: a repeated notice
--- is harmless, a missing one is not.
+-- conversation already reached the person with that version: delivered or
+-- read. Sent is only the provider's acceptance (sent can still become failed),
+-- and an unknown outcome is not delivery: a repeated notice is harmless, a
+-- missing one is not.
 create or replace function ops.begin_outbound_send(p_tenant_id uuid, p_outbound_id uuid)
 returns jsonb
 language plpgsql
@@ -277,7 +279,7 @@ begin
    where n.tenant_id = p_tenant_id and n.superseded_at is null;
   if found and exists (select 1 from ops.outbound_messages o
                         where o.tenant_id = p_tenant_id and o.conversation_id = v_out.conversation_id
-                          and o.privacy_notice_id = v_notice.id and o.status in ('sent', 'delivered', 'read')) then
+                          and o.privacy_notice_id = v_notice.id and o.status in ('delivered', 'read')) then
     v_notice := null;
   end if;
   if v_notice.id is not null then
@@ -769,6 +771,154 @@ begin
     end if;
   end loop;
   return v_count;
+end
+$function$;
+
+-- The Phase 2B gateway function (20260918170000), plus: a redelivery of a
+-- message already answered never re-creates a conversation, so it never
+-- restores an erased number (Codex review of PR #27, P1).
+create or replace function ops.receive_whatsapp_message(
+  p_provider_target     text,
+  p_external_message_id text,
+  p_from                text,
+  p_body                text,
+  p_received_at         timestamptz
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path to ''
+as $function$
+declare
+  v_channel     ops.communication_channels;
+  v_crm         jsonb;
+  v_dnc         boolean;
+  v_conv        uuid;
+  v_received_at timestamptz;
+  v_reason      text;
+  v_result      jsonb;
+  v_prior       ops.inbound_messages;
+  v_refused     jsonb;
+begin
+  -- A malformed target or message id cannot be tied to any tenant or keyed
+  -- once: a typed refusal. The gateway's parser never produces one.
+  if p_provider_target is null or p_provider_target !~ '^[0-9]{1,32}$' then
+    raise exception using errcode = 'OS400', message = 'ops.receive_whatsapp_message: malformed provider target';
+  end if;
+  if p_external_message_id is null or p_external_message_id !~ '^[\x21-\x7e]{1,200}$' then
+    raise exception using errcode = 'OS400', message = 'ops.receive_whatsapp_message: malformed message id';
+  end if;
+  -- The sender may be absent (a WhatsApp user known only by username); if
+  -- present it is digits with the country code.
+  if p_from is not null and p_from !~ '^[0-9]{6,20}$' then
+    raise exception using errcode = 'OS400', message = 'ops.receive_whatsapp_message: malformed sender id';
+  end if;
+  if p_received_at is null then
+    raise exception using errcode = 'OS400', message = 'ops.receive_whatsapp_message: received_at is missing';
+  end if;
+
+  -- The TRUSTED mapping, and the closed real-data gate. Nothing in the payload
+  -- names a tenant, a channel or a mode. A message that is not for a live test
+  -- channel is not ours to acknowledge: the gateway answers it with a non-2xx
+  -- and stores nothing.
+  select * into v_channel from ops.communication_channels c
+   where c.provider = 'meta_whatsapp' and c.provider_target = p_provider_target;
+  if not found then
+    return jsonb_build_object('state', 'unrouted', 'reason', 'unknown_target');
+  end if;
+  if not v_channel.active or v_channel.mode <> 'test' then
+    return jsonb_build_object('state', 'unrouted', 'reason', 'channel_not_live');
+  end if;
+  -- The units that would own the work must be able to take it. A paused unit
+  -- is recoverable: re-activating it lets Meta's redelivery through.
+  if not exists (
+    select 1
+      from ops.agents a
+      join ops.departments d on d.tenant_id = a.tenant_id and d.company_id = a.company_id and d.id = a.department_id
+      join ops.companies co on co.tenant_id = a.tenant_id and co.id = a.company_id
+     where a.tenant_id = v_channel.tenant_id and a.company_id = v_channel.company_id and a.id = v_channel.agent_id
+       and a.status = 'active' and d.status = 'active' and co.status = 'active') then
+    return jsonb_build_object('state', 'unrouted', 'reason', 'organisation_inactive');
+  end if;
+
+  -- The database's clock, not the gateway's: skew cannot refuse a message.
+  v_received_at := least(p_received_at, now());
+
+  -- ADR 0021 W5: a redelivery of a message this channel's tenant already
+  -- answered never touches a conversation, so a routine provider retry cannot
+  -- re-create a number that was erased. An admitted message goes on to the
+  -- admission (which answers the replay, or refuses a reused id) with its own
+  -- conversation; a message refused on the record gets that refusal again.
+  select m.* into v_prior
+    from ops.inbound_messages m
+   where m.tenant_id = v_channel.tenant_id and m.source_kind = 'whatsapp'
+     and m.external_message_id = p_external_message_id;
+  if v_prior.id is null then
+    select e.payload into v_refused
+      from ops.events e
+     where e.tenant_id = v_channel.tenant_id
+       and e.idempotency_key = format('whatsapp:refused:%s',
+                                      encode(sha256(convert_to(p_external_message_id, 'UTF8')), 'hex'));
+    if found then
+      return jsonb_strip_nulls(jsonb_build_object(
+        'state', 'refused', 'reason', v_refused ->> 'reason', 'conversation_id', v_refused ->> 'conversation_id'));
+    end if;
+  end if;
+
+  if p_from is null then
+    v_reason := 'no_sender_number';
+  else
+    v_crm := ops.crm_contact_by_phone(v_channel.tenant_id, p_from);
+    -- Only a single CRM contact whose opt-out flag is false is eligible at
+    -- admission; every other answer is do-not-contact.
+    v_dnc := not (v_crm ->> 'state' = 'found'
+                  and jsonb_typeof(v_crm -> 'do_not_contact') = 'boolean'
+                  and not (v_crm ->> 'do_not_contact')::boolean);
+
+    if v_prior.conversation_id is not null then
+      v_conv := v_prior.conversation_id;
+    else
+      insert into ops.conversations (tenant_id, company_id, channel_id, contact_ref, last_inbound_at)
+      values (v_channel.tenant_id, v_channel.company_id, v_channel.id, p_from, v_received_at)
+      on conflict (tenant_id, channel_id, contact_ref) do update
+        set last_inbound_at = greatest(ops.conversations.last_inbound_at, excluded.last_inbound_at)
+      returning id into v_conv;
+    end if;
+
+    -- ops.admit_inbound_core's own bounds, decided here so that a refusal is on
+    -- the record rather than an exception the gateway could only log.
+    v_reason := case
+      when p_body is null then 'unsupported_content'
+      when p_body !~ '\S' then 'empty_body'
+      when char_length(p_body) > 4000 then 'body_too_long'
+    end;
+
+    if v_reason is null then
+      begin
+        v_result := ops.admit_inbound_core(
+          v_channel.tenant_id, v_channel.company_id, v_channel.agent_id, 'whatsapp',
+          p_external_message_id, p_from, p_body, 'whatsapp-gateway', v_dnc, v_received_at,
+          v_channel.id, v_conv, v_crm ->> 'state', v_crm ->> 'crm_contact_ref');
+        return v_result || jsonb_build_object('state', 'admitted', 'conversation_id', v_conv);
+      exception when sqlstate 'OS400' or sqlstate 'OS409' then
+        -- The admission refused it (a reused message id carrying another
+        -- message, or a unit paused since the check above): nothing it began
+        -- survives, and the refusal is recorded below.
+        v_reason := 'admission_refused';
+      end;
+    end if;
+  end if;
+
+  -- Acknowledged only with a durable record of it: the channel, the
+  -- conversation when there is a sender number, and why. Never the body, the
+  -- sender or the message id. Once per message id.
+  perform ops.record_event(
+    v_channel.tenant_id, v_channel.company_id, 'communication.inbound_refused', 'whatsapp-gateway',
+    'company', v_channel.company_id,
+    jsonb_strip_nulls(jsonb_build_object('channel_id', v_channel.id, 'conversation_id', v_conv, 'reason', v_reason)),
+    null, null,
+    format('whatsapp:refused:%s', encode(sha256(convert_to(p_external_message_id, 'UTF8')), 'hex')));
+  return jsonb_strip_nulls(jsonb_build_object('state', 'refused', 'reason', v_reason, 'conversation_id', v_conv));
 end
 $function$;
 

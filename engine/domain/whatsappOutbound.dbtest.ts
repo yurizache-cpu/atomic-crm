@@ -612,7 +612,27 @@ describe("the privacy notice (ADR 0021)", () => {
   const NOTICE =
     "Privacy notice: synthetic clinic, no AI reads your messages. Your rights: https://clinic.example.test/privacy";
 
-  it("rides on the first reply of a conversation once, recording its version, and never on the next", async () => {
+  /** The same person writes again, and a person accepts the next triage. */
+  const nextAcceptedReply = async (scenario: Scenario, messageId: string) => {
+    await deliver(
+      gateway,
+      metaPayload(scenario.clinic.providerTarget, {
+        messages: [{ id: messageId, from: LEAD, body: "Synthetic follow-up" }],
+      }),
+    );
+    const { registry } = fakeRuntime({ type: "respond", content: ADVICE });
+    return {
+      ...scenario,
+      reviewId: await triageAndAccept(
+        owner,
+        db,
+        registry,
+        scenario.clinic.tenantId,
+      ),
+    };
+  };
+
+  it("rides on every reply of a conversation until one carrying it is delivered, recording its version, and then stops", async () => {
     const scenario = await acceptedReview({ messageId: "wamid.IN4001" });
     await owner.withTransaction((tx) =>
       recordPrivacyNotice(tx, {
@@ -624,40 +644,39 @@ describe("the privacy notice (ADR 0021)", () => {
         actor: "dbtest-owner",
       }),
     );
+    const withNotice = `${ADVICE.response_draft}\n\n${NOTICE}`;
 
     const first = fakeTransport(() => accepted("wamid.OUT4001"));
     expect(await send(scenario, first)).toMatchObject({ status: "sent" });
-    expect(first.calls).toHaveLength(1);
     // The reviewed draft, a blank line, then the tenant's notice: nothing else.
-    expect(first.calls[0].body).toBe(`${ADVICE.response_draft}\n\n${NOTICE}`);
+    expect(first.calls[0].body).toBe(withNotice);
     expect((await outboundOf(scenario))?.privacyNoticeVersion).toBe("v1");
 
-    // The same person writes again in the same conversation; the next reply
-    // carries the draft alone.
+    // Accepted by the provider is not delivered: the next reply carries it again.
+    const second = await nextAcceptedReply(scenario, "wamid.IN4002");
+    const again = fakeTransport(() => accepted("wamid.OUT4002"));
+    expect(await send(second, again)).toMatchObject({ status: "sent" });
+    expect(again.calls[0].body).toBe(withNotice);
+
+    // Meta reports it delivered, through the gateway's own login.
     await deliver(
       gateway,
       metaPayload(scenario.clinic.providerTarget, {
-        messages: [
-          { id: "wamid.IN4002", from: LEAD, body: "Synthetic follow-up" },
+        statuses: [
+          { id: "wamid.OUT4002", status: "delivered", recipient: LEAD },
         ],
       }),
     );
-    const { registry } = fakeRuntime({ type: "respond", content: ADVICE });
-    const second: Scenario = {
-      ...scenario,
-      reviewId: await triageAndAccept(
-        owner,
-        db,
-        registry,
-        scenario.clinic.tenantId,
-      ),
-    };
-    const next = fakeTransport(() => accepted("wamid.OUT4002"));
-    expect(await send(second, next)).toMatchObject({ status: "sent" });
-    expect(next.calls[0].body).toBe(ADVICE.response_draft);
-    expect((await outboundOf(second))?.privacyNoticeVersion).toBeNull();
+    expect((await outboundOf(second))?.status).toBe("delivered");
 
-    // The send record still holds neither text nor recipient.
+    // Once it reached the person, the next reply carries the draft alone.
+    const third = await nextAcceptedReply(scenario, "wamid.IN4003");
+    const next = fakeTransport(() => accepted("wamid.OUT4003"));
+    expect(await send(third, next)).toMatchObject({ status: "sent" });
+    expect(next.calls[0].body).toBe(ADVICE.response_draft);
+    expect((await outboundOf(third))?.privacyNoticeVersion).toBeNull();
+
+    // The send records still hold neither text nor recipient.
     const { rows } = await admin.query<Record<string, unknown>>(
       "select o.* from ops.outbound_messages o where o.tenant_id = $1",
       [scenario.clinic.tenantId],
