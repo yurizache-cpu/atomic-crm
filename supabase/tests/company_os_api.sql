@@ -1551,7 +1551,9 @@ begin
     ('get_review', array[
       '.agentRunId', '.allowedDecisions', '.asOf', '.capability', '.createdAt', '.decisionNote',
       '.doNotContact', '.hasNote', '.id', '.outboundStatus', '.reviewedAt', '.shadowDecision',
-      '.shadowDecision.status', '.status', '.taskId', '.v']),
+      '.shadowDecision.status', '.status', '.structuredDecisions', '.structuredDecisions.businessRoute',
+      '.structuredDecisions.leadIntelligence', '.structuredDecisions.modelRoute', '.structuredDecisions.status',
+      '.taskId', '.v']),
     ('get_review_advice', array[
       '.asOf', '.capability', '.flags', '.intent', '.needsHumanReview', '.outcome', '.priority',
       '.recommendedNextAction', '.reviewId', '.summary', '.v', '.withheld']),
@@ -3168,6 +3170,11 @@ insert into cos_internal values
   ('ops.cos_review_shadow_decision(uuid, ops.review_items)', 's'),
   -- Phase 2D.3: the overview's shadow calibration counts, read only.
   ('ops.cos_decision_intelligence(uuid)', 's'),
+  -- ADR 0022: get_review's structured decisions and their helpers, read only.
+  ('ops.cos_review_structured_decisions(uuid, ops.review_items)', 's'),
+  ('ops.cos_structured_decision(ops.structured_decisions)', 's'),
+  ('ops.cos_structured_department(uuid, uuid, text)', 's'),
+  ('ops.cos_structured_level(jsonb)', 'i'),
   -- Phase 2E.2: the overview's operational health, read only.
   ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's'),
   -- Phase 3A: the overview's agenda and its two row summaries, read only.

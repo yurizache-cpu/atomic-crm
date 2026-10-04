@@ -20,6 +20,15 @@ import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
 import { describe, expect, it } from "vitest";
 import * as contracts from "../../contracts/company-os-api/index.ts";
+import {
+  BUSINESS_INTENTS,
+  COMPLEXITY,
+} from "../decision/structured/businessRouting.ts";
+import {
+  LEAD_INTELLIGENCE_QUESTIONS,
+  NEXT_ACTIONS,
+  OBJECTIONS,
+} from "../decision/structured/leadIntelligence.ts";
 import * as leadTriage from "../models/leadTriage.ts";
 import { MODEL_ERROR_CATEGORIES } from "../models/errors.ts";
 import { FAILURE_CLASSES } from "../worker/failures.ts";
@@ -125,6 +134,28 @@ describe("the contract vocabularies equal the engine's", () => {
       ...NEW_RUN_ADMISSIONS,
       "unconfigured",
     ]);
+  });
+
+  it("offers exactly the structured decisions' version-1 options (ADR 0022)", () => {
+    expect([...contracts.STRUCTURED_BUSINESS_INTENTS].sort()).toEqual(
+      Object.keys(BUSINESS_INTENTS).sort(),
+    );
+    expect([...contracts.STRUCTURED_OBJECTIONS].sort()).toEqual(
+      Object.keys(OBJECTIONS).sort(),
+    );
+    expect([...contracts.STRUCTURED_NEXT_ACTIONS].sort()).toEqual(
+      Object.keys(NEXT_ACTIONS).sort(),
+    );
+    // The levels the projection names are the scales' own, lowest first.
+    expect([...COMPLEXITY]).toEqual(["low", "medium", "high"]);
+    for (const key of [
+      "commercial_readiness",
+      "scheduling_readiness",
+      "follow_up_priority",
+    ]) {
+      const question = LEAD_INTELLIGENCE_QUESTIONS[key];
+      expect(question?.type === "score" && question.criteria.length).toBe(3);
+    }
   });
 
   it("checks money against the engine's own USD formatting", () => {

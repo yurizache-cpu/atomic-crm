@@ -276,6 +276,6 @@ PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
 - **Nothing was sent:** no outbound message, no data authorization. The gateway was stopped afterwards.
 - **The browser decision (2026-10-03): DONE.** The owner opened that review on the Netlify site, signed in with password and TOTP (AAL2), and chose Aceitar → Confirmar. The review is `accepted`, recorded under the owner's own principal (`auth.uid()`), and the page and the database both show that no message was sent.
   - This closes the step left open on 2026-10-01: a person deciding a staging review in a real browser.
-  - A gap observed on that page: "Inteligência de decisão" shows only the 2D shadow engine (off on staging). The ADR 0022 Jev decisions for the same task are stored but not yet shown there. That is a candidate UI follow-up.
+  - A gap observed on that page: "Inteligência de decisão" shows only the 2D shadow engine (off on staging). The ADR 0022 Jev decisions for the same task are stored but not yet shown there. That is a candidate UI follow-up. *(Implemented on 2026-10-03 on `feature/jev-review-insight`, ADR 0022 §I.1: a section "Decisões estruturadas" on the review page. Not yet on staging.)*
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**

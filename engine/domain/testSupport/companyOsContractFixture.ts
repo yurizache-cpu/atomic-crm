@@ -321,6 +321,106 @@ async function recordShadowDecision(
   );
 }
 
+/** ADR 0022: the decision model the fixture's structured decisions name. */
+export const DECISION_MODEL = "typesafe/jev-1.13";
+export const DECISION_BUILD = "typesafe/jev-1.13-20260917";
+
+interface StructuredDecisionPlan {
+  readonly kind: "business_route" | "lead_intelligence" | "model_route";
+  readonly deterministicRoute: Record<string, unknown> | null;
+  /** pending, refused (with its code), or completed (with its spec and answers). */
+  readonly outcome:
+    | { readonly status: "pending" }
+    | { readonly status: "refused"; readonly refusal: string }
+    | {
+        readonly status: "completed";
+        readonly spec: Record<string, unknown>;
+        readonly answers: Record<string, unknown>;
+      };
+}
+
+const QUESTION_SETS = {
+  business_route: "business_routing.v1",
+  lead_intelligence: "lead_intelligence.v1",
+  model_route: "model_route.v1",
+} as const;
+
+/**
+ * ADR 0022: a structured decision for `reviewId`'s task and run, recorded as
+ * the owner through the guarded lifecycle the worker's capabilities follow
+ * (born pending or refused; running with its price, spec and reservation;
+ * completed with answers that satisfy the spec).
+ */
+async function recordStructuredDecision(
+  tx: TxClient,
+  reviewId: string,
+  plan: StructuredDecisionPlan,
+): Promise<void> {
+  const refused = plan.outcome.status === "refused";
+  const id = await one<string>(
+    tx,
+    `insert into ops.structured_decisions
+       (tenant_id, company_id, department_id, agent_id, task_id, agent_run_id, decision_kind, question_set,
+        idempotency_key, status, refusal_code, deterministic_route, settled_at)
+     select r.tenant_id, r.company_id, ar.department_id, ar.agent_id, r.task_id, r.agent_run_id, $2, $3,
+            $2 || ':review:' || r.id, $4, $5, $6::jsonb, case when $4 = 'refused' then now() end
+       from ops.review_items r
+       join ops.agent_runs ar on ar.tenant_id = r.tenant_id and ar.id = r.agent_run_id
+      where r.id = $1
+     returning id as v`,
+    [
+      reviewId,
+      plan.kind,
+      QUESTION_SETS[plan.kind],
+      refused ? "refused" : "pending",
+      plan.outcome.status === "refused" ? plan.outcome.refusal : null,
+      plan.deterministicRoute === null
+        ? null
+        : JSON.stringify(plan.deterministicRoute),
+    ],
+  );
+  if (plan.outcome.status !== "completed") return;
+  await tx.query(
+    `update ops.structured_decisions
+        set status = 'running', started_at = now(), gateway = 'openrouter', model = $2,
+            input_fingerprint = $3, question_spec = $4::jsonb, reserved_cost_micros = 40,
+            price_id = (select p.id from ops.model_prices p
+                         where p.provider = 'openrouter' and p.model = $2
+                         order by p.effective_from desc limit 1)
+      where id = $1`,
+    [
+      id,
+      DECISION_MODEL,
+      `sha256:${"1".repeat(64)}`,
+      JSON.stringify(plan.outcome.spec),
+    ],
+  );
+  await tx.query(
+    `update ops.structured_decisions
+        set status = 'completed', answers = $2::jsonb, served_model = $3, provider_route = 'TypeSafe',
+            input_tokens = 400, output_tokens = 20, latency_ms = 350, charged_cost_micros = 31,
+            reported_cost_micros = 31, settled_at = now()
+      where id = $1`,
+    [id, JSON.stringify(plan.outcome.answers), DECISION_BUILD],
+  );
+}
+
+const choice = (value: string, confidence: number) => ({
+  type: "choice",
+  choice: value,
+  confidence,
+  probabilities: null,
+});
+const score = (value: number, level: number) => ({
+  type: "score",
+  score: value,
+  level,
+  confidence: null,
+  probabilities: null,
+});
+const options = (...values: string[]) => ({ type: "choice", options: values });
+const LEVELS = { type: "score", levels: 3 };
+
 /**
  * An authorized send for an accepted review of a WhatsApp task: the row and the
  * event ops.request_outbound_send writes. That service itself refuses here,
@@ -484,6 +584,12 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
     `select ops.record_model_price($1, $2, 1.25, 2.5, true, now() - interval '1 minute',
                                    now() + interval '1 day', 'dbtest contract price', $3, 0.125)`,
     [PROVIDER, MODEL, PRICE_RECORDER],
+  );
+  // ADR 0022: the decision model's price, for the structured decisions below.
+  await tx.query(
+    `select ops.record_model_price('openrouter', $1, 0.042, 0, true, now() - interval '1 minute',
+                                   now() + interval '1 day', 'dbtest decision price', $2)`,
+    [DECISION_MODEL, PRICE_RECORDER],
   );
   await tx.query(
     `select ops.set_spend_limit('global', 1000000000000, 'UTC', 'dbtest contract ceiling', $1)
@@ -741,6 +847,81 @@ export async function buildFixture(tx: TxClient): Promise<Fixture> {
   // Phase 2D.1: its shadow decision, completed, through the guarded lifecycle
   // (the worker's own path needs a real run; this review has none).
   await recordShadowDecision(tx, open);
+  // ADR 0022: the runtime-opened review carries all three structured
+  // decisions, completed, the business route disagreeing with the route taken;
+  // the first accepted one a refused business route and a pending lead
+  // intelligence; every other review none.
+  await recordStructuredDecision(tx, opened, {
+    kind: "business_route",
+    deterministicRoute: {
+      department: "intake",
+      capability: "lead_triage",
+      agentId: triage.id,
+      humanReview: true,
+    },
+    outcome: {
+      status: "completed",
+      spec: {
+        intent: options("new_lead", "existing_client_admin", "unknown"),
+        department: options(
+          "intake",
+          "night-desk",
+          "human_review",
+          "no_action",
+        ),
+        capability: options("lead_triage", "none"),
+        complexity: LEVELS,
+        human_review: { type: "noul" },
+      },
+      answers: {
+        intent: choice("existing_client_admin", 0.91),
+        department: choice("night-desk", 0.99),
+        capability: choice("lead_triage", 0.7),
+        complexity: score(0.2, 0),
+        human_review: { type: "noul", noul: 0.3 },
+      },
+    },
+  });
+  await recordStructuredDecision(tx, opened, {
+    kind: "lead_intelligence",
+    deterministicRoute: null,
+    outcome: {
+      status: "completed",
+      spec: {
+        commercial_readiness: LEVELS,
+        scheduling_readiness: LEVELS,
+        follow_up_priority: LEVELS,
+        objection: options("price", "none", "unknown"),
+        next_best_action: options("share_pricing_information", "human_review"),
+      },
+      answers: {
+        commercial_readiness: score(1.2, 1),
+        scheduling_readiness: score(0.3, 0),
+        follow_up_priority: score(1.8, 2),
+        objection: choice("price", 0.55),
+        next_best_action: choice("share_pricing_information", 0.8),
+      },
+    },
+  });
+  await recordStructuredDecision(tx, opened, {
+    kind: "model_route",
+    deterministicRoute: { executedModel: MODEL, gateway: PROVIDER, pool: null },
+    outcome: {
+      status: "completed",
+      spec: { model: options(MODEL, "dbtest/cheaper-model") },
+      answers: { model: choice("dbtest/cheaper-model", 0.64) },
+    },
+  });
+  await recordStructuredDecision(tx, accepted[0] as string, {
+    kind: "business_route",
+    deterministicRoute: { department: "intake", capability: "lead_triage" },
+    outcome: { status: "refused", refusal: "stopped" },
+  });
+  await recordStructuredDecision(tx, accepted[0] as string, {
+    kind: "lead_intelligence",
+    deterministicRoute: null,
+    outcome: { status: "pending" },
+  });
 
   // Sends: failed after sending, blocked by eligibility, marked indeterminate.
   await tx.query(
