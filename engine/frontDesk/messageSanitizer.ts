@@ -28,7 +28,7 @@
 import { redactStructuredIdentifiers } from "../models/identifierRedaction.ts";
 import { HEALTH_PT_BR_V1 } from "./packs/healthPtBr.ts";
 
-export const SANITIZER_VERSION = "front_desk_screen.v1";
+export const SANITIZER_VERSION = "front_desk_screen.v2";
 export const OMISSION_MARKER = "[trecho omitido]";
 
 /** The most text the screen reads from one message; beyond it is omitted. */
@@ -215,14 +215,25 @@ export function sanitizeMessage(
   pack: SanitizerPack = HEALTH_PT_BR_V1,
 ): SanitizedMessage {
   const truncated = text.length > MAX_SCREENED_LENGTH;
-  // Structured identifiers first: an address or a number becomes its marker
-  // before a dot or a dash inside it can read as a clause boundary.
+  // Line breaks are clause boundaries, so they survive until the split: only
+  // the other whitespace is collapsed here, and the kept text is normalised
+  // after (PR #28 review). Structured identifiers go first, so an address or
+  // a number becomes its marker before a dot or a dash inside it can read as
+  // a boundary.
   const original = redactStructuredIdentifiers(
-    text.slice(0, MAX_SCREENED_LENGTH).replace(/\s+/gu, " ").trim(),
+    text
+      .slice(0, MAX_SCREENED_LENGTH)
+      .replace(/\r\n?/gu, "\n")
+      .replace(/[^\S\n]+/gu, " ")
+      .replace(/ *\n[\s]*/gu, "\n")
+      .trim(),
   );
   const folded = foldForScreening(original);
-  const humanRequested = matchesAny(pack.humanRequest, folded);
-  const optOutRequested = matchesAny(pack.optOut, folded);
+  // Whole-message phrases (danger, a request for a person, an opt-out) may
+  // run across a line break, so they are matched on one line.
+  const oneLine = folded.replace(/\s+/gu, " ");
+  const humanRequested = matchesAny(pack.humanRequest, oneLine);
+  const optOutRequested = matchesAny(pack.optOut, oneLine);
   const base = {
     sanitizerVersion: SANITIZER_VERSION,
     packId: pack.id,
@@ -230,7 +241,7 @@ export function sanitizeMessage(
     optOutRequested,
   };
 
-  if (matchesAny(pack.crisis, folded)) {
+  if (matchesAny(pack.crisis, oneLine)) {
     return Object.freeze({
       ...base,
       messageClass: "safety",

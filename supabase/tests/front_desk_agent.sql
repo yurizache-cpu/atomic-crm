@@ -251,7 +251,7 @@ begin
       message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
       administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
       policy_version_id)
-    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v1', 'health_pt_br.v1',
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
       'sensitive_only', 'none', 1, 1, 0, false, false, false, 'any text', 'prospect', 'model', v_policy);
     raise exception 'F3: a sensitive-only screening carried text to the model';
   exception when check_violation then null;
@@ -261,7 +261,7 @@ begin
       message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
       administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
       policy_version_id)
-    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v1', 'health_pt_br.v1',
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
       'unknown', 'none', 1, 0, 1, false, false, false, null, 'prospect', 'model', v_policy);
     raise exception 'F3: an unknown screening was sent to the model';
   exception when check_violation then null;
@@ -271,7 +271,7 @@ begin
       message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
       administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
       policy_version_id)
-    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v1', 'health_pt_br.v1',
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
       'safety', 'none', 1, 1, 0, false, false, false, null, 'prospect', 'held_for_person', v_policy);
     raise exception 'F3: a safety class without the crisis safety class was stored';
   exception when check_violation then null;
@@ -282,7 +282,7 @@ begin
     message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
     administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
     policy_version_id)
-  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v1', 'health_pt_br.v1',
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_task, v_run, 'front_desk_screen.v2', 'health_pt_br.v1',
     'administrative', 'none', 0, 0, 0, true, false, false, 'Synthetic question about prices', 'prospect', 'model',
     v_policy);
   -- Past the trigger now: only the run's own shape (cost, price) can refuse

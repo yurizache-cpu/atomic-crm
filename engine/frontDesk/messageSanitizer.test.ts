@@ -143,6 +143,18 @@ describe("the screen's mechanics", () => {
     expect(screened.safeText).not.toMatch(/sensitive|clinic|saúde/i);
   });
 
+  it("splits clauses at line breaks before anything else normalises them (PR #28 review, P1)", () => {
+    const screened = sanitizeMessage("as coisas estão pesadas\nQual o valor?");
+    expect(screened.messageClass).toBe("mixed");
+    expect(screened.safeText).toBe(`${OMISSION_MARKER} Qual o valor?`);
+    expect(screened.safeText).not.toMatch(/pesadas/);
+    // A danger phrase broken across lines is still one phrase.
+    expect(sanitizeMessage("quero\nmorrer").messageClass).toBe("safety");
+    expect(sanitizeMessage("Quero falar com\numa pessoa").humanRequested).toBe(
+      true,
+    );
+  });
+
   it("treats an empty or punctuation-only message as nothing to answer", () => {
     expect(sanitizeMessage("").messageClass).toBe("unknown");
     expect(sanitizeMessage("   ").messageClass).toBe("unknown");

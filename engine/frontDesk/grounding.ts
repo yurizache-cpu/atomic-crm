@@ -24,9 +24,9 @@ const MONEY =
   /R\$\s?\d{1,3}(?:[.\s]?\d{3})*(?:,\d{1,2})?|\b\d+(?:,\d{2})?\s?reais\b/giu;
 const TIME = /\b([01]?\d|2[0-3])(?::([0-5]\d)|h([0-5]\d)?)(?!\d)/giu;
 const ISO_TIME = /T([01]\d|2[0-3]):([0-5]\d)/gu;
-const DATE = /\b([0-2]?\d|3[01])\/(0?[1-9]|1[0-2])(?:\/\d{2,4})?\b/gu;
+const DATE = /\b([0-2]?\d|3[01])\/(0?[1-9]|1[0-2])(?:\/(\d{4}|\d{2}))?\b/gu;
 // No trailing \b: in "2026-10-13T19:00" the date runs straight into the "T".
-const ISO_DATE = /\b\d{4}-(0[1-9]|1[0-2])-([0-2]\d|3[01])(?!\d)/gu;
+const ISO_DATE = /\b(\d{4})-(0[1-9]|1[0-2])-([0-2]\d|3[01])(?!\d)/gu;
 const URL = /\b(?:https?:\/\/|www\.)[^\s<>"')]+/giu;
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/gu;
 const DIGIT_RUN = /(?<!\d)\d[\d\s().-]{6,}\d(?!\d)/gu;
@@ -38,25 +38,34 @@ const moneyKey = (raw: string): string => {
 };
 const timeKey = (hours: string, minutes: string | undefined): string =>
   `${hours.padStart(2, "0")}:${(minutes ?? "00").padStart(2, "0")}`;
-const dateKey = (day: string, month: string): string =>
-  `${day.padStart(2, "0")}/${month.padStart(2, "0")}`;
+const dateKey = (day: string, month: string, year?: string): string => {
+  const dayMonth = `${day.padStart(2, "0")}/${month.padStart(2, "0")}`;
+  if (year === undefined) return dayMonth;
+  return `${dayMonth}/${year.length === 2 ? `20${year}` : year}`;
+};
 const trimUrl = (url: string): string =>
   url.replace(/[.,;:!?]+$/u, "").toLowerCase();
 const digitsOf = (raw: string): string => raw.replace(/\D/gu, "");
 
 function factKeys(text: string): Set<string> {
   const keys = new Set<string>();
+  // Only an amount the facts write as money is a price: a bare number in
+  // the context (a turn count, a slot's month) never is (PR #28 review).
   for (const m of text.matchAll(MONEY)) keys.add(`money:${moneyKey(m[0])}`);
-  // A bare number in the facts can be the amount a reply writes with "R$".
-  for (const m of text.matchAll(/\b\d+(?:,\d{2})?\b/gu))
-    keys.add(`money:${moneyKey(m[0])}`);
   for (const m of text.matchAll(TIME))
     keys.add(`time:${timeKey(m[1], m[2] ?? m[3])}`);
   for (const m of text.matchAll(ISO_TIME))
     keys.add(`time:${timeKey(m[1], m[2])}`);
-  for (const m of text.matchAll(DATE)) keys.add(`date:${dateKey(m[1], m[2])}`);
-  for (const m of text.matchAll(ISO_DATE))
-    keys.add(`date:${dateKey(m[2], m[1])}`);
+  // A known date answers a claim without a year, and, with its year, only a
+  // claim of that same year (PR #28 review).
+  for (const m of text.matchAll(DATE)) {
+    keys.add(`date:${dateKey(m[1], m[2])}`);
+    if (m[3] !== undefined) keys.add(`date:${dateKey(m[1], m[2], m[3])}`);
+  }
+  for (const m of text.matchAll(ISO_DATE)) {
+    keys.add(`date:${dateKey(m[3], m[2])}`);
+    keys.add(`date:${dateKey(m[3], m[2], m[1])}`);
+  }
   for (const m of text.matchAll(URL)) keys.add(`url:${trimUrl(m[0])}`);
   for (const m of text.matchAll(EMAIL)) keys.add(`email:${m[0].toLowerCase()}`);
   for (const m of text.matchAll(DIGIT_RUN))
@@ -69,7 +78,8 @@ function claimedKeys(text: string): string[] {
   for (const m of text.matchAll(MONEY)) keys.push(`money:${moneyKey(m[0])}`);
   for (const m of text.matchAll(TIME))
     keys.push(`time:${timeKey(m[1], m[2] ?? m[3])}`);
-  for (const m of text.matchAll(DATE)) keys.push(`date:${dateKey(m[1], m[2])}`);
+  for (const m of text.matchAll(DATE))
+    keys.push(`date:${dateKey(m[1], m[2], m[3])}`);
   for (const m of text.matchAll(URL)) keys.push(`url:${trimUrl(m[0])}`);
   for (const m of text.matchAll(EMAIL))
     keys.push(`email:${m[0].toLowerCase()}`);

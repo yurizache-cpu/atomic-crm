@@ -76,6 +76,29 @@ describe("the grounding check", () => {
     expect(checkGrounding("R$ 999 às 07:30", facts).unsupported).toBe(2);
   });
 
+  it("never reads a configuration number or a slot's month as a price (PR #28 review, P2)", () => {
+    const withPolicy = groundingFacts({
+      ...CONTEXT,
+      policy: { ...CONTEXT.policy, contextTurns: 6 },
+    });
+    expect(checkGrounding("A sessão custa R$ 6.", withPolicy).grounded).toBe(
+      false,
+    );
+    expect(checkGrounding("A sessão custa R$ 10.", withPolicy).grounded).toBe(
+      false,
+    );
+    expect(checkGrounding("A sessão custa R$ 200.", withPolicy).grounded).toBe(
+      true,
+    );
+  });
+
+  it("compares the year when a date names one (PR #28 review, P2)", () => {
+    expect(checkGrounding("Pode ser 13/10/2026?", facts).grounded).toBe(true);
+    expect(checkGrounding("Pode ser 13/10/26?", facts).grounded).toBe(true);
+    expect(checkGrounding("Pode ser 13/10/2035?", facts).grounded).toBe(false);
+    expect(checkGrounding("Pode ser 13/10?", facts).grounded).toBe(true);
+  });
+
   it("has nothing to check in prose", () => {
     expect(
       checkGrounding("Posso pedir para uma pessoa confirmar.", facts).grounded,
