@@ -1,6 +1,6 @@
 # ADR 0021 — Opening WhatsApp to real patients: the decisions the gate needs
 
-**Status:** Proposed (2026-10-02). **Nothing is opened by this record.** Owner decisions W1 to W8 are required. W1 to W5 need the owner's legal counsel. The repository records decisions and references, never legal analysis. **Date:** 2026-10-02.
+**Status:** Proposed (2026-10-02). **Nothing is opened by this record.** Owner decisions W1 to W8 are required. **W1 is decided (owner, 2026-10-04).** There is no external counsel: the owner decides W2 to W8 (owner, 2026-10-04). The repository records decisions and references, never legal analysis. **Date:** 2026-10-02.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -46,6 +46,13 @@ May a real patient's message reach a model at all?
 
 **Recommendation:** go live with (a). Revisit (b) only after the provider evidence is recorded and counsel signs off. (a) loses no safety and needs no new code.
 
+**Owner decision (2026-10-04): no health information is ever fed to AI through OpenRouter.** Real patient messages are triaged by people: option (a). Nothing changes in the code, which already holds it:
+- a message from any number that is not a registered test sender is `health` (ADR 0020 D3, D8);
+- `ops.model_data_authorizations` refuses gateway `openrouter` for `person_text` and `health` (ADR 0022 §D, SI-78);
+- without an authorization, the run is `cancelled / data_not_authorized` before any call, and the message waits for a person.
+
+A route to any other model provider for protected data would need a new owner decision and a new ADR.
+
 ### W2. The lawful basis for processing and replying
 
 For a person who writes first about care, counsel decides the LGPD basis:
@@ -54,7 +61,7 @@ For a person who writes first about care, counsel decides the LGPD basis:
 - for keeping the message and the number;
 - if W1(b), for model processing of what is presumed health data.
 
-The system represents the answer as an opaque `lawful_basis_ref` (a document reference and its version), required wherever person content is processed under an authorization (ADR 0020 D4). **Owner and counsel decide; nothing is recommended here.**
+The system represents the answer as an opaque `lawful_basis_ref` (a document reference and its version), required wherever person content is processed under an authorization (ADR 0020 D4). ~~Owner and counsel decide; nothing is recommended here.~~ **The owner decides (there is no external counsel, owner 2026-10-04); nothing is recommended here.** With W1 decided as (a), model processing of real messages is out of scope.
 
 ### W3. How consent and opt-in are represented
 
