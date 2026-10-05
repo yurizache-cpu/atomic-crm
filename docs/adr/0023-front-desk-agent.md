@@ -128,6 +128,17 @@ Nothing new keeps a body. A conversation's state holds no text.
   - the CRM settings screen;
   - showing the reply draft in the browser. SI-52 keeps it out today, so a browser acceptance does not show what will be sent. Supervised production needs the reviewer to see the draft, and that is an owner decision to amend SI-52.
 
+## Integration and staging record (2026-10-04 and 2026-10-05)
+
+- **Integrated.** PR #28, normal merge `26c14347` into `feature/clinical-phase-1` (parents `a2979573` and `428e6451`, tree equal to the reviewed head). `main` is unchanged at `a863e2a0`. Post-merge CI at the historical baseline: core jobs PASS, e2e exactly 9 failed and 1 skipped (the same ids), Prettier exactly the two baseline files.
+- **Staging.** Migration 71 applied with the pinned CLI (dry run first, no seed). The staging front-desk agent's four configuration kinds are published as version 1, all synthetic (a fictional clinic, a synthetic price).
+- **Staging pass (2026-10-04).** Signed inbound messages from the channel's registered test sender went through the local gateway and the real worker on OpenRouter:
+  - an administrative question reached the model whole, and the draft stated only the knowledge's price and format;
+  - a mixed message reached the model and Jev as the omission marker plus the scheduling request;
+  - the sensitive word was found in `ops.tasks` (the raw store) and in no other table.
+- **First supervised send (2026-10-05).** The owner accepted the administrative review in the browser at AAL2, wrote from the test device to the channel's number to open the provider's service window, and `messaging send` carried the reply once: status `sent`, the provider accepted, nothing resent, no privacy notice (none is recorded on staging). The number's status callbacks go to another app's webhook, which is not touched, so the row stays `sent`; the owner confirmed receipt on the device.
+- **What the owner found.** The reply was out of context. It answered the simulated question, not the owner's own message, which never reached this system, because the number's inbound webhooks go to the other app. And the browser showed neither the message nor the draft (§K), so the acceptance was blind. The next change answers both.
+
 ## Consequences
 
 - SI-80 is added. The pipeline is proven end to end against a real database with the gateway's own login (`engine/domain/frontDeskPipeline.dbtest.ts`). There, a mixed message's sensitive clause is absent from:
