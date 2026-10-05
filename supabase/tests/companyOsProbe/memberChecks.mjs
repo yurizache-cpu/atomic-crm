@@ -360,14 +360,38 @@ function forbiddenValues(t) {
   ]);
 }
 
+/**
+ * The one place a reply draft may leave (ADR 0023 §L, amending SI-52 and
+ * SI-56): the review detail's conversation, so a reviewer sees what the send
+ * would carry. The sweep reads every other byte of that answer.
+ */
+const withoutReviewDraft = ({ fn, text }) => {
+  if (fn !== "get_review") return text;
+  const value = JSON.parse(text);
+  if (value?.conversation?.replyDraft === undefined) return text;
+  return JSON.stringify({
+    ...value,
+    conversation: { ...value.conversation, replyDraft: null },
+  });
+};
+
 /** No answer to the member carried what it must never carry. */
 export function sweepMemberOutputs(t) {
   const forbidden = forbiddenValues(t);
-  for (const { fn, text } of t.outputs) {
+  for (const output of t.outputs) {
+    const text = withoutReviewDraft(output);
     for (const [label, value] of forbidden) {
-      check(!text.includes(value), `member: ${fn} carries ${label}`);
+      check(!text.includes(value), `member: ${output.fn} carries ${label}`);
     }
   }
+  check(
+    t.outputs.some(
+      ({ fn, text }) =>
+        fn === "get_review" &&
+        JSON.parse(text)?.conversation?.replyDraft === SENTINELS.draft,
+    ),
+    "member: get_review did not show its own reply draft, so the one exception is untested",
+  );
   check(
     t.outputs.some(({ text }) => text.includes(t.ids.agent_a)) &&
       t.outputs.some(({ text }) => text.includes(t.ids.run_a)) &&

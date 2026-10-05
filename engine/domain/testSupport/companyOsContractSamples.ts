@@ -473,6 +473,19 @@ export const CONTRACT_SAMPLES: {
           answer: null,
         },
       },
+      conversation: {
+        status: "available",
+        screening: {
+          messageClass: "mixed",
+          disposition: "model",
+          fixedMessageKey: null,
+          screenedMessage: "[trecho omitido] Is there a slot on Tuesday?",
+        },
+        replyDraft:
+          "We have Tuesday at 19:00. Shall I ask a person to confirm?",
+        contentRedacted: false,
+        newerMessage: false,
+      },
     },
     {
       ...ENVELOPE,
@@ -486,6 +499,7 @@ export const CONTRACT_SAMPLES: {
       allowedDecisions: ["rejected", "needs_edit"],
       shadowDecision: { status: "unavailable" },
       structuredDecisions: { status: "unavailable" },
+      conversation: { status: "unavailable" },
     },
   ],
   get_review_advice: [

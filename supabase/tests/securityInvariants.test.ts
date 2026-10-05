@@ -2638,7 +2638,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-52",
     statement:
-      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason. Phase 2C adds one read: on an explicit open of a single review of its own tenant, a Company OS member may read that review's capability-pinned structured advice (for lead_triage, its classification enums, summary and recommended next action), only for a synthetic or test origin, into browser memory under no-store and nowhere else; the projection never includes the stored inbound body or any task description, the sender's stored number, the reply draft, a secret, an access token or a raw provider error, and because its summary and recommended next action are written by the model from the inbound message and may echo its words, the read is limited to synthetic or test origins.",
+      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason. Phase 2C adds one read: on an explicit open of a single review of its own tenant, a Company OS member may read that review's capability-pinned structured advice (for lead_triage, its classification enums, summary and recommended next action), only for a synthetic or test origin, into browser memory under no-store and nowhere else; the projection never includes the stored inbound body or any task description, the sender's stored number, the reply draft, a secret, an access token or a raw provider error, and because its summary and recommended next action are written by the model from the inbound message and may echo its words, the read is limited to synthetic or test origins. ADR 0023 §L (owner decision, 2026-10-05) adds one more read, on the same open of a single review of its own tenant and only for a browser-decidable review of synthetic or test data: the front desk's screening of the message (its class, its disposition, the fixed text's key, and the screened text a model and Jev read, never the task's description or the raw message) and the reply draft the send would carry, so a reviewer sees what they accept; a draft whose content was redacted is not shown.",
     provenBy: ["driver-backed test", "unit test", "live database"],
     enforcedBy: [
       {
@@ -2694,6 +2694,21 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/company_os_api.sql",
         marker: /N6: advice for a line now in production was not withheld/,
+      },
+      // ADR 0023 §L: the screened text and the draft, for synthetic or test
+      // data only, never the raw message.
+      {
+        file: "supabase/migrations/20261012120000_front_desk_review_context.sql",
+        marker:
+          /raise exception 'the review conversation projection reads a description';/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F7: the raw message reached the review/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F7: a review of health data showed its conversation/,
       },
     ],
     caveat:
@@ -2922,7 +2937,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-56",
     statement:
-      "No browser-facing output carries another tenant's data, a stored message or task body, a stored phone number, a reply draft, a raw job error, a provider secret or internal id, a global sequence value, a platform-wide identifier, an Auth or CRM email, an email hash, or a raw free-form actor or reviewer label (a stored reviewer, requested_by, tripped_by, cleared_by, marked_by, configured_by, set_by, ended_by or recorded_by value, or a principal's display name); an event's source is returned only when it is in a pinned provenance allowlist, and as the fixed value other otherwise. Free-text content a projection returns (a decision note, a stop reason and clear reason, the advice summary and recommended next action, and the tenant's own owner-typed configuration labels: tenant, company, department and agent names and a channel label) is content, not identity, and is not claimed free of email-like text. Platform state is limited to the pinned platform-derived set. The lead_triage classification enums, summary and recommended next action appear only through the capability-pinned advice projection, on explicit open, for synthetic or test origins; the summary is model-written and may echo the message it describes (SI-52).",
+      "No browser-facing output carries another tenant's data, a stored message or task body, a stored phone number, a reply draft, a raw job error, a provider secret or internal id, a global sequence value, a platform-wide identifier, an Auth or CRM email, an email hash, or a raw free-form actor or reviewer label (a stored reviewer, requested_by, tripped_by, cleared_by, marked_by, configured_by, set_by, ended_by or recorded_by value, or a principal's display name); an event's source is returned only when it is in a pinned provenance allowlist, and as the fixed value other otherwise. Free-text content a projection returns (a decision note, a stop reason and clear reason, the advice summary and recommended next action, and the tenant's own owner-typed configuration labels: tenant, company, department and agent names and a channel label) is content, not identity, and is not claimed free of email-like text. Platform state is limited to the pinned platform-derived set. The lead_triage classification enums, summary and recommended next action appear only through the capability-pinned advice projection, on explicit open, for synthetic or test origins; the summary is model-written and may echo the message it describes (SI-52). The reply draft the send would carry and the front desk's screened text appear only in a review detail's conversation, for a browser-decidable review of synthetic or test data (SI-52, ADR 0023 §L).",
     provenBy: ["migration assertion", "live database"],
     enforcedBy: [
       {
@@ -2974,6 +2989,22 @@ const INVARIANTS: Invariant[] = [
         file: "engine/domain/companyOsRecordedResponses.dbtest.ts",
         marker:
           /holds synthetic values only: no identity, contact, message or call value the fixture planted/,
+      },
+      // ADR 0023 §L: the draft leaves only in a review's conversation.
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /N2: no review showed its reply draft, so the exception is untested/,
+      },
+      {
+        file: "supabase/tests/companyOsProbe/memberChecks.mjs",
+        marker:
+          /member: get_review did not show its own reply draft, so the one exception is untested/,
+      },
+      {
+        file: "engine/domain/companyOsContractMinimisation.test.ts",
+        marker:
+          /declares the reply draft and the screened message in the review detail alone/,
       },
     ],
     caveat:
@@ -4565,6 +4596,44 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The screen is deterministic and lexical: a sensitive phrase fused into an administrative clause without a recognised sensitive term passes (a documented case in the corpus test), and it is not anonymisation (names stay). The model learns that something was omitted, and the party kind tells it whether the contact is a client. Q8 still decides what class of data may reach which provider: today only test and synthetic data do, and a real sender's message is refused before any model. A reply's prose is checked by the review, not by the grounding check, which recognises prices, times, dates, links, addresses and long numbers only.",
+  },
+  {
+    id: "SI-81",
+    statement:
+      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again, the send request refuses the review (newer_message) and nothing is recorded, and the last gate before the provider call, which reads the conversation again, blocks the send on the record, so a message that arrives between the request and the call still stops it; the review page shows the same predicate.",
+    provenBy: ["live database", "migration assertion", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261012120000_front_desk_review_context.sql",
+        marker:
+          /message = 'ops\.request_outbound_send: refused: newer_message'/,
+      },
+      {
+        file: "supabase/migrations/20261012120000_front_desk_review_context.sql",
+        marker:
+          /v_check := jsonb_build_object\('eligible', false, 'reason', 'newer_message'\);/,
+      },
+      {
+        file: "supabase/migrations/20261012120000_front_desk_review_context.sql",
+        marker: /raise exception 'a send path does not refuse a stale reply';/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /refuses the request once the contact wrote again, and calls nothing/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /blocks at the last gate a message that arrived after the request, on the record/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F7: a newer message did not mark the review superseded/,
+      },
+    ],
+    caveat:
+      "Order is the provider's message timestamp, in seconds, with the admission instant breaking a tie; two messages admitted in one transaction cannot be ordered, which the gateway never does. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
   },
 ];
 

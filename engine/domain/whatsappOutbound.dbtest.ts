@@ -608,6 +608,61 @@ describe("the outbound record", () => {
   });
 });
 
+describe("a reply the contact's newer message made stale is never sent (ADR 0023 §L)", () => {
+  const writeAgain = (scenario: Scenario, messageId: string) =>
+    deliver(
+      gateway,
+      metaPayload(scenario.clinic.providerTarget, {
+        messages: [
+          { id: messageId, from: LEAD, body: "Synthetic second question" },
+        ],
+      }),
+    );
+
+  it("refuses the request once the contact wrote again, and calls nothing", async () => {
+    const scenario = await acceptedReview();
+    await writeAgain(scenario, "wamid.IN1002");
+    const transport = fakeTransport(() => accepted("wamid.never"));
+    await expect(send(scenario, transport)).rejects.toMatchObject({
+      code: "refused",
+      message: expect.stringContaining("newer_message"),
+    });
+    expect(transport.calls).toHaveLength(0);
+    expect(await outboundCount(TENANT_A)).toBe(0);
+  });
+
+  it("blocks at the last gate a message that arrived after the request, on the record", async () => {
+    const scenario = await acceptedReview();
+    await owner.withTransaction((tx) =>
+      requestOutboundSend(tx, {
+        tenantId: TENANT_A,
+        reviewId: scenario.reviewId,
+        requestedBy: OPERATOR,
+        source: "dbtest-whatsapp",
+      }),
+    );
+    await writeAgain(scenario, "wamid.IN1003");
+    const transport = fakeTransport(() => accepted("wamid.never"));
+
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "blocked",
+      blockedReason: "newer_message",
+      providerCalled: false,
+    });
+    expect(transport.calls).toHaveLength(0);
+  });
+
+  it("still sends a reply whose message is the conversation's latest", async () => {
+    const scenario = await acceptedReview();
+    const transport = fakeTransport(() => accepted("wamid.OUT3001"));
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "sent",
+      providerCalled: true,
+    });
+    expect(transport.calls).toHaveLength(1);
+  });
+});
+
 describe("the privacy notice (ADR 0021)", () => {
   const NOTICE =
     "Privacy notice: synthetic clinic, no AI reads your messages. Your rights: https://clinic.example.test/privacy";

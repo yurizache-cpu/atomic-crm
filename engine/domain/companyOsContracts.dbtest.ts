@@ -64,7 +64,9 @@ import {
   actAs,
   buildFixture,
   createAuthUser,
+  DRAFT,
   must,
+  withoutReplyDrafts,
   type AuthUser,
   type Fixture,
 } from "./testSupport/companyOsContractFixture.ts";
@@ -697,8 +699,27 @@ describe("every company_os_api response parses with its contract", () => {
     expect(session.principalId).not.toBe(session.membershipId);
   });
 
+  it("shows a review's reply draft only in its conversation (ADR 0023 §L)", () => {
+    const drafts = session.calls.flatMap((c) =>
+      c.operation === "get_review"
+        ? [(c.value as contracts.ReviewDetail).conversation]
+        : [],
+    );
+    expect(
+      drafts.some(
+        (conversation) =>
+          conversation.status === "available" &&
+          conversation.replyDraft === DRAFT,
+      ),
+    ).toBe(true);
+  });
+
   it("carries no content, message or call identity, label or person identity the brief keeps out", () => {
-    const text = JSON.stringify(session.calls.map((c) => c.value));
+    // The review's own draft is shown in its conversation (the test above);
+    // every other byte is swept.
+    const text = JSON.stringify(
+      withoutReplyDrafts(session.calls.map((c) => c.value)),
+    );
     const { member } = session;
     const kept: [string, string][] = [
       ["the stored body", "COS-SENTINEL-BODY"],

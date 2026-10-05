@@ -798,6 +798,13 @@
         "agentRunId": "00000000-0000-4000-8000-002100000001",
         "capability": "lead_triage",
         "reviewedAt": null,
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": "A synthetic reply about opening hours.",
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": null,
         "doNotContact": true,
         "outboundStatus": null,
@@ -879,6 +886,13 @@
         "agentRunId": "00000000-0000-4000-8000-00210000000c",
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": "A synthetic reply about opening hours.",
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": "Call back tomorrow",
         "doNotContact": false,
         "outboundStatus": "failed",
@@ -931,6 +945,13 @@
         "agentRunId": "00000000-0000-4000-8000-00210000000d",
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": "A synthetic reply about opening hours.",
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": "blocked",
@@ -958,6 +979,13 @@
         "agentRunId": "00000000-0000-4000-8000-00210000000e",
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": "A synthetic reply about opening hours.",
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": "indeterminate",
@@ -985,6 +1013,7 @@
         "agentRunId": null,
         "capability": "intake_summary",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
+        "conversation": { "status": "unavailable" },
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
@@ -1007,6 +1036,13 @@
         "agentRunId": "00000000-0000-4000-8000-002100000005",
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": null,
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": "",
         "doNotContact": false,
         "outboundStatus": null,
@@ -1034,6 +1070,7 @@
         "agentRunId": null,
         "capability": "lead_triage",
         "reviewedAt": null,
+        "conversation": { "status": "unavailable" },
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,
@@ -1056,6 +1093,13 @@
         "agentRunId": null,
         "capability": "lead_triage",
         "reviewedAt": null,
+        "conversation": {
+          "status": "available",
+          "screening": null,
+          "replyDraft": "A synthetic reply about opening hours.",
+          "newerMessage": false,
+          "contentRedacted": false
+        },
         "decisionNote": null,
         "doNotContact": false,
         "outboundStatus": null,

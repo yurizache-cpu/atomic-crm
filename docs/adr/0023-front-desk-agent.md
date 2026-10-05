@@ -126,7 +126,25 @@ Nothing new keeps a body. A conversation's state holds no text.
   - Google Calendar;
   - follow-up text written by the model, and WhatsApp templates outside the 24-hour window;
   - the CRM settings screen;
-  - showing the reply draft in the browser. SI-52 keeps it out today, so a browser acceptance does not show what will be sent. Supervised production needs the reviewer to see the draft, and that is an owner decision to amend SI-52.
+  - ~~showing the reply draft in the browser. SI-52 keeps it out today, so a browser acceptance does not show what will be sent. Supervised production needs the reviewer to see the draft, and that is an owner decision to amend SI-52.~~ *(Decided by the owner on 2026-10-05: §L.)*
+
+### L. The review shows what it accepts; a stale reply is never sent (owner decision, 2026-10-05)
+
+The first supervised send on staging (record below) showed two gaps. The owner chose to close both before the next test (migration `20261012120000_front_desk_review_context.sql`).
+
+- **The review shows the message and the reply.** `get_review` gains `conversation`, for a browser-decidable review of synthetic or test data only (any other review reads `unavailable`):
+  - the front desk's screening of the message: its class, its disposition, the fixed text's key, and the **screened text**, which is exactly what a model and Jev read. Never the task's description: the raw message stays in the raw store;
+  - the reply draft the send act would carry, until the task's content is redacted;
+  - whether the contact wrote again since.
+
+  The review page shows it above the decision, read only ("Mensagem e resposta"). Accepting still sends nothing. This amends SI-52 and SI-56: a reviewer must see what they accept.
+- **A stale reply is never sent.** A reply answers the message it was drafted for. `ops.cos_review_superseded` is true when the contact wrote again in the same conversation (by the provider's timestamp, the admission instant breaking a tie). Then:
+  - the send request refuses the review (`newer_message`) and records nothing;
+  - the last gate before the provider call reads the conversation again and blocks the send on the record, so a message that arrives between the request and the call still stops it;
+  - the review page warns with the same predicate.
+
+  SI-81 is added.
+- **What this does not change.** Q8, the screen, the send preconditions (SI-49) and at most one call (SI-50) are unchanged. No browser act is added: `get_review` already reached the read through its gate, so this is not an OD-8a migration.
 
 ## Integration and staging record (2026-10-04 and 2026-10-05)
 
@@ -137,7 +155,7 @@ Nothing new keeps a body. A conversation's state holds no text.
   - a mixed message reached the model and Jev as the omission marker plus the scheduling request;
   - the sensitive word was found in `ops.tasks` (the raw store) and in no other table.
 - **First supervised send (2026-10-05).** The owner accepted the administrative review in the browser at AAL2, wrote from the test device to the channel's number to open the provider's service window, and `messaging send` carried the reply once: status `sent`, the provider accepted, nothing resent, no privacy notice (none is recorded on staging). The number's status callbacks go to another app's webhook, which is not touched, so the row stays `sent`; the owner confirmed receipt on the device.
-- **What the owner found.** The reply was out of context. It answered the simulated question, not the owner's own message, which never reached this system, because the number's inbound webhooks go to the other app. And the browser showed neither the message nor the draft (§K), so the acceptance was blind. The next change answers both.
+- **What the owner found.** The reply was out of context. It answered the simulated question, not the owner's own message, which never reached this system, because the number's inbound webhooks go to the other app. And the browser showed neither the message nor the draft (§K), so the acceptance was blind. §L answers both.
 
 ## Consequences
 
