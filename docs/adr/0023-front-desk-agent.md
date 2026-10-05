@@ -29,7 +29,7 @@ The engine stays domain-independent (CLAUDE.md rule 2; the vocabulary guard refu
 
 Pipeline: raw WhatsApp message → local screen → screened text → (Jev, shadow) → the agent's capability → Q8's authorized pool → OpenRouter → the model → a reply candidate → a person's review → the separate send act.
 
-- **Where.** In the worker, for every `lead_triage` run of an agent with a published operating policy, before a route is chosen (`engine/handlers/agentRunExecute.ts`). The screen is `engine/frontDesk/messageSanitizer.ts`, version `front_desk_screen.v2` (v1 collapsed line breaks before splitting, so a clause on its own line could ride along with an administrative one; fixed before the merge, PR #28 review).
+- **Where.** In the worker, for every `lead_triage` run of an agent with a published operating policy, before a route is chosen (`engine/handlers/agentRunExecute.ts`). The screen is `engine/frontDesk/messageSanitizer.ts`, version `front_desk_screen.v3` (v1 collapsed line breaks before splitting, so a clause on its own line could ride along with an administrative one; fixed before the merge, PR #28 review; v3 keeps one punctuation after a run of omissions, §C).
 - **How.** Structured identifiers (e-mail, URL, CPF- and phone-shaped numbers) are replaced first. The message is split into clauses at punctuation and Portuguese connectors (never at the verb "é"). Each clause is classified with a reviewed **pack** (`health_pt_br.v1`): sensitive (health, intimate, distress, treatment history, being a patient), administrative, or benign; an administrative phrase that names a sensitive word without being about the sender ("a diferença entre psicólogo e psiquiatra") is never split, and the rest of its clause must still be clean. **Only recognised clauses are kept.** A sensitive clause AND an unrecognised one are replaced by one marker, `[trecho omitido]`, the same for every reason, so the omission itself says nothing about health.
 - **Classes.**
   - `administrative`: nothing omitted.
@@ -45,6 +45,14 @@ Pipeline: raw WhatsApp message → local screen → screened text → (Jev, shad
 ### C. A pack is reviewed code, selected by the tenant
 
 The pack decides what never reaches a model. It lives in reviewed code with a synthetic corpus test and mutation checks; a tenant selects it by id in its operating policy and never edits it. A changed list is a new pack version, because every screening records the pack id it used.
+
+**`health_pt_br.v2` (2026-10-05).** The owner's site sends leads to WhatsApp with a message its intake form writes: a greeting, one sentence naming the demand, its duration and a 0-10 rating ("O que mais tem me pegado é <demand> há <time> (impacto 8/10)."), then the request for the first session. Measured on that format, v1 leaked:
+- the rating, which its date pattern read as administrative;
+- the form's demand words: conflicts at work or in a relationship, overload, procrastination, paralysis.
+
+v2 keeps every v1 pattern and adds the form's sentence, the rating, the form's demand vocabulary and a few identity and disability terms. It also keeps a pronoun that a connector split off ("dê pra você?"). On 50 messages built exactly as the form builds them, nothing of the demand, its duration or its rating passes, and the request for the first session is kept. Five deliberate pattern removals are each caught.
+
+The screen itself moved to `front_desk_screen.v3`: in a run of omissions, the later clause's punctuation replaces the earlier one's (never ", ."). The default pack is v2; v1 stays selectable for history.
 
 ### D. The four kinds of configuration are versioned system data
 

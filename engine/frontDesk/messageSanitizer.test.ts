@@ -8,7 +8,11 @@ import {
   sanitizeMessage,
   SANITIZER_VERSION,
 } from "./messageSanitizer.ts";
-import { HEALTH_PT_BR_V1, SANITIZER_PACKS } from "./packs/healthPtBr.ts";
+import {
+  HEALTH_PT_BR_V1,
+  HEALTH_PT_BR_V2,
+  SANITIZER_PACKS,
+} from "./packs/healthPtBr.ts";
 
 describe("the six owner cases", () => {
   it("case 1: an administrative question passes whole", () => {
@@ -172,7 +176,10 @@ describe("the screen's mechanics", () => {
       "Oi, estou ansiosa e queria saber o valor",
     );
     expect(screened.sanitizerVersion).toBe(SANITIZER_VERSION);
-    expect(screened.packId).toBe("health_pt_br.v1");
+    expect(screened.packId).toBe("health_pt_br.v2");
+    expect(sanitizeMessage("Qual o valor?", HEALTH_PT_BR_V1).packId).toBe(
+      "health_pt_br.v1",
+    );
     expect(screened.segmentsRedacted).toBe(
       screened.segmentsSensitive + screened.segmentsUnrecognised,
     );
@@ -190,7 +197,10 @@ describe("the screen's mechanics", () => {
   });
 
   it("lists exactly its reviewed packs", () => {
-    expect(Object.keys(SANITIZER_PACKS)).toEqual([HEALTH_PT_BR_V1.id]);
+    expect(Object.keys(SANITIZER_PACKS)).toEqual([
+      HEALTH_PT_BR_V1.id,
+      HEALTH_PT_BR_V2.id,
+    ]);
   });
 });
 
@@ -317,6 +327,21 @@ const CORPUS: readonly Entry[] = [
 ];
 
 describe("the synthetic corpus", () => {
+  it.each([HEALTH_PT_BR_V1, HEALTH_PT_BR_V2])(
+    "leaks no omitted clause under $id either (hard requirement)",
+    (pack) => {
+      const leaks = CORPUS.flatMap((entry) => {
+        const sent = (
+          sanitizeMessage(entry.text, pack).safeText ?? ""
+        ).toLowerCase();
+        return entry.omit
+          .filter((clause) => sent.includes(clause.toLowerCase()))
+          .map((clause) => `${entry.text} -> ${clause}`);
+      });
+      expect(leaks).toEqual([]);
+    },
+  );
+
   it("leaks no omitted clause (hard requirement)", () => {
     const leaks = CORPUS.flatMap((entry) => {
       const screened = sanitizeMessage(entry.text);
@@ -354,5 +379,179 @@ describe("the synthetic corpus", () => {
       "Preciso marcar com urgência, minha cabeça não está legal hoje",
     );
     expect(screened.safeText).toContain("minha cabeça não está legal hoje");
+  });
+});
+
+// The owner's intake form (2026-10-05): after the site's triage, a lead sends
+// the first WhatsApp message the form wrote, built here exactly as the form
+// builds it (synthetic names). Its middle sentence is the demand, its
+// duration and a 0-10 rating: health data that must never reach a model.
+const INTAKE_DEMANDS = [
+  "ansiedade e excesso de pensamento",
+  "burnout, exaustão e sobrecarga",
+  "paralisia, procrastinação e bloqueio",
+  "conflitos no trabalho ou relacionamento",
+] as const;
+const INTAKE_TIMES = [
+  "há menos de 6 meses",
+  "há algo entre 6 meses e 2 anos",
+  "há mais de 2 anos",
+] as const;
+
+const intakeMessage = (
+  name: string | null,
+  demandLine: string,
+  plan: string | null,
+): string =>
+  [
+    name === null
+      ? "Oi, Yuri! Fiz a triagem no seu site."
+      : `Oi, Yuri! Sou ${name}, fiz a triagem no seu site.`,
+    demandLine,
+    plan === null
+      ? "Queria começar pela sessão inicial de avaliação (R$ 97). Me avisa um horário que dê pra você?"
+      : `Queria começar pela sessão inicial de avaliação (R$ 97), pensando em seguir ${plan} depois. Me avisa um horário que dê pra você?`,
+  ].join("\n");
+
+const INTAKE: readonly Entry[] = [
+  ...INTAKE_DEMANDS.flatMap((demand) =>
+    INTAKE_TIMES.flatMap((time) =>
+      [2, 8].flatMap((impact) =>
+        [null, "semanal"].map((plan) => ({
+          text: intakeMessage(
+            plan === null ? "Ana" : null,
+            `O que mais tem me pegado é ${demand} ${time} (impacto ${impact}/10).`,
+            plan,
+          ),
+          omit: [
+            ...demand.split(/, | e | ou /),
+            "impacto",
+            `${impact}/10`,
+            time,
+            ...(plan === null ? ["Sou Ana"] : []),
+          ],
+          keep: ["sessão inicial de avaliação", "horário que dê pra você"],
+        })),
+      ),
+    ),
+  ),
+  {
+    text: intakeMessage(
+      "Bruno",
+      "Tô lidando com insônia e uso de remédio há mais de 2 anos (impacto 8/10).",
+      null,
+    ),
+    omit: ["insônia", "remédio", "impacto", "8/10"],
+    keep: ["sessão inicial de avaliação"],
+  },
+  {
+    text: intakeMessage(
+      null,
+      "Tem algo que prefiro te contar pessoalmente (impacto 9/10).",
+      "quinzenal",
+    ),
+    omit: ["prefiro te contar", "impacto", "9/10"],
+    keep: ["sessão inicial de avaliação", "quinzenal"],
+  },
+];
+
+describe("the owner's intake form (pack v2)", () => {
+  it("never lets the demand, its duration or its rating through", () => {
+    const leaks = INTAKE.flatMap((entry) => {
+      const sent = (
+        sanitizeMessage(entry.text, HEALTH_PT_BR_V2).safeText ?? ""
+      ).toLowerCase();
+      return entry.omit
+        .filter((clause) => sent.includes(clause.toLowerCase()))
+        .map((clause) => `${entry.text} -> ${clause}`);
+    });
+    expect(leaks).toEqual([]);
+  });
+
+  it("keeps the request for the first session and a time, as one mixed message", () => {
+    for (const entry of INTAKE) {
+      const screened = sanitizeMessage(entry.text, HEALTH_PT_BR_V2);
+      expect(screened.messageClass, entry.text).toBe("mixed");
+      for (const clause of entry.keep) {
+        expect(screened.safeText ?? "", entry.text).toContain(clause);
+      }
+    }
+  });
+
+  it("reads like a message: one marker per run of omissions, no stray punctuation", () => {
+    const screened = sanitizeMessage(
+      intakeMessage(
+        "Ana",
+        "O que mais tem me pegado é burnout, exaustão e sobrecarga há menos de 6 meses (impacto 5/10).",
+        "semanal",
+      ),
+      HEALTH_PT_BR_V2,
+    );
+    expect(screened.safeText).toBe(
+      `Oi, ${OMISSION_MARKER}, fiz a triagem no seu site. ${OMISSION_MARKER}. Queria começar pela sessão inicial de avaliação (R$ 97), pensando em seguir semanal depois. Me avisa um horário que dê pra você?`,
+    );
+  });
+
+  it("records why v2 exists: v1 let the form's demand sentence through", () => {
+    const text = intakeMessage(
+      null,
+      "O que mais tem me pegado é conflitos no trabalho ou relacionamento há mais de 2 anos (impacto 7/10).",
+      null,
+    );
+    expect(sanitizeMessage(text, HEALTH_PT_BR_V1).safeText).toContain(
+      "conflitos no trabalho",
+    );
+    expect(sanitizeMessage(text, HEALTH_PT_BR_V2).safeText).not.toContain(
+      "conflitos",
+    );
+  });
+});
+
+// Free text with the form's vocabulary, where an administrative word shares
+// the clause: only v2's own patterns stand between it and a model.
+const V2_FREE_TEXT: readonly Entry[] = [
+  {
+    text: "Meu relacionamento está difícil esta semana, posso marcar?",
+    omit: ["relacionamento"],
+    keep: ["posso marcar"],
+  },
+  {
+    text: "Muitos conflitos em casa nesta semana, tem horário?",
+    omit: ["conflitos"],
+    keep: ["tem horário"],
+  },
+  {
+    text: "Sobrecarga demais esta semana, tem horário sábado?",
+    omit: ["Sobrecarga"],
+    keep: ["horário sábado"],
+  },
+  {
+    text: "O que mais tem me pegado é a rotina à noite, tem vaga de manhã?",
+    omit: ["me pegado", "rotina"],
+    keep: ["vaga de manhã"],
+  },
+  {
+    text: "Procrastino tudo há meses, quanto custa a sessão?",
+    omit: ["Procrastino"],
+    keep: ["custa a sessão"],
+  },
+];
+
+describe("the form's vocabulary in free text (pack v2)", () => {
+  it("omits it even beside an administrative word", () => {
+    const leaks = V2_FREE_TEXT.flatMap((entry) => {
+      const sent = (
+        sanitizeMessage(entry.text, HEALTH_PT_BR_V2).safeText ?? ""
+      ).toLowerCase();
+      return [
+        ...entry.omit
+          .filter((clause) => sent.includes(clause.toLowerCase()))
+          .map((clause) => `${entry.text} -> leaked ${clause}`),
+        ...entry.keep
+          .filter((clause) => !sent.includes(clause.toLowerCase()))
+          .map((clause) => `${entry.text} -> lost ${clause}`),
+      ];
+    });
+    expect(leaks).toEqual([]);
   });
 });

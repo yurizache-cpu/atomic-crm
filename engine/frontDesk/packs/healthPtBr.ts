@@ -337,6 +337,60 @@ export const HEALTH_PT_BR_V1: SanitizerPack = Object.freeze({
   optOut: Object.freeze(OPT_OUT),
 });
 
+// v2 (2026-10-05): the message a lead's intake form writes. The owner's site
+// sends leads to WhatsApp with a structured first message: a greeting, ONE
+// sentence naming what brings them and how long and how strongly ("O que mais
+// tem me pegado é <demand> há <time> (impacto 8/10)."), then the request for
+// the first session. v1 leaked parts of it: a 0-10 rating reads as a date
+// (administrative), and the form's demand words were not in the list. Every
+// v1 pattern stays.
+const SENSITIVE_V2_ADDED: readonly RegExp[] = [
+  // The form's sentence about the demand, and its severity rating.
+  /\bimpacto\b/,
+  /\bo que (mais )?(tem )?me (pegado|pega|pegou|incomoda|incomodado|incomodando)\b/,
+  /\b(to|tou|estou|ando) lidando com\b/,
+  /\b(prefiro|quero|queria) (te |lhe )?contar pessoalmente\b/,
+  // The form's demand vocabulary, and its neighbours.
+  /\bsobrecarg/,
+  /\bexcesso de (pensamento|trabalho|cobranca)/,
+  /\bpens(o|ar|ando) demais\b/,
+  /\bprocrastin/,
+  /\bparalis/,
+  /\bbloquei/,
+  /\btravad[oa]s?\b/,
+  /\btrav(o|ar|ando|ei|ou)\b/,
+  /\bconflitos?\b/,
+  /\brelacionamentos?\b/,
+  /\bauto ?-?cobranc/,
+  /\bme cobr(o|ando|ar)\b/,
+  /\bestagn/,
+  /\bdesmoron/,
+  /\bfalta de (foco|motivacao|energia|vontade|animo)\b/,
+  /\bdificuldades? (de|em|para|pra|com)\b/,
+  // Identity and disability terms v1 lacked (LGPD art. 5 II).
+  /\btrans\b/,
+  /\bsoropositiv/,
+  /\bdeficien/,
+  /\bcadeirante\b/,
+];
+
+// A pronoun a connector split off ("dê pra você?"): kept, not omitted.
+const BENIGN_V2_ADDED: readonly RegExp[] = [/^(voce|vc|voces|vcs)$/];
+
+export const HEALTH_PT_BR_V2: SanitizerPack = Object.freeze({
+  id: "health_pt_br.v2",
+  crisis: Object.freeze(CRISIS),
+  sensitive: Object.freeze([...SENSITIVE, ...SENSITIVE_V2_ADDED]),
+  administrative: Object.freeze(ADMINISTRATIVE),
+  administrativePhrases: Object.freeze(ADMINISTRATIVE_PHRASES),
+  benign: Object.freeze([...BENIGN, ...BENIGN_V2_ADDED]),
+  humanRequest: Object.freeze(HUMAN_REQUEST),
+  optOut: Object.freeze(OPT_OUT),
+});
+
 /** The reviewed packs a tenant may select. */
 export const SANITIZER_PACKS: Readonly<Record<string, SanitizerPack>> =
-  Object.freeze({ [HEALTH_PT_BR_V1.id]: HEALTH_PT_BR_V1 });
+  Object.freeze({
+    [HEALTH_PT_BR_V1.id]: HEALTH_PT_BR_V1,
+    [HEALTH_PT_BR_V2.id]: HEALTH_PT_BR_V2,
+  });
