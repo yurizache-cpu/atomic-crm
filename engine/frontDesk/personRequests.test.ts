@@ -58,12 +58,19 @@ function errors(pack: SanitizerPack) {
   return { misses, falseHandoffs };
 }
 
+// The tests that screen the whole corpus, on a slower CI runner.
+const CORPUS_WIDE = 60_000;
+
 describe("pack v4: how leads ask for a person", () => {
-  it("makes exactly the mistakes it is known to make on the judged corpus", () => {
-    const found = errors(HEALTH_PT_BR_V4);
-    expect(found.falseHandoffs).toEqual(corpus.knownFalseHandoffs);
-    expect(found.misses).toEqual(corpus.knownMisses);
-  });
+  it(
+    "makes exactly the mistakes it is known to make on the judged corpus",
+    () => {
+      const found = errors(HEALTH_PT_BR_V4);
+      expect(found.falseHandoffs).toEqual(corpus.knownFalseHandoffs);
+      expect(found.misses).toEqual(corpus.knownMisses);
+    },
+    CORPUS_WIDE,
+  );
 
   it("is precise: almost nothing that asks for no one is handed over", () => {
     const others = corpus.entries.filter((entry) => !entry.person).length;
@@ -127,20 +134,26 @@ describe("pack v4: how leads ask for a person", () => {
     expect(asksForPerson("Quero falar com\numa pessoa")).toBe(true);
   });
 
-  it("changes nothing else: every text reaches a model exactly as under v3", () => {
-    const rest = (text: string, pack: SanitizerPack) => {
-      const {
-        packId: _packId,
-        humanRequested: _humanRequested,
-        requiresHuman: _requiresHuman,
-        ...kept
-      } = sanitizeMessage(text, pack, NAMES);
-      return kept;
-    };
-    for (const { text } of corpus.entries) {
-      expect(rest(text, HEALTH_PT_BR_V4)).toEqual(rest(text, HEALTH_PT_BR_V3));
-    }
-  });
+  it(
+    "changes nothing else: every text reaches a model exactly as under v3",
+    () => {
+      const rest = (text: string, pack: SanitizerPack) => {
+        const {
+          packId: _packId,
+          humanRequested: _humanRequested,
+          requiresHuman: _requiresHuman,
+          ...kept
+        } = sanitizeMessage(text, pack, NAMES);
+        return kept;
+      };
+      for (const { text } of corpus.entries) {
+        expect(rest(text, HEALTH_PT_BR_V4)).toEqual(
+          rest(text, HEALTH_PT_BR_V3),
+        );
+      }
+    },
+    CORPUS_WIDE,
+  );
 
   it("leaves the question about the assistant to the model, as v3 does", () => {
     for (const text of [
@@ -187,35 +200,39 @@ describe("pack v4: how leads ask for a person", () => {
     ).toBe(false);
   });
 
-  it("needs every pattern it adds: each is the only one to catch some judged request", () => {
-    // A static pattern is its own shape; a configured name's patterns share
-    // their shapes with every other name's (one copy per name).
-    const shapes = new Map<RegExp, string>();
-    PERSON_REQUEST_PT_BR.forEach((pattern, index) =>
-      shapes.set(pattern, `static #${index} ${pattern.source.slice(0, 50)}`),
-    );
-    for (const name of corpus.handoffNames) {
-      patternsForName(name).forEach((pattern, index) =>
-        shapes.set(pattern, `named #${index}`),
+  it(
+    "needs every pattern it adds: each is the only one to catch some judged request",
+    () => {
+      // A static pattern is its own shape; a configured name's patterns share
+      // their shapes with every other name's (one copy per name).
+      const shapes = new Map<RegExp, string>();
+      PERSON_REQUEST_PT_BR.forEach((pattern, index) =>
+        shapes.set(pattern, `static #${index} ${pattern.source.slice(0, 50)}`),
       );
-    }
-    const caught = corpus.entries.filter(
-      (entry) => entry.person && asksForPerson(entry.text),
-    );
-    // Which shapes catch each request, on the texts the screen reads.
-    const needed = new Set<string>();
-    for (const entry of caught) {
-      const texts = requestTexts(entry.text, HEALTH_PT_BR_V4);
-      const found = new Set(
-        [...shapes]
-          .filter(([pattern]) => texts.some((text) => pattern.test(text)))
-          .map(([, shape]) => shape),
+      for (const name of corpus.handoffNames) {
+        patternsForName(name).forEach((pattern, index) =>
+          shapes.set(pattern, `named #${index}`),
+        );
+      }
+      const caught = corpus.entries.filter(
+        (entry) => entry.person && asksForPerson(entry.text),
       );
-      if (found.size === 1) needed.add([...found][0]);
-    }
-    const unneeded = [...new Set(shapes.values())].filter(
-      (shape) => !needed.has(shape),
-    );
-    expect(unneeded).toEqual([]);
-  });
+      // Which shapes catch each request, on the texts the screen reads.
+      const needed = new Set<string>();
+      for (const entry of caught) {
+        const texts = requestTexts(entry.text, HEALTH_PT_BR_V4);
+        const found = new Set(
+          [...shapes]
+            .filter(([pattern]) => texts.some((text) => pattern.test(text)))
+            .map(([, shape]) => shape),
+        );
+        if (found.size === 1) needed.add([...found][0]);
+      }
+      const unneeded = [...new Set(shapes.values())].filter(
+        (shape) => !needed.has(shape),
+      );
+      expect(unneeded).toEqual([]);
+    },
+    CORPUS_WIDE,
+  );
 });
