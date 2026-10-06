@@ -180,9 +180,7 @@ export const PERSON_REQUEST_PT_BR: readonly RegExp[] = Object.freeze([
   pattern(
     `\\b${STAFF} (?:pode|poderia|podia|consegue|conseguiria|possa) (?:${CONTACTS}|(?:${ATTENDS}|responder|atender|me ajudar)${END})`,
   ),
-  pattern(
-    `${START}${LEAD_IN}${STAFF} (?:${CONTACTS}|${ATTENDS})${END}`,
-  ),
+  pattern(`${START}${LEAD_IN}${STAFF} (?:${CONTACTS}|${ATTENDS})${END}`),
   pattern(
     `\\bse (?:vcs|voces|alguem) (?:puder|puderem|pudesse|pudessem) me (?:ligar|retornar|chamar)\\b`,
   ),
@@ -193,9 +191,7 @@ export const PERSON_REQUEST_PT_BR: readonly RegExp[] = Object.freeze([
   pattern(
     `${START}${LEAD_IN}(?:me )?(?:passa|passe|passar|repassa|repasse|repassar|transfere|transfira|transferir|encaminha|encaminhe|encaminhar|coloca|coloque|colocar|poe|bota|joga|conecta|conecte|direciona|direcione|redireciona|redirecione)(?: (?:meu atendimento|meu contato|minha conversa|meu caso|minha mensagem|minha msg))? (?:pra|pro|para|p\\/|p|com|em contato com|em contato c|a) (?:${STAFF}|${PROFESSIONAL})`,
   ),
-  pattern(
-    `${START}${LEAD_IN}me (?:poe|coloca|coloque|bota) em contato${END}`,
-  ),
+  pattern(`${START}${LEAD_IN}me (?:poe|coloca|coloque|bota) em contato${END}`),
   // "chama um humano", "chama alguém da recepção", "chama a doutora".
   pattern(
     `${START}${UNQUOTED}${LEAD_IN}(?:chama|chame|chamar|chamem)(?: ai| la| pra mim)? (?:${STAFF}|${PROFESSIONAL})`,
@@ -357,12 +353,28 @@ function nameAlternatives(names: readonly string[]): string | null {
   return [...forms].sort((a, b) => b.length - a.length).join("|");
 }
 
+/** Compiled name patterns by name list: a tenant's list rarely changes. */
+const compiled = new Map<string, readonly RegExp[]>();
+const MAX_COMPILED = 32;
+
 /**
  * Patterns for the people a tenant's contacts may ask for by name (the
- * operating policy's `handoffNames`), built per screening. Empty without
- * names, so a tenant that names no one gets only the patterns above.
+ * operating policy's `handoffNames`). Empty without names, so a tenant that
+ * names no one gets only the patterns above.
  */
-export function namedPersonRequests(names: readonly string[]): RegExp[] {
+export function namedPersonRequests(
+  names: readonly string[],
+): readonly RegExp[] {
+  const key = names.join("\u0000");
+  const cached = compiled.get(key);
+  if (cached) return cached;
+  const built = Object.freeze(buildNamedPersonRequests(names));
+  if (compiled.size >= MAX_COMPILED) compiled.clear();
+  compiled.set(key, built);
+  return built;
+}
+
+function buildNamedPersonRequests(names: readonly string[]): RegExp[] {
   const alternatives = nameAlternatives(names);
   if (alternatives === null) return [];
   const BARE = `(?:(?:dr|dra|doutor|doutora)\\.? )?(?:${alternatives})\\b`;

@@ -223,6 +223,37 @@ export interface ScreeningOptions {
 }
 
 /**
+ * The message as the screen reads it: cut to the screened length, line breaks
+ * kept (they are clause boundaries, so only the other whitespace is collapsed
+ * here and the kept text is normalised after, PR #28 review), and structured
+ * identifiers replaced first, so an address or a number becomes its marker
+ * before a dot or a dash inside it can read as a boundary.
+ */
+function screenedOriginal(text: string): string {
+  return redactStructuredIdentifiers(
+    text
+      .slice(0, MAX_SCREENED_LENGTH)
+      .replace(/\r\n?/gu, "\n")
+      .replace(/[^\S\n]+/gu, " ")
+      .replace(/ *\n[\s]*/gu, "\n")
+      .trim(),
+  );
+}
+
+/**
+ * The texts a pack's request patterns read: the folded message on one line,
+ * since a whole-message phrase may run across a line break, and, from v4,
+ * also with each line break read as the end of a clause.
+ */
+export function requestTexts(text: string, pack: SanitizerPack): string[] {
+  const folded = foldForScreening(screenedOriginal(text));
+  const oneLine = folded.replace(/\s+/gu, " ");
+  return pack.lineBreaksEndClauses
+    ? [oneLine, folded.replace(/[^\S\n]*\n\s*/gu, ". ").replace(/\s+/gu, " ")]
+    : [oneLine];
+}
+
+/**
  * Screen one inbound message. Pure and deterministic: the same text, pack and
  * options always give the same result.
  */
@@ -232,32 +263,16 @@ export function sanitizeMessage(
   options: ScreeningOptions = {},
 ): SanitizedMessage {
   const truncated = text.length > MAX_SCREENED_LENGTH;
-  // Line breaks are clause boundaries, so they survive until the split: only
-  // the other whitespace is collapsed here, and the kept text is normalised
-  // after (PR #28 review). Structured identifiers go first, so an address or
-  // a number becomes its marker before a dot or a dash inside it can read as
-  // a boundary.
-  const original = redactStructuredIdentifiers(
-    text
-      .slice(0, MAX_SCREENED_LENGTH)
-      .replace(/\r\n?/gu, "\n")
-      .replace(/[^\S\n]+/gu, " ")
-      .replace(/ *\n[\s]*/gu, "\n")
-      .trim(),
-  );
+  const original = screenedOriginal(text);
   const folded = foldForScreening(original);
   // Whole-message phrases (danger, a request for a person, an opt-out) may
   // run across a line break, so they are matched on one line.
   const oneLine = folded.replace(/\s+/gu, " ");
-  // A pack from v4 also reads each line break as the end of a clause.
-  const requestTexts = pack.lineBreaksEndClauses
-    ? [oneLine, folded.replace(/[^\S\n]*\n\s*/gu, ". ").replace(/\s+/gu, " ")]
-    : [oneLine];
   const requestPatterns = [
     ...pack.humanRequest,
     ...(pack.namedRequest?.(options.handoffNames ?? []) ?? []),
   ];
-  const humanRequested = requestTexts.some((line) =>
+  const humanRequested = requestTexts(text, pack).some((line) =>
     matchesAny(requestPatterns, line),
   );
   const optOutRequested = matchesAny(pack.optOut, oneLine);

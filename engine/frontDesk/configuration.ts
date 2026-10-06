@@ -53,8 +53,7 @@ const text = (max: number) =>
     );
 const key = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
 /** A person's name: a letter first, then letters, spaces, dots, apostrophes, hyphens. */
-const HANDOFF_NAME =
-  /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'-]{0,59}$/u;
+const HANDOFF_NAME = /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'-]{0,59}$/u;
 const domainKey = z.string().regex(/^[a-z][A-Za-z0-9_]{0,39}$/);
 const uuid = z
   .string()

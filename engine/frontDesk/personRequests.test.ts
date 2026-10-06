@@ -3,7 +3,11 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { sanitizeMessage, type SanitizerPack } from "./messageSanitizer.ts";
+import {
+  requestTexts,
+  sanitizeMessage,
+  type SanitizerPack,
+} from "./messageSanitizer.ts";
 import { HEALTH_PT_BR_V3, HEALTH_PT_BR_V4 } from "./packs/healthPtBr.ts";
 import {
   namedPersonRequests,
@@ -104,9 +108,9 @@ describe("pack v4: how leads ask for a person", () => {
     expect(
       asksForPerson("posso falar com a dra helena?", HEALTH_PT_BR_V4, options),
     ).toBe(true);
-    expect(
-      asksForPerson("chama a Helena pfv", HEALTH_PT_BR_V4, options),
-    ).toBe(true);
+    expect(asksForPerson("chama a Helena pfv", HEALTH_PT_BR_V4, options)).toBe(
+      true,
+    );
     expect(
       asksForPerson("quero falar com o jose", HEALTH_PT_BR_V4, options),
     ).toBe(true);
@@ -164,27 +168,28 @@ describe("pack v4: how leads ask for a person", () => {
     expect(asksForPerson(family)).toBe(false);
   });
 
-  it("needs every pattern it adds: removing any one changes a judged decision", () => {
-    const baseline = errors(HEALTH_PT_BR_V4).misses.length;
-    const unneeded = PERSON_REQUEST_PT_BR.flatMap((removed, index) => {
-      const without: SanitizerPack = {
-        ...HEALTH_PT_BR_V4,
-        humanRequest: PERSON_REQUEST_PT_BR.filter((p) => p !== removed),
-      };
-      return errors(without).misses.length > baseline
-        ? []
-        : [`#${index} ${removed.source.slice(0, 50)}`];
+  it("needs every pattern it adds: each is the only one to catch some judged request", () => {
+    const patterns = [
+      ...PERSON_REQUEST_PT_BR,
+      ...namedPersonRequests(corpus.handoffNames),
+    ];
+    const caught = corpus.entries.filter(
+      (entry) => entry.person && asksForPerson(entry.text),
+    );
+    // Which patterns catch each request, on the texts the screen reads.
+    const catchers = caught.map((entry) => {
+      const texts = requestTexts(entry.text, HEALTH_PT_BR_V4);
+      return patterns.filter((pattern) =>
+        texts.some((text) => pattern.test(text)),
+      );
     });
-    const named = namedPersonRequests(corpus.handoffNames);
-    const unneededNamed = named.flatMap((removed, index) => {
-      const without: SanitizerPack = {
-        ...HEALTH_PT_BR_V4,
-        namedRequest: () => named.filter((p) => p !== removed),
-      };
-      return errors(without).misses.length > baseline
-        ? []
-        : [`named #${index}`];
-    });
-    expect([...unneeded, ...unneededNamed]).toEqual([]);
+    const needed = new Set(
+      catchers.filter((found) => found.length === 1).map((found) => found[0]),
+    );
+    const unneeded = patterns
+      .map((pattern, index) => ({ pattern, index }))
+      .filter(({ pattern }) => !needed.has(pattern))
+      .map(({ pattern, index }) => `#${index} ${pattern.source.slice(0, 60)}`);
+    expect(unneeded).toEqual([]);
   });
 });
