@@ -70,6 +70,13 @@ export const operatingPolicySchema = z.strictObject({
   contextTurns: z.int().min(0).max(12),
   /** How the agent identifies itself as a virtual assistant. */
   aiDisclosure: text(300),
+  /** The name the assistant gives contacts, when not the agent's own (prompt v4). */
+  persona: z.strictObject({ name: text(60) }).optional(),
+  /** How dates and times are written to contacts: a language tag ("pt-BR"). */
+  locale: z
+    .string()
+    .regex(/^[a-z]{2,3}(?:-[A-Z]{2})?$/)
+    .optional(),
   /** What the agent handles. */
   scope: z.array(text(300)).min(1).max(20),
   /** What it never does. */

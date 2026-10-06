@@ -30,6 +30,11 @@ const ISO_DATE = /\b(\d{4})-(0[1-9]|1[0-2])-([0-2]\d|3[01])(?!\d)/gu;
 const URL = /\b(?:https?:\/\/|www\.)[^\s<>"')]+/giu;
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/gu;
 const DIGIT_RUN = /(?<!\d)\d[\d\s().-]{6,}\d(?!\d)/gu;
+// Hours before or after something are a duration, not a time of day: in
+// "lembretes 24h e 5h antes" no clock time is stated (the round-two
+// receptionist test, 2026-10-05). Read on the text right after an "Nh".
+const DURATION_AFTER =
+  /^(?:\s*(?:,|e|ou)\s*\d{1,2}\s?(?:h|horas?))*\s+(?:antes|depois|ap[oó]s|de anteced[eê]ncia)\b/iu;
 
 const moneyKey = (raw: string): string => {
   const digits = raw.replace(/[^\d,]/gu, "");
@@ -76,8 +81,12 @@ function factKeys(text: string): Set<string> {
 function claimedKeys(text: string): string[] {
   const keys: string[] = [];
   for (const m of text.matchAll(MONEY)) keys.push(`money:${moneyKey(m[0])}`);
-  for (const m of text.matchAll(TIME))
-    keys.push(`time:${timeKey(m[1], m[2] ?? m[3])}`);
+  for (const m of text.matchAll(TIME)) {
+    const isDuration =
+      m[0].toLowerCase().endsWith("h") &&
+      DURATION_AFTER.test(text.slice(m.index + m[0].length));
+    if (!isDuration) keys.push(`time:${timeKey(m[1], m[2] ?? m[3])}`);
+  }
   for (const m of text.matchAll(DATE))
     keys.push(`date:${dateKey(m[1], m[2], m[3])}`);
   for (const m of text.matchAll(URL)) keys.push(`url:${trimUrl(m[0])}`);

@@ -52,7 +52,9 @@ The pack decides what never reaches a model. It lives in reviewed code with a sy
 
 v2 keeps every v1 pattern and adds the form's sentence, the rating, the form's demand vocabulary and a few identity and disability terms. It also keeps a pronoun that a connector split off ("dê pra você?"). On 50 messages built exactly as the form builds them, nothing of the demand, its duration or its rating passes, and the request for the first session is kept. Five deliberate pattern removals are each caught.
 
-The screen itself moved to `front_desk_screen.v3`: in a run of omissions, the later clause's punctuation replaces the earlier one's (never ", ."). The default pack is v2; v1 stays selectable for history.
+The screen itself moved to `front_desk_screen.v3`: in a run of omissions, the later clause's punctuation replaces the earlier one's (never ", ."). v1 stays selectable for history.
+
+**`health_pt_br.v3` (2026-10-05), the default.** The owner's round-two test of receptionist models showed two kinds of over-omission. A connector split a short administrative question, and its opener was omitted as unrecognised: "Como faço pra pagar?" read "[trecho omitido] pagar?", and "Consigo trocar pra sexta?" and "vocês mandam quando?" lost their verbs the same way. And two questions about the assistant itself never reached a model: "qual seu nome?" was held as unknown and got the clarification text, and "você é robô?" moved the conversation to a person, which the owner's receptionist should answer as its disclosure says. v3 keeps every v2 pattern. It knows those openers and that small talk as benign, but only as whole clauses, so what follows an opener is still screened ("Como faço pra parar de pensar nisso?" sends nothing). The question about the assistant is no longer a request for a person; asking for a person still is.
 
 ### D. The four kinds of configuration are versioned system data
 
@@ -71,17 +73,19 @@ The owner's planning page (the Claude artifact "Recepção IA da Clínica") stay
 
 ### E. The prompt, and hallucination control
 
-- **The context.** The prompt (`lead_triage` capability, prompt version `lead_triage.v3`, the unchanged output contract) is built only from the context `ops.record_inbound_screening` answers:
+- **The context.** The prompt (`lead_triage` capability, prompt version `lead_triage.v4` since 2026-10-05, the unchanged output contract) is built only from the context `ops.record_inbound_screening` answers:
   - the screened text;
   - the earlier turns, at most 12 and as the policy sets: a contact's screened text, the replies the agent or a fixed text sent, and a marker for anything else, a person's reply included;
   - the published configuration;
   - the conversation's party kind and phase;
   - availability, only from the booking foundation (`ops.available_slots`) for the resource the policy names;
-  - the next booked slot.
+  - the next booked slot;
+  - when the contact wrote, on the agent profile's clock (`receivedAt`, migration `20261014120000_front_desk_context_received_at.sql`; a database before it does not send it, and the worker accepts both).
 
   Never the task's description.
+- **Prompt v4 (2026-10-05): the receptionist the owner chose.** After the round-two test (the same 15-message conversation run by every candidate model and prompt, judged blind by Jev), the owner chose Gemini 3.8 Flash. `lead_triage.v4` is the prompt that test called v4.1, with everything a tenant says differently moved to configuration: the name the assistant gives contacts (`persona.name` in the operating policy, else the agent's name), the language tag dates and times are written in (`locale`; each slot, the next booking and `receivedAt` carry a label, the instant always kept), and the tone (the playbook's examples). What it adds: the register of an experienced receptionist (one to three short sentences, one next step, no repetition of an earlier turn, no emoji unless the contact used one), small talk and the question about the assistant answered simply, slots offered two or three at a time by their labels, and an honest account of what it cannot do: it does not book (a contact's pick goes to a person, `needs_human_review`), only the next booked slot is a booking, and how or when something happens is never guessed.
 - **Facts only from that context.** The model is told to state facts only from what it was given, to say plainly when it does not have one and offer a person, never to ask about an omission, never to confirm a booking or a payment, and never to claim to be a person or a professional.
-- **The grounding check** (`engine/frontDesk/grounding.ts`) does not trust the model. Every price, time, date, link, e-mail address and long number in the reply must appear in what the run was given. An ungrounded reply is marked for a person (`needs_human_review`, flag `unclear`) before it is stored. Prose is the review's job.
+- **The grounding check** (`engine/frontDesk/grounding.ts`) does not trust the model. Every price, time, date, link, e-mail address and long number in the reply must appear in what the run was given. An ungrounded reply is marked for a person (`needs_human_review`, flag `unclear`) before it is stored. Prose is the review's job. Hours before or after something ("lembretes 24h e 5h antes") are a duration, not a time of day, and are not claims (2026-10-05: the round-two test showed the check sending such replies to a person for nothing).
 
 ### F. Generate is not send; three stages, the third not built
 

@@ -99,6 +99,21 @@ describe("the grounding check", () => {
     expect(checkGrounding("Pode ser 13/10?", facts).grounded).toBe(true);
   });
 
+  it("reads hours before or after something as a duration, not a time (round two, 2026-10-05)", () => {
+    for (const reply of [
+      "Você recebe lembretes 24h e 5h antes da sessão.",
+      "Remarcações com 12h de antecedência.",
+      "Te aviso 2h antes.",
+    ]) {
+      expect(checkGrounding(reply, facts).grounded, reply).toBe(true);
+    }
+    // A time of day is still a claim, wherever it sits.
+    expect(
+      checkGrounding("Tenho às 5h, antes do almoço.", facts).grounded,
+    ).toBe(false);
+    expect(checkGrounding("Tenho às 07:30 antes.", facts).grounded).toBe(false);
+  });
+
   it("has nothing to check in prose", () => {
     expect(
       checkGrounding("Posso pedir para uma pessoa confirmar.", facts).grounded,
@@ -112,9 +127,104 @@ describe("the front-desk prompt", () => {
     CONTEXT,
   );
 
-  it("is the lead triage capability at prompt version v3", () => {
+  it("is the lead triage capability at prompt version v4", () => {
     expect(prompt.promptVersion).toBe(FRONT_DESK_PROMPT_VERSION);
-    expect(FRONT_DESK_PROMPT_VERSION).toMatch(/^[a-z][a-z0-9_]*\.v[0-9]{1,4}$/);
+    expect(FRONT_DESK_PROMPT_VERSION).toBe("lead_triage.v4");
+  });
+
+  const V4_CONTEXT: FrontDeskContext = frontDeskContextSchema.parse({
+    ...CONTEXT,
+    receivedAt: "2026-10-12T20:10",
+    policy: {
+      ...CONTEXT.policy,
+      persona: { name: "Synthetic Persona" },
+      locale: "pt-BR",
+    },
+    upcomingBooking: { startsAt: "2026-10-13T19:00" },
+  });
+  const v4 = buildFrontDeskPrompt(
+    { name: "Lia", role: "front desk" },
+    V4_CONTEXT,
+  );
+  const v4Document = JSON.parse(v4.input.slice(v4.input.indexOf("\n") + 1));
+
+  it("names the assistant as the policy's persona, and as the agent without one", () => {
+    expect(v4.instructions).toMatch(
+      /^You are Synthetic Persona, the front desk/,
+    );
+    expect(v4Document.agent.name).toBe("Synthetic Persona");
+    expect(prompt.instructions).toMatch(/^You are Lia, the front desk/);
+  });
+
+  it("says when the contact wrote and labels every instant in the policy's locale, keeping the instant", () => {
+    expect(v4Document.receivedAt).toEqual({
+      at: "2026-10-12T20:10",
+      label: "segunda-feira, 12/10, 20:10",
+    });
+    expect(v4Document.availability.slots).toEqual([
+      { at: "2026-10-13T19:00", label: "terça-feira, 13/10, 19:00" },
+      { at: "2026-10-13T20:30", label: "terça-feira, 13/10, 20:30" },
+    ]);
+    expect(v4Document.conversation.upcomingBooking).toEqual({
+      at: "2026-10-13T19:00",
+      label: "terça-feira, 13/10, 19:00",
+    });
+    // No locale: the instant alone, never a guessed language.
+    expect(
+      JSON.parse(prompt.input.slice(prompt.input.indexOf("\n") + 1))
+        .availability.slots[0],
+    ).toEqual({
+      at: "2026-10-13T19:00",
+      label: null,
+    });
+  });
+
+  it("accepts a context from a database that does not say when the contact wrote", () => {
+    expect(frontDeskContextSchema.safeParse(CONTEXT).success).toBe(true);
+    expect(
+      JSON.parse(prompt.input.slice(prompt.input.indexOf("\n") + 1)).receivedAt,
+    ).toBeNull();
+  });
+
+  it("speaks as an experienced receptionist: short, one next step, no repetition, no emoji the contact did not use", () => {
+    expect(v4.instructions).toMatch(/one to three short sentences/);
+    expect(v4.instructions).toMatch(/at most ONE next step/);
+    expect(v4.instructions).toMatch(
+      /Never repeat what one of your earlier turns/,
+    );
+    expect(v4.instructions).toMatch(/No emoji, unless the contact used one/);
+    expect(v4.instructions).toMatch(
+      /whether you are a robot or an AI, say yes/,
+    );
+  });
+
+  it("is honest about what it cannot do: it does not book, and only the upcoming booking is booked", () => {
+    expect(v4.instructions).toMatch(/You cannot book/);
+    expect(v4.instructions).toMatch(
+      /Only `conversation.upcomingBooking` is a booked session/,
+    );
+    expect(v4.instructions).toMatch(
+      /do not give even a general answer: say you will check/,
+    );
+  });
+
+  it("holds no tenant's words: names, tone and facts come from the configuration", () => {
+    for (const word of [
+      /Yuri/,
+      /psic[oó]log/i,
+      /\bLia\b/,
+      /\bpra\b/,
+      /consult[oó]rio/i,
+    ]) {
+      expect(v4.instructions).not.toMatch(word);
+    }
+  });
+
+  it("counts the message's instant among the facts a reply may state", () => {
+    expect(
+      checkGrounding("Hoje, 12/10, tenho às 19:00.", groundingFacts(V4_CONTEXT))
+        .grounded,
+    ).toBe(true);
   });
 
   it("carries the screened message, the knowledge and the availability, and nothing else of the contact", () => {
@@ -191,6 +301,22 @@ describe("the authoring shapes", () => {
     expect(
       validateConfiguration("operating_policy", { ...policy, extra: 1 }).ok,
     ).toBe(false);
+  });
+
+  it("accepts a persona and a locale, and refuses a malformed one", () => {
+    const named = {
+      ...policy,
+      persona: { name: "Synthetic Persona" },
+      locale: "pt-BR",
+    };
+    expect(validateConfiguration("operating_policy", named).ok).toBe(true);
+    for (const bad of [
+      { ...named, locale: "portuguese" },
+      { ...named, persona: { name: "" } },
+      { ...named, persona: { name: "x", tone: "y" } },
+    ]) {
+      expect(validateConfiguration("operating_policy", bad).ok).toBe(false);
+    }
   });
 
   it("requires every fixed message", () => {

@@ -388,9 +388,53 @@ export const HEALTH_PT_BR_V2: SanitizerPack = Object.freeze({
   optOut: Object.freeze(OPT_OUT),
 });
 
+// v3 (2026-10-05): what the round-two receptionist test showed (ADR 0023 §C).
+// A connector split short administrative questions into an opener the pack
+// did not know, which was omitted ("Como faço pra pagar?" read "[trecho
+// omitido] pagar?"), and two questions about the assistant itself never
+// reached a model: "qual seu nome?" was held as unknown, and "você é robô?"
+// moved the conversation to a person. v3 keeps every v2 pattern, knows those
+// whole clauses as benign, and answers the question about the assistant
+// through the model, as the operating policy's disclosure says. A request for
+// a person is still recognised.
+const BENIGN_V3_ADDED: readonly RegExp[] = [
+  // Openers a connector cut off: harmless alone, and only alone.
+  /^como (eu )?(faco|faz|fica|seria|posso|consigo)$/,
+  /^(eu )?(consigo|posso|da|daria|tem como|teria como)( (trocar|mudar|passar|remarcar|reagendar|adiantar|antecipar))?$/,
+  /^(e )?(voces|vcs|voce|vc) (mandam|enviam|manda|envia)( quando)?$/,
+  /^quando (voces|vcs|voce|vc) (mandam|enviam|manda|envia)$/,
+  // Small talk about the assistant.
+  /^(e )?(qual|como) (e )?(o )?(seu|teu) nome( mesmo)?$/,
+  /^(e )?(voce|vc) se chama como$/,
+  /^(como|qual) (voce|vc) se chama( mesmo)?$/,
+  /^quem (e|eh) (voce|vc)$/,
+  /^com quem (eu )?(falo|to falando|estou falando)$/,
+  /^(voce|vc|aqui) e (um |uma )?(robo|bot|ia|inteligencia artificial|maquina|pessoa|humano|humana|assistente( virtual)?|atendente)$/,
+  /^e (um |uma )?(robo|bot|ia)$/,
+  /^(e )?com (voce|vc)$/,
+  /^(tudo|td) (bem|bom|certo|otimo|joia) sim$/,
+];
+
+// The question about the assistant is not a request for a person.
+const HUMAN_REQUEST_V3: readonly RegExp[] = HUMAN_REQUEST.filter(
+  (pattern) => !/robo/.test(pattern.source),
+);
+
+export const HEALTH_PT_BR_V3: SanitizerPack = Object.freeze({
+  id: "health_pt_br.v3",
+  crisis: Object.freeze(CRISIS),
+  sensitive: Object.freeze([...SENSITIVE, ...SENSITIVE_V2_ADDED]),
+  administrative: Object.freeze(ADMINISTRATIVE),
+  administrativePhrases: Object.freeze(ADMINISTRATIVE_PHRASES),
+  benign: Object.freeze([...BENIGN, ...BENIGN_V2_ADDED, ...BENIGN_V3_ADDED]),
+  humanRequest: Object.freeze(HUMAN_REQUEST_V3),
+  optOut: Object.freeze(OPT_OUT),
+});
+
 /** The reviewed packs a tenant may select. */
 export const SANITIZER_PACKS: Readonly<Record<string, SanitizerPack>> =
   Object.freeze({
     [HEALTH_PT_BR_V1.id]: HEALTH_PT_BR_V1,
     [HEALTH_PT_BR_V2.id]: HEALTH_PT_BR_V2,
+    [HEALTH_PT_BR_V3.id]: HEALTH_PT_BR_V3,
   });
