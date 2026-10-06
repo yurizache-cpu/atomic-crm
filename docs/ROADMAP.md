@@ -1,12 +1,153 @@
 # Roadmap — AI Company OS
 
-**Status:** proposed, pending owner approval.
+**Status:** proposed, pending owner approval (2026-09-10; the phase plan below is historical). **Since 2026-10-05 the long-term program map (owner decision, ADR 0024) organises the work:** see the next section.
 **Date:** 2026-09-10
 **Basis:** [BASELINE_REPORT.md](BASELINE_REPORT.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Phases are small and verifiable. Each closes a cycle of value and is independently revertible. **One phase at a time**; the next starts only when acceptance criteria pass.
 
 This is not the brief's example phase list. It is adjusted for what the audit actually found — most importantly that the repository is currently **not deployable, unpushed, and locked out on login**, which inserts a custodial phase before any architecture work.
+
+---
+
+## Long-term program map (owner decision 2026-10-05, ADR 0024)
+
+> **How to read this roadmap now.** This section is the long-term program map: the whole AI Company OS in ten workstreams, each mapped to what already exists. Everything below it (Phase 0 onwards and the dated status updates) is the **historical record** of how the repository got here, preserved unchanged. Current status, open PRs and the exact next action live in [CURRENT_STATE.md](CURRENT_STATE.md). The north star is [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md).
+
+**Legend:** ✅ implemented (integrated) · 🟡 partial, or in an open PR or branch · ⬜ planned · 🚫 blocked on an external or owner decision.
+
+**Dependency rule:**
+- Layer 2 (Growth) consumes trusted Layer 1 outcomes: no sophisticated ads optimisation on unreliable conversion events.
+- Layer 3 (Management) grows incrementally and becomes more valuable as Layers 1 and 2 produce structured data.
+- **Completing the roadmap is not a real-patient authorization:** workstream J keeps every gate explicit.
+
+### A. Reception operations core (Layer 1; [RECEPTION_OPERATIONS_SPEC.md](RECEPTION_OPERATIONS_SPEC.md))
+
+| Item | Status |
+| --- | --- |
+| Local screen before any model, reviewed packs | ✅ pack v1 · 🟡 v2 in PR #29 · 🟡 v3 on `feature/front-desk-prompt-v4` |
+| Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
+| Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
+| Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |
+| The review shows the screened message and the draft; stale replies never sent | 🟡 PR #29 |
+| Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | 🟡 `feature/front-desk-prompt-v4` |
+| Follow-up engine (cadences, plans, due jobs) | ✅ (Phase 3A) |
+| Creating a CRM lead for a new WhatsApp number | 🚫 ADR 0021 W6 (owner decision) |
+| Structured triage (pre-filled from a form, or conversational) | ⬜ |
+| Core lead events (`lead.created`, `triage.completed`, `exception.raised`) | ⬜ |
+| Next best action (deterministic, Jev shadow) | ⬜ (Jev's lead intelligence asks for it in shadow already) |
+| CRM settings screen for the receptionist's configuration | ⬜ (needs browser acts under OD-8a) |
+
+### B. Scheduling (Layer 1)
+
+| Item | Status |
+| --- | --- |
+| Booking foundation: resources, types, weekly rules, bookings without overlap, reschedule, cancel | ✅ (Phase 3A) |
+| Agenda screen | ✅ |
+| Real availability in the receptionist's context | ✅ (integrated) · 🟡 ten slots with labels on the v4 branch; a test agenda on staging |
+| Booking page (self-service, mobile-first) | ⬜ |
+| Slot holds with expiry | ⬜ |
+| Rescheduling and cancellation through the conversation | ⬜ |
+| Calendar mirror: provider-neutral port and fake provider | ✅ |
+| Google Calendar and Meet (event and link created early, link sent late) | 🚫 provider authentication and data-processing terms |
+
+### C. Payments and revenue (Layer 1)
+
+| Item | Status |
+| --- | --- |
+| Payment request (Pix instructions or a link) as state and event | ⬜ |
+| Authoritative settlement (provider webhook) or authorized manual confirmation | 🚫 payment provider choice · ⬜ manual confirmation |
+| Receipt as non-authoritative evidence | ⬜ |
+| Owner notification of a paid first appointment | ⬜ |
+| Payment events and the revenue ledger; package sales | ⬜ |
+
+### D. Session and package lifecycle (Layer 1)
+
+| Item | Status |
+| --- | --- |
+| Package ledger (purchased, scheduled, completed, cancelled, remaining, value, status) | ⬜ |
+| Session completion as the only consumption | ⬜ |
+| Confirmation (T-24h), reminders, link at session time | ⬜ · 🚫 Meta templates outside the 24-hour window (ADR 0021 W8) |
+| No-show workflow | ⬜ |
+| Renewal due and renewal | ⬜ |
+| Waitlist and cancellation backfill | ⬜ (later optimisation) |
+
+### E. Outcome and attribution foundation (Layer 2 foundation; [GROWTH_INTELLIGENCE_SPEC.md](GROWTH_INTELLIGENCE_SPEC.md))
+
+| Item | Status |
+| --- | --- |
+| Attribution columns per contact (`acquisition_attributions`) | ✅ table · ⬜ capture at entry |
+| Deterministic identity resolution across form, WhatsApp, booking and payment | ⬜ (`merge_contacts` exists as the explicit merge act) |
+| CRM commercial funnel, stage-transition ledger, convert and lose acts | ✅ (Phase 3B) |
+| Outcome Engine (canonical outcomes with value, source fact and attribution) | ⬜ |
+| Revenue attribution | ⬜ |
+
+### F. Growth intelligence (Layer 2)
+
+| Item | Status |
+| --- | --- |
+| Lead intelligence in shadow, outcomes stored for calibration | ✅ (ADR 0022 §F) |
+| Ad spend import, campaign metadata | ⬜ |
+| Offline conversion feedback (configurable primary event; evaluate `first_appointment_paid` first) | 🚫 owner and legal decision on identifiers and health-advertising policy · ⬜ |
+| Funnel economics: CPL, cost per paid first appointment, CAC, ROAS | ⬜ |
+| Umami (approved by decision I) | ⬜ |
+| Growth / Ads Manager recommendations | ⬜ |
+
+### G. Management OS (Layer 3; [MANAGEMENT_OS_SPEC.md](MANAGEMENT_OS_SPEC.md))
+
+| Item | Status |
+| --- | --- |
+| Operator surface: overview, tasks, runs, reviews with Jev, decision intelligence, health, agenda, funnel, costs, agents, communications, stops | ✅ (ADR 0019, Phases 2C to 3B) |
+| Exception and approval inbox | 🟡 its parts exist (reviews, health attention, stops, indeterminate work) · ⬜ the unified inbox |
+| Daily Brief from structured state | ⬜ |
+| Owner notifications | ⬜ |
+| Owner questions over analytical tools | ⬜ |
+| Agent KPI surfaces | 🟡 costs and model economics exist · ⬜ per-employee KPIs |
+
+### H. Structured agent collaboration (Layer 3)
+
+| Item | Status |
+| --- | --- |
+| One event store, tasks, structured-decision ledger | ✅ (ADR 0015, ADR 0022) |
+| Domain event catalog | ✅ as specification ([DOMAIN_EVENT_CATALOG.md](DOMAIN_EVENT_CATALOG.md)) · ⬜ the planned events |
+| Bounded Decision Rooms (recommendation only) | ⬜ |
+
+### I. Controlled autonomy
+
+| Item | Status |
+| --- | --- |
+| Jev promoted from shadow to deciding a route | ⬜ only on measured outcomes (ADR 0023 §I) |
+| Autonomous send mode for a low-risk scope | ⬜ not representable today (ADR 0023 §F); needs its own ADR |
+| Ads write actions (campaigns, budgets) | ⬜ after recommendation-only proves its value |
+
+### J. Production go-live
+
+| Item | Status |
+| --- | --- |
+| Production Security Gate A (AAL2, CSP, no enrichment) | ✅ |
+| Gate B host contract and verifiers; hosting runtime | ✅ |
+| LGPD minimum (W1 to W6) | ✅ |
+| Production webhook host (W7) and Meta actions (W8) | 🚫 owner |
+| Production frontend host | 🚫 owner ([DECISIONS.md](DECISIONS.md), OPEN) |
+| Q8 model-data authorization for real data | 🚫 none recorded; real patient model traffic DISABLED |
+| The owner's go-live decision | 🚫 not before every item above |
+
+### Next three implementation milestones
+
+1. **Receptionist v4, supervised and live:** PR #29 and the prompt v4 PR integrated, staging migrations applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
+2. **Lead journey core:**
+   - lead creation for new numbers (after W6);
+   - identity resolution and attribution capture at entry;
+   - structured triage;
+   - the first catalogued lead events (A, E).
+3. **Scheduling in the journey:**
+   - real slots offered in conversation;
+   - the booking page with holds;
+   - `outcome.first_appointment_booked`;
+   - rescheduling and cancellation through the conversation (B).
+
+Then payments (C, once a provider is chosen), the session and package lifecycle (D), the Outcome Engine and growth (E, F), and the Command Center (G).
+
 
 ---
 

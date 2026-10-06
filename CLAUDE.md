@@ -4,6 +4,27 @@
 
 Read this before doing anything. The repository is the project memory; conversation history is not.
 
+## Fresh-session boot sequence
+
+1. Read `CLAUDE.md` (this file: rules, known issues, commands).
+2. Read [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md): branches, active work, staging, owner actions and the exact next action.
+3. Read [docs/COMPANY_OS_MASTER_BLUEPRINT.md](docs/COMPANY_OS_MASTER_BLUEPRINT.md): what we are building, the three layers and the principles that do not change.
+4. Read [docs/ROADMAP.md](docs/ROADMAP.md): its first section, the long-term program map. Everything below that section is history.
+5. Read ONLY the layer specification relevant to the current milestone:
+   - [RECEPTION_OPERATIONS_SPEC.md](docs/RECEPTION_OPERATIONS_SPEC.md) (Layer 1);
+   - [GROWTH_INTELLIGENCE_SPEC.md](docs/GROWTH_INTELLIGENCE_SPEC.md) (Layer 2);
+   - [MANAGEMENT_OS_SPEC.md](docs/MANAGEMENT_OS_SPEC.md) (Layer 3).
+
+   Add [DOMAIN_EVENT_CATALOG.md](docs/DOMAIN_EVENT_CATALOG.md) when the milestone adds events, and [AGENT_CONTRACTS.md](docs/AGENT_CONTRACTS.md) when it changes an AI employee.
+6. Read the Accepted ADRs those files reference for the milestone, starting with [ADR 0024](docs/adr/0024-three-layer-company-os-and-outcome-engine.md).
+7. Continue from CURRENT_STATE without redesigning already accepted architecture.
+
+> Repository state overrides stale conversation history.
+
+> If an Accepted ADR conflicts with a blueprint sentence, the ADR wins; reconcile the blueprint rather than silently violating the ADR.
+
+Phase reports are evidence, not boot memory: read one only when a task needs its detail. The **Current phase** cell below is the historical milestone log, kept for provenance. New milestones record their state in CURRENT_STATE.md.
+
 | | |
 | --- | --- |
 | **What this is** | An AI Company OS being built **on top of** a fork of [Atomic CRM](https://github.com/marmelab/atomic-crm). Companies, departments, AI employees, workflows, events, tasks, decisions, reviews, approvals, permissions, risk policy, cost accounting and audit trails as first-class data. |
@@ -168,6 +189,17 @@ Environment here: Windows 11, Node v22.23.1, npm 10.9.8, Docker **CLI** 29.7.2, 
 - **Do not edit `docs/product/*.md`.** Tracked prior art in Portuguese (committed `652784b3`), kept as a dated record. Supersede with a note instead. (The reason is provenance — an earlier version of this line said "untracked, so an edit is unrecoverable", which was false.)
 - **Do not modify `src/components/admin/` or `src/components/ui/`.** They are inbound shadcn-registry content (`registry.json` lists 214 `atomic-crm` files and **zero** from those directories). `AGENTS.md` says otherwise; `docs/product/07-upstream-strategy.md` wins — see [ADR 0008](docs/adr/0008-fork-posture.md).
 - **Do not commit secrets.** `.gitignore:42` deliberately un-ignores `supabase/functions/.env`; an EC private signing key is already tracked in `supabase/signing_keys.json`. Never let a provider key follow that path.
+
+## Keeping the project memory current
+
+When a milestone merges:
+1. Update [docs/CURRENT_STATE.md](docs/CURRENT_STATE.md): branches and SHAs, what is integrated, staging, owner actions, the CI baseline and the exact next action.
+2. Update the status of its items in the [ROADMAP.md](docs/ROADMAP.md) program map.
+3. Update the master blueprint or a layer specification only when architecture or product semantics changed.
+4. Write or amend an ADR for any structural decision; index it in [DECISIONS.md](docs/DECISIONS.md).
+5. Keep historical implementation detail in the milestone's report, not duplicated across these files.
+
+Do not grow this file with milestone narratives: the Current phase cell above is closed to new entries.
 
 ## Conventions
 
