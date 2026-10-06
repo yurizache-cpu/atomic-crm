@@ -2,10 +2,13 @@
 -- the contact wrote. The round-two receptionist test showed a reply needs the
 -- day it is answering on to read "amanhã", "essa semana" or a weekday; the
 -- context gives it as the message's own instant, in the agent profile's time
--- zone, the same clock the availability is listed in. Nothing else changes:
--- ops.record_inbound_screening is the function of 20261011120000 with one key
--- added to its context. The worker's parser accepts the context with or
--- without it.
+-- zone, the same clock the availability is listed in. And it lists up to ten
+-- free slots in the next fourteen days, not six: with six, a contact who asked
+-- for a later day of the week heard of one time when there were three.
+-- Nothing else changes: ops.record_inbound_screening is the function of
+-- 20261011120000 with one key added to its context and the larger list. The
+-- worker's parser accepts the context with or without the key, and ten slots
+-- is its bound.
 --
 -- PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.
 
@@ -234,7 +237,7 @@ begin
         into v_slots
         from ops.available_slots(
                v_tenant, (v_sched ->> 'resourceId')::uuid, (v_sched ->> 'bookingTypeId')::uuid, now(),
-               now() + make_interval(days => 14), 6) sl;
+               now() + make_interval(days => 14), 10) sl;
       v_avail := 'connected';
     exception when others then
       v_slots := null;
