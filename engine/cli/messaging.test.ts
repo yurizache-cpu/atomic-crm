@@ -178,6 +178,8 @@ describe("running the messaging tool", () => {
         to: "5511900000001",
         body: "SENTINEL-DRAFT",
       },
+      // ADR 0023 §L: the last gate, in the transaction that calls and settles.
+      confirm_outbound_send: { state: "send" },
     };
     const tx = {
       async query(sql: string) {
