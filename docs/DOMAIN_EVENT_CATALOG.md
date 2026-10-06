@@ -19,7 +19,7 @@ There is **one event store: `ops.events`** (ADR 0015 §7). This catalog extends 
 | Type | `type`, dotted lower case with at least one dot (`family.name`), checked by the table |
 | Timestamp | `created_at` (the transaction start; `seq` orders insertion and is internal only, SI-26) |
 | Source | `source` (the writer: `whatsapp-gateway`, `operator-cli`, `front-desk`, a worker, …) |
-| Entity reference | `subject_type` and `subject_id` (`company`, `department`, `agent`, `task`), plus ids in the payload |
+| Entity reference | `subject_type` and `subject_id` (`company`, `department`, `agent`, `task`, `agent_run`, the last added by `20260914120000_agent_runtime.sql`), plus ids in the payload. A new subject type is a migration of the table constraint |
 | Payload | `payload`, a JSON object of at most 16 KB, **minimised**: ids, states, enums, amounts, instants |
 | Correlation and causation | `correlation_id`, `causation_id` (the cause must already exist, same tenant and company) |
 | Idempotency | An optional idempotency key on `ops.record_event` (a redelivery records nothing new) |
