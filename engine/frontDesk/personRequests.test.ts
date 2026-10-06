@@ -11,6 +11,7 @@ import {
 import { HEALTH_PT_BR_V3, HEALTH_PT_BR_V4 } from "./packs/healthPtBr.ts";
 import {
   namedPersonRequests,
+  patternsForName,
   PERSON_REQUEST_PT_BR,
 } from "./packs/personRequestPtBr.ts";
 
@@ -168,28 +169,53 @@ describe("pack v4: how leads ask for a person", () => {
     expect(asksForPerson(family)).toBe(false);
   });
 
+  it("discounts only the name next to a relationship, never another configured name (PR #32 review)", () => {
+    const options = { handoffNames: ["Rafael", "Marina"] };
+    expect(
+      asksForPerson(
+        "meu filho Rafael vai comigo. Quero falar com Marina",
+        HEALTH_PT_BR_V4,
+        options,
+      ),
+    ).toBe(true);
+    expect(
+      asksForPerson(
+        "meu filho Rafael vai comigo. quero falar com o Rafael",
+        HEALTH_PT_BR_V4,
+        options,
+      ),
+    ).toBe(false);
+  });
+
   it("needs every pattern it adds: each is the only one to catch some judged request", () => {
-    const patterns = [
-      ...PERSON_REQUEST_PT_BR,
-      ...namedPersonRequests(corpus.handoffNames),
-    ];
+    // A static pattern is its own shape; a configured name's patterns share
+    // their shapes with every other name's (one copy per name).
+    const shapes = new Map<RegExp, string>();
+    PERSON_REQUEST_PT_BR.forEach((pattern, index) =>
+      shapes.set(pattern, `static #${index} ${pattern.source.slice(0, 50)}`),
+    );
+    for (const name of corpus.handoffNames) {
+      patternsForName(name).forEach((pattern, index) =>
+        shapes.set(pattern, `named #${index}`),
+      );
+    }
     const caught = corpus.entries.filter(
       (entry) => entry.person && asksForPerson(entry.text),
     );
-    // Which patterns catch each request, on the texts the screen reads.
-    const catchers = caught.map((entry) => {
+    // Which shapes catch each request, on the texts the screen reads.
+    const needed = new Set<string>();
+    for (const entry of caught) {
       const texts = requestTexts(entry.text, HEALTH_PT_BR_V4);
-      return patterns.filter((pattern) =>
-        texts.some((text) => pattern.test(text)),
+      const found = new Set(
+        [...shapes]
+          .filter(([pattern]) => texts.some((text) => pattern.test(text)))
+          .map(([, shape]) => shape),
       );
-    });
-    const needed = new Set(
-      catchers.filter((found) => found.length === 1).map((found) => found[0]),
+      if (found.size === 1) needed.add([...found][0]);
+    }
+    const unneeded = [...new Set(shapes.values())].filter(
+      (shape) => !needed.has(shape),
     );
-    const unneeded = patterns
-      .map((pattern, index) => ({ pattern, index }))
-      .filter(({ pattern }) => !needed.has(pattern))
-      .map(({ pattern, index }) => `#${index} ${pattern.source.slice(0, 60)}`);
     expect(unneeded).toEqual([]);
   });
 });

@@ -340,7 +340,7 @@ function nameAlternatives(names: readonly string[]): string | null {
   for (const raw of names) {
     const folded = raw
       .normalize("NFD")
-      .replace(/[̀-ͯ]/gu, "")
+      .replace(/[\u0300-\u036f]/gu, "")
       .toLowerCase()
       .replace(/\s+/gu, " ")
       .trim();
@@ -375,13 +375,23 @@ export function namedPersonRequests(
 }
 
 function buildNamedPersonRequests(names: readonly string[]): RegExp[] {
-  const alternatives = nameAlternatives(names);
+  return names.flatMap((name) => patternsForName(name));
+}
+
+/**
+ * The request patterns for ONE configured name. Each name carries its own
+ * relationship guard, so "meu filho Rafael" discounts Rafael alone and never
+ * a request for Marina in the same message (PR #32 review).
+ */
+export function patternsForName(name: string): RegExp[] {
+  const alternatives = nameAlternatives([name]);
   if (alternatives === null) return [];
   const BARE = `(?:(?:dr|dra|doutor|doutora)\\.? )?(?:${alternatives})\\b`;
   const NAME = `(?:(?:o|a) )?${BARE}(?![^.?!]{0,25}\\b(?:(?:meu|minha) ${RELATIONSHIP}|(?:ele|ela) (?:e|eh) (?:meu|minha|a minha|o meu)|(?:q|que) (?:e|eh) (?:a |o )?(?:meu|minha))\\b)(?!,? \\(?(?:(?:o|a) )?(?:${RELATIONSHIP})\\b)(?! (?:d[oa] (?:meu|minha)\\b|o (?:comprovante|link|recibo|boleto|pix|valor|horario|numero|contato)\\b|tb\\b|tambem\\b|como\\b|na sessao\\b|no link\\b))`;
   // Anywhere in the message, a name next to a relationship is someone
   // else's, and a message that names a relative "chama <name>" is naming.
-  const GUARD = `^(?![\\s\\S]*\\b${RELATIONSHIP}(?: (?:o|a))? ${BARE})(?![\\s\\S]*\\b${RELATIONSHIP}\\b[\\s\\S]*\\b(?:se chama|chama|nome e) ${BARE})[\\s\\S]*?`;
+  // The request texts are on one line, so "." reaches the whole message.
+  const GUARD = `^(?!.*\\b${RELATIONSHIP}(?: (?:o|a))? ${BARE})(?!.*\\b${RELATIONSHIP}\\b.*\\b(?:se chama|chama|nome e) ${BARE}).*?`;
   const named = (source: string): RegExp => pattern(`${GUARD}${source}`);
   return [
     // "quero falar com o Rafael", "tenho que falar com a Carla urgente", "eu
@@ -418,7 +428,7 @@ function buildNamedPersonRequests(names: readonly string[]): RegExp[] {
     // "a Marina tá aí?", "a Carla tá?", "Rafael, você tá aí?", "responde aí,
     // Rafael", "Marina, me responde".
     named(
-      `${START}${NAME}(?: ou ${NAME})?,?(?:(?: (?:vc|voce))?(?: (?:ta|esta|estao|tao|ja ta|ja esta))? (?:ai|online|por ai)| (?:ta|esta|tai)(?: disponivel)?)${END}`,
+      `${START}${NAME}(?: ou (?:(?:o|a) )?[a-z]+)?,?(?:(?: (?:vc|voce))?(?: (?:ta|esta|estao|tao|ja ta|ja esta))? (?:ai|online|por ai)| (?:ta|esta|tai)(?: disponivel)?)${END}`,
     ),
     named(`${START}(?:me )?(?:responde|atende) ai,? ${NAME}`),
     named(`${START}${NAME},? ${CONTACTS}${END}`),
