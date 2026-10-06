@@ -492,6 +492,15 @@ describe("no schema declares a forbidden key", () => {
     }
     expect(FORBIDDEN_KEYS.filter((key) => keys.has(key))).toEqual([]);
   });
+
+  it("declares the reply draft and the screened message in the review detail alone (ADR 0023 §L)", () => {
+    const declaring = COMPANY_OS_OPERATION_NAMES.filter((name) =>
+      declaredKeys(responseOf(name) as unknown as ZodNode).some(
+        (key) => key === "replyDraft" || key === "screenedMessage",
+      ),
+    );
+    expect(declaring).toEqual(["get_review"]);
+  });
 });
 
 describe("the refinements restate the projections' own semantics", () => {

@@ -15,7 +15,8 @@
 //     every successful answer carries `Cache-Control: no-store`; no answer
 //     carries an Auth email, its hash, the display name, a task title or body,
 //     an agent's role or description, a run's stored result (reply draft,
-//     summary, next action), keys, fingerprints, correlation or provider ids,
+//     summary, next action; the review's own draft only in get_review's
+//     conversation, ADR 0023 §L), keys, fingerprints, correlation or provider ids,
 //     a job's id, lease owner, raw error or step detail, a price row, a raw
 //     actor label (the PR #6 fixtures A to C: an email-like reviewer,
 //     tripped_by, cleared_by and requested_by, and a channel's configured_by),

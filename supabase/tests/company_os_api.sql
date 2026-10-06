@@ -1549,7 +1549,11 @@ begin
       '.recentRuns[].startedAt', '.recentRuns[].status', '.recentRuns[].stopRef', '.recentRuns[].stopRef.id',
       '.recentRuns[].taskId', '.recentRuns[].totalTokens', '.v']),
     ('get_review', array[
-      '.agentRunId', '.allowedDecisions', '.asOf', '.capability', '.createdAt', '.decisionNote',
+      '.agentRunId', '.allowedDecisions', '.asOf', '.capability',
+      -- ADR 0023 §L: what the agent read and what the send would carry.
+      '.conversation', '.conversation.contentRedacted', '.conversation.newerMessage',
+      '.conversation.replyDraft', '.conversation.screening', '.conversation.status',
+      '.createdAt', '.decisionNote',
       '.doNotContact', '.hasNote', '.id', '.outboundStatus', '.reviewedAt', '.shadowDecision',
       '.shadowDecision.status', '.status', '.structuredDecisions', '.structuredDecisions.businessRoute',
       '.structuredDecisions.leadIntelligence', '.structuredDecisions.modelRoute', '.structuredDecisions.status',
@@ -1753,7 +1757,10 @@ $$;
 -- N2. Every excluded column and payload key of brief §13 item 2 carries a
 --     planted sentinel (SENTINEL-..., sentinel-..., Sentinel...) in both
 --     tenants, and no output carries one: the only allowed content is the
---     advice's summary and next action, in get_review_advice alone.
+--     advice's summary and next action, in get_review_advice alone, and (ADR
+--     0023 §L, amending SI-52 and SI-56) the reply draft the send would carry,
+--     in get_review's conversation.replyDraft alone, for the tenant's own
+--     browser-decidable review. The task's description never leaves.
 do $$
 declare
   v_check record;
@@ -1809,6 +1816,8 @@ begin
     from cos_out o,
          regexp_matches(case when o.fn = 'get_review_advice'
                              then replace(replace(o.result::text, 'SENTINEL-A-SUMMARY', ''), 'SENTINEL-A-NEXT', '')
+                             when o.fn = 'get_review'
+                             then (o.result #- '{body,conversation,replyDraft}')::text
                              else o.result::text end,
                         '(sentinel[^",]{0,40})', 'gi') m
    where o.snapshot = 'busy';
@@ -1819,6 +1828,15 @@ begin
   if not exists (select 1 from cos_out where snapshot = 'busy' and fn = 'get_review_advice'
                     and result::text like '%SENTINEL-A-SUMMARY%' and result::text like '%SENTINEL-A-NEXT%') then
     raise exception 'N2: the advice summary and next action never left, so the exception is untested';
+  end if;
+  -- The reply draft leaves only there, and only tenant A's own.
+  if not exists (select 1 from cos_out where snapshot = 'busy' and fn = 'get_review'
+                    and result #>> '{body,conversation,replyDraft}' like 'SENTINEL-A-DRAFT%') then
+    raise exception 'N2: no review showed its reply draft, so the exception is untested';
+  end if;
+  if exists (select 1 from cos_out where snapshot = 'busy' and fn = 'get_review'
+                and coalesce(result #>> '{body,conversation,replyDraft}', 'SENTINEL-A-DRAFT') not like 'SENTINEL-A-DRAFT%') then
+    raise exception 'N2: a review showed a draft that is not its own tenant''s';
   end if;
 end
 $$;
@@ -3177,6 +3195,10 @@ insert into cos_internal values
   ('ops.cos_structured_decision(ops.structured_decisions)', 's'),
   ('ops.cos_structured_department(uuid, uuid, text)', 's'),
   ('ops.cos_structured_level(jsonb)', 'i'),
+  -- ADR 0023 §L: get_review's conversation block and the stale-reply
+  -- predicate the send shares, read only.
+  ('ops.cos_review_conversation(uuid, ops.review_items)', 's'),
+  ('ops.cos_review_superseded(uuid, ops.review_items)', 's'),
   -- Phase 2E.2: the overview's operational health, read only.
   ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's'),
   -- Phase 3A: the overview's agenda and its two row summaries, read only.
@@ -3610,7 +3632,7 @@ begin
     from unnest(array['request_agent_run', 'start_agent_run', 'assign_task', 'record_event', 'open_review_for_settled_job',
                       'enforce_spend_ceiling', 'spend_admission', 'set_agent_status', 'clear_execution_stop',
                       'trip_execution_stop', 'configure_whatsapp_channel', 'request_outbound_send', 'begin_outbound_send',
-                      'settle_outbound_send', 'mark_outbound_indeterminate', 'whatsapp_send_eligibility',
+                      'confirm_outbound_send', 'settle_outbound_send', 'mark_outbound_indeterminate', 'whatsapp_send_eligibility',
                       'admit_inbound_message', 'admit_inbound_core', 'receive_whatsapp_message', 'receive_whatsapp_status',
                       'lease_job', 'complete_job', 'fail_job', 'claim_agent_run', 'refuse_agent_run', 'complete_agent_run',
                       'fail_agent_run', 'settle_stale_agent_runs', 'job_execution_stop', 'defer_job', 'reap_expired_leases',

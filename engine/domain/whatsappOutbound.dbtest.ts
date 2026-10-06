@@ -45,6 +45,7 @@ import {
   setDoNotContact,
   triageAndAccept,
   type Clinic,
+  type InboundItem,
 } from "./testSupport/whatsappFixture.ts";
 
 let admin: Pool;
@@ -85,6 +86,8 @@ const acceptedReview = async (
     readonly tenantId?: string;
     readonly target?: string;
     readonly messageId?: string;
+    /** Delivered in the same notification, before the reviewed message. */
+    readonly before?: readonly InboundItem[];
   } = {},
 ): Promise<Scenario> => {
   const clinic = await buildClinic(
@@ -99,6 +102,7 @@ const acceptedReview = async (
     gateway,
     metaPayload(clinic.providerTarget, {
       messages: [
+        ...(options.before ?? []),
         {
           id: options.messageId ?? "wamid.IN1001",
           from: LEAD,
@@ -605,6 +609,154 @@ describe("the outbound record", () => {
     ]);
     expect(JSON.stringify(facts)).not.toContain("SENTINEL");
     expect(JSON.stringify(facts)).not.toContain(LEAD);
+  });
+});
+
+describe("a reply the contact's newer message made stale is never sent (ADR 0023 §L)", () => {
+  const writeAgain = (scenario: Scenario, messageId: string) =>
+    deliver(
+      gateway,
+      metaPayload(scenario.clinic.providerTarget, {
+        messages: [
+          { id: messageId, from: LEAD, body: "Synthetic second question" },
+        ],
+      }),
+    );
+
+  it("refuses the request once the contact wrote again, and calls nothing", async () => {
+    const scenario = await acceptedReview();
+    await writeAgain(scenario, "wamid.IN1002");
+    const transport = fakeTransport(() => accepted("wamid.never"));
+    await expect(send(scenario, transport)).rejects.toMatchObject({
+      code: "refused",
+      message: expect.stringContaining("newer_message"),
+    });
+    expect(transport.calls).toHaveLength(0);
+    expect(await outboundCount(TENANT_A)).toBe(0);
+  });
+
+  it("blocks at the last gate a message that arrived after the request, on the record", async () => {
+    const scenario = await acceptedReview();
+    await owner.withTransaction((tx) =>
+      requestOutboundSend(tx, {
+        tenantId: TENANT_A,
+        reviewId: scenario.reviewId,
+        requestedBy: OPERATOR,
+        source: "dbtest-whatsapp",
+      }),
+    );
+    await writeAgain(scenario, "wamid.IN1003");
+    const transport = fakeTransport(() => accepted("wamid.never"));
+
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "blocked",
+      blockedReason: "newer_message",
+      providerCalled: false,
+    });
+    expect(transport.calls).toHaveLength(0);
+  });
+
+  it("still sends a reply whose message is the conversation's latest", async () => {
+    const scenario = await acceptedReview();
+    const transport = fakeTransport(() => accepted("wamid.OUT3001"));
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "sent",
+      providerCalled: true,
+    });
+    expect(transport.calls).toHaveLength(1);
+  });
+
+  const sendImage = (scenario: Scenario, messageId: string) =>
+    deliver(
+      gateway,
+      metaPayload(scenario.clinic.providerTarget, {
+        messages: [{ id: messageId, from: LEAD, body: "", kind: "image" }],
+      }),
+    );
+
+  it("refuses the request once the contact sent an image, which the store refused on the record", async () => {
+    const scenario = await acceptedReview();
+    await sendImage(scenario, "wamid.IN1004");
+    const transport = fakeTransport(() => accepted("wamid.never"));
+    await expect(send(scenario, transport)).rejects.toMatchObject({
+      code: "refused",
+      message: expect.stringContaining("newer_message"),
+    });
+    expect(transport.calls).toHaveLength(0);
+  });
+
+  it("still sends when the conversation's other message is an image sent before the reviewed one", async () => {
+    const scenario = await acceptedReview({
+      before: [
+        {
+          id: "wamid.IN1005",
+          from: LEAD,
+          body: "",
+          kind: "image",
+          timestamp: Math.floor(Date.now() / 1000) - 60,
+        },
+      ],
+    });
+    const transport = fakeTransport(() => accepted("wamid.OUT3005"));
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "sent",
+      providerCalled: true,
+    });
+  });
+
+  it("stops the call when the contact writes after the last check: never called, settled failed", async () => {
+    const scenario = await acceptedReview();
+    const transport = fakeTransport(() => accepted("wamid.never"));
+    const report = await send(scenario, transport, {
+      afterBegin: async () => {
+        await writeAgain(scenario, "wamid.IN1006");
+      },
+    });
+    expect(report).toMatchObject({
+      status: "failed",
+      blockedReason: "newer_message",
+      providerCalled: false,
+    });
+    expect(transport.calls).toHaveLength(0);
+    expect(await outboundOf(scenario)).toMatchObject({
+      status: "failed",
+      errorClass: "newer_message",
+      providerMessageId: null,
+    });
+  });
+
+  /** True once a WhatsApp admission waits on a lock; gives up after about five seconds. */
+  const admissionIsWaiting = async (): Promise<boolean> => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const { rows } = await admin.query<{ waiting: number }>(
+        `select count(*)::int as waiting from pg_stat_activity
+          where wait_event_type = 'Lock' and query like '%receive_whatsapp_message%'`,
+      );
+      if (rows[0].waiting > 0) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    return false;
+  };
+
+  it("holds the contact's next message at its admission while the call is in flight", async () => {
+    const scenario = await acceptedReview();
+    const pending: { delivery: ReturnType<typeof writeAgain> | null } = {
+      delivery: null,
+    };
+    let admissionWaited = false;
+    const transport = fakeTransport(async () => {
+      pending.delivery = writeAgain(scenario, "wamid.IN1007");
+      admissionWaited = await admissionIsWaiting();
+      return accepted("wamid.OUT3007");
+    });
+
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "sent",
+      providerCalled: true,
+    });
+    expect(admissionWaited).toBe(true);
+    // Admitted only once the reply it would have made stale had been settled.
+    expect(await pending.delivery).toMatchObject({ status: 200 });
   });
 });
 

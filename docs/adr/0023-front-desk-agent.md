@@ -29,7 +29,7 @@ The engine stays domain-independent (CLAUDE.md rule 2; the vocabulary guard refu
 
 Pipeline: raw WhatsApp message → local screen → screened text → (Jev, shadow) → the agent's capability → Q8's authorized pool → OpenRouter → the model → a reply candidate → a person's review → the separate send act.
 
-- **Where.** In the worker, for every `lead_triage` run of an agent with a published operating policy, before a route is chosen (`engine/handlers/agentRunExecute.ts`). The screen is `engine/frontDesk/messageSanitizer.ts`, version `front_desk_screen.v2` (v1 collapsed line breaks before splitting, so a clause on its own line could ride along with an administrative one; fixed before the merge, PR #28 review).
+- **Where.** In the worker, for every `lead_triage` run of an agent with a published operating policy, before a route is chosen (`engine/handlers/agentRunExecute.ts`). The screen is `engine/frontDesk/messageSanitizer.ts`, version `front_desk_screen.v3` (v1 collapsed line breaks before splitting, so a clause on its own line could ride along with an administrative one; fixed before the merge, PR #28 review; v3 keeps one punctuation after a run of omissions, §C).
 - **How.** Structured identifiers (e-mail, URL, CPF- and phone-shaped numbers) are replaced first. The message is split into clauses at punctuation and Portuguese connectors (never at the verb "é"). Each clause is classified with a reviewed **pack** (`health_pt_br.v1`): sensitive (health, intimate, distress, treatment history, being a patient), administrative, or benign; an administrative phrase that names a sensitive word without being about the sender ("a diferença entre psicólogo e psiquiatra") is never split, and the rest of its clause must still be clean. **Only recognised clauses are kept.** A sensitive clause AND an unrecognised one are replaced by one marker, `[trecho omitido]`, the same for every reason, so the omission itself says nothing about health.
 - **Classes.**
   - `administrative`: nothing omitted.
@@ -45,6 +45,14 @@ Pipeline: raw WhatsApp message → local screen → screened text → (Jev, shad
 ### C. A pack is reviewed code, selected by the tenant
 
 The pack decides what never reaches a model. It lives in reviewed code with a synthetic corpus test and mutation checks; a tenant selects it by id in its operating policy and never edits it. A changed list is a new pack version, because every screening records the pack id it used.
+
+**`health_pt_br.v2` (2026-10-05).** The owner's site sends leads to WhatsApp with a message its intake form writes: a greeting, one sentence naming the demand, its duration and a 0-10 rating ("O que mais tem me pegado é <demand> há <time> (impacto 8/10)."), then the request for the first session. Measured on that format, v1 leaked:
+- the rating, which its date pattern read as administrative;
+- the form's demand words: conflicts at work or in a relationship, overload, procrastination, paralysis.
+
+v2 keeps every v1 pattern and adds the form's sentence, the rating, the form's demand vocabulary and a few identity and disability terms. It also keeps a pronoun that a connector split off ("dê pra você?"). On 50 messages built exactly as the form builds them, nothing of the demand, its duration or its rating passes, and the request for the first session is kept. Five deliberate pattern removals are each caught.
+
+The screen itself moved to `front_desk_screen.v3`: in a run of omissions, the later clause's punctuation replaces the earlier one's (never ", ."). The default pack is v2; v1 stays selectable for history.
 
 ### D. The four kinds of configuration are versioned system data
 
@@ -126,7 +134,39 @@ Nothing new keeps a body. A conversation's state holds no text.
   - Google Calendar;
   - follow-up text written by the model, and WhatsApp templates outside the 24-hour window;
   - the CRM settings screen;
-  - showing the reply draft in the browser. SI-52 keeps it out today, so a browser acceptance does not show what will be sent. Supervised production needs the reviewer to see the draft, and that is an owner decision to amend SI-52.
+  - ~~showing the reply draft in the browser. SI-52 keeps it out today, so a browser acceptance does not show what will be sent. Supervised production needs the reviewer to see the draft, and that is an owner decision to amend SI-52.~~ *(Decided by the owner on 2026-10-05: §L.)*
+
+### L. The review shows what it accepts; a stale reply is never sent (owner decision, 2026-10-05)
+
+The first supervised send on staging (record below) showed two gaps. The owner chose to close both before the next test (migration `20261012120000_front_desk_review_context.sql`).
+
+- **The review shows the message and the reply.** `get_review` gains `conversation`, for a browser-decidable review of synthetic or test data only (any other review reads `unavailable`):
+  - the front desk's screening of the message: its class, its disposition, the fixed text's key, and the **screened text**, which is exactly what a model and Jev read. Never the task's description: the raw message stays in the raw store;
+  - the reply draft the send act would carry, until the task's content is redacted;
+  - whether the contact wrote again since.
+
+  The review page shows it above the decision, read only ("Mensagem e resposta"). Accepting still sends nothing. This amends SI-52 and SI-56: a reviewer must see what they accept.
+- **A stale reply is never sent.** A reply answers the message it was drafted for. `ops.cos_review_superseded` is true when the contact wrote again in the same conversation (by the provider's timestamp, the admission instant breaking a tie). Then:
+  - the send request refuses the review (`newer_message`) and records nothing;
+  - the last gate before the provider call reads the conversation again and blocks the send on the record, so a message that arrives between the request and the call still stops it;
+  - the review page warns with the same predicate.
+
+  SI-81 is added.
+- **Closed against the two gaps the automated review of PR #29 found** (migration `20261013120000_front_desk_stale_reply_closure.sql`):
+  - *A refused message counts.* A follow-up the store refuses on the record (an image, an empty or an oversized text) creates no admitted message, so the predicate above never saw it: the contact could send the photo of a receipt and the old draft would still go. The predicate now also reads the conversation's clock (`last_inbound_at`, which every message with a sender advances) and the order in which the database recorded each message: a conversation's messages are recorded one at a time, each waiting on the conversation's row at its admission, so the insertion order of their facts is their arrival order. Two messages the provider delivers out of order hold both replies for a person (fail closed).
+  - *Nothing arrives between the last check and the call.* `ops.begin_outbound_send` commits `sending` before the call, as at-most-once requires (SI-50), so a message committed after its check went unseen. The last gate is now `ops.confirm_outbound_send`: it locks the conversation's row and reads the predicate again, and `engine/domain/outboundSend.ts` makes the one call and settles it in that same transaction. While it is open, the contact's next message waits at its admission (bounded by the gateway's statement timeout; Meta redelivers one the gateway could not take). A send stopped there was never called and settles `failed`, class `newer_message`: the state machine is unchanged.
+- **What this does not change.** Q8, the screen, the send preconditions (SI-49) and at most one call (SI-50) are unchanged. No browser act is added: `get_review` already reached the read through its gate, so this is not an OD-8a migration.
+
+## Integration and staging record (2026-10-04 and 2026-10-05)
+
+- **Integrated.** PR #28, normal merge `26c14347` into `feature/clinical-phase-1` (parents `a2979573` and `428e6451`, tree equal to the reviewed head). `main` is unchanged at `a863e2a0`. Post-merge CI at the historical baseline: core jobs PASS, e2e exactly 9 failed and 1 skipped (the same ids), Prettier exactly the two baseline files.
+- **Staging.** Migration 71 applied with the pinned CLI (dry run first, no seed). The staging front-desk agent's four configuration kinds are published as version 1, all synthetic (a fictional clinic, a synthetic price).
+- **Staging pass (2026-10-04).** Signed inbound messages from the channel's registered test sender went through the local gateway and the real worker on OpenRouter:
+  - an administrative question reached the model whole, and the draft stated only the knowledge's price and format;
+  - a mixed message reached the model and Jev as the omission marker plus the scheduling request;
+  - the sensitive word was found in `ops.tasks` (the raw store) and in no other table.
+- **First supervised send (2026-10-05).** The owner accepted the administrative review in the browser at AAL2, wrote from the test device to the channel's number to open the provider's service window, and `messaging send` carried the reply once: status `sent`, the provider accepted, nothing resent, no privacy notice (none is recorded on staging). The number's status callbacks go to another app's webhook, which is not touched, so the row stays `sent`; the owner confirmed receipt on the device.
+- **What the owner found.** The reply was out of context. It answered the simulated question, not the owner's own message, which never reached this system, because the number's inbound webhooks go to the other app. And the browser showed neither the message nor the draft (§K), so the acceptance was blind. §L answers both.
 
 ## Consequences
 

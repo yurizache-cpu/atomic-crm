@@ -12,7 +12,63 @@ export const REVIEW_DECISIONS_NOTE =
 export const REVIEW_NOT_A_SEND_NOTE =
   "Registrar uma decisão nunca aprova nem envia uma resposta.";
 
-export const REPLY_DRAFT_NOTE = "O rascunho de resposta nunca é mostrado aqui.";
+export const REPLY_DRAFT_NOTE =
+  "O rascunho de resposta não faz parte desta análise: ele aparece em “Mensagem e resposta”.";
+
+// ADR 0023 §L: what the assistant read and the text the send would carry, for
+// a review of synthetic or test data. Accepting still sends nothing.
+export const CONVERSATION_TITLE = "Mensagem e resposta";
+
+export const CONVERSATION_NOTE =
+  "O que o assistente leu, depois do filtro, e o texto que o envio levaria. Aceitar não envia: o envio é um passo separado.";
+
+export const CONVERSATION_UNAVAILABLE =
+  "Indisponível: só revisões com dados sintéticos ou de teste mostram a mensagem e a resposta.";
+
+export const CONVERSATION_NEWER_MESSAGE =
+  "O contato escreveu de novo depois desta mensagem. Esta resposta não será enviada: decida a revisão da mensagem mais recente.";
+
+export const CONVERSATION_NO_SCREENING =
+  "Esta mensagem não passou pelo filtro da recepção; o texto original não é mostrado.";
+
+export const CONVERSATION_REDACTED = "Apagado pela retenção.";
+
+export const CONVERSATION_NO_DRAFT = "Sem rascunho de resposta.";
+
+export const SCREENING_CLASS_LABELS = {
+  administrative: "Administrativa",
+  mixed: "Mista: uma parte foi omitida",
+  sensitive_only: "Só assunto sensível",
+  safety: "Risco à vida ou à segurança",
+  unknown: "Não reconhecida",
+} as const;
+
+/** Why nothing of the message was read, by its class. */
+export const SCREENING_NOTHING_READ = {
+  administrative: CONVERSATION_REDACTED,
+  mixed: CONVERSATION_REDACTED,
+  sensitive_only: "Só assunto sensível: o modelo não leu nada desta mensagem.",
+  safety:
+    "Risco à vida ou à segurança: o modelo não leu nada, e a conversa foi para uma pessoa.",
+  unknown: "Nada foi reconhecido: o modelo não leu nada desta mensagem.",
+} as const;
+
+export const SCREENING_DISPOSITION_LABELS = {
+  model: "O modelo de IA escreveu a resposta",
+  fixed_reply: "Texto fixo",
+  held_for_person: "Uma pessoa está com a conversa",
+} as const;
+
+export const FIXED_MESSAGE_LABELS = {
+  safety: "Segurança",
+  human_handoff_ack: "Passagem para uma pessoa",
+  sensitive_only_prospect: "Assunto sensível (lead)",
+  sensitive_only_client: "Assunto sensível (cliente)",
+  clarification: "Pedido de esclarecimento",
+  out_of_scope: "Fora do escopo",
+  service_unavailable: "Serviço indisponível",
+  opt_out_ack: "Confirmação de descadastro",
+} as const;
 
 export const NEEDS_EDIT_TEXT =
   "registrada; nesta fase não há próximo passo para ajuste";

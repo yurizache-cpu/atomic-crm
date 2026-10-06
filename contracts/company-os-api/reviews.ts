@@ -1,12 +1,14 @@
 // Reviews and the one content exception (docs/PHASE_2C_BRIEF.md §9, §13 item 3;
 // the SI-52 amendment).
 //
-// A summary and a detail carry no field of the model's proposal and no reviewer
-// label. The advice is a separate, capability-pinned projection read on
-// explicit open: for lead_triage, the classification enums, the summary and the
-// recommended next action. It NEVER carries the reply draft: both branches of
-// ReviewAdviceSchema are strict, so a `response_draft` (or any other key) makes
-// the response fail to parse instead of reaching a screen.
+// A summary carries no field of the model's proposal and no reviewer label. The
+// advice is a separate, capability-pinned projection read on explicit open: for
+// lead_triage, the classification enums, the summary and the recommended next
+// action. It NEVER carries the reply draft: both branches of ReviewAdviceSchema
+// are strict, so a `response_draft` (or any other key) makes the response fail
+// to parse instead of reaching a screen. The reply draft the send would carry
+// is shown in one place only, a detail's `conversation` (ADR 0023 §L), for a
+// browser-decidable review of synthetic or test data.
 
 import { z } from "zod";
 import {
@@ -24,6 +26,7 @@ import {
   ShadowPolicyVersionSchema,
   ShadowProviderSchema,
 } from "./decisions.ts";
+import { ReviewConversationSchema } from "./reviewConversation.ts";
 import { ReviewStructuredDecisionsSchema } from "./structuredDecisions.ts";
 import {
   AdviceWithheldReasonSchema,
@@ -142,6 +145,8 @@ export const ReviewDetailSchema = z
     shadowDecision: ShadowDecisionSchema.nullable(),
     // ADR 0022: the structured decisions (Jev) for this review, advisory.
     structuredDecisions: ReviewStructuredDecisionsSchema,
+    // ADR 0023 §L: the screened message and the draft the send would carry.
+    conversation: ReviewConversationSchema,
   })
   .superRefine((review, ctx) => {
     if (review.hasNote !== (review.decisionNote !== null)) {

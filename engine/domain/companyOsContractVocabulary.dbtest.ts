@@ -114,6 +114,15 @@ const CHECKED: Readonly<Record<string, readonly [readonly string[], string]>> =
       contracts.EVENT_SUBJECT_TYPES,
       "events.events_subject_type_check",
     ],
+    // ADR 0023 §L: what a review shows of its screening.
+    SCREENING_MESSAGE_CLASSES: [
+      contracts.SCREENING_MESSAGE_CLASSES,
+      "inbound_screenings.inbound_screenings_class_check",
+    ],
+    SCREENING_DISPOSITIONS: [
+      contracts.SCREENING_DISPOSITIONS,
+      "inbound_screenings.inbound_screenings_disposition_check",
+    ],
   };
 
 describe("the contract vocabularies equal the database's", () => {
@@ -121,6 +130,40 @@ describe("the contract vocabularies equal the database's", () => {
     const [table, constraint] = where.split(".");
     const definition = await constraintDefinition(table, constraint);
     expect(sorted(new Set(literals(definition)))).toEqual(sorted(vocabulary));
+  });
+
+  it("the review's conversation names the fixed texts and the bounds the database holds (ADR 0023 §L)", async () => {
+    const { rows } = await admin.query<{ keys: string[] }>(
+      "select ops.fixed_message_keys() as keys",
+    );
+    expect(sorted(rows[0].keys)).toEqual(sorted(contracts.FIXED_MESSAGE_KEYS));
+    const length = await constraintDefinition(
+      "inbound_screenings",
+      "inbound_screenings_input_length",
+    );
+    expect(
+      Number(
+        section(
+          length,
+          /char_length\(model_input\) <= (\d+)/,
+          "the screened bound",
+        ),
+      ),
+    ).toBe(contracts.SCREENED_MESSAGE_MAX_LENGTH);
+    const branch = section(
+      await functionSource("agent_run_result_valid"),
+      /if p_capability = 'lead_triage' then(.*?)return true;/s,
+      "the lead_triage branch",
+    );
+    expect(
+      Number(
+        section(
+          branch,
+          /char_length\(p_result ->> 'response_draft'\) not between 1 and (\d+)/,
+          "the draft bound",
+        ),
+      ),
+    ).toBe(contracts.RESPONSE_DRAFT_MAX_LENGTH);
   });
 
   it("the error categories are exactly those the status-pair constraint admits", async () => {
