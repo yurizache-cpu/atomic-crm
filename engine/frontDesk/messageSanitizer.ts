@@ -26,7 +26,7 @@
 // the omitted text never leaves the store it came from.
 
 import { redactStructuredIdentifiers } from "../models/identifierRedaction.ts";
-import { HEALTH_PT_BR_V3 } from "./packs/healthPtBr.ts";
+import { HEALTH_PT_BR_V4 } from "./packs/healthPtBr.ts";
 
 export const SANITIZER_VERSION = "front_desk_screen.v3";
 export const OMISSION_MARKER = "[trecho omitido]";
@@ -56,6 +56,16 @@ export interface SanitizerPack {
   readonly benign: readonly RegExp[];
   /** The sender asks for a person. */
   readonly humanRequest: readonly RegExp[];
+  /**
+   * The sender asks for one of the people the tenant names (the operating
+   * policy's `handoffNames`), from v4: the patterns for those names.
+   */
+  readonly namedRequest?: (names: readonly string[]) => readonly RegExp[];
+  /**
+   * From v4: the request patterns also read each line break as the end of a
+   * clause, so a request on its own line starts a clause.
+   */
+  readonly lineBreaksEndClauses?: boolean;
   /** The sender asks to stop receiving messages. */
   readonly optOut: readonly RegExp[];
 }
@@ -206,13 +216,20 @@ function classOf(
 
 const isPunctuation = (separator: string) => /^[.!?;:,\n]+ ?$/u.test(separator);
 
+/** What the tenant's configuration adds to a screening. */
+export interface ScreeningOptions {
+  /** The people a contact may ask for by name; read by packs from v4. */
+  readonly handoffNames?: readonly string[];
+}
+
 /**
- * Screen one inbound message. Pure and deterministic: the same text and pack
- * always give the same result.
+ * Screen one inbound message. Pure and deterministic: the same text, pack and
+ * options always give the same result.
  */
 export function sanitizeMessage(
   text: string,
-  pack: SanitizerPack = HEALTH_PT_BR_V3,
+  pack: SanitizerPack = HEALTH_PT_BR_V4,
+  options: ScreeningOptions = {},
 ): SanitizedMessage {
   const truncated = text.length > MAX_SCREENED_LENGTH;
   // Line breaks are clause boundaries, so they survive until the split: only
@@ -232,7 +249,17 @@ export function sanitizeMessage(
   // Whole-message phrases (danger, a request for a person, an opt-out) may
   // run across a line break, so they are matched on one line.
   const oneLine = folded.replace(/\s+/gu, " ");
-  const humanRequested = matchesAny(pack.humanRequest, oneLine);
+  // A pack from v4 also reads each line break as the end of a clause.
+  const requestTexts = pack.lineBreaksEndClauses
+    ? [oneLine, folded.replace(/[^\S\n]*\n\s*/gu, ". ").replace(/\s+/gu, " ")]
+    : [oneLine];
+  const requestPatterns = [
+    ...pack.humanRequest,
+    ...(pack.namedRequest?.(options.handoffNames ?? []) ?? []),
+  ];
+  const humanRequested = requestTexts.some((line) =>
+    matchesAny(requestPatterns, line),
+  );
   const optOutRequested = matchesAny(pack.optOut, oneLine);
   const base = {
     sanitizerVersion: SANITIZER_VERSION,

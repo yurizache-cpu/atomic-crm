@@ -52,6 +52,9 @@ const text = (max: number) =>
       "no control characters but the line break",
     );
 const key = z.string().regex(/^[a-z][a-z0-9_]{0,39}$/);
+/** A person's name: a letter first, then letters, spaces, dots, apostrophes, hyphens. */
+const HANDOFF_NAME =
+  /^[A-Za-zÀ-ÖØ-öø-ÿ][A-Za-zÀ-ÖØ-öø-ÿ .'-]{0,59}$/u;
 const domainKey = z.string().regex(/^[a-z][A-Za-z0-9_]{0,39}$/);
 const uuid = z
   .string()
@@ -77,6 +80,11 @@ export const operatingPolicySchema = z.strictObject({
     .string()
     .regex(/^[a-z]{2,3}(?:-[A-Z]{2})?$/)
     .optional(),
+  /**
+   * The people a contact may ask for by name (pack v4): asking for one moves
+   * the conversation to a person. The database holds the same shape.
+   */
+  handoffNames: z.array(z.string().regex(HANDOFF_NAME)).max(20).optional(),
   /** What the agent handles. */
   scope: z.array(text(300)).min(1).max(20),
   /** What it never does. */

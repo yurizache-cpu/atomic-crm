@@ -182,7 +182,10 @@ beforeEach(async () => {
 });
 
 /** A clinic with a receptionist agent whose four configuration kinds are published. */
-const frontDesk = async (knowledge: unknown = KNOWLEDGE): Promise<Clinic> => {
+const frontDesk = async (
+  knowledge: unknown = KNOWLEDGE,
+  policy: unknown = POLICY,
+): Promise<Clinic> => {
   const clinic = await buildClinic(owner, TENANT_A, TARGET, "test", [DEVICE]);
   await admin.query(
     `select ops.record_agent_profile($1, $2, 'Answer contacts on administrative matters.',
@@ -191,7 +194,7 @@ const frontDesk = async (knowledge: unknown = KNOWLEDGE): Promise<Clinic> => {
     [TENANT_A, clinic.agentId],
   );
   for (const [kind, content] of [
-    ["operating_policy", POLICY],
+    ["operating_policy", policy],
     ["playbook", PLAYBOOK],
     ["knowledge", knowledge],
     ["fixed_messages", FIXED],
@@ -590,6 +593,35 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
     });
     expect(provider.calls).toHaveLength(0);
     expect(decisions.asked).toHaveLength(0);
+  });
+
+  it("pack v4: asking for someone the policy names hands the conversation over; asking for anyone else does not", async () => {
+    await frontDesk(KNOWLEDGE, {
+      ...POLICY,
+      sanitizerPack: "health_pt_br.v4",
+      handoffNames: ["Rafael"],
+    });
+    await addCrmContact(admin, DEVICE);
+    const { provider, registry } = runtime();
+    // A name the policy does not list asks for no one the front desk has.
+    await send("quero falar com o Bruno");
+    await drain(registry);
+    expect(await latest()).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "clarification",
+    });
+    await send("quero falar com o Rafael");
+    await drain(registry);
+    const asked = await latest();
+    expect(asked).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "human_handoff_ack",
+    });
+    expect(await holder(asked.conversation_id)).toMatchObject({
+      holder: "person",
+      holder_reason: "person_requested",
+    });
+    expect(provider.calls).toHaveLength(0);
   });
 
   it("asks an unrecognised message to clarify, without a model", async () => {

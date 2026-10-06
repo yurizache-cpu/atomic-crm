@@ -12,6 +12,10 @@
 // sensitive. Administrative patterns are what the reception may serve.
 
 import type { SanitizerPack } from "../messageSanitizer.ts";
+import {
+  namedPersonRequests,
+  PERSON_REQUEST_PT_BR,
+} from "./personRequestPtBr.ts";
 
 const CRISIS: readonly RegExp[] = [
   /\bsuicid/,
@@ -431,10 +435,28 @@ export const HEALTH_PT_BR_V3: SanitizerPack = Object.freeze({
   optOut: Object.freeze(OPT_OUT),
 });
 
+// v4 (2026-10-06): how leads ask for a person. Reviewing v3 found that it
+// knew only "falar com uma pessoa / um atendente / alguém": refusing the
+// assistant ("não quero falar com robô"), asking for a named person or a role,
+// asking to be called and asking whether anyone is there came out unrecognised
+// (the clarification text) or reached the model, while "falar com alguém da
+// minha família" moved a conversation to a person. v4 replaces the request
+// list with ./personRequestPtBr.ts, written for precision, and recognises the
+// names the tenant configures. Everything else is v3's: what reaches a model
+// is unchanged, and a request for a person never reaches one.
+export const HEALTH_PT_BR_V4: SanitizerPack = Object.freeze({
+  ...HEALTH_PT_BR_V3,
+  id: "health_pt_br.v4",
+  humanRequest: PERSON_REQUEST_PT_BR,
+  namedRequest: namedPersonRequests,
+  lineBreaksEndClauses: true,
+});
+
 /** The reviewed packs a tenant may select. */
 export const SANITIZER_PACKS: Readonly<Record<string, SanitizerPack>> =
   Object.freeze({
     [HEALTH_PT_BR_V1.id]: HEALTH_PT_BR_V1,
     [HEALTH_PT_BR_V2.id]: HEALTH_PT_BR_V2,
     [HEALTH_PT_BR_V3.id]: HEALTH_PT_BR_V3,
+    [HEALTH_PT_BR_V4.id]: HEALTH_PT_BR_V4,
   });

@@ -1,0 +1,5064 @@
+{
+ "handoffNames": [
+  "Rafael",
+  "Marina",
+  "Bruno",
+  "Carla",
+  "Dra. Helena",
+  "Dr. Paulo"
+ ],
+ "entries": [
+  {
+   "text": "oi, quero falar com uma pessoa por favor",
+   "person": true
+  },
+  {
+   "text": "tem alguem ai?",
+   "person": true
+  },
+  {
+   "text": "alguem pode me atender??",
+   "person": true
+  },
+  {
+   "text": "quero atendimento com pessoa, nao com robo",
+   "person": true
+  },
+  {
+   "text": "me passa pra um atendente pf",
+   "person": true
+  },
+  {
+   "text": "pode me ligar? prefiro conversar por telefone com alguem",
+   "person": true
+  },
+  {
+   "text": "me liga quando puder",
+   "person": true
+  },
+  {
+   "text": "chama alguem da recepcao pra mim",
+   "person": true
+  },
+  {
+   "text": "queria falar com a Marina",
+   "person": true
+  },
+  {
+   "text": "o Rafael ta ai? preciso falar com ele",
+   "person": true
+  },
+  {
+   "text": "posso falar com a Dra. Helena diretamente?",
+   "person": true
+  },
+  {
+   "text": "quero conversar com o Dr. Paulo, nao com o sistema",
+   "person": true
+  },
+  {
+   "text": "ATENDENTE",
+   "person": true
+  },
+  {
+   "text": "humano por favor 🙏",
+   "person": true
+  },
+  {
+   "text": "quero falar com um humano",
+   "person": true
+  },
+  {
+   "text": "tem gente de verdade ai ou é so bot?",
+   "person": true
+  },
+  {
+   "text": "nao quero falar com robo, me transfere",
+   "person": true
+  },
+  {
+   "text": "me transfere pra alguem da equipe",
+   "person": true
+  },
+  {
+   "text": "passa pra alguem ai pf, to com pressa",
+   "person": true
+  },
+  {
+   "text": "vcs tem alguem pra me atender agora?",
+   "person": true
+  },
+  {
+   "text": "preciso resolver isso com uma pessoa",
+   "person": true
+  },
+  {
+   "text": "prefiro tratar direto com alguem da clinica",
+   "person": true
+  },
+  {
+   "text": "ola, gostaria de ser atendida por uma pessoa, obrigada",
+   "person": true
+  },
+  {
+   "text": "cade o atendente??? ja perguntei 3x",
+   "person": true
+  },
+  {
+   "text": "alguem real pode responder? 😅",
+   "person": true
+  },
+  {
+   "text": "quero falar com alguem de verdade",
+   "person": true
+  },
+  {
+   "text": "para de responder automatico e chama uma pessoa",
+   "person": true
+  },
+  {
+   "text": "nao vou conversar com maquina nao, obg",
+   "person": true
+  },
+  {
+   "text": "me coloca em contato com a recepcao",
+   "person": true
+  },
+  {
+   "text": "falar com atendente",
+   "person": true
+  },
+  {
+   "text": "bom dia! tem como alguem da equipe me retornar?",
+   "person": true
+  },
+  {
+   "text": "vc é robo? se for quero uma pessoa",
+   "person": true
+  },
+  {
+   "text": "pode chamar a Marina ou o Rafael pra mim?",
+   "person": true
+  },
+  {
+   "text": "quero falar com a psicologa, nao com IA",
+   "person": true
+  },
+  {
+   "text": "tem alguem humano nesse numero?",
+   "person": true
+  },
+  {
+   "text": "pf me liga, nao consigo explicar por msg\nprefiro falar com alguem",
+   "person": true
+  },
+  {
+   "text": "ngm vai me atender nao? quero uma pessoa",
+   "person": true
+  },
+  {
+   "text": "Quero Falar Com Alguem Responsavel",
+   "person": true
+  },
+  {
+   "text": "me encaminha pra alguem do atendimento",
+   "person": true
+  },
+  {
+   "text": "oi td bem? consigo conversar com algum atendente?",
+   "person": true
+  },
+  {
+   "text": "chega de bot 😤 quero gente",
+   "person": true
+  },
+  {
+   "text": "alguem me atende pelo amor de deus",
+   "person": true
+  },
+  {
+   "text": "posso falar com o pessoal da clinica?",
+   "person": true
+  },
+  {
+   "text": "queria q alguem me ligasse pra explicar os horarios",
+   "person": true
+  },
+  {
+   "text": "blz, mas eu quero falar com uma pessoa msm",
+   "person": true
+  },
+  {
+   "text": "nao quero falar com robo",
+   "person": true
+  },
+  {
+   "text": "odeio bot 😤 me passa pra alguem",
+   "person": true
+  },
+  {
+   "text": "para de me responder robô, quero uma pessoa",
+   "person": true
+  },
+  {
+   "text": "nao quero IA nenhuma, prefiro alguem de verdade",
+   "person": true
+  },
+  {
+   "text": "isso aq é robo? se for nem continuo",
+   "person": true
+  },
+  {
+   "text": "Nao vou conversar com maquina. Alguem humano por favor",
+   "person": true
+  },
+  {
+   "text": "ja vi q é bot... chama ngm ai nao?",
+   "person": true
+  },
+  {
+   "text": "quero falar com o Rafael",
+   "person": true
+  },
+  {
+   "text": "chama a Marina pfv",
+   "person": true
+  },
+  {
+   "text": "a Dra. Helena ta ai?",
+   "person": true
+  },
+  {
+   "text": "preciso falar diretamente com o Dr. Paulo",
+   "person": true
+  },
+  {
+   "text": "passa pro Rafael por favor",
+   "person": true
+  },
+  {
+   "text": "oi, a marina pode me atender? é sobre o pagamento",
+   "person": true
+  },
+  {
+   "text": "queria falar c a dra helena antes de marcar",
+   "person": true
+  },
+  {
+   "text": "dr paulo esta disponivel pra conversar cmg?",
+   "person": true
+  },
+  {
+   "text": "me coloca em contato com o Rafael q ele ja me conhece",
+   "person": true
+  },
+  {
+   "text": "QUERO FALAR COM A MARINA AGORA",
+   "person": true
+  },
+  {
+   "text": "é a Dra. Helena q responde aqui ou é robo? quero ela",
+   "person": true
+  },
+  {
+   "text": "pode chamar o dr. Paulo? tenho uma duvida so ele resolve",
+   "person": true
+  },
+  {
+   "text": "quero falar com o psicologo",
+   "person": true
+  },
+  {
+   "text": "tem como falar com a psicóloga antes de marcar?",
+   "person": true
+  },
+  {
+   "text": "preciso falar com o responsavel",
+   "person": true
+  },
+  {
+   "text": "quero falar com o dono da clinica",
+   "person": true
+  },
+  {
+   "text": "me passa pra secretaria por favor",
+   "person": true
+  },
+  {
+   "text": "quero falar com o financeiro sobre o pagamento",
+   "person": true
+  },
+  {
+   "text": "posso falar com o terapeuta? 🙏",
+   "person": true
+  },
+  {
+   "text": "prefiro conversar com o profissional direto",
+   "person": true
+  },
+  {
+   "text": "tem alguem do atendimento ai? robo nao resolve",
+   "person": true
+  },
+  {
+   "text": "quero um atendente humano",
+   "person": true
+  },
+  {
+   "text": "vcs tem atendimento com gente de verdade? quero isso",
+   "person": true
+  },
+  {
+   "text": "chega de robo, me passa pra equipe",
+   "person": true
+  },
+  {
+   "text": "nao to afim de falar com IA blz? chama a secretaria",
+   "person": true
+  },
+  {
+   "text": "Bom dia! Gostaria de falar com a Dra. Helena sobre os horarios, por gentileza",
+   "person": true
+  },
+  {
+   "text": "responde ai rafael, sei q vc ta ai",
+   "person": true
+  },
+  {
+   "text": "pq to falando com bot? quero a marina",
+   "person": true
+  },
+  {
+   "text": "robo não entende nada. alguem da clinica por favor",
+   "person": true
+  },
+  {
+   "text": "quero falar com o responsavel pelo financeiro, cobraram errado",
+   "person": true
+  },
+  {
+   "text": "me liga alguem? n quero escrever pra maquina",
+   "person": true
+  },
+  {
+   "text": "tb queria falar com o psicologo antes de pagar",
+   "person": true
+  },
+  {
+   "text": "sem ofensa mas prefiro uma pessoa real",
+   "person": true
+  },
+  {
+   "text": "pode transferir pro dr paulo?",
+   "person": true
+  },
+  {
+   "text": "nao quero assistente virtual, quero a dona",
+   "person": true
+  },
+  {
+   "text": "vc é IA ne? entao passa pra alguem da equipe",
+   "person": true
+  },
+  {
+   "text": "para de mandar mensagem automatica e me coloca com a psicologa",
+   "person": true
+  },
+  {
+   "text": "alguem de carne e osso pfvr 😩",
+   "person": true
+  },
+  {
+   "text": "vc é um robô?",
+   "person": false
+  },
+  {
+   "text": "isso é uma IA? kkk so curiosidade",
+   "person": false
+  },
+  {
+   "text": "qual seu nome?",
+   "person": false
+  },
+  {
+   "text": "com quem eu falo? 😊",
+   "person": false
+  },
+  {
+   "text": "quem é vc? a clinica tem atendente virtual agora?",
+   "person": false
+  },
+  {
+   "text": "vc é a secretária da clinica?",
+   "person": false
+  },
+  {
+   "text": "nossa vc responde rapido, é robo neh? tudo bem, pode seguir",
+   "person": false
+  },
+  {
+   "text": "se for IA tranquilo, so quero saber o valor",
+   "person": false
+  },
+  {
+   "text": "a sessão é com a própria psicóloga ou com estagiario?",
+   "person": false
+  },
+  {
+   "text": "quem vai me atender na consulta?",
+   "person": false
+  },
+  {
+   "text": "o Rafael atende sabado?",
+   "person": false
+  },
+  {
+   "text": "a Dra. Helena atende online?",
+   "person": false
+  },
+  {
+   "text": "o psicologo é formado onde?",
+   "person": false
+  },
+  {
+   "text": "o Dr. Paulo atende casal tb?",
+   "person": false
+  },
+  {
+   "text": "qual a abordagem da Dra. Helena? tcc?",
+   "person": false
+  },
+  {
+   "text": "as sessoes sao sempre com o mesmo profissional ou muda?",
+   "person": false
+  },
+  {
+   "text": "vou falar com meu marido e te aviso",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com minha mãe antes, blz?",
+   "person": false
+  },
+  {
+   "text": "falei com a minha amiga que indicou vcs, ela amou",
+   "person": false
+  },
+  {
+   "text": "meu namorado pediu pra eu perguntar se tem horario a noite",
+   "person": false
+  },
+  {
+   "text": "vou ver com o pessoal do trabalho meu horario de almoco e volto aqui",
+   "person": false
+  },
+  {
+   "text": "minha terapeuta antiga se aposentou, por isso to procurando",
+   "person": false
+  },
+  {
+   "text": "falei com a atendente ontem sobre horario",
+   "person": false
+  },
+  {
+   "text": "a Marina me passou o valor semana passada, ainda é o msm?",
+   "person": false
+  },
+  {
+   "text": "o Rafael ja tinha me mandado o link, so confirmando o dia",
+   "person": false
+  },
+  {
+   "text": "ontem alguem da clinica me respondeu, so queria continuar o agendamento",
+   "person": false
+  },
+  {
+   "text": "posso falar sobre o valor?",
+   "person": false
+  },
+  {
+   "text": "pode falar",
+   "person": false
+  },
+  {
+   "text": "fala comigo por aqui mesmo",
+   "person": false
+  },
+  {
+   "text": "prefiro falar por mensagem, nao gosto de ligacao",
+   "person": false
+  },
+  {
+   "text": "vamos conversar por aqui msm",
+   "person": false
+  },
+  {
+   "text": "falar com vcs por aqui é mais facil",
+   "person": false
+  },
+  {
+   "text": "me fala como funciona a primeira sessao",
+   "person": false
+  },
+  {
+   "text": "queria falar um pouco sobre os horarios disponiveis",
+   "person": false
+  },
+  {
+   "text": "pode me explicar? nao entendi a parte do pagamento",
+   "person": false
+  },
+  {
+   "text": "obrigada, vc foi otima 💜",
+   "person": false
+  },
+  {
+   "text": "valeu, robozinho 😂",
+   "person": false
+  },
+  {
+   "text": "brigadao, atendimento nota 10",
+   "person": false
+  },
+  {
+   "text": "obg! manda um abraço pra Dra. Helena",
+   "person": false
+  },
+  {
+   "text": "nem parece robo, parabens kkkk",
+   "person": false
+  },
+  {
+   "text": "tchau, ate a sessao com o Dr. Paulo",
+   "person": false
+  },
+  {
+   "text": "ah entao vc é uma IA? q legal, e quanto custa?",
+   "person": false
+  },
+  {
+   "text": "robo ou nao, vc me ajudou mt",
+   "person": false
+  },
+  {
+   "text": "a psicologa q atende é mulher ou homem? prefiro mulher",
+   "person": false
+  },
+  {
+   "text": "a Marina é psicologa tb ou so da recepcao?",
+   "person": false
+  },
+  {
+   "text": "na consulta é video com a profissional ou chat?",
+   "person": false
+  },
+  {
+   "text": "meu filho tem 15 anos, a Dra. Helena atende adolescente?",
+   "person": false
+  },
+  {
+   "text": "minha irma faz terapia com vcs e falou mt bem",
+   "person": false
+  },
+  {
+   "text": "vc q marca ou outra pessoa marca o horario?",
+   "person": false
+  },
+  {
+   "text": "td bem ser robo, so me manda os horarios de quinta",
+   "person": false
+  },
+  {
+   "text": "oi quanto ta a sessao? e queria falar com alguem de verdade se possivel",
+   "person": true
+  },
+  {
+   "text": "bom dia, vcs atendem sabado? prefiro conversar com uma atendente pfv",
+   "person": true
+  },
+  {
+   "text": "to com mta ansiedade esses dias e nao quero falar com robo, tem alguem ai?",
+   "person": true
+  },
+  {
+   "text": "qual o valor do pacote mensal\nme passa pra Marina por favor",
+   "person": true
+  },
+  {
+   "text": "Olá! Gostaria de saber se aceitam plano de saúde, se fazem recibo pro reembolso e, se possível, gostaria de falar diretamente com a Dra. Helena antes de marcar, obrigada",
+   "person": true
+  },
+  {
+   "text": "meu psiquiatra trocou minha medicacao e eu to me sentindo estranha, quero falar com uma pessoa nao com IA",
+   "person": true
+  },
+  {
+   "text": "pix ou cartao? e outra coisa, cadê o Rafael q falou cmg semana passada? quero falar com ele",
+   "person": true
+  },
+  {
+   "text": "to me sentindo mt mal hj 😞 alguem da equipe pode me chamar?",
+   "person": true
+  },
+  {
+   "text": "vc é robo ne? entao nem adianta, quero humano. era so pra saber o horario de quinta",
+   "person": true
+  },
+  {
+   "text": "recebi diagnostico de depressao mes passado e queria comecar terapia. tem como eu falar com o Dr. Paulo antes?",
+   "person": true
+  },
+  {
+   "text": "ja paguei o boleto e nao confirmou\nALGUEM ME RESPONDE POR FAVOR, uma pessoa",
+   "person": true
+  },
+  {
+   "text": "boa tarde, entao, eu vi o anuncio de vcs no insta e me interessei pq to passando por um momento dificil no trabalho, muita pressao, nao durmo direito, e queria saber como funciona, mas sinceramente prefiro conversar com um atendente humano do que com esse sistema automatico, pode ser? obg",
+   "person": true
+  },
+  {
+   "text": "Quanto custa a primeira consulta? Pode transferir pro atendimento humano",
+   "person": true
+  },
+  {
+   "text": "nao to bem nao, crise de panico de novo. preciso falar com gente",
+   "person": true
+  },
+  {
+   "text": "tem horario a noite? to trabalhando ate as 18h. ah e quero falar c/ a Marina q ela q me indicou",
+   "person": true
+  },
+  {
+   "text": "para de mandar msg automatica!!! quero uma pessoa pra remarcar minha sessao",
+   "person": true
+  },
+  {
+   "text": "minha filha ta muito triste, se isolando, nao sei mais o que fazer. alguem de verdade pode me ligar?",
+   "person": true
+  },
+  {
+   "text": "oi\nqueria cancelar e falar com a Dra. Helena sobre isso",
+   "person": true
+  },
+  {
+   "text": "vcs parcelam? e tem alguem ai q nao seja bot? kkk",
+   "person": true
+  },
+  {
+   "text": "tomo sertralina faz 2 anos, posso fazer terapia online junto? prefiro tirar essa duvida com o psicologo mesmo, nao com maquina",
+   "person": true
+  },
+  {
+   "text": "Bom dia. Meu convênio negou o reembolso e preciso da nota fiscal das últimas três sessões, além disso estou numa fase complicada emocionalmente e gostaria muito que alguém da equipe falasse comigo pessoalmente. Aguardo.",
+   "person": true
+  },
+  {
+   "text": "quero agendar mas so se for com atendente, robo nao entende nada",
+   "person": true
+  },
+  {
+   "text": "to chorando aqui faz uma hora 😢 me passa pra alguem pfvr",
+   "person": true
+  },
+  {
+   "text": "Qual link da sessão de amanhã? Aliás, o Rafael pode me ligar? Prefiro resolver com ele",
+   "person": true
+  },
+  {
+   "text": "nao quero conversar com inteligencia artificial sobre meus problemas. tem psicologa disponivel pra falar agora?",
+   "person": true
+  },
+  {
+   "text": "oi td bem? vi q a primeira sessao é 150 ne\nmas antes queria falar com uma pessoa da clinica",
+   "person": true
+  },
+  {
+   "text": "ja tentei 3x marcar por aqui e nao deu certo, cansei, chama um humano",
+   "person": true
+  },
+  {
+   "text": "meu marido faleceu mes passado e eu nao to conseguindo lidar. queria falar com alguem, uma pessoa mesmo",
+   "person": true
+  },
+  {
+   "text": "aceitam pix parcelado? quero falar com o Dr. Paulo sobre valores tb",
+   "person": true
+  },
+  {
+   "text": "vcs atendem adolescente? meu filho tem tdah e ta com problema na escola... alguem pode me atender pessoalmente por aqui?",
+   "person": true
+  },
+  {
+   "text": "oi, sei que aqui é um assistente virtual e tudo bem. queria saber o valor da sessao individual e se tem horario terca de manha, pq tenho tido muita insonia e ansiedade",
+   "person": false
+  },
+  {
+   "text": "a Dra. Helena me atendeu ano passado e me ajudou mto com a depressao, queria voltar. tem horario com ela em novembro?",
+   "person": false
+  },
+  {
+   "text": "meu psiquiatra falou q eu deveria fazer terapia junto com o remedio, entao to procurando. como funciona o pagamento e quanto dura cada sessao?",
+   "person": false
+  },
+  {
+   "text": "kkkk achei q era uma pessoa respondendo, vc escreve bem pra um robo. enfim, qual o valor do pacote de 4 sessoes?",
+   "person": false
+  },
+  {
+   "text": "Boa noite. Estou passando por um período de muita tristeza desde que perdi o emprego, e uma amiga me indicou vocês dizendo que o Rafael foi super atencioso com ela. Vocês fazem preço social? Quais dias têm disponíveis?",
+   "person": false
+  },
+  {
+   "text": "paguei pelo pix agora, segue o comprovante. a Marina tinha me dito q era so mandar aqui ne",
+   "person": false
+  },
+  {
+   "text": "tenho diagnostico de ansiedade generalizada e toc, faço acompanhamento com um medico. queria saber se o atendimento é por video ou so por chamada de voz",
+   "person": false
+  },
+  {
+   "text": "pode remarcar minha sessao de quinta pra sexta mesmo horario? to com crise de enxaqueca e nao vou conseguir. avisa o Dr. Paulo pfv",
+   "person": false
+  },
+  {
+   "text": "nossa q rapido vc respondeu, robo eficiente hein 😂 entao fechado, quero agendar a primeira sessao pra semana q vem a tarde",
+   "person": false
+  },
+  {
+   "text": "Olá, minha terapeuta anterior se mudou e eu fiquei sem acompanhamento. Tenho me sentido muito mal ultimamente, sem vontade de nada. Gostaria de saber o valor e se vocês emitem recibo para o imposto de renda.",
+   "person": false
+  },
+  {
+   "text": "cadê vcs?",
+   "person": true
+  },
+  {
+   "text": "dá pra me passar o contato de alguém?",
+   "person": true
+  },
+  {
+   "text": "me põe em contato com alguém da clínica",
+   "person": true
+  },
+  {
+   "text": "deixa eu falar com o Bruno",
+   "person": true
+  },
+  {
+   "text": "tem como a Carla me chamar?",
+   "person": true
+  },
+  {
+   "text": "pode me transferir?",
+   "person": true
+  },
+  {
+   "text": "me transfere pfv",
+   "person": true
+  },
+  {
+   "text": "liga aqui pra mim",
+   "person": true
+  },
+  {
+   "text": "manda a marina falar comigo",
+   "person": true
+  },
+  {
+   "text": "pede pro Bruno me retornar",
+   "person": true
+  },
+  {
+   "text": "quero retorno de uma pessoa",
+   "person": true
+  },
+  {
+   "text": "alguém aí?",
+   "person": true
+  },
+  {
+   "text": "oi tem alguem me atendendo?",
+   "person": true
+  },
+  {
+   "text": "alguém vivo aí??",
+   "person": true
+  },
+  {
+   "text": "tem algum ser humano ai",
+   "person": true
+  },
+  {
+   "text": "da pra falar cm alguem",
+   "person": true
+  },
+  {
+   "text": "preciso muito falar com a dra helena",
+   "person": true
+  },
+  {
+   "text": "quero falar urgente com a Carla",
+   "person": true
+  },
+  {
+   "text": "queria falar rapidinho com a recepcao",
+   "person": true
+  },
+  {
+   "text": "vou querer falar com o Bruno",
+   "person": true
+  },
+  {
+   "text": "quero que um atendente me responda",
+   "person": true
+  },
+  {
+   "text": "tem como uma pessoa olhar meu caso?",
+   "person": true
+  },
+  {
+   "text": "me redireciona pra recepção",
+   "person": true
+  },
+  {
+   "text": "repassa pro bruno por favor",
+   "person": true
+  },
+  {
+   "text": "quero o gerente",
+   "person": true
+  },
+  {
+   "text": "q saco, nao tem ninguem pra responder?",
+   "person": true
+  },
+  {
+   "text": "alo, alguem??",
+   "person": true
+  },
+  {
+   "text": "oi?? alguém?",
+   "person": true
+  },
+  {
+   "text": "isso é automático? quero gente",
+   "person": true
+  },
+  {
+   "text": "sai robô",
+   "person": true
+  },
+  {
+   "text": "robô não, por favor",
+   "person": true
+  },
+  {
+   "text": "sem robo pfv",
+   "person": true
+  },
+  {
+   "text": "quero suporte humano",
+   "person": true
+  },
+  {
+   "text": "liga p mim qdo der",
+   "person": true
+  },
+  {
+   "text": "me retorna por ligação",
+   "person": true
+  },
+  {
+   "text": "bota a carla na conversa",
+   "person": true
+  },
+  {
+   "text": "coloca a recepcionista aqui",
+   "person": true
+  },
+  {
+   "text": "chama ai a marina",
+   "person": true
+  },
+  {
+   "text": "pede pra ela me chamar",
+   "person": true
+  },
+  {
+   "text": "a carla tá?",
+   "person": true
+  },
+  {
+   "text": "o bruno taí?",
+   "person": true
+  },
+  {
+   "text": "o rafael ta online?",
+   "person": true
+  },
+  {
+   "text": "cadê a marina??",
+   "person": true
+  },
+  {
+   "text": "cadê o Bruno, ele q me atendeu",
+   "person": true
+  },
+  {
+   "text": "cade voces gente 😡",
+   "person": true
+  },
+  {
+   "text": "tem atendente aí?",
+   "person": true
+  },
+  {
+   "text": "tem humano ai?",
+   "person": true
+  },
+  {
+   "text": "tem alguem de vdd ai?",
+   "person": true
+  },
+  {
+   "text": "alguem de vdd pfv",
+   "person": true
+  },
+  {
+   "text": "atendenteee",
+   "person": true
+  },
+  {
+   "text": "ATENDENTE POR FAVOOOR",
+   "person": true
+  },
+  {
+   "text": "atendente, por favor",
+   "person": true
+  },
+  {
+   "text": "humano, pfv",
+   "person": true
+  },
+  {
+   "text": "recepção, pfv",
+   "person": true
+  },
+  {
+   "text": "qro atendente",
+   "person": true
+  },
+  {
+   "text": "kero um atendente",
+   "person": true
+  },
+  {
+   "text": "qria falar c a marina",
+   "person": true
+  },
+  {
+   "text": "falar c atendente",
+   "person": true
+  },
+  {
+   "text": "falar c/ atendente",
+   "person": true
+  },
+  {
+   "text": "quero falar com o chefe de vcs",
+   "person": true
+  },
+  {
+   "text": "chama teu chefe aí",
+   "person": true
+  },
+  {
+   "text": "chama seu supervisor",
+   "person": true
+  },
+  {
+   "text": "me passa pro seu supervisor",
+   "person": true
+  },
+  {
+   "text": "quero falar com outra pessoa",
+   "person": true
+  },
+  {
+   "text": "me passa pra outra pessoa pfv",
+   "person": true
+  },
+  {
+   "text": "quero falar com outro atendente",
+   "person": true
+  },
+  {
+   "text": "tem alguem pra eu falar?",
+   "person": true
+  },
+  {
+   "text": "vcs tem um humano pra eu falar?",
+   "person": true
+  },
+  {
+   "text": "so falo com humano",
+   "person": true
+  },
+  {
+   "text": "só converso com pessoa",
+   "person": true
+  },
+  {
+   "text": "atendimento de gente, nao de maquina",
+   "person": true
+  },
+  {
+   "text": "quero conversar com quem manda",
+   "person": true
+  },
+  {
+   "text": "quero falar com quem resolve",
+   "person": true
+  },
+  {
+   "text": "preciso de alguém da clínica",
+   "person": true
+  },
+  {
+   "text": "quero alguem da clinica pfv",
+   "person": true
+  },
+  {
+   "text": "nao quero falar com vc, quero alguem da equipe",
+   "person": true
+  },
+  {
+   "text": "por gentileza, poderiam me encaminhar a um atendente?",
+   "person": true
+  },
+  {
+   "text": "gostaria de ser contatada por alguém da equipe",
+   "person": true
+  },
+  {
+   "text": "aguardo o contato de alguém",
+   "person": true
+  },
+  {
+   "text": "alguém pode entrar em contato comigo?",
+   "person": true
+  },
+  {
+   "text": "me responde alguém pfv",
+   "person": true
+  },
+  {
+   "text": "me atende alguem por favor",
+   "person": true
+  },
+  {
+   "text": "oxe, cadê o povo da clinica?",
+   "person": true
+  },
+  {
+   "text": "bah, tem um vivente aí pra me atender?",
+   "person": true
+  },
+  {
+   "text": "ninguem respondendo?",
+   "person": true
+  },
+  {
+   "text": "ninguém pra me atender aqui não?",
+   "person": true
+  },
+  {
+   "text": "ta dificil hein, ninguem atendendo",
+   "person": true
+  },
+  {
+   "text": "oi\nalguém aí?",
+   "person": true
+  },
+  {
+   "text": "boa noite\npreciso falar cm alguem urgente",
+   "person": true
+  },
+  {
+   "text": "eu quero é falar com gente",
+   "person": true
+  },
+  {
+   "text": "prefiro gente",
+   "person": true
+  },
+  {
+   "text": "gostaria que alguém entrasse em contato",
+   "person": true
+  },
+  {
+   "text": "seria possível um atendente entrar em contato?",
+   "person": true
+  },
+  {
+   "text": "algum atendente poderia me chamar?",
+   "person": true
+  },
+  {
+   "text": "solicito contato com um atendente",
+   "person": true
+  },
+  {
+   "text": "pfv peça pra Dra Helena me retornar",
+   "person": true
+  },
+  {
+   "text": "fala pro rafael me chamar no whats",
+   "person": true
+  },
+  {
+   "text": "diz pra marina me dar um retorno",
+   "person": true
+  },
+  {
+   "text": "me dá um toque por telefone",
+   "person": true
+  },
+  {
+   "text": "aguardo uma ligação de vcs",
+   "person": true
+  },
+  {
+   "text": "quero ser transferido pra um atendente",
+   "person": true
+  },
+  {
+   "text": "tem como transferir?",
+   "person": true
+  },
+  {
+   "text": "transfere aí",
+   "person": true
+  },
+  {
+   "text": "me joga pra um atendente",
+   "person": true
+  },
+  {
+   "text": "vcs só tem robô aqui?",
+   "person": true
+  },
+  {
+   "text": "isso aqui nao tem gente nao?",
+   "person": true
+  },
+  {
+   "text": "tem gente trabalhando aí?",
+   "person": true
+  },
+  {
+   "text": "alguém lê essas mensagens?",
+   "person": true
+  },
+  {
+   "text": "tem alguém lendo isso?",
+   "person": true
+  },
+  {
+   "text": "rafael, vc ta ai?",
+   "person": true
+  },
+  {
+   "text": "marina me responde pfv",
+   "person": true
+  },
+  {
+   "text": "secretaria aí?",
+   "person": true
+  },
+  {
+   "text": "quero a secretaria",
+   "person": true
+  },
+  {
+   "text": "tem algm ai?",
+   "person": true
+  },
+  {
+   "text": "tem alguen ai",
+   "person": true
+  },
+  {
+   "text": "atendemte pfv",
+   "person": true
+  },
+  {
+   "text": "qero falar com a marina",
+   "person": true
+  },
+  {
+   "text": "qeria falar com o bruno",
+   "person": true
+  },
+  {
+   "text": "precizo falar com a carla",
+   "person": true
+  },
+  {
+   "text": "tenho q falar com a carla urgente",
+   "person": true
+  },
+  {
+   "text": "vim falar com o bruno",
+   "person": true
+  },
+  {
+   "text": "o bruno pode falar comigo?",
+   "person": true
+  },
+  {
+   "text": "a carla consegue falar cmg hj?",
+   "person": true
+  },
+  {
+   "text": "ola, gostaria de falar com um de vcs",
+   "person": true
+  },
+  {
+   "text": "preciso de ajuda de um humano",
+   "person": true
+  },
+  {
+   "text": "ajuda humana pfv",
+   "person": true
+  },
+  {
+   "text": "vc não entende nada, me passa pra quem entende",
+   "person": true
+  },
+  {
+   "text": "humanoooo",
+   "person": true
+  },
+  {
+   "text": "atendente pls",
+   "person": true
+  },
+  {
+   "text": "uma pessoa, pf",
+   "person": true
+  },
+  {
+   "text": "opção 2 falar c atendente",
+   "person": true
+  },
+  {
+   "text": "espero que uma pessoa me responda logo",
+   "person": true
+  },
+  {
+   "text": "tô querendo falar com a marina",
+   "person": true
+  },
+  {
+   "text": "queria trocar uma ideia com a marina",
+   "person": true
+  },
+  {
+   "text": "dá pra bater um papo com alguém da equipe?",
+   "person": true
+  },
+  {
+   "text": "queria dar uma palavrinha com o dr paulo",
+   "person": true
+  },
+  {
+   "text": "pfv falar c alguem",
+   "person": true
+  },
+  {
+   "text": "desejo falar com a recepção",
+   "person": true
+  },
+  {
+   "text": "vc pode pedir pra marina falar comigo?",
+   "person": true
+  },
+  {
+   "text": "me passa a marina",
+   "person": true
+  },
+  {
+   "text": "passa a carla aí",
+   "person": true
+  },
+  {
+   "text": "quero falar com a mesma atendente de ontem",
+   "person": true
+  },
+  {
+   "text": "cade a moça q tava me atendendo?",
+   "person": true
+  },
+  {
+   "text": "a moça que me atendeu ta ai?",
+   "person": true
+  },
+  {
+   "text": "tem alguém do financeiro pra falar comigo?",
+   "person": true
+  },
+  {
+   "text": "não vou falar com vc, quero a carla",
+   "person": true
+  },
+  {
+   "text": "n quero mais falar c vc, cadê a marina",
+   "person": true
+  },
+  {
+   "text": "para de me responder vc, quero gente",
+   "person": true
+  },
+  {
+   "text": "vcs tem atendente humano?",
+   "person": true
+  },
+  {
+   "text": "é só robô que atende aqui?",
+   "person": true
+  },
+  {
+   "text": "falei com a atendente ontem e ela disse q ia me ligar",
+   "person": false
+  },
+  {
+   "text": "da pra passar pra mais tarde? tipo umas 19h",
+   "person": false
+  },
+  {
+   "text": "pode passar pro fim do mes? to sem grana agora",
+   "person": false
+  },
+  {
+   "text": "passa pra dezembro entao, novembro ta corrido",
+   "person": false
+  },
+  {
+   "text": "coloca pro final da semana que vc conseguir",
+   "person": false
+  },
+  {
+   "text": "passa pra prox semana pfv 🙏",
+   "person": false
+  },
+  {
+   "text": "da pra passar pras seis da tarde?",
+   "person": false
+  },
+  {
+   "text": "coloca pro meio dia, é meu horario de almoço",
+   "person": false
+  },
+  {
+   "text": "passa pro primeiro horario da manha",
+   "person": false
+  },
+  {
+   "text": "bota pro ultimo horario q tiver",
+   "person": false
+  },
+  {
+   "text": "pode colocar pra quinzenal? semanal ta pesado no bolso",
+   "person": false
+  },
+  {
+   "text": "posso transferir pro cnpj da clinica?",
+   "person": false
+  },
+  {
+   "text": "transfere pro picpay ou so pix?",
+   "person": false
+  },
+  {
+   "text": "consigo resolver com transferencia bancaria?",
+   "person": false
+  },
+  {
+   "text": "tem como resolver com debito?",
+   "person": false
+  },
+  {
+   "text": "queria tirar uma duvida com relacao ao horario de sabado",
+   "person": false
+  },
+  {
+   "text": "preciso resolver isso com urgencia, a sessao é amanha e nao vou conseguir",
+   "person": false
+  },
+  {
+   "text": "me chama quando abrir vaga a noite",
+   "person": false
+  },
+  {
+   "text": "me chama assim que liberar horario na terça",
+   "person": false
+  },
+  {
+   "text": "pode me chamar pelo whats msm",
+   "person": false
+  },
+  {
+   "text": "me chama se vagar algo na sexta",
+   "person": false
+  },
+  {
+   "text": "na sessao online ela chama ou eu chamo?",
+   "person": false
+  },
+  {
+   "text": "a psicologa chama pelo meet ou eu entro no link?",
+   "person": false
+  },
+  {
+   "text": "vcs me ligam pra confirmar a consulta ou é so msg?",
+   "person": false
+  },
+  {
+   "text": "na hora da sessao ela me liga ou eu entro pelo link?",
+   "person": false
+  },
+  {
+   "text": "so por mensagem pfv, odeio q me liguem no trabalho",
+   "person": false
+  },
+  {
+   "text": "posso ser atendido pelo google meet?",
+   "person": false
+  },
+  {
+   "text": "o horario das 15h de sexta ja tem alguem?",
+   "person": false
+  },
+  {
+   "text": "nao posso fazer a sessao agora, tem gente aqui em casa",
+   "person": false
+  },
+  {
+   "text": "alguem atende sabado?",
+   "person": false
+  },
+  {
+   "text": "ninguem atende domingo ne?",
+   "person": false
+  },
+  {
+   "text": "a Marina pode me atender por video?",
+   "person": false
+  },
+  {
+   "text": "a dra helena consegue me atender depois das 18?",
+   "person": false
+  },
+  {
+   "text": "a marina pode atender meu filho de 15 anos?",
+   "person": false
+  },
+  {
+   "text": "o dr paulo pode me atender toda semana?",
+   "person": false
+  },
+  {
+   "text": "nao gosto de sistema de agendamento, posso marcar por aqui msm?",
+   "person": false
+  },
+  {
+   "text": "o debito automatico nao serve pra mim, prefiro pagar todo mes",
+   "person": false
+  },
+  {
+   "text": "o sistema mostrou dois horarios, quero o primeiro",
+   "person": false
+  },
+  {
+   "text": "se o valor passar de 200 nem continuo kkk",
+   "person": false
+  },
+  {
+   "text": "esse das 19h? quero ele",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com alguem aqui de casa antes de fechar o pacote",
+   "person": false
+  },
+  {
+   "text": "o lembrete vcs mandam por msg ou me ligam?",
+   "person": false
+  },
+  {
+   "text": "evitem me ligar pfv, trabalho o dia todo",
+   "person": false
+  },
+  {
+   "text": "detesto quando me ligam, prefiro msg",
+   "person": false
+  },
+  {
+   "text": "melhor me chamar por aqui do q ligar",
+   "person": false
+  },
+  {
+   "text": "pode me chamar por msg mesmo, ligacao nao consigo atender",
+   "person": false
+  },
+  {
+   "text": "me chama dez min antes de começar",
+   "person": false
+  },
+  {
+   "text": "me chama logo cedo q eu confirmo",
+   "person": false
+  },
+  {
+   "text": "me chama pfv quando tiver o valor do pacote",
+   "person": false
+  },
+  {
+   "text": "transfere com ted ou só pix?",
+   "person": false
+  },
+  {
+   "text": "da pra passar com debito na hora?",
+   "person": false
+  },
+  {
+   "text": "posso transferir pra poupanca de vcs?",
+   "person": false
+  },
+  {
+   "text": "transfere pro mercado pago?",
+   "person": false
+  },
+  {
+   "text": "coloca pras duas da tarde se der",
+   "person": false
+  },
+  {
+   "text": "passa pras oito da noite?",
+   "person": false
+  },
+  {
+   "text": "passa pra janeiro, dezembro viajo",
+   "person": false
+  },
+  {
+   "text": "coloca pro inicio do mes que vem que recebo dia 5",
+   "person": false
+  },
+  {
+   "text": "passa pro periodo da tarde",
+   "person": false
+  },
+  {
+   "text": "coloca pro turno da noite",
+   "person": false
+  },
+  {
+   "text": "pode passar pra mensal? semanal nao cabe",
+   "person": false
+  },
+  {
+   "text": "passa pro feriado nao, pode ser dia 20?",
+   "person": false
+  },
+  {
+   "text": "bota pra quinzena que vem",
+   "person": false
+  },
+  {
+   "text": "posso resolver com deposito?",
+   "person": false
+  },
+  {
+   "text": "prefiro resolver com pagamento antecipado do pacote",
+   "person": false
+  },
+  {
+   "text": "da pra resolver c transferencia?",
+   "person": false
+  },
+  {
+   "text": "tem como resolver com parcelamento?",
+   "person": false
+  },
+  {
+   "text": "queria conversar com calma sobre os horarios disponiveis",
+   "person": false
+  },
+  {
+   "text": "posso ser atendida pela plataforma de vcs ou é meet?",
+   "person": false
+  },
+  {
+   "text": "posso ser atendido pelo app?",
+   "person": false
+  },
+  {
+   "text": "posso ser atendida com urgencia essa semana?",
+   "person": false
+  },
+  {
+   "text": "encaminha pro contador da empresa pfv, ele que paga as sessoes",
+   "person": false
+  },
+  {
+   "text": "como chama a plataforma q vcs usam pra sessao?",
+   "person": false
+  },
+  {
+   "text": "como chama o app da videochamada? preciso baixar antes",
+   "person": false
+  },
+  {
+   "text": "nao consigo conectar com a internet de casa, da pra fazer pelo celular?",
+   "person": false
+  },
+  {
+   "text": "na hora da sessao vc me chama por video ou eu ligo?",
+   "person": false
+  },
+  {
+   "text": "pode colocar pro credito em 2x?",
+   "person": false
+  },
+  {
+   "text": "bota pro debito msm",
+   "person": false
+  },
+  {
+   "text": "passa pro credito, no pix nao vai dar",
+   "person": false
+  },
+  {
+   "text": "alguem da equipe atende adolescente?",
+   "person": false
+  },
+  {
+   "text": "alguem atende a noite? so consigo dps das 20h",
+   "person": false
+  },
+  {
+   "text": "alguem atende pelo convenio?",
+   "person": false
+  },
+  {
+   "text": "ninguem atende pelo plano ne?",
+   "person": false
+  },
+  {
+   "text": "a marina pode me atender mais cedo? tipo 7h",
+   "person": false
+  },
+  {
+   "text": "o bruno pode me atender quinzenal?",
+   "person": false
+  },
+  {
+   "text": "a carla pode me atender ainda esse mes?",
+   "person": false
+  },
+  {
+   "text": "a dra helena pode me atender ate dezembro? depois mudo de cidade",
+   "person": false
+  },
+  {
+   "text": "a marina consegue me atender 2x por semana?",
+   "person": false
+  },
+  {
+   "text": "o rafael pode atender casal?",
+   "person": false
+  },
+  {
+   "text": "a marina pode me atender so online?",
+   "person": false
+  },
+  {
+   "text": "a dra helena tem horario livre pra conversar semana q vem?",
+   "person": false
+  },
+  {
+   "text": "nao aceito sistema de assinatura, prefiro pagar avulso",
+   "person": false
+  },
+  {
+   "text": "chega de sistema de app de banco, posso pagar no boleto?",
+   "person": false
+  },
+  {
+   "text": "o pix automatico nao serve pra sessao avulsa?",
+   "person": false
+  },
+  {
+   "text": "o lembrete automatico nao ajuda, prefiro q me avisem na vespera",
+   "person": false
+  },
+  {
+   "text": "se nao tiver horario a noite nem continuo",
+   "person": false
+  },
+  {
+   "text": "a sessao das 18 de sexta? quero ela",
+   "person": false
+  },
+  {
+   "text": "tem a opcao do pacote mensal ne? quero ele",
+   "person": false
+  },
+  {
+   "text": "a ia me passou 3 horarios, quero o ultimo",
+   "person": false
+  },
+  {
+   "text": "eu ia pedir semanal mas quero o quinzenal",
+   "person": false
+  },
+  {
+   "text": "eu ia pagar avulso mas quero o mensal",
+   "person": false
+  },
+  {
+   "text": "vou falar com alguem do rh pra ver se a empresa paga",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com alguem do banco sobre o limite, ai te confirmo",
+   "person": false
+  },
+  {
+   "text": "vou falar com a pessoa responsavel pelo pagamento la na empresa",
+   "person": false
+  },
+  {
+   "text": "agora tem gente aqui no trabalho, mais tarde te mando o comprovante",
+   "person": false
+  },
+  {
+   "text": "o horario de quinta das 19 ainda ta livre ou ja tem alguem?",
+   "person": false
+  },
+  {
+   "text": "posso transferir pro itau ou tem q ser outro banco?",
+   "person": false
+  },
+  {
+   "text": "posso ser atendida pelo zoom?",
+   "person": false
+  },
+  {
+   "text": "da pra ser atendido com reembolso do plano?",
+   "person": false
+  },
+  {
+   "text": "consegue passar pra mais pro fim da tarde?",
+   "person": false
+  },
+  {
+   "text": "o recibo sai no nome de quem paga? posso colocar pro nome da minha empresa",
+   "person": false
+  },
+  {
+   "text": "emite o recibo e encaminha pra contabilidade da firma pfv",
+   "person": false
+  },
+  {
+   "text": "me liguem nao, pfv, só msg",
+   "person": false
+  },
+  {
+   "text": "amanha tem gente aqui em casa, posso remarcar pra sexta?",
+   "person": false
+  },
+  {
+   "text": "alguem atende em ingles?",
+   "person": false
+  },
+  {
+   "text": "a marina pode me atender aos sabados?",
+   "person": false
+  },
+  {
+   "text": "a Dra. Helena consegue me atender quinzenalmente?",
+   "person": false
+  },
+  {
+   "text": "o dr paulo consegue me atender pelo plano?",
+   "person": false
+  },
+  {
+   "text": "pode ser o pix msm, o boleto automatico nao serve",
+   "person": false
+  },
+  {
+   "text": "se for so presencial nem continuo, moro longe",
+   "person": false
+  },
+  {
+   "text": "queria tirar uma duvida com respeito ao reembolso",
+   "person": false
+  },
+  {
+   "text": "consigo tratar com antecedencia a remarcacao do feriado?",
+   "person": false
+  },
+  {
+   "text": "gostaria de resolver com rapidez, quero marcar ainda hoje",
+   "person": false
+  },
+  {
+   "text": "pode passar pra meia hora mais tarde?",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com o pessoal la de casa antes de fechar",
+   "person": false
+  },
+  {
+   "text": "preciso falar com o Bruno meu marido antes de pagar",
+   "person": false
+  },
+  {
+   "text": "tenho que falar com a Carla, minha socia, pq ela q paga",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com a galera do trabalho sobre o horario",
+   "person": false
+  },
+  {
+   "text": "vc parece gente de verdade kkkk",
+   "person": false
+  },
+  {
+   "text": "nossa vc escreve igual pessoa real 😂",
+   "person": false
+  },
+  {
+   "text": "parece alguem humano respondendo, gostei",
+   "person": false
+  },
+  {
+   "text": "minha mae me liga td dia perguntando se ja marquei kkk",
+   "person": false
+  },
+  {
+   "text": "meu chefe me liga toda hora, por isso prefiro a noite",
+   "person": false
+  },
+  {
+   "text": "n me liga pfv, prefiro so mensagem",
+   "person": false
+  },
+  {
+   "text": "odeio q me liguem, pode ser tudo por msg?",
+   "person": false
+  },
+  {
+   "text": "minha filha chama Carla e tb quer fazer terapia",
+   "person": false
+  },
+  {
+   "text": "meu marido chama Bruno, ele vai pagar no cartao dele",
+   "person": false
+  },
+  {
+   "text": "como chama aquela abordagem q vcs usam?",
+   "person": false
+  },
+  {
+   "text": "como chama o tipo de terapia q vcs fazem?",
+   "person": false
+  },
+  {
+   "text": "tem alguem aqui em casa q tb quer fazer, da pra marcar 2?",
+   "person": false
+  },
+  {
+   "text": "de dia nao rola pq em casa sempre tem gente",
+   "person": false
+  },
+  {
+   "text": "posso falar com sinceridade? to com vergonha de perguntar o preco",
+   "person": false
+  },
+  {
+   "text": "da pra falar com calma aqui ou é mt corrido?",
+   "person": false
+  },
+  {
+   "text": "preciso resolver isso com urgencia, tem horario essa semana?",
+   "person": false
+  },
+  {
+   "text": "vou passar pra Carla minha amiga o contato de vcs",
+   "person": false
+  },
+  {
+   "text": "minha prima pediu pra eu passar pra ela o numero de vcs, posso?",
+   "person": false
+  },
+  {
+   "text": "vou passar pra ele o link e ele te chama",
+   "person": false
+  },
+  {
+   "text": "preciso ver isso com o contador da minha empresa pra nota",
+   "person": false
+  },
+  {
+   "text": "tenho que conversar com ela antes, minha esposa",
+   "person": false
+  },
+  {
+   "text": "preciso ver isso com ele, é meu marido q decide",
+   "person": false
+  },
+  {
+   "text": "da pra passar pra mais tarde a sessao?",
+   "person": false
+  },
+  {
+   "text": "coloca pra mais tarde pfv",
+   "person": false
+  },
+  {
+   "text": "posso transferir pro nubank?",
+   "person": false
+  },
+  {
+   "text": "no grupo da familia ngm me responde kkk",
+   "person": false
+  },
+  {
+   "text": "minha sogra manda corrente e eu nem respondo mais 😂",
+   "person": false
+  },
+  {
+   "text": "a psicologa ta ai em sp ou é so online?",
+   "person": false
+  },
+  {
+   "text": "eu to livre pra conversar depois das 18h, tem horario?",
+   "person": false
+  },
+  {
+   "text": "minha amiga disse q alguem atende rapidinho ai, verdade?",
+   "person": false
+  },
+  {
+   "text": "a recepcionista disse q alguem retorna amanha, ta bom",
+   "person": false
+  },
+  {
+   "text": "meu marido falou: 'quero falar com a psicologa antes' kkk mas sou eu q vou fazer",
+   "person": false
+  },
+  {
+   "text": "vc é muito educada, parece atendente de verdade",
+   "person": false
+  },
+  {
+   "text": "jurava q era uma pessoa real escrevendo",
+   "person": false
+  },
+  {
+   "text": "sou meio antiquada, odeio o sistema de pagamento do meu banco",
+   "person": false
+  },
+  {
+   "text": "minha filha nao para com o robo aspirador kkkk",
+   "person": false
+  },
+  {
+   "text": "eu ia fazer o plano mensal mas acho q quero a quinzenal",
+   "person": false
+  },
+  {
+   "text": "eu ia comprar o curso mas quero a mentoria",
+   "person": false
+  },
+  {
+   "text": "a gente chama ele de Bruninho em casa",
+   "person": false
+  },
+  {
+   "text": "meu cachorro chama Thor kkk ele late qdo eu to em call",
+   "person": false
+  },
+  {
+   "text": "isso chama muito a atencao, adorei o site",
+   "person": false
+  },
+  {
+   "text": "vou encaminhar pro gmail do meu marido",
+   "person": false
+  },
+  {
+   "text": "pode encaminhar pro gmail q te passei?",
+   "person": false
+  },
+  {
+   "text": "tenho que conversar com o pediatra dele primeiro",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a diretora da escola dele antes",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com o sindico pra ver se libera a sala",
+   "person": false
+  },
+  {
+   "text": "quando alguem me liga eu travo, por isso prefiro whats",
+   "person": false
+  },
+  {
+   "text": "tenho medo q alguem me chame de doida por fazer terapia",
+   "person": false
+  },
+  {
+   "text": "ninguem aparece no aniversario do meu filho, triste kkk",
+   "person": false
+  },
+  {
+   "text": "ngm responde email no meu trabalho",
+   "person": false
+  },
+  {
+   "text": "lá em casa ninguem me responde qdo eu pergunto",
+   "person": false
+  },
+  {
+   "text": "a Marina pode me atender a qualquer hora ou tem horario fixo?",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com o travesseiro kkk amanha te respondo",
+   "person": false
+  },
+  {
+   "text": "posso conversar com o boy e te falo amanha?",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a sogra pq ela fica com as criancas no horario",
+   "person": false
+  },
+  {
+   "text": "tenho que conversar com a cunhada, ela q vai me levar",
+   "person": false
+  },
+  {
+   "text": "queria tirar uma duvida com a Carla minha amiga q fez com vcs antes",
+   "person": false
+  },
+  {
+   "text": "preciso resolver com a unimed se cobre, depois volto",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a antiga terapeuta pra pegar o relatorio",
+   "person": false
+  },
+  {
+   "text": "tenho que falar com o Joao do rh da minha empresa sobre o reembolso",
+   "person": false
+  },
+  {
+   "text": "isso sim é atendimento de verdade, parabens",
+   "person": false
+  },
+  {
+   "text": "vcs tem um atendimento humano mt bom viu",
+   "person": false
+  },
+  {
+   "text": "a sessao é com uma pessoa real ne? nao é com ia",
+   "person": false
+  },
+  {
+   "text": "nao gosto de ia mas vc ta mandando bem kkk",
+   "person": false
+  },
+  {
+   "text": "nao curto ia mas vc é diferente",
+   "person": false
+  },
+  {
+   "text": "nao aguento mais o sistema do meu trabalho, por isso quero de noite",
+   "person": false
+  },
+  {
+   "text": "pode ser pix normal? nao quero o automatico",
+   "person": false
+  },
+  {
+   "text": "chega dessa ia de foto no insta kkkk",
+   "person": false
+  },
+  {
+   "text": "cansei de sistema de saude q nao funciona, por isso particular",
+   "person": false
+  },
+  {
+   "text": "meu filho fala q a ia nao entende piada kkk",
+   "person": false
+  },
+  {
+   "text": "em banco todo bot nao ajuda nada, vc ta de parabens",
+   "person": false
+  },
+  {
+   "text": "minha amiga fez terapia com a Dra Helena e amou, quero ela",
+   "person": false
+  },
+  {
+   "text": "eu ia fazer avulsa mas quero o pacotinho",
+   "person": false
+  },
+  {
+   "text": "meu psicologo antigo chama Paulo, ele mudou de cidade",
+   "person": false
+  },
+  {
+   "text": "alguem vai me chamar de exagerada mas amei o site",
+   "person": false
+  },
+  {
+   "text": "nao posso falar alto pq aqui tem gente",
+   "person": false
+  },
+  {
+   "text": "nao da pra ligar agora pq tem alguem aqui do lado",
+   "person": false
+  },
+  {
+   "text": "tem alguem ai q atende casal?",
+   "person": false
+  },
+  {
+   "text": "se a novela for assim nem continuo vendo kkk",
+   "person": false
+  },
+  {
+   "text": "fico livre pra falar a partir das 19h",
+   "person": false
+  },
+  {
+   "text": "da pra falar com franqueza aqui?",
+   "person": false
+  },
+  {
+   "text": "prefiro tratar com discricao, tem como?",
+   "person": false
+  },
+  {
+   "text": "o banco me liga toda hora oferecendo emprestimo",
+   "person": false
+  },
+  {
+   "text": "minha mae me liga de video td domingo, entao domingo nao",
+   "person": false
+  },
+  {
+   "text": "a terapeuta esta ai no rio ou em sp?",
+   "person": false
+  },
+  {
+   "text": "sei q vc ta ai no sul, mas atende online?",
+   "person": false
+  },
+  {
+   "text": "cade o pessoal do grupo q sumiu kkk",
+   "person": false
+  },
+  {
+   "text": "minha esposa q vai fazer, ela chama Marina tb kkk coincidencia",
+   "person": false
+  },
+  {
+   "text": "o nome do meu filho? chama Pedro, tem 9 anos",
+   "person": false
+  },
+  {
+   "text": "o pessoal do trabalho me liga ate de ferias",
+   "person": false
+  },
+  {
+   "text": "pode mandar por aqui, se me ligam no trabalho complica",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com a babá pra ver se ela cobre o horario",
+   "person": false
+  },
+  {
+   "text": "queria conversar com alguem antes, minha irma, pq ela q indicou",
+   "person": false
+  },
+  {
+   "text": "preciso falar com alguem da minha familia antes de decidir",
+   "person": false
+  },
+  {
+   "text": "transfere pra Carla q é a titular do cartao? brincadeira kkk",
+   "person": false
+  },
+  {
+   "text": "oi boa tarde, to passando por uma fase bem dificil com ansiedade e insonia. queria saber o valor da sessao online e se tem horario a noite. deixa eu falar com a Marina pfv, foi ela q me indicaram",
+   "person": true
+  },
+  {
+   "text": "Ja mandei 3 msg sobre o pagamento e vc nao entende nada do q eu falo 😡 to com a cabeça explodindo essa semana. HUMANO PFV",
+   "person": true
+  },
+  {
+   "text": "bom dia! minha terapeuta anterior se mudou e eu fiquei sem acompanhamento, tenho depressao faz 2 anos. vcs atendem por convenio? me poe em contato com alguem da equipe por favor",
+   "person": true
+  },
+  {
+   "text": "olá, estou com crises de panico no trabalho e preciso começar terapia logo. qual o valor? quero que uma pessoa me responda, nao maquina",
+   "person": true
+  },
+  {
+   "text": "oii tudo bem? sou mae de um adolescente de 15 anos que ta se isolando muito, nao sai do quarto. vcs atendem adolescente? gostaria que a Dra Helena me retornasse assim q puder",
+   "person": true
+  },
+  {
+   "text": "to ha 20 min tentando agendar e so recebo resposta pronta. nao quero mais conversar com assistente, quero gente. tenho TOC e isso ta me deixando pior",
+   "person": true
+  },
+  {
+   "text": "mandei msg ontem perguntando do valor do pacote mensal e ate agora nada... meu psiquiatra pediu pra eu começar logo por causa da depressao. alguem ai??",
+   "person": true
+  },
+  {
+   "text": "boa noite, tenho muita ansiedade social e ate pra mandar msg ja fico nervoso kkk. queria saber se tem sessao online sabado. algm pode me atender agora?",
+   "person": true
+  },
+  {
+   "text": "oi, sou eu de novo. o pix nao foi, deu erro. to bem mal hj, chorei o dia todo. qro falar c a marina, ela sabe do meu caso",
+   "person": true
+  },
+  {
+   "text": "preciso remarcar minha sessao de quinta pq vou estar no hospital com meu pai, ele teve um avc. tem como alguem de vcs me responder pessoalmente? to sem cabeça pra robo",
+   "person": true
+  },
+  {
+   "text": "chega dessa automacao!!! eu so quero saber se aceitam cartao e quanto custa a primeira consulta, to com burnout e nao tenho paciencia",
+   "person": true
+  },
+  {
+   "text": "quero contato humano por favor. faço tratamento pra bipolaridade e preciso trocar de psicologo, qual a disponibilidade de vcs?",
+   "person": true
+  },
+  {
+   "text": "oi, me atende alguem pfv, to tendo uma semana horrivel com a separação e queria marcar urgente uma sessao, pode ser qualquer dia",
+   "person": true
+  },
+  {
+   "text": "boa tarde. tem algum ser humano lendo isso? preciso q uma pessoa veja meu caso, tenho TDAH e ja tentei 3 clinicas",
+   "person": true
+  },
+  {
+   "text": "Pede pra psicologa entrar em contato comigo por favor, preciso falar sobre a minha filha q ta com anorexia e quero saber valores",
+   "person": true
+  },
+  {
+   "text": "vcs aceitam encaminhamento? o clinico geral disse q ia me encaminhar pra terapia por causa da ansiedade e da insonia. quanto fica a sessao?",
+   "person": false
+  },
+  {
+   "text": "oi! queria agendar a primeira sessao. quando meu chefe me liga fora do horario eu tenho crise de ansiedade, acho q preciso de ajuda. vcs atendem a noite?",
+   "person": false
+  },
+  {
+   "text": "me sinto mt sozinho, nao tem gente pra conversar aqui em casa, so meus pais q nao entendem. so queria saber se tem horario a noite e o valor",
+   "person": false
+  },
+  {
+   "text": "moro com meus pais e sempre tem gente aqui em casa, entao preferia sessao online bem cedo ou a noite. tem horario? to com depressao leve",
+   "person": false
+  },
+  {
+   "text": "liguei em 3 clinicas e ngm atende, to desesperada com a ansiedade da minha filha. vcs tem horario sabado de manha?",
+   "person": false
+  },
+  {
+   "text": "meu marido nunca ta disponivel pra conversar, isso ta acabando comigo e com o casamento. vcs atendem casal? qual o valor?",
+   "person": false
+  },
+  {
+   "text": "to tentando pagar mas nao consigo resolver com o sistema do banco, deu erro 2x. posso pagar no pix entao? a sessao e amanha e eu to bem ansiosa",
+   "person": false
+  },
+  {
+   "text": "cansei de sistema publico, fila de 6 meses pra psicologo no posto e eu com depressao. qual o valor da sessao particular de vcs?",
+   "person": false
+  },
+  {
+   "text": "minha mae me manda msg o dia todo cobrando, eu nem respondo mais e me sinto culpada. queria marcar uma sessao pra falar disso, tem horario quarta?",
+   "person": false
+  },
+  {
+   "text": "faz 1 ano q terminei mas meu ex voltou a me procurar essa semana e eu fico confusa... nao sei mais o q eu sinto. no fundo eu ainda quero ele",
+   "person": false
+  },
+  {
+   "text": "oi, uma duvida: o remedio que eu tomo chama escitalopram, isso atrapalha a terapia? e qual o valor da sessao?",
+   "person": false
+  },
+  {
+   "text": "meu chefe me chama toda hora no fim de semana e eu to tendo crise de ansiedade por isso. vcs tem horario sabado?",
+   "person": false
+  },
+  {
+   "text": "quando a ansiedade vem ela passa pro estomago, fico enjoada o dia todo. a primeira sessao e online mesmo? quanto custa?",
+   "person": false
+  },
+  {
+   "text": "oi, da pra passar pro credito em 3x? a sessao ta cara pra mim agora, to desempregado e com depressao",
+   "person": false
+  },
+  {
+   "text": "queria tirar uma duvida com relacao ao valor do pacote. tenho ansiedade generalizada e meu medico recomendou terapia semanal",
+   "person": false
+  },
+  {
+   "text": "tenho crise de panico quase todo dia e preciso tratar com urgencia, qual o primeiro horario livre de vcs? pode ser online",
+   "person": false
+  },
+  {
+   "text": "meu namorado fica bravo quando eu nao atendo e eu vivo com medo. preciso conversar com ele sobre isso mas nao consigo. vcs atendem individual a noite?",
+   "person": false
+  },
+  {
+   "text": "prefiro ser atendida por mulher pq passei por um trauma com um homem. vcs tem psicologa mulher? qual o valor?",
+   "person": false
+  },
+  {
+   "text": "eu queria muito ter alguem de verdade na minha vida, me sinto vazia desde a mudança. vcs atendem online pra quem mora fora do brasil?",
+   "person": false
+  },
+  {
+   "text": "em casa nao tem alguem pra me responder uma msg sequer, todo mundo me ignora. to precisando de terapia, quanto custa?",
+   "person": false
+  },
+  {
+   "text": "se a terapia for muito cara eu nem vou continuar, ja gasto mt com psiquiatra e remedio. tem algum desconto pra pacote?",
+   "person": false
+  },
+  {
+   "text": "to falando com uma IA ne? sem problema, mas prefiro esperar um atendente de vcs. tenho fobia social e queria entender como funciona a sessao online",
+   "person": true
+  },
+  {
+   "text": "nao to conseguindo me expressar por msg, ansiedade ta alta hj. sera q da pra fazer uma chamada com alguem antes de eu fechar o pacote?",
+   "person": true
+  },
+  {
+   "text": "isso e bot? se for me avisa q eu espero uma pessoa. quero saber valor e se aceitam pix, to com depressao pos parto",
+   "person": true
+  },
+  {
+   "text": "nao confio em IA pra falar de coisa seria. tenho historico de abuso e quero tratar isso com a psicologa diretamente, nao por aqui",
+   "person": true
+  },
+  {
+   "text": "bom dia. ja expliquei minha situacao 2x, tenho sindrome do panico e preciso de horario fixo. eu so falo com o Dr Paulo",
+   "person": true
+  },
+  {
+   "text": "me retorna por ligação pfv, nao consigo escrever direito hj, to com a cabeça cheia por causa do meu filho internado",
+   "person": true
+  },
+  {
+   "text": "quero atendimento de uma pessoa, nao desse menu. tenho ansiedade e preciso saber se tem horario sabado",
+   "person": true
+  },
+  {
+   "text": "o atendimento de vcs é so por bot? eu queria um contato direto com a equipe pra falar do meu caso de TOC",
+   "person": true
+  },
+  {
+   "text": "Dra Helena, se vc estiver lendo, me responde vc mesma por favor. to em crise de ansiedade desde ontem e nao quero ficar falando com programa",
+   "person": true
+  },
+  {
+   "text": "oiee, tem alguem do atendimento disponivel? queria marcar pra minha esposa q ta com depressao, ela nao consegue mandar msg",
+   "person": true
+  },
+  {
+   "text": "eu queria que vcs me ligassem, digitar me deixa mais ansiosa ainda. o horario das 19h ainda ta livre?",
+   "person": true
+  },
+  {
+   "text": "meu psiquiatra me recomendou vcs. vcs tem alguem pra atender adolescente com TDAH? qual o valor?",
+   "person": false
+  },
+  {
+   "text": "nao tem alguem aqui na minha cidade q atenda online pelo mesmo preço? to desempregada e com crise de ansiedade",
+   "person": false
+  },
+  {
+   "text": "nunca to disponivel pra falar de dia por causa do trabalho, e o estresse ta me consumindo. tem horario depois das 20h?",
+   "person": false
+  },
+  {
+   "text": "so fico livre pra conversar depois das 19h, cuido da minha mae com alzheimer o dia todo. tem sessao nesse horario?",
+   "person": false
+  },
+  {
+   "text": "isso q eu sinto chama burnout? to exausta, chorando no trabalho. queria saber como funciona a primeira sessao",
+   "person": false
+  },
+  {
+   "text": "tem como a sessao de quinta passar pra novembro? vou fazer uma cirurgia e nao vou ter cabeça pra terapia",
+   "person": false
+  },
+  {
+   "text": "posso transferir pro cnpj de vcs? meu app do banco nao aceita pix hj. e a sessao e online mesmo ne, tenho agorafobia",
+   "person": false
+  },
+  {
+   "text": "minha internet as vezes nao conecta pra videochamada, sera q da pra fazer a sessao por audio? tenho ansiedade de camera",
+   "person": false
+  },
+  {
+   "text": "da pra ser atendida pelo sus ou vcs sao so particular? to com depressao e sem dinheiro pra pagar",
+   "person": false
+  },
+  {
+   "text": "queria conversar com calma sobre os valores, to passando aperto e com crise de ansiedade, mas preciso muito de terapia",
+   "person": false
+  },
+  {
+   "text": "preciso resolver com urgencia o pagamento da sessao de amanha, o boleto venceu. to nervosa pq nao quero perder a consulta",
+   "person": false
+  },
+  {
+   "text": "eu nunca consegui falar com alguem sobre o abuso que sofri na infancia. acho q ta na hora. como funciona a primeira sessao?",
+   "person": false
+  },
+  {
+   "text": "minha filha de 9 anos nao consegue conversar com alguem sem chorar, a escola ja chamou a gente. vcs atendem criança?",
+   "person": false
+  },
+  {
+   "text": "eu preciso de uma pessoa pra cuidar da minha mae e to esgotada, sem tempo nem pra mim. tem sessao a noite?",
+   "person": false
+  },
+  {
+   "text": "acho lindo q vcs fazem um atendimento humano e acolhedor, vi no insta. queria saber se tem vaga pra terapia de casal",
+   "person": false
+  },
+  {
+   "text": "minha filha vai falar com a recepcionista da escola sobre o bullying, mas acho q ela precisa de terapia tb. vcs atendem adolescente?",
+   "person": false
+  },
+  {
+   "text": "minha sogra me liga toda noite pra brigar e eu ja to tendo insonia. queria marcar uma sessao, quanto custa?",
+   "person": false
+  },
+  {
+   "text": "fico mt nervosa quando alguem me liga, por isso prefiro tudo por msg. a sessao pode ser por chat ou tem q ser video?",
+   "person": false
+  },
+  {
+   "text": "no meu convenio ninguem responde, ja tentei 5 vezes. vcs emitem recibo pra reembolso? tenho depressao e faço terapia semanal",
+   "person": false
+  },
+  {
+   "text": "tem dia q eu nem continuo a conversa com meu marido de tanto cansaço mental. sera q terapia de casal ajuda? qual o valor?",
+   "person": false
+  },
+  {
+   "text": "a terapeuta ta ai na cidade de vcs ou atende de outro estado? pergunto pq queria presencial, tenho ansiedade de video",
+   "person": false
+  },
+  {
+   "text": "queria uma pessoa q me entendesse de verdade, minha familia acha q depressao e frescura. vcs atendem a noite?",
+   "person": false
+  },
+  {
+   "text": "oi, tudo bem? tenho depressao e to sem forças pra ficar digitando. queria ligar pra alguem da equipe, tem como?",
+   "person": true
+  },
+  {
+   "text": "Rafael, me responde pfv. vc disse q ia ver o horario da minha sessao e ate agora nada, to ficando mais ansiosa ainda",
+   "person": true
+  },
+  {
+   "text": "Por favor, preciso de atendimento com profissional, nao com programa. tenho crises de ansiedade e quero agendar logo",
+   "person": true
+  },
+  {
+   "text": "to cansada de responder robozinho, so quero marcar a sessao de terapia pro meu filho autista. qual o valor?",
+   "person": true
+  },
+  {
+   "text": "eu nao vim aqui pra falar com maquina. passei por um aborto espontaneo mes passado e preciso de acolhimento",
+   "person": true
+  },
+  {
+   "text": "eu nao estou a fim de ficar respondendo maquina, ja to emocionalmente esgotada. quanto e a sessao?",
+   "person": true
+  },
+  {
+   "text": "oi, sou paciente nova. quero q o Bruno entre em contato comigo, ele atendeu minha amiga e ela disse q ele e otimo. tenho fobia de dirigir",
+   "person": true
+  },
+  {
+   "text": "liga aqui pfv, nao to conseguindo escrever, minha mao treme de ansiedade. preciso marcar pra essa semana",
+   "person": true
+  },
+  {
+   "text": "pode transferir meu atendimento pra uma pessoa? o assunto e delicado, envolve violencia domestica",
+   "person": true
+  },
+  {
+   "text": "passa meu contato pra Marina por favor, ela me atendeu semana passada e eu tive uma recaida forte",
+   "person": true
+  },
+  {
+   "text": "encaminha minha msg pro Dr Paulo pfv, ele ja conhece meu historico de bipolaridade e eu preciso ajustar o horario",
+   "person": true
+  },
+  {
+   "text": "a Dra Helena pode me atender depois das 18h? trabalho o dia todo e a ansiedade ta piorando",
+   "person": false
+  },
+  {
+   "text": "o Dr Paulo pode me atender pelo convenio? tenho depressao e o plano cobre psicoterapia",
+   "person": false
+  },
+  {
+   "text": "tenho pavor de pensar q alguem vai me responder com julgamento, por isso nunca fiz terapia. como e a primeira sessao?",
+   "person": false
+  },
+  {
+   "text": "nao tenho alguem pra me ligar quando to mal, moro sozinha em outro estado. vcs atendem online qualquer lugar do brasil?",
+   "person": false
+  },
+  {
+   "text": "desde q fiquei doente ninguem aparece pra me visitar, nem minha familia. queria muito começar terapia, qual o valor?",
+   "person": false
+  },
+  {
+   "text": "o hospital vai me ligar com o resultado da biopsia e eu to apavorada. vcs tem horario essa semana ainda?",
+   "person": false
+  },
+  {
+   "text": "meu ex insiste em me ligar mesmo depois da medida protetiva, to com muito medo. vcs atendem vitima de violencia?",
+   "person": false
+  },
+  {
+   "text": "minha mae liga pra mim chorando todo dia e eu nao sei mais o q fazer, to adoecendo junto. tem sessao a noite?",
+   "person": false
+  },
+  {
+   "text": "tem gente ai q faz terapia de casal? eu e meu marido estamos brigando muito depois q o bebe nasceu",
+   "person": false
+  },
+  {
+   "text": "queria saber o valor da sessao online. tenho agorafobia e sinto panico em qualquer lugar onde tem gente",
+   "person": false
+  },
+  {
+   "text": "o atendimento de verdade comeca so na primeira sessao ou antes tem triagem? to com muita ansiedade e queria saber como funciona",
+   "person": false
+  },
+  {
+   "text": "as vezes eu sinto q nao sou uma pessoa real, como se eu tivesse fora do corpo. isso tem tratamento? quanto custa a sessao?",
+   "person": false
+  },
+  {
+   "text": "nao aceito esse sistema de pagamento antecipado, ja tomei golpe antes. posso pagar depois da sessao? to bem ansiosa com isso",
+   "person": false
+  },
+  {
+   "text": "qual o valor da sessao? to perdida, minha familia quer que eu termine com meu namorado mas eu quero ele",
+   "person": false
+  },
+  {
+   "text": "trabalho com ia o dia todo e to com burnout. tem vaga quinta? quero a vaga",
+   "person": false
+  },
+  {
+   "text": "chega desse sistema de saude q nao funciona, esperei 1 ano pela psiquiatria. vcs tem psicologo pra depressao?",
+   "person": false
+  },
+  {
+   "text": "a Carla pode me atender quinzenalmente? to desempregada e a crise de panico nao para, mas nao consigo pagar toda semana",
+   "person": false
+  },
+  {
+   "text": "quando alguem me responde seco eu ja acho q a pessoa me odeia, isso e ansiedade? queria marcar uma avaliação",
+   "person": false
+  },
+  {
+   "text": "oi, quero falar por telefone com vcs, escrever sobre a morte do meu pai ta me fazendo mal. qual horario posso ser atendido?",
+   "person": true
+  },
+  {
+   "text": "ja tentei agendar aqui 2x e nao foi 😩 to com ansiedade e insonia faz semanas. preciso falar c 1 humano",
+   "person": true
+  },
+  {
+   "text": "kero falar cum atendente pfv, minha filha ta com depressao e eu nao sei por onde começar. vcs atendem adolescente?",
+   "person": true
+  },
+  {
+   "text": "Gostaria de um retorno da Dra Helena sobre o laudo. Meu filho tem TEA e a escola esta cobrando. Obrigada",
+   "person": true
+  },
+  {
+   "text": "pode pedir pro Rafael me dar um toque? to num momento ruim com a separação e prefiro resolver o pagamento com ele",
+   "person": true
+  },
+  {
+   "text": "aguardo contato de alguem da clinica, nao quero continuar por aqui. tenho historico de depressao e quero marcar com urgencia",
+   "person": true
+  },
+  {
+   "text": "Me chama no privado, Marina. nao quero falar sobre meu diagnostico de HIV com o atendimento automatico",
+   "person": true
+  },
+  {
+   "text": "eu quero é gente me atendendo, nao isso aqui. faz 1 hora q to tentando marcar pra minha mae q ta com demencia",
+   "person": true
+  },
+  {
+   "text": "tem como ser por ligação? prefiro falar ao vivo com vcs, sou idoso e tenho dificuldade com celular. tenho depressao",
+   "person": true
+  },
+  {
+   "text": "ATENDENTEEE 😭 minha crise de ansiedade ta forte e eu so quero marcar uma sessao pra hoje se tiver",
+   "person": true
+  },
+  {
+   "text": "oi\nnao quero mais responder esse questionario automatico\nquero uma resposta de alguem de vcs\ntenho TOC",
+   "person": true
+  },
+  {
+   "text": "meu psiquiatra sempre me passa pra psicologa mas eu nunca fui. agora decidi ir, vcs tem horario na quarta?",
+   "person": false
+  },
+  {
+   "text": "a terapia faz a ansiedade passar pra sempre ou e so controle? queria entender antes de pagar o pacote",
+   "person": false
+  },
+  {
+   "text": "minha mae bota pra baixo tudo q eu faço e eu ja nem tento mais nada. queria marcar uma sessao, quanto custa?",
+   "person": false
+  },
+  {
+   "text": "desde a depressao nao consigo me conectar com as pessoas, me isolei de todo mundo. a sessao e online mesmo?",
+   "person": false
+  },
+  {
+   "text": "o q eu tenho chama TAG, foi o psiquiatra q disse. vcs atendem ansiedade generalizada? qual o valor?",
+   "person": false
+  },
+  {
+   "text": "minha amiga me chama pra sair e eu nunca vou, fico em casa chorando. sera q e depressao? queria marcar uma avaliação",
+   "person": false
+  },
+  {
+   "text": "a escola vai chamar o conselho tutelar se eu nao levar meu filho na terapia. vcs atendem criança com TDAH sabado?",
+   "person": false
+  },
+  {
+   "text": "tenho receio de ser atendida por estagiario, ja tive experiencia ruim. as psicologas de vcs sao formadas ha quanto tempo?",
+   "person": false
+  },
+  {
+   "text": "sempre q alguem me chama pra conversar no trabalho eu travo de ansiedade. isso tem tratamento? qual o valor da sessao?",
+   "person": false
+  },
+  {
+   "text": "agora nao da pra falar muito pq em casa tem alguem agora. mas queria saber se a sessao pode ser por chat, tenho medo do meu marido ouvir",
+   "person": false
+  },
+  {
+   "text": "tem uma pessoa aqui comigo agora, depois eu explico melhor. mas ja adianto q e sobre crise de panico. qual o valor?",
+   "person": false
+  },
+  {
+   "text": "minha mae nao ta disponivel pra conversar sobre o abuso, entao decidi procurar terapia sozinha. vcs atendem adulto?",
+   "person": false
+  },
+  {
+   "text": "queria falar com sinceridade: to com medo de começar terapia e de chorar na primeira sessao. e normal? quanto custa?",
+   "person": false
+  },
+  {
+   "text": "isso da pra resolver com terapia ou precisa de remedio? tenho tido pensamentos acelerados e nao durmo",
+   "person": false
+  },
+  {
+   "text": "tem como tratar com terapia online ou tem q ser presencial? tenho fobia de sair de casa desde a pandemia",
+   "person": false
+  },
+  {
+   "text": "minha mae ta muito deprimida desde q meu pai morreu, preciso conversar com ela sobre terapia. vcs atendem idoso?",
+   "person": false
+  },
+  {
+   "text": "nao gosto de falar com alguem olhando, por isso prefiro sessao so com audio. pode ser? tenho fobia social",
+   "person": false
+  },
+  {
+   "text": "preciso de uma pessoa de confiança pra deixar meu filho durante a sessao, entao queria a noite. tem horario?",
+   "person": false
+  },
+  {
+   "text": "as vezes eu começo um livro e nem continuo, perco o foco em td. sera q e tdah? vcs fazem avaliação?",
+   "person": false
+  },
+  {
+   "text": "meu filho perguntou se ia falar com uma pessoa ou com um computador na terapia online kkkk. ele tem 8 anos e e bem ansioso. qual o valor?",
+   "person": false
+  },
+  {
+   "text": "me liga nao, por favor, pq meu marido controla meu celular. prefiro tudo por msg. sofro violencia e queria marcar uma sessao",
+   "person": false
+  },
+  {
+   "text": "vc tem como me transferir pra um atendente?",
+   "person": true
+  },
+  {
+   "text": "vc consegue me passar pra alguem?",
+   "person": true
+  },
+  {
+   "text": "voce poderia me transferir pra uma pessoa pfv",
+   "person": true
+  },
+  {
+   "text": "vc poderia chamar alguem da recepção?",
+   "person": true
+  },
+  {
+   "text": "tô precisando falar com alguém",
+   "person": true
+  },
+  {
+   "text": "estou precisando de atendimento humano",
+   "person": true
+  },
+  {
+   "text": "to precisando de um atendimento de verdade",
+   "person": true
+  },
+  {
+   "text": "necessito falar com um atendente",
+   "person": true
+  },
+  {
+   "text": "preciso urgente falar com alguem",
+   "person": true
+  },
+  {
+   "text": "quero mt falar com uma pessoa",
+   "person": true
+  },
+  {
+   "text": "queria so falar com alguem rapidinho",
+   "person": true
+  },
+  {
+   "text": "to tentando falar com um atendente faz tempo",
+   "person": true
+  },
+  {
+   "text": "quero falar com a doutora",
+   "person": true
+  },
+  {
+   "text": "posso falar com a dra?",
+   "person": true
+  },
+  {
+   "text": "quero falar com a psi antes de marcar",
+   "person": true
+  },
+  {
+   "text": "quero falar com a propria psicologa",
+   "person": true
+  },
+  {
+   "text": "como faço pra falar com a psicóloga?",
+   "person": true
+  },
+  {
+   "text": "como eu falo com um atendente?",
+   "person": true
+  },
+  {
+   "text": "pfv atendente",
+   "person": true
+  },
+  {
+   "text": "por favor atendimento humano",
+   "person": true
+  },
+  {
+   "text": "pessoa de verdade por favor",
+   "person": true
+  },
+  {
+   "text": "algueeem??",
+   "person": true
+  },
+  {
+   "text": "pelo amor de deus alguem me atende",
+   "person": true
+  },
+  {
+   "text": "socorro alguem me responde",
+   "person": true
+  },
+  {
+   "text": "ninguem vai me atender?",
+   "person": true
+  },
+  {
+   "text": "ngm responde nessa clinica?",
+   "person": true
+  },
+  {
+   "text": "alguem fala comigo pfv",
+   "person": true
+  },
+  {
+   "text": "eu preciso q alguem me ligue",
+   "person": true
+  },
+  {
+   "text": "quero q me liguem",
+   "person": true
+  },
+  {
+   "text": "quero que vcs me retornem hoje",
+   "person": true
+  },
+  {
+   "text": "podem ligar p mim?",
+   "person": true
+  },
+  {
+   "text": "liga ai pra mim",
+   "person": true
+  },
+  {
+   "text": "da uma ligada pra mim qdo puder",
+   "person": true
+  },
+  {
+   "text": "dá p me ligar?",
+   "person": true
+  },
+  {
+   "text": "teria como chamar alguem?",
+   "person": true
+  },
+  {
+   "text": "daria pra falar com alguém?",
+   "person": true
+  },
+  {
+   "text": "dava pra falar com uma pessoa?",
+   "person": true
+  },
+  {
+   "text": "rola de falar com alguem de vcs?",
+   "person": true
+  },
+  {
+   "text": "me encaminha p/ um atendente",
+   "person": true
+  },
+  {
+   "text": "me direciona pra alguem pfv",
+   "person": true
+  },
+  {
+   "text": "me poe em contato",
+   "person": true
+  },
+  {
+   "text": "me coloca em contato c alguem",
+   "person": true
+  },
+  {
+   "text": "manda um atendente aqui",
+   "person": true
+  },
+  {
+   "text": "bota alguem pra falar comigo",
+   "person": true
+  },
+  {
+   "text": "to esperando um atendente ha horas",
+   "person": true
+  },
+  {
+   "text": "aguardando atendimento humano",
+   "person": true
+  },
+  {
+   "text": "preciso da Marina urgente",
+   "person": true
+  },
+  {
+   "text": "preciso da carla, ela q tava vendo meu horario",
+   "person": true
+  },
+  {
+   "text": "me passa o whats da marina",
+   "person": true
+  },
+  {
+   "text": "me dá o número da recepção",
+   "person": true
+  },
+  {
+   "text": "qual o contato da psicologa? queria falar direto com ela",
+   "person": true
+  },
+  {
+   "text": "avisa a marina q eu to esperando ela me chamar",
+   "person": true
+  },
+  {
+   "text": "avisa a psicologa que eu quero falar com ela",
+   "person": true
+  },
+  {
+   "text": "diz pra dra que eu preciso falar com ela",
+   "person": true
+  },
+  {
+   "text": "marina cade vc?",
+   "person": true
+  },
+  {
+   "text": "to esperando o retorno da Dra Helena ate agora",
+   "person": true
+  },
+  {
+   "text": "tem como o rafa me ligar?",
+   "person": true
+  },
+  {
+   "text": "chama a mari pra mim",
+   "person": true
+  },
+  {
+   "text": "me passa p/ marina",
+   "person": true
+  },
+  {
+   "text": "cade a moça?",
+   "person": true
+  },
+  {
+   "text": "kd o carinha q tava me atendendo",
+   "person": true
+  },
+  {
+   "text": "pode chamar a moça de ontem?",
+   "person": true
+  },
+  {
+   "text": "quero falar com quem marca as consultas",
+   "person": true
+  },
+  {
+   "text": "quero falar com quem cuida disso ai",
+   "person": true
+  },
+  {
+   "text": "tem alguem q possa me atender?",
+   "person": true
+  },
+  {
+   "text": "existe atendimento humano?",
+   "person": true
+  },
+  {
+   "text": "solicito atendimento humano",
+   "person": true
+  },
+  {
+   "text": "nada de robô",
+   "person": true
+  },
+  {
+   "text": "nao aguento mais esse robo",
+   "person": true
+  },
+  {
+   "text": "to de saco cheio desse bot",
+   "person": true
+  },
+  {
+   "text": "me tira desse robo",
+   "person": true
+  },
+  {
+   "text": "quero sair desse atendimento automatico",
+   "person": true
+  },
+  {
+   "text": "se for robo me passa pra uma pessoa",
+   "person": true
+  },
+  {
+   "text": "gostaria, se possível, de falar com um atendente",
+   "person": true
+  },
+  {
+   "text": "teria a possibilidade de falar com uma pessoa?",
+   "person": true
+  },
+  {
+   "text": "é possível falar com alguém?",
+   "person": true
+  },
+  {
+   "text": "conseguiria falar com um atendente?",
+   "person": true
+  },
+  {
+   "text": "tem jeito de falar com alguem?",
+   "person": true
+  },
+  {
+   "text": "queria saber se alguém pode me ligar",
+   "person": true
+  },
+  {
+   "text": "ve se alguem me liga",
+   "person": true
+  },
+  {
+   "text": "urgente alguem me liga",
+   "person": true
+  },
+  {
+   "text": "liguem pra mim por favor",
+   "person": true
+  },
+  {
+   "text": "ligue pra mim assim q der",
+   "person": true
+  },
+  {
+   "text": "prefiro q vcs me liguem",
+   "person": true
+  },
+  {
+   "text": "me consegue um atendente?",
+   "person": true
+  },
+  {
+   "text": "me arruma alguem pra falar",
+   "person": true
+  },
+  {
+   "text": "estou aguardando um atendente",
+   "person": true
+  },
+  {
+   "text": "oi\nninguem atende aqui nao?",
+   "person": true
+  },
+  {
+   "text": "quero fala com atendente",
+   "person": true
+  },
+  {
+   "text": "qro fala c alguem",
+   "person": true
+  },
+  {
+   "text": "quero falar com um atemdente",
+   "person": true
+  },
+  {
+   "text": "quero falar com uma pesoa",
+   "person": true
+  },
+  {
+   "text": "QUERO UM ATENDENTE AGORAAA",
+   "person": true
+  },
+  {
+   "text": "quero um atendente imediatamente",
+   "person": true
+  },
+  {
+   "text": "quero um atendente msm",
+   "person": true
+  },
+  {
+   "text": "quero um atendente q n seja robo",
+   "person": true
+  },
+  {
+   "text": "quero uma pessoa pra me explicar os valores",
+   "person": true
+  },
+  {
+   "text": "quero uma pessoa pra cancelar minha consulta",
+   "person": true
+  },
+  {
+   "text": "1 atendente pfv",
+   "person": true
+  },
+  {
+   "text": "solicito transferencia para um atendente",
+   "person": true
+  },
+  {
+   "text": "quero ser transferido",
+   "person": true
+  },
+  {
+   "text": "gostaria de ser transferido para um atendente",
+   "person": true
+  },
+  {
+   "text": "posso ser transferida pra alguem?",
+   "person": true
+  },
+  {
+   "text": "nao tem atendente nessa clinica?",
+   "person": true
+  },
+  {
+   "text": "Solicito, por gentileza, que um atendente entre em contato.",
+   "person": true
+  },
+  {
+   "text": "Peço que alguém da equipe me retorne.",
+   "person": true
+  },
+  {
+   "text": "peco pra alguem me ligar",
+   "person": true
+  },
+  {
+   "text": "Fico no aguardo de um atendente.",
+   "person": true
+  },
+  {
+   "text": "Fico aguardando o retorno da equipe.",
+   "person": true
+  },
+  {
+   "text": "Agradeço se alguém puder me ligar.",
+   "person": true
+  },
+  {
+   "text": "Agradeceria se um atendente entrasse em contato.",
+   "person": true
+  },
+  {
+   "text": "Ficaria grata se a psicóloga pudesse me ligar.",
+   "person": true
+  },
+  {
+   "text": "Se alguém puder me retornar, agradeço.",
+   "person": true
+  },
+  {
+   "text": "assim que alguem estiver disponivel me chama",
+   "person": true
+  },
+  {
+   "text": "é sério q nao tem ninguem pra atender?",
+   "person": true
+  },
+  {
+   "text": "nao curto falar com robo",
+   "person": true
+  },
+  {
+   "text": "não gosto de robô, me passa alguém",
+   "person": true
+  },
+  {
+   "text": "passa alguém aí",
+   "person": true
+  },
+  {
+   "text": "dispenso o robô, obrigado",
+   "person": true
+  },
+  {
+   "text": "pode parar com o robo",
+   "person": true
+  },
+  {
+   "text": "Oi!\nTô tentando falar com alguém desde cedo 😩",
+   "person": true
+  },
+  {
+   "text": "quero o Bruno de novo",
+   "person": true
+  },
+  {
+   "text": "a marina consegue me mandar msg?",
+   "person": true
+  },
+  {
+   "text": "pede pra Carla me mandar mensagem",
+   "person": true
+  },
+  {
+   "text": "fala pra Marina que é a Joana e que eu quero falar com ela",
+   "person": true
+  },
+  {
+   "text": "Marina?? tô aguardando",
+   "person": true
+  },
+  {
+   "text": "quero voltar a falar com a Marina",
+   "person": true
+  },
+  {
+   "text": "quero continuar falando com o Rafael",
+   "person": true
+  },
+  {
+   "text": "prefiro continuar com a Marina, ela q tava me atendendo",
+   "person": true
+  },
+  {
+   "text": "me devolve pra Marina",
+   "person": true
+  },
+  {
+   "text": "volta a carla pfv",
+   "person": true
+  },
+  {
+   "text": "pede pra me ligarem",
+   "person": true
+  },
+  {
+   "text": "pede pra me retornarem qdo der",
+   "person": true
+  },
+  {
+   "text": "quero falar com a central de atendimento",
+   "person": true
+  },
+  {
+   "text": "quero falar com o suporte",
+   "person": true
+  },
+  {
+   "text": "quero falar com a coordenação",
+   "person": true
+  },
+  {
+   "text": "quero falar com o setor financeiro",
+   "person": true
+  },
+  {
+   "text": "quero falar com a parte financeira",
+   "person": true
+  },
+  {
+   "text": "quero falar com a menina da recepção",
+   "person": true
+  },
+  {
+   "text": "quero falar com a moça",
+   "person": true
+  },
+  {
+   "text": "quero falar com quem me mandou msg",
+   "person": true
+  },
+  {
+   "text": "preciso trocar uma palavra com alguem",
+   "person": true
+  },
+  {
+   "text": "preciso tratar um assunto com alguem",
+   "person": true
+  },
+  {
+   "text": "queria tirar umas duvidas com alguem",
+   "person": true
+  },
+  {
+   "text": "queria tirar umas dúvidas com a psicóloga",
+   "person": true
+  },
+  {
+   "text": "preciso falar sobre um assunto com alguém da clinica",
+   "person": true
+  },
+  {
+   "text": "preciso falar uma coisa com a recepção",
+   "person": true
+  },
+  {
+   "text": "quero esclarecer umas coisas com uma pessoa",
+   "person": true
+  },
+  {
+   "text": "tem algum humano pra eu conversar?",
+   "person": true
+  },
+  {
+   "text": "gente cadê o atendimento humano dessa clinica",
+   "person": true
+  },
+  {
+   "text": "alguém ai pode me ajudar?",
+   "person": true
+  },
+  {
+   "text": "vcs vao me atender ou nao?",
+   "person": true
+  },
+  {
+   "text": "Bruno?? cade vc",
+   "person": true
+  },
+  {
+   "text": "Carla vc pode me ligar?",
+   "person": true
+  },
+  {
+   "text": "me passa uma pessoa",
+   "person": true
+  },
+  {
+   "text": "me passa alguem do atendimento",
+   "person": true
+  },
+  {
+   "text": "me leva até um atendente",
+   "person": true
+  },
+  {
+   "text": "PESSOAAAA",
+   "person": true
+  },
+  {
+   "text": "tem gente aí ou é tudo automático?",
+   "person": true
+  },
+  {
+   "text": "tem alguem ai ou so robo?",
+   "person": true
+  },
+  {
+   "text": "vcs fazem ligação? queria que me ligassem",
+   "person": true
+  },
+  {
+   "text": "dá pra vcs me ligarem?",
+   "person": true
+  },
+  {
+   "text": "tem como me ligarem?",
+   "person": true
+  },
+  {
+   "text": "me ligam?",
+   "person": true
+  },
+  {
+   "text": "me telefonem por favor",
+   "person": true
+  },
+  {
+   "text": "me atendam por favor",
+   "person": true
+  },
+  {
+   "text": "quero ser atendida logo, por uma pessoa",
+   "person": true
+  },
+  {
+   "text": "vc chama alguem pra mim?",
+   "person": true
+  },
+  {
+   "text": "voce me passa pra um atendente?",
+   "person": true
+  },
+  {
+   "text": "vc me liga?",
+   "person": true
+  },
+  {
+   "text": "vcs me ligam hj?",
+   "person": true
+  },
+  {
+   "text": "vocês me retornam por telefone?",
+   "person": true
+  },
+  {
+   "text": "Gostaria imensamente de falar com uma pessoa",
+   "person": true
+  },
+  {
+   "text": "queria demais falar com alguem",
+   "person": true
+  },
+  {
+   "text": "to querendo muito falar com alguem",
+   "person": true
+  },
+  {
+   "text": "preciso da ajuda de um atendente",
+   "person": true
+  },
+  {
+   "text": "oiii, sera q tem alguem pra conversar cmg?",
+   "person": true
+  },
+  {
+   "text": "alguem disponivel pra conversar comigo agora?",
+   "person": true
+  },
+  {
+   "text": "queria q alguem me desse um retorno",
+   "person": true
+  },
+  {
+   "text": "espero retorno de alguem",
+   "person": true
+  },
+  {
+   "text": "quero que um humano leia isso",
+   "person": true
+  },
+  {
+   "text": "alguem le isso por favor",
+   "person": true
+  },
+  {
+   "text": "quero uma pessoa de verdade lendo minhas mensagens",
+   "person": true
+  },
+  {
+   "text": "cade a galera da clinica",
+   "person": true
+  },
+  {
+   "text": "hellooo alguem?",
+   "person": true
+  },
+  {
+   "text": "to aqui esperando alguem me responder",
+   "person": true
+  },
+  {
+   "text": "ainda tô esperando alguém me ligar",
+   "person": true
+  },
+  {
+   "text": "plmds alguem me atende",
+   "person": true
+  },
+  {
+   "text": "pls falar com atendente",
+   "person": true
+  },
+  {
+   "text": "😭😭 alguém me ajuda a falar com a recepção",
+   "person": true
+  },
+  {
+   "text": "isso aqui é robo ne? me chama qnd tiver alguem",
+   "person": true
+  },
+  {
+   "text": "me avisa quando tiver um atendente disponivel",
+   "person": true
+  },
+  {
+   "text": "tem previsão de alguém me atender?",
+   "person": true
+  },
+  {
+   "text": "quanto tempo pra alguem falar comigo?",
+   "person": true
+  },
+  {
+   "text": "to precisando de um help de alguem da clinica",
+   "person": true
+  },
+  {
+   "text": "alguem me socorre aqui",
+   "person": true
+  },
+  {
+   "text": "meu deus, me passa logo pra um humano",
+   "person": true
+  },
+  {
+   "text": "o rafael pode me mandar um audio?",
+   "person": true
+  },
+  {
+   "text": "queria q a Marina me mandasse msg depois",
+   "person": true
+  },
+  {
+   "text": "tem como a dra helena me dar uma ligadinha?",
+   "person": true
+  },
+  {
+   "text": "queria falar com a Dra. pfv",
+   "person": true
+  },
+  {
+   "text": "oi, consegue passar o atendimento pra quinta? surgiu um imprevisto",
+   "person": false
+  },
+  {
+   "text": "coloca o atendimento pra semana q vem pfv",
+   "person": false
+  },
+  {
+   "text": "joga o atendimento pra sexta 19h se tiver vaga",
+   "person": false
+  },
+  {
+   "text": "bota o atendimento pra terça de manha entao",
+   "person": false
+  },
+  {
+   "text": "pode passar a gente pra sexta? meu marido nao vai conseguir na quarta",
+   "person": false
+  },
+  {
+   "text": "coloca a gente na quinta as 20h pfv 🙏",
+   "person": false
+  },
+  {
+   "text": "a dra helena atende hj?",
+   "person": false
+  },
+  {
+   "text": "a dra Helena atende pessoalmente?",
+   "person": false
+  },
+  {
+   "text": "o dr paulo atende aqui?",
+   "person": false
+  },
+  {
+   "text": "a carla atende hoje? queria marcar pra mais tarde",
+   "person": false
+  },
+  {
+   "text": "psicologa online?",
+   "person": false
+  },
+  {
+   "text": "oi! psicólogo online, quanto custa?",
+   "person": false
+  },
+  {
+   "text": "terapeuta online, vcs tem?",
+   "person": false
+  },
+  {
+   "text": "posso ser atendida por uma psicologa mulher?",
+   "person": false
+  },
+  {
+   "text": "prefiro ser atendido por um psicologo homem, tem?",
+   "person": false
+  },
+  {
+   "text": "preciso ligar pra psicologa pra desmarcar?",
+   "person": false
+  },
+  {
+   "text": "tenho q falar com a recepcao pra remarcar ou da por aqui msm?",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a psicologa antes ou ja marco direto?",
+   "person": false
+  },
+  {
+   "text": "posso tirar duvidas com a psicologa na primeira sessao?",
+   "person": false
+  },
+  {
+   "text": "pode falar pra gente o valor da terapia de casal?",
+   "person": false
+  },
+  {
+   "text": "da pra resolver isso pra gente? a gente queria mudar pra sabado",
+   "person": false
+  },
+  {
+   "text": "tem como ver isso pra gente ate amanha?",
+   "person": false
+  },
+  {
+   "text": "beleza, a gente vai entrar em contato semana q vem pra marcar",
+   "person": false
+  },
+  {
+   "text": "a gente pode entrar em contato pelo instagram tb?",
+   "person": false
+  },
+  {
+   "text": "prefiro contato por aqui, nao consigo atender ligação no trabalho",
+   "person": false
+  },
+  {
+   "text": "mandei o comprovante, aguardo retorno 🙏",
+   "person": false
+  },
+  {
+   "text": "gostaria que vcs me chamassem um dia antes da sessao pra lembrar",
+   "person": false
+  },
+  {
+   "text": "queria q vcs me respondessem so por msg, nao posso atender ligacao",
+   "person": false
+  },
+  {
+   "text": "me da um toque um dia antes pra eu nao esquecer kkk",
+   "person": false
+  },
+  {
+   "text": "me dá um toque qd o pix cair pfv",
+   "person": false
+  },
+  {
+   "text": "segue o comprovante. encaminha isso pro financeiro pfv",
+   "person": false
+  },
+  {
+   "text": "o pix ta dando erro. tem como transferir agora?",
+   "person": false
+  },
+  {
+   "text": "pode ser com a marina ou com a carla? prefiro a carla",
+   "person": false
+  },
+  {
+   "text": "pode remarcar, mas prefiro o mesmo profissional",
+   "person": false
+  },
+  {
+   "text": "gente, qual o valor da sessao?",
+   "person": false
+  },
+  {
+   "text": "Gente!! quanto custa?",
+   "person": false
+  },
+  {
+   "text": "me ajuda gente, o pix nao ta indo",
+   "person": false
+  },
+  {
+   "text": "a psicologa me chama no horario da sessao ou eu entro no link?",
+   "person": false
+  },
+  {
+   "text": "vou aguardar o profissional me chamar no link entao",
+   "person": false
+  },
+  {
+   "text": "chama a gente no whats 10 min antes da sessao pfv",
+   "person": false
+  },
+  {
+   "text": "da pra passar o atendimento das 19h pras 20h?",
+   "person": false
+  },
+  {
+   "text": "repassa o atendimento pra 18h q eu saio mais cedo do trampo",
+   "person": false
+  },
+  {
+   "text": "transfere o atendimento pra quinta, pode ser?",
+   "person": false
+  },
+  {
+   "text": "quero atendimento hoje, tem horario a noite?",
+   "person": false
+  },
+  {
+   "text": "preciso de atendimento hj, tem vaga?",
+   "person": false
+  },
+  {
+   "text": "nao consigo de dia, o chefe me liga toda hora 😩",
+   "person": false
+  },
+  {
+   "text": "pix nao foi, a gerente me liga amanha pra liberar",
+   "person": false
+  },
+  {
+   "text": "e o reembolso? me transfere hj?",
+   "person": false
+  },
+  {
+   "text": "manda o link pra mim e passa pro bruno tb, ele vai participar",
+   "person": false
+  },
+  {
+   "text": "coloca a marina como responsavel financeira, ela q vai pagar",
+   "person": false
+  },
+  {
+   "text": "bota o bruno na sessao tb, a terapia e de casal",
+   "person": false
+  },
+  {
+   "text": "chama o bruno tb no link? ele vai entrar do trabalho",
+   "person": false
+  },
+  {
+   "text": "prefiro o dr paulo",
+   "person": false
+  },
+  {
+   "text": "gostaria de ser atendida pela psicologa que atendeu minha amiga",
+   "person": false
+  },
+  {
+   "text": "tenho que ligar pra secretaria pra confirmar o horario?",
+   "person": false
+  },
+  {
+   "text": "consigo falar com a psicologa por video na sessao? meu audio e ruim",
+   "person": false
+  },
+  {
+   "text": "posso ser atendido por outro profissional se a marina nao tiver horario a noite?",
+   "person": false
+  },
+  {
+   "text": "queria um psicologo pra me ajudar com ansiedade, quanto e?",
+   "person": false
+  },
+  {
+   "text": "preciso de um profissional pra me atender a noite, depois das 20h",
+   "person": false
+  },
+  {
+   "text": "espero q a psicologa me chame no horario certo kkk",
+   "person": false
+  },
+  {
+   "text": "prefiro retorno por aqui",
+   "person": false
+  },
+  {
+   "text": "ninguem, so eu msm",
+   "person": false
+  },
+  {
+   "text": "bom dia gente! tem horario sabado?",
+   "person": false
+  },
+  {
+   "text": "oi gente, tudo bem? queria saber o valor",
+   "person": false
+  },
+  {
+   "text": "valeu, gente!",
+   "person": false
+  },
+  {
+   "text": "psicologa online, aceita convenio?",
+   "person": false
+  },
+  {
+   "text": "oi, atendimento de uma pessoa so, quanto fica?",
+   "person": false
+  },
+  {
+   "text": "a sessao seria so pra mim, uma pessoa.",
+   "person": false
+  },
+  {
+   "text": "me coloca com a mesma psicologa da minha irma",
+   "person": false
+  },
+  {
+   "text": "pode me passar pra outro profissional? a marina nao tem horario a noite",
+   "person": false
+  },
+  {
+   "text": "a psicologa vai ver meu caso na primeira sessao?",
+   "person": false
+  },
+  {
+   "text": "a psicologa vai entrar em contato pra confirmar ou vcs?",
+   "person": false
+  },
+  {
+   "text": "o financeiro vai entrar em contato sobre a nota?",
+   "person": false
+  },
+  {
+   "text": "a psicologa vai falar comigo por video ou por audio?",
+   "person": false
+  },
+  {
+   "text": "a psicologa me responde por aqui tb ou so na sessao?",
+   "person": false
+  },
+  {
+   "text": "pode conversar com a gente junto na sessao? somos casal",
+   "person": false
+  },
+  {
+   "text": "a marina atende ne? minha prima falou bem dela",
+   "person": false
+  },
+  {
+   "text": "confirmado! pode falar pra psicologa q eu vou",
+   "person": false
+  },
+  {
+   "text": "tem como ver isso com a dra helena? se ela tem horario sexta",
+   "person": false
+  },
+  {
+   "text": "o dr paulo me chama no meet ou no zoom?",
+   "person": false
+  },
+  {
+   "text": "a psicologa me chama pelo link ou pelo whats?",
+   "person": false
+  },
+  {
+   "text": "me retorna por aqui qnd abrir vaga",
+   "person": false
+  },
+  {
+   "text": "me retorne por msg msm, n precisa ligar",
+   "person": false
+  },
+  {
+   "text": "me de um toque qd confirmar o pagamento",
+   "person": false
+  },
+  {
+   "text": "o pagamento pode ser pix, pode transferir ne?",
+   "person": false
+  },
+  {
+   "text": "cancelei. vcs podem transferir hj?",
+   "person": false
+  },
+  {
+   "text": "o reembolso, transfere pro bruno pfv, foi ele q pagou",
+   "person": false
+  },
+  {
+   "text": "coloca o atendimento no nome do meu filho",
+   "person": false
+  },
+  {
+   "text": "poe o atendimento no meu nome, nao no da minha mae",
+   "person": false
+  },
+  {
+   "text": "passa o atendimento pro nome da minha esposa pfv",
+   "person": false
+  },
+  {
+   "text": "a dra helena me atende hj?",
+   "person": false
+  },
+  {
+   "text": "o dr paulo me atende pessoalmente?",
+   "person": false
+  },
+  {
+   "text": "meu filho o Rafael vai me chamar no link, eu nao sei mexer",
+   "person": false
+  },
+  {
+   "text": "quem vai pagar e minha filha, a carla me liga qd fizer o pix",
+   "person": false
+  },
+  {
+   "text": "deixa eu ver isso com o financeiro da empresa e te falo",
+   "person": false
+  },
+  {
+   "text": "preciso falar com o gerente do banco pra liberar o pix",
+   "person": false
+  },
+  {
+   "text": "tenho q ligar pra gerente do cartao, depois pago",
+   "person": false
+  },
+  {
+   "text": "deixa eu conversar com a psicologa da minha filha e volto aqui",
+   "person": false
+  },
+  {
+   "text": "preciso falar com o dono do cartao antes de pagar",
+   "person": false
+  },
+  {
+   "text": "tenho que ver isso com o chefe pra saber se libera na quinta",
+   "person": false
+  },
+  {
+   "text": "psicologa online!",
+   "person": false
+  },
+  {
+   "text": "terapeuta online 🙏",
+   "person": false
+  },
+  {
+   "text": "pra quantas pessoas? uma pessoa",
+   "person": false
+  },
+  {
+   "text": "entao gente, e o recibo?",
+   "person": false
+  },
+  {
+   "text": "pode ser com a mesma psicologa? quero a mesma psicologa, pfv",
+   "person": false
+  },
+  {
+   "text": "a secretaria me chama pra confirmar ou eu q confirmo?",
+   "person": false
+  },
+  {
+   "text": "a equipe me retorna com o horario ou eu espero o link?",
+   "person": false
+  },
+  {
+   "text": "o comprovante mando pra quem? recepcao?",
+   "person": false
+  },
+  {
+   "text": "a psicologa ta disponivel pra conversar quinta as 19h? queria agendar",
+   "person": false
+  },
+  {
+   "text": "a marina ta livre pra conversar sexta de manha? quero marcar",
+   "person": false
+  },
+  {
+   "text": "pode me retornar o valor da sessao cancelada?",
+   "person": false
+  },
+  {
+   "text": "me retorna o dinheiro da sessao q foi cancelada?",
+   "person": false
+  },
+  {
+   "text": "gostaria de retorno por aqui",
+   "person": false
+  },
+  {
+   "text": "preciso de uma psicologa pra marcar consulta pro meu filho de 8 anos",
+   "person": false
+  },
+  {
+   "text": "queria uma psicologa pra agendar ainda essa semana",
+   "person": false
+  },
+  {
+   "text": "avisa pra psicologa me chamar 5 min mais tarde, vou atrasar no transito",
+   "person": false
+  },
+  {
+   "text": "a recepcao vai me ligar pra confirmar ou confirma por aqui?",
+   "person": false
+  },
+  {
+   "text": "alguem vai me chamar no dia pra lembrar?",
+   "person": false
+  },
+  {
+   "text": "o comprovante ta ai, joga isso pro financeiro",
+   "person": false
+  },
+  {
+   "text": "repassa isso pra recepcao, e o comprovante do pix",
+   "person": false
+  },
+  {
+   "text": "passa pra gente o horario da sessao de casal",
+   "person": false
+  },
+  {
+   "text": "passa pra gente o link pfv",
+   "person": false
+  },
+  {
+   "text": "coloca pra gente na quinta, pode ser 19h",
+   "person": false
+  },
+  {
+   "text": "bota pra gente sexta 18h",
+   "person": false
+  },
+  {
+   "text": "encaminha pra gente o recibo, a gente pede reembolso no plano",
+   "person": false
+  },
+  {
+   "text": "passa pra marina o link, ela e minha esposa",
+   "person": false
+  },
+  {
+   "text": "pode marcar quinta 19h? queria o dr paulo, pfv",
+   "person": false
+  },
+  {
+   "text": "quero a carla ne, ja me consultei com ela antes",
+   "person": false
+  },
+  {
+   "text": "ah gente, nao sei qual horario fica melhor",
+   "person": false
+  },
+  {
+   "text": "😅 gente, errei o horario, pode ser 20h?",
+   "person": false
+  },
+  {
+   "text": "olha gente, so consigo depois das 19h",
+   "person": false
+  },
+  {
+   "text": "oi, a psicologa atende aqui ne?",
+   "person": false
+  },
+  {
+   "text": "o dr paulo atende hoje? se sim quero marcar",
+   "person": false
+  },
+  {
+   "text": "tem como passar o atendimento pra semana que vem? viajei",
+   "person": false
+  },
+  {
+   "text": "consegue mudar? coloca o atendimento pra outro dia",
+   "person": false
+  },
+  {
+   "text": "pode transferir ja? quero garantir o horario",
+   "person": false
+  },
+  {
+   "text": "tem como transferir hoje? o boleto venceu",
+   "person": false
+  },
+  {
+   "text": "vcs podem falar pra gente quanto fica o pacote mensal?",
+   "person": false
+  },
+  {
+   "text": "pode falar pra gente se tem horario sabado?",
+   "person": false
+  },
+  {
+   "text": "gente, quanto custa a sessao?",
+   "person": false
+  },
+  {
+   "text": "Gente, boa tarde! vcs atendem online?",
+   "person": false
+  },
+  {
+   "text": "nao posso falar agora, tem gente aqui",
+   "person": false
+  },
+  {
+   "text": "minha mae é atendente.",
+   "person": false
+  },
+  {
+   "text": "ah entao vc é humano kkk",
+   "person": false
+  },
+  {
+   "text": "oi, pode falar pra gente quanto custa?",
+   "person": false
+  },
+  {
+   "text": "da pra falar pra gente como funciona a terapia de casal?",
+   "person": false
+  },
+  {
+   "text": "passa pra gente os horarios de quinta?",
+   "person": false
+  },
+  {
+   "text": "coloca a gente na lista de espera pfv",
+   "person": false
+  },
+  {
+   "text": "vou aguardar a gente receber o salario pra marcar",
+   "person": false
+  },
+  {
+   "text": "vou esperar a gente conversar em casa e te falo",
+   "person": false
+  },
+  {
+   "text": "preciso resolver isso pra gente ainda essa semana",
+   "person": false
+  },
+  {
+   "text": "queria tirar uma duvida pra gente fechar o pacote",
+   "person": false
+  },
+  {
+   "text": "vou ver com meu marido e a gente responde hj",
+   "person": false
+  },
+  {
+   "text": "eu e minha esposa vamos decidir, a gente vai entrar em contato com vcs",
+   "person": false
+  },
+  {
+   "text": "deixa eu falar com o Bruno e te falo",
+   "person": false
+  },
+  {
+   "text": "deixa eu falar com o chefe e te confirmo o horario",
+   "person": false
+  },
+  {
+   "text": "tenho q ver isso com quem manda kkk minha mulher",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com alguem la de casa antes",
+   "person": false
+  },
+  {
+   "text": "tenho que falar com o gerente do banco antes de pagar",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a psicologa da minha filha antes",
+   "person": false
+  },
+  {
+   "text": "preciso falar com a pessoa que me indicou vcs",
+   "person": false
+  },
+  {
+   "text": "meu marido Bruno vai falar comigo hj sobre isso",
+   "person": false
+  },
+  {
+   "text": "o Bruno vai me ligar mais tarde pra decidir, ele é meu marido",
+   "person": false
+  },
+  {
+   "text": "minha irma Carla me liga toda noite kkk",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com o Rafael do meu trabalho primeiro",
+   "person": false
+  },
+  {
+   "text": "preciso falar com o Bruno, o meu marido",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com a Marina (minha esposa) antes",
+   "person": false
+  },
+  {
+   "text": "meu filho tem 12 anos, chama Rafael",
+   "person": false
+  },
+  {
+   "text": "nao, chama ninguem nao, so tava testando",
+   "person": false
+  },
+  {
+   "text": "me liga n pfv, to no trabalho",
+   "person": false
+  },
+  {
+   "text": "minha mae fala: me liga qnd chegar kkk",
+   "person": false
+  },
+  {
+   "text": "agora nao vou conversar com vc pq to dirigindo, depois te respondo",
+   "person": false
+  },
+  {
+   "text": "valeu! robo, obrigada kkkk",
+   "person": false
+  },
+  {
+   "text": "odeio ia kkk mas vc ta mandando bem",
+   "person": false
+  },
+  {
+   "text": "detesto robo, mas vc é ok",
+   "person": false
+  },
+  {
+   "text": "a moça que me atendeu ai, super educada",
+   "person": false
+  },
+  {
+   "text": "prefiro ser atendida por uma psicologa",
+   "person": false
+  },
+  {
+   "text": "meu marido ta vendo os horarios dele, espero q ele me ligue logo pra eu confirmar",
+   "person": false
+  },
+  {
+   "text": "ops, era pra minha irma: Carla, me liga qnd puder",
+   "person": false
+  },
+  {
+   "text": "pra pagar é só transferir?",
+   "person": false
+  },
+  {
+   "text": "Gostaria de saber o valor da sessão. Aguardo retorno.",
+   "person": false
+  },
+  {
+   "text": "vc é humano? so curiosidade msm kkk",
+   "person": false
+  },
+  {
+   "text": "vc é gente? pergunto pq responde mt rapido rs",
+   "person": false
+  },
+  {
+   "text": "profissao: atendente",
+   "person": false
+  },
+  {
+   "text": "Nome Carla, 34 anos, profissão: secretária",
+   "person": false
+  },
+  {
+   "text": "trabalho na area de TI, suporte",
+   "person": false
+  },
+  {
+   "text": "é individual, uma pessoa",
+   "person": false
+  },
+  {
+   "text": "a recepcionista ai, ela q me passou esse numero",
+   "person": false
+  },
+  {
+   "text": "e a psicologa ai, atende casal?",
+   "person": false
+  },
+  {
+   "text": "e o atendimento gente, é online ou presencial?",
+   "person": false
+  },
+  {
+   "text": "preciso de ajuda gente, como faço pra marcar?",
+   "person": false
+  },
+  {
+   "text": "a gente ta livre pra conversar so a noite, tem horario pra casal?",
+   "person": false
+  },
+  {
+   "text": "minha mae sempre diz q eu preciso falar com um psicologo kkk entao vim",
+   "person": false
+  },
+  {
+   "text": "ele disse 'nao quero falar com vc' e saiu, por isso quero terapia de casal",
+   "person": false
+  },
+  {
+   "text": "meu filho só diz: nao quero conversar com voce mae",
+   "person": false
+  },
+  {
+   "text": "ia, obrigada!! ajudou demais",
+   "person": false
+  },
+  {
+   "text": "cansei de bot, mas vc ate q é legal",
+   "person": false
+  },
+  {
+   "text": "odeio assistente virtual, mas vc é diferente",
+   "person": false
+  },
+  {
+   "text": "minha amiga marina me chama todo dia pra ir na academia kkk",
+   "person": false
+  },
+  {
+   "text": "minha filha Carla vai entrar em contato com vcs amanha",
+   "person": false
+  },
+  {
+   "text": "minha esposa Marina pode me ligar no horario do almoço, ai a gente decide",
+   "person": false
+  },
+  {
+   "text": "hj a carla me atende, ela é minha manicure kkk",
+   "person": false
+  },
+  {
+   "text": "quero falar com o Rafael antes, meu filho, pq ele q vai fazer a terapia",
+   "person": false
+  },
+  {
+   "text": "tenho q ver isso com a Carla q é a minha socia",
+   "person": false
+  },
+  {
+   "text": "Gente!! que bom, consegui marcar",
+   "person": false
+  },
+  {
+   "text": "aff gente, esqueci de pagar ontem",
+   "person": false
+  },
+  {
+   "text": "nossa gente, que caro",
+   "person": false
+  },
+  {
+   "text": "Bom dia gente! tem vaga pra essa semana?",
+   "person": false
+  },
+  {
+   "text": "boa tarde gente, qual o valor?",
+   "person": false
+  },
+  {
+   "text": "quero conversar com a psicologa sobre isso na primeira sessao",
+   "person": false
+  },
+  {
+   "text": "tenho que conversar com a terapeuta da minha mae antes",
+   "person": false
+  },
+  {
+   "text": "tenho q ligar pra gerente do banco antes",
+   "person": false
+  },
+  {
+   "text": "preciso ligar pra pessoa q me indicou vcs",
+   "person": false
+  },
+  {
+   "text": "pago na hora, sem maquina?",
+   "person": false
+  },
+  {
+   "text": "se nao tiver cartao pago em dinheiro, sem maquina",
+   "person": false
+  },
+  {
+   "text": "a recepcao ai, abre que horas?",
+   "person": false
+  },
+  {
+   "text": "a secretaria ai, ela é mt gente boa",
+   "person": false
+  },
+  {
+   "text": "o responsavel ai, é psicologo tb?",
+   "person": false
+  },
+  {
+   "text": "a terapeuta ai, é mulher?",
+   "person": false
+  },
+  {
+   "text": "a psicologa online, quanto custa?",
+   "person": false
+  },
+  {
+   "text": "a menina que me atendeu ontem ai, foi um amor",
+   "person": false
+  },
+  {
+   "text": "nossa, a atendente q falou comigo ontem ai, nota 10",
+   "person": false
+  },
+  {
+   "text": "a pessoa q me atendeu ai, falou q tinha desconto",
+   "person": false
+  },
+  {
+   "text": "deixa eu conversar com a pessoa q vai pagar e te aviso",
+   "person": false
+  },
+  {
+   "text": "preciso ver isso com o pessoal da clinica onde trabalho",
+   "person": false
+  },
+  {
+   "text": "tenho que falar com a supervisora pra trocar meu turno",
+   "person": false
+  },
+  {
+   "text": "preciso falar com o dono da empresa q trabalho pra liberar o horario",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com um profissional, por isso procurei vcs. como funciona?",
+   "person": false
+  },
+  {
+   "text": "eu queria muito conversar com alguem, por isso to procurando terapia",
+   "person": false
+  },
+  {
+   "text": "minha mae: “me liga quando sair”",
+   "person": false
+  },
+  {
+   "text": "minha sogra é do tipo: quero falar com o gerente! kkkk",
+   "person": false
+  },
+  {
+   "text": "kkkk parece minha mae, 'quero falar com o gerente'",
+   "person": false
+  },
+  {
+   "text": "tenho q falar com o Bruno, ele é meu marido e decide as financas",
+   "person": false
+  },
+  {
+   "text": "tem gente aqui, depois eu falo",
+   "person": false
+  },
+  {
+   "text": "agora nao da, tem alguem aqui",
+   "person": false
+  },
+  {
+   "text": "desculpa, nao posso ligar, aqui tem gente",
+   "person": false
+  },
+  {
+   "text": "ela é atendente, por isso so pode sabado",
+   "person": false
+  },
+  {
+   "text": "errar é humano, ne? esqueci de pagar kkk",
+   "person": false
+  },
+  {
+   "text": "o reembolso, consegue transferir hj?",
+   "person": false
+  },
+  {
+   "text": "passa pro Bruno o link, ele é meu marido",
+   "person": false
+  },
+  {
+   "text": "encaminha pra Carla o comprovante? ela é minha socia",
+   "person": false
+  },
+  {
+   "text": "vcs tem psicologa mulher? prefiro uma psicologa.",
+   "person": false
+  },
+  {
+   "text": "prefiro um psicologo, homem de preferencia",
+   "person": false
+  },
+  {
+   "text": "queria a Dra Helena, ela atende adolescente?",
+   "person": false
+  },
+  {
+   "text": "tem horario quinta a noite? prefiro o dr paulo",
+   "person": false
+  },
+  {
+   "text": "por isso so posso a noite, preciso de alguem pra me ajudar com as criancas",
+   "person": false
+  },
+  {
+   "text": "faz tempo q sinto q preciso de alguem pra conversar, como funciona a terapia?",
+   "person": false
+  },
+  {
+   "text": "bot obrigada kkk",
+   "person": false
+  },
+  {
+   "text": "ok, robo, obrigado!",
+   "person": false
+  },
+  {
+   "text": "meu chefe sempre diz: me liga",
+   "person": false
+  },
+  {
+   "text": "gostaria de conversar com a equipe da escola antes de marcar a terapia do meu filho",
+   "person": false
+  },
+  {
+   "text": "queria falar com a dona do salao q indicou vcs",
+   "person": false
+  },
+  {
+   "text": "kkk minha avó acha q td robo é gente",
+   "person": false
+  },
+  {
+   "text": "meu marido ta aqui perguntando se vc é gente kkkk",
+   "person": false
+  },
+  {
+   "text": "vc tem nome? ou é so assistente?",
+   "person": false
+  },
+  {
+   "text": "chama ninguem nao kkk era so duvida",
+   "person": false
+  },
+  {
+   "text": "me liguem n, pfv, só por msg",
+   "person": false
+  },
+  {
+   "text": "a gente atende? kkk digo, vcs atendem domingo?",
+   "person": false
+  },
+  {
+   "text": "oi boa noite, faz uns 3 meses q to com insonia e crise de choro do nada. to precisando falar com alguem da clinica pra entender como funciona o pacote",
+   "person": true
+  },
+  {
+   "text": "bom dia! minha ansiedade ta nas alturas com a mudança de emprego. queria poder falar com uma atendente antes de pagar, pode ser?",
+   "person": true
+  },
+  {
+   "text": "oi, eu tenho depressao desde a adolescencia e to querendo voltar pra terapia. quero mt falar com a recepcao sobre os horarios de vcs",
+   "person": true
+  },
+  {
+   "text": "tenho um diagnostico de tdah recente e to perdida. preciso falar com a doutora antes de decidir se faço com vcs, ela atende online ne?",
+   "person": true
+  },
+  {
+   "text": "oi, o Rafa ja tinha me ajudado com o agendamento mes passado. to numa semana pessima, briguei com meu pai. queria falar com o Rafa de novo",
+   "person": true
+  },
+  {
+   "text": "queria falar com o pessoal ai da clinica, minha filha ta com crise de ansiedade na escola e eu nao sei o q fazer, vcs atendem crianca?",
+   "person": true
+  },
+  {
+   "text": "oi to mt ansiosa e nao consigo dormir faz dias nem sei se aqui é o lugar certo pra perguntar isso alguem pode me ligar? digitar ta dificil",
+   "person": true
+  },
+  {
+   "text": "bom dia, sou nova aqui e to passando por um luto pesado, perdi minha mae. seria bom se alguem da equipe me ligasse pra eu entender os valores",
+   "person": true
+  },
+  {
+   "text": "oi, tenho fobia social e fico travada em video. entao se vcs puderem me ligar antes da primeira sessao eu agradeço demais",
+   "person": true
+  },
+  {
+   "text": "queria saber o valor da terapia de casal, eu e meu marido estamos brigando mt. fico no aguardo de uma ligação de vcs",
+   "person": true
+  },
+  {
+   "text": "oi! to com burnout e afastada do trabalho. daria pra marcar uma ligação com alguem da equipe? por msg eu me enrolo toda",
+   "person": true
+  },
+  {
+   "text": "boa tarde, vc poderia me ligar? to com crise de panico desde cedo e queria remarcar a sessao de amanha",
+   "person": true
+  },
+  {
+   "text": "oi tudo bem? sobre o pagamento do pacote, deu erro no cartao 2x e eu to ficando nervosa. vc consegue me passar pra alguem?",
+   "person": true
+  },
+  {
+   "text": "oii, to com depressao e nao consigo ficar digitando mt. teria como me ligar hj a tarde? queria entender como funciona",
+   "person": true
+  },
+  {
+   "text": "minha filha tem anorexia e ta internada, eu preciso de ajuda pra mim tb. tem como vcs me ligarem? to sem forca pra escrever",
+   "person": true
+  },
+  {
+   "text": "ja expliquei 3 vezes q quero remarcar e vc nao entende. nao aguento mais falar com bot, to com a cabeça explodindo de enxaqueca",
+   "person": true
+  },
+  {
+   "text": "me tira desse robo pfv. so quero saber se tem vaga pra quinta, to com crise de ansiedade e isso ta piorando",
+   "person": true
+  },
+  {
+   "text": "oi, existe a possibilidade de falar com alguem? meu caso é meio delicado, envolve abuso, e eu nao queria explicar tudo pra um sistema",
+   "person": true
+  },
+  {
+   "text": "boa noite. posso falar com quem cuida da agenda? preciso mudar meu horario pq comecei um remedio novo q me da mt sono de manha",
+   "person": true
+  },
+  {
+   "text": "tem como alguem me explicar melhor por ligacao? sou idosa, tenho 70 anos e depressao, e nao entendo bem essas mensagens",
+   "person": true
+  },
+  {
+   "text": "oi, a Marina ainda trabalha ai? queria falar com ela, foi ela q me atendeu qndo eu tava na pior com o divorcio",
+   "person": true
+  },
+  {
+   "text": "diz pra Dra Helena q preciso falar com ela, tive uma recaida feia esse fds e nao sei se espero ate a sessao de terça",
+   "person": true
+  },
+  {
+   "text": "minha prima Marina me liga todo dia pra desabafar e eu to ficando sobrecarregada, acho q preciso de terapia tb. qual o valor da sessao?",
+   "person": false
+  },
+  {
+   "text": "meu filho Rafael me responde mal o tempo todo, ele tem 16 anos. vcs atendem adolescente? e tem horario depois das 18h?",
+   "person": false
+  },
+  {
+   "text": "minha irma viajou e ta sem dar noticia, to mt ansiosa. espero que ela me ligue hoje. enfim, queria saber se tem sessao sabado",
+   "person": false
+  },
+  {
+   "text": "meu marido Bruno vai me ligar quando sair do trabalho pra gente decidir junto. vcs fazem terapia de casal online? quanto fica?",
+   "person": false
+  },
+  {
+   "text": "minha avó Helena me liga todo domingo e sempre termina em briga, isso me deixa mal a semana toda. tem horario segunda cedo?",
+   "person": false
+  },
+  {
+   "text": "minha gerente Carla pode me ligar a qualquer hora, por isso prefiro sessao online no fim do dia. vcs tem vaga 19h?",
+   "person": false
+  },
+  {
+   "text": "preciso conversar com o dr paulo, cardiologista q me acompanha, antes de comecar terapia? ele disse q minha ansiedade ta afetando o coracao",
+   "person": false
+  },
+  {
+   "text": "meu marido se chama Bruno e a gente briga mt. quero conversar com o Bruno sobre terapia de casal mas tenho medo da reacao. quanto custa?",
+   "person": false
+  },
+  {
+   "text": "oi, tenho ansiedade de video. a Dra Helena atende pessoalmente?",
+   "person": false
+  },
+  {
+   "text": "meu caso é crise de panico quase diaria. o Dr Paulo atende urgente? ou tem fila de espera",
+   "person": false
+  },
+  {
+   "text": "to com depressao e sem carro. queria saber o valor e o endereço do consultorio. a terapeuta atende pessoalmente?",
+   "person": false
+  },
+  {
+   "text": "fiquei com uma duvida: durante a semana, se eu tiver uma crise, a psicologa me responde por aqui? ou so na sessao",
+   "person": false
+  },
+  {
+   "text": "nunca fiz terapia online. o terapeuta me liga no horario da sessao ou eu entro num link? tenho medo de nao saber mexer",
+   "person": false
+  },
+  {
+   "text": "oi, to passando por um momento bem dificil, perdi o emprego e to tendo crise de ansiedade toda noite. preciso de atendimento.",
+   "person": false
+  },
+  {
+   "text": "me sinto mt sozinha desde que me mudei de cidade. so queria alguem pra conversar. vcs fazem terapia online? quanto é?",
+   "person": false
+  },
+  {
+   "text": "faz tempo q eu ignoro isso mas acho que preciso de um profissional. tenho crise de choro no trabalho. quais os horarios?",
+   "person": false
+  },
+  {
+   "text": "oi, gostaria de saber o valor da sessao individual e se aceitam cartao. tenho ansiedade generalizada. aguardo retorno",
+   "person": false
+  },
+  {
+   "text": "vou pagar a primeira sessao por ted pq meu pix ta bloqueado. tem como transferir hoje?",
+   "person": false
+  },
+  {
+   "text": "a sessao é 180 ne? to com depressao e o dinheiro ta curto mas quero começar. da pra transferir agora?",
+   "person": false
+  },
+  {
+   "text": "de noite fico pensando em tudo q deu errado, alguem me liga e eu nem atendo. queria saber se a terapia é semanal ou quinzenal",
+   "person": false
+  },
+  {
+   "text": "minha mae vive dizendo: me liga quando chegar. e eu tenho crise so de pensar. vcs tratam ansiedade com tcc?",
+   "person": false
+  },
+  {
+   "text": "oi bom dia, minha mae faleceu semana passada e eu nao to conseguindo trabalhar. preciso urgente falar com alguem da clinica sobre horarios",
+   "person": true
+  },
+  {
+   "text": "queria so falar com alguem rapidinho antes de fechar, tenho tag e fico mt insegura com compromisso novo kkk",
+   "person": true
+  },
+  {
+   "text": "preciso mesmo falar com a recepcao, o link da sessao nao abre e eu to ficando com falta de ar de nervoso",
+   "person": true
+  },
+  {
+   "text": "me passa o whats da Marina? ela q cuidou do meu agendamento e eu to num dia pessimo, prefiro tratar direto com ela",
+   "person": true
+  },
+  {
+   "text": "a Marina ficou de me ligar ontem e nao ligou. pode pedir pra ela? to esperando pra saber se tem vaga, minha ansiedade ta a mil",
+   "person": true
+  },
+  {
+   "text": "quero a resposta da Marina, nao sua. ela conhece meu historico de depressao e sabe o q eu preciso",
+   "person": true
+  },
+  {
+   "text": "oi, a Carla me atendeu semana passada no agendamento, ela pode me atender de novo? to com duvida no pagamento",
+   "person": true
+  },
+  {
+   "text": "ja tentei pagar 3x pelo link e da erro, to suando frio de ansiedade. tem alguem que possa me ajudar?",
+   "person": true
+  },
+  {
+   "text": "boa noite!! to com crise de choro e queria remarcar amanha. tem algum humano por ai?",
+   "person": true
+  },
+  {
+   "text": "oi alguem ai pode me atender? to tentando marcar pra minha esposa q ta com depressao pos parto",
+   "person": true
+  },
+  {
+   "text": "nao suporto falar com robo, ainda mais sobre isso. tenho vaginismo e queria saber se vcs atendem sexualidade",
+   "person": true
+  },
+  {
+   "text": "desisto desse robo. so queria saber se a sessao de amanha ta confirmada, fiquei a noite toda acordada de ansiedade",
+   "person": true
+  },
+  {
+   "text": "prefiro mil vezes uma pessoa, sério. to com depressao e essas respostas automaticas me deixam pior",
+   "person": true
+  },
+  {
+   "text": "prefiro ser atendida pela Dra Helena pq ela é mulher e eu sofri assedio. ela tem horario quinta de manha?",
+   "person": false
+  },
+  {
+   "text": "gostaria de ser atendida por uma psicologa mulher, passei por um trauma. qual o valor e tem horario a noite?",
+   "person": false
+  },
+  {
+   "text": "quero ser atendido pelo Dr Paulo, um amigo fez terapia com ele pra ansiedade e amou. ele atende sabado?",
+   "person": false
+  },
+  {
+   "text": "na primeira sessao eu queria conversar com a psicologa sobre meu luto, ela trabalha com isso? a sessao é 50 min?",
+   "person": false
+  },
+  {
+   "text": "posso falar com a terapeuta sobre meu casamento ou a sessao individual é so sobre mim? to com ansiedade por causa dele",
+   "person": false
+  },
+  {
+   "text": "consigo conversar com a Dra Helena em ingles na sessao? moro fora e meu portugues ta enferrujado, tenho depressao",
+   "person": false
+  },
+  {
+   "text": "da pra falar com o psicologo por video ou so audio? tenho fobia de camera e isso ja me deixa ansiosa",
+   "person": false
+  },
+  {
+   "text": "queria um terapeuta pra me ajudar com a ansiedade, ela ta atrapalhando meu sono e meu trabalho. vcs tem vaga essa semana?",
+   "person": false
+  },
+  {
+   "text": "vcs tem grupo de apoio? queria conversar com uma pessoa q passou pelo mesmo q eu, perdi um filho",
+   "person": false
+  },
+  {
+   "text": "fiquei com duvida sobre a sessao online. o psicologo vai falar comigo por video ou por ligacao normal?",
+   "person": false
+  },
+  {
+   "text": "a empresa reembolsa a terapia. o recibo, pode encaminhar pro financeiro da empresa? to fazendo tratamento pra burnout",
+   "person": false
+  },
+  {
+   "text": "vcs podem me encaminhar pra uma psicologa especialista em luto? perdi meu bebe e nao sei com quem fazer",
+   "person": false
+  },
+  {
+   "text": "meu namorado Rafael vai falar comigo hj sobre o termino e eu to tremendo. vcs tem horario amanha cedo?",
+   "person": false
+  },
+  {
+   "text": "minha chefe Carla me chama toda hora no teams e eu ja to tendo crise de ansiedade. vcs atendem depois das 20h?",
+   "person": false
+  },
+  {
+   "text": "a atendente vai me ligar amanha pra confirmar, entao so queria saber se o valor continua 150. ando bem ansiosa",
+   "person": false
+  },
+  {
+   "text": "a Marina vai me ligar amanha pra fechar o pacote, nao precisa responder agora. so me diz se tem estacionamento",
+   "person": false
+  },
+  {
+   "text": "quando meu pai desmaiou na cozinha eu travei e so consegui gritar: chama alguem! desde entao tenho crise. vcs tratam tept?",
+   "person": false
+  },
+  {
+   "text": "acho q preciso conversar com alguem sobre o luto, ja faz 1 ano e nao passa. vcs tem psicologo pra luto? qual o valor",
+   "person": false
+  },
+  {
+   "text": "oi, quero agendar pro meu filho q ta com tdah e muita birra, mas antes quero tirar umas duvidas com uma pessoa, pode ser?",
+   "person": true
+  },
+  {
+   "text": "bom dia. necessito falar com a recepção, minha sessao de hj caiu e eu to bem abalada, tive uma crise de panico no metro",
+   "person": true
+  },
+  {
+   "text": "to tentando falar com alguem ai faz 2 dias!!! ja paguei o pix e ninguem confirma, e eu com essa depressao sem conseguir sair da cama",
+   "person": true
+  },
+  {
+   "text": "oi, nao consigo escrever direito, minha mao ta tremendo de ansiedade. pode me dar uma ligadinha? queria marcar ainda essa semana",
+   "person": true
+  },
+  {
+   "text": "quero falar com a menina q me atendeu ontem, ela tinha ficado de ver um horario pra mim a noite pq trabalho o dia todo e to esgotada",
+   "person": true
+  },
+  {
+   "text": "queria falar com a mocinha da recepcao, ela ja sabe do meu caso de sindrome do panico e eu nao quero explicar tudo de novo",
+   "person": true
+  },
+  {
+   "text": "oi, o boleto veio errado de novo. quero falar com o moço do financeiro, isso ta me deixando mais ansiosa do q eu ja sou",
+   "person": true
+  },
+  {
+   "text": "quero falar com o suporte, o link da videochamada nao abre e minha sessao começa em 5 min, to em pânico",
+   "person": true
+  },
+  {
+   "text": "oii, to bem mal essa semana, terminei um namoro de 6 anos. tem como falar com a psi antes da sessao de quinta?",
+   "person": true
+  },
+  {
+   "text": "preciso falar com a dra, comecei a tomar sertralina e to com muito efeito colateral, nao sei se mantenho a sessao",
+   "person": true
+  },
+  {
+   "text": "queria falar com o Rafa, ele q me passou os valores. minha esposa ta com depressao e a gente quer começar logo",
+   "person": true
+  },
+  {
+   "text": "oi, a Dra Helena ta atendendo ainda? queria falar com ela antes de marcar, tenho um historico de abuso e preciso de confiança",
+   "person": true
+  },
+  {
+   "text": "tem alguem ai q saiba me explicar o reembolso? ja perguntei 2x e vc so manda o mesmo texto, to cansada e com dor de cabeça",
+   "person": true
+  },
+  {
+   "text": "oi, me chama no telefone pfv, sou analfabeta funcional e minha neta q ta digitando pra mim. tenho depressao",
+   "person": true
+  },
+  {
+   "text": "meu filho Bruno tem 8 anos e nao fala comigo desde a separação. preciso conversar com o Bruno mas ele foge. vcs atendem criança?",
+   "person": false
+  },
+  {
+   "text": "a professora mandou bilhete. preciso conversar com a Carla da coordenacao da escola sobre o comportamento do meu filho. vcs fazem avaliacao de tdah?",
+   "person": false
+  },
+  {
+   "text": "meu casamento acabou faz 3 meses e eu nao consigo seguir, choro todo dia. no fundo eu so quero o Bruno",
+   "person": false
+  },
+  {
+   "text": "minha filha pergunta todo dia: cade o Paulo? (o pai dela foi embora). nao sei o q responder. vcs atendem criança de 5 anos?",
+   "person": false
+  },
+  {
+   "text": "é so robo q atende aqui? pergunto por curiosidade, achei mt rapido kkk. enfim, quanto é a sessao? to com insonia",
+   "person": false
+  },
+  {
+   "text": "vcs tem atendente humano? pergunto pq achei o bot otimo, me ajudou mais q a outra clinica kkk. tem horario quarta?",
+   "person": false
+  },
+  {
+   "text": "a Dra Helena ta de ferias ne? se for, vou esperar a psicologa voltar pra começar, nao quero trocar. ela volta quando?",
+   "person": false
+  },
+  {
+   "text": "na terapia eu espero uma pessoa que me escute sem julgar, ja tive experiencia ruim. a abordagem de vcs é tcc?",
+   "person": false
+  },
+  {
+   "text": "minha familia nao me apoia em nada. quem me apoia? ninguem. por isso quero começar terapia, qual o valor?",
+   "person": false
+  },
+  {
+   "text": "moro sozinha desde o divorcio e nao tem ninguem. as vezes da um vazio enorme. vcs atendem online à noite?",
+   "person": false
+  },
+  {
+   "text": "nao quero psiquiatra, ja tomei mt remedio. eu quero e uma psicologa. vcs tem vaga pra adulto com ansiedade?",
+   "person": false
+  },
+  {
+   "text": "cancelei a sessao de amanha pq to com covid. sobre o reembolso, vcs podem transferir hj?",
+   "person": false
+  },
+  {
+   "text": "a psicologa atende hj? to tendo um dia horrivel e queria ver se encaixa alguma sessao no fim da tarde",
+   "person": false
+  },
+  {
+   "text": "a psicologa vai olhar meu caso na primeira sessao ou é so uma triagem? tenho toc e queria entender o processo",
+   "person": false
+  },
+  {
+   "text": "minha sogra fica dizendo pro meu marido: me liga todo dia. ele obedece e eu fico de lado. vcs atendem casal?",
+   "person": false
+  },
+  {
+   "text": "ontem tive crise no trabalho, meu colega gritou: chamem alguem! foi horrivel. vcs atendem sindrome do panico?",
+   "person": false
+  },
+  {
+   "text": "eu sei q pode parecer bobo mas prefiro conversar com uma pessoa mais velha, tipo 40+. a Dra Helena tem quantos anos de experiencia?",
+   "person": false
+  },
+  {
+   "text": "nao precisa ser a Marina, me passa pra qualquer pessoa da clinica. to com o boleto vencido e com crise de ansiedade por causa disso",
+   "person": true
+  },
+  {
+   "text": "oi! ja paguei a primeira sessao mas nao recebi confirmacao. quero falar com algum de vcs, to bem insegura com isso",
+   "person": true
+  },
+  {
+   "text": "chama a doutora pfv, eu tive uma recaida com o alcool e nao sei se ainda posso ir na sessao amanha",
+   "person": true
+  },
+  {
+   "text": "vcs nao tem telefone? queria ligar, escrever sobre o que aconteceu com meu filho ta me fazendo chorar",
+   "person": true
+  },
+  {
+   "text": "da pra eu ligar ai? tenho 68 anos, depressao, e nao me dou bem com essas mensagens",
+   "person": true
+  },
+  {
+   "text": "a recepcao ainda ta funcionando? preciso falar com elas sobre a nota fiscal do meu tratamento de ansiedade",
+   "person": true
+  },
+  {
+   "text": "tenho tanta coisa acontecendo, minha mae doente, eu sem dormir chorando sera q alguem consegue me ligar ainda hj",
+   "person": true
+  },
+  {
+   "text": "oi, o link da sessao nao chegou e eu ja to tendo falta de ar. tem como alguem resolver isso por telefone comigo?",
+   "person": true
+  },
+  {
+   "text": "o atendimento de vcs é otimo, a Carla me responde rapidinho sempre. so queria saber se tem horario pra minha irma tb, ela ta com depressao",
+   "person": false
+  },
+  {
+   "text": "meu psiquiatra Dr Paulo vai me retornar sobre a dosagem do remedio. enquanto isso queria marcar a primeira sessao, tem quinta?",
+   "person": false
+  },
+  {
+   "text": "ja passei por 3 psicologas ruins. dessa vez quero um profissional de verdade, a ultima so mexia no celular. tem vaga?",
+   "person": false
+  },
+  {
+   "text": "quero marcar a primeira consulta. quando a psicologa ta livre pra conversar? de preferencia de manha, trabalho a tarde",
+   "person": false
+  },
+  {
+   "text": "a Dra Helena ta livre pra conversar na quinta? seria minha primeira sessao, to com ansiedade e insonia faz meses",
+   "person": false
+  },
+  {
+   "text": "meu marido Bruno pode me ligar no meio da sessao? as vezes ele fica preocupado pq eu tenho crise de panico. ou o celular fica desligado?",
+   "person": false
+  },
+  {
+   "text": "eu posso falar com o psicologo sobre o meu uso de maconha sem ele contar pra minha familia? tenho 19 anos e ansiedade",
+   "person": false
+  },
+  {
+   "text": "preciso de uma psicologa urgente, tenho crise de ansiedade toda noite e nao aguento mais. qual o primeiro horario?",
+   "person": false
+  },
+  {
+   "text": "a Marina ja me passou o valor, obrigada. so queria confirmar: a Dra Helena atende hj? to precisando muito de uma sessao",
+   "person": false
+  }
+ ]
+}
