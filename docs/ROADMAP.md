@@ -25,12 +25,12 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 | Item | Status |
 | --- | --- |
-| Local screen before any model, reviewed packs | ✅ pack v2 (PR #29) · 🟡 v3 on `feature/front-desk-prompt-v4` |
+| Local screen before any model, reviewed packs | ✅ pack v2 (PR #29) · 🟡 v3 in PR #31 |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
 | Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
 | Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |
 | The review shows the screened message and the draft; stale replies never sent | ✅ (PR #29, ADR 0023 §L, SI-81) |
-| Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | 🟡 `feature/front-desk-prompt-v4` |
+| Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | 🟡 PR #31 |
 | Follow-up engine (cadences, plans, due jobs) | ✅ (Phase 3A) |
 | Creating a CRM lead for a new WhatsApp number | 🚫 ADR 0021 W6 (owner decision) |
 | Structured triage (pre-filled from a form, or conversational) | ⬜ |
@@ -44,7 +44,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 | --- | --- |
 | Booking foundation: resources, types, weekly rules, bookings without overlap, reschedule, cancel | ✅ (Phase 3A) |
 | Agenda screen | ✅ |
-| Real availability in the receptionist's context | ✅ (integrated) · 🟡 ten slots with labels on the v4 branch; a test agenda on staging |
+| Real availability in the receptionist's context | ✅ (integrated) · 🟡 ten slots with labels in PR #31; a test agenda on staging |
 | Booking page (self-service, mobile-first) | ⬜ |
 | Slot holds with expiry | ⬜ |
 | Rescheduling and cancellation through the conversation | ⬜ |
@@ -134,7 +134,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 ### Next three implementation milestones
 
-1. **Receptionist v4, supervised and live:** PR #29 is integrated; the prompt v4 PR integrated, staging migrations applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
+1. **Receptionist v4, supervised and live:** PR #29 is integrated and on staging; PR #31 (prompt v4) integrated and its migration applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
 2. **Lead journey core:**
    - lead creation for new numbers (after W6);
    - identity resolution and attribution capture at entry;
@@ -796,7 +796,7 @@ Built on `feature/openrouter-jev-intelligence` from `6da21fbd` by owner directiv
 
 - **Branch and head.** `feature/staging-model-and-meta` from `6da21fbd`, kept as is: the head is this commit, with nothing discarded and nothing merged.
 - **Done:**
-  - the Meta live probe (ADR 0018 amendment 2), complete except two unobservable items ([docs/COST_FIRST_STAGING.md](docs/COST_FIRST_STAGING.md) §11);
+  - the Meta live probe (ADR 0018 amendment 2), complete except two unobservable items ([docs/COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §11);
   - ADR 0021 Proposed, the production WhatsApp gate's decisions W1 to W8;
   - `with-staging --pass`.
 - **Superseded before it ran:** the planned real-model run on a direct OpenAI `gpt-6-luna` key. The model path becomes OpenRouter.
