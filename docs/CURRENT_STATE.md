@@ -2,7 +2,7 @@
 
 **What this is:** the operational state a fresh session reads after CLAUDE.md. It changes with every merged milestone (the maintenance rule in CLAUDE.md). The stable product and architecture are in [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md). The long-term program map is in [ROADMAP.md](ROADMAP.md).
 
-**Updated:** 2026-10-06, after PR #30's merge (`9069f5c1`) and staging's update to PR #29, in PR #31 (receptionist v4, [ADR 0023](adr/0023-front-desk-agent.md) §C, §E).
+**Updated:** 2026-10-06, after PR #31's merge (`90be88dc`) and staging's update to it, on `feature/front-desk-pack-v4` ([ADR 0023](adr/0023-front-desk-agent.md) §C).
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -15,10 +15,10 @@
 | Item | State |
 | --- | --- |
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
-| Integration branch | `feature/clinical-phase-1` at `9069f5c1`: PR #30's normal merge (2026-10-06; parents `33c03771`, PR #29's merge, and `c6b930dd`, the tree equal to the reviewed head). PR #31 merges on top of it |
+| Integration branch | `feature/clinical-phase-1` at `90be88dc`: PR #31's normal merge (2026-10-06; parents `9069f5c1`, PR #30's merge, and `af6d12b3`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Open PR #31 | `feature/front-desk-prompt-v4`, receptionist v4, into `feature/clinical-phase-1`; the integration branch is merged into it (§3) |
-| Retained, integrated | `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
+| Active branch | `feature/front-desk-pack-v4`, from `90be88dc` (§3) |
+| Retained, integrated | `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
 
@@ -34,7 +34,7 @@ By layer. Detail in each ADR and report.
   - Production Security Gate A (AAL2 for the Company OS and CRM data, CSP, no third-party enrichment);
   - the Gate B host contract and verifiers;
   - 80 security invariants (SI-01 to SI-81, SI-07 retired) with live guards ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md));
-  - 73 canonical migrations, the latest `20261013120000_front_desk_stale_reply_closure.sql`.
+  - 74 canonical migrations, the latest `20261014120000_front_desk_context_received_at.sql`.
 - **Models:**
   - OpenRouter as the gateway;
   - model registry and pools filtered by Q8;
@@ -44,7 +44,7 @@ By layer. Detail in each ADR and report.
 - **Layer 1, Operations:**
   - WhatsApp transport for test channels, with a signed gateway and supervised human send (ADR 0018);
   - the LGPD minimum: privacy notice and identifier clock (ADR 0021);
-  - the front-desk agent: a local screen with pack `health_pt_br.v2` (screen `front_desk_screen.v3`), versioned configuration, conversation state, takeover, grounding check and prompt `lead_triage.v3` (ADR 0023);
+  - the front-desk agent (ADR 0023): a local screen with pack `health_pt_br.v3` (screen `front_desk_screen.v3`), versioned configuration with the assistant's name and locale, conversation state, takeover, grounding check, and prompt `lead_triage.v4` (the receptionist the owner chose, on Gemini 3.8 Flash), whose context says when the contact wrote and lists up to ten free slots;
   - the review of synthetic or test data shows the screened message and the reply draft, and a reply the contact's newer message made stale (admitted or refused) is never sent: the last gate holds the conversation through the provider call (ADR 0023 §L, SI-81);
   - the follow-up engine and the booking foundation, with a fake calendar port (Phase 3A);
   - the commercial funnel with four narrow acts and the follow-up bridge (Phase 3B).
@@ -59,24 +59,17 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 
 **Just integrated:**
 
+- **PR #31** (merge `90be88dc`, 2026-10-06; ADR 0023 §C, §E): receptionist v4. It brings prompt `lead_triage.v4`, pack `health_pt_br.v3`, the grounding check's duration rule and migration `20261014120000_front_desk_context_received_at.sql`. PR CI on `af6d12b3` (both runs) and the post-merge run 37466466840 on `90be88dc` match the historical baseline (§7). The automated review did not run (the Codex account reached its usage limit); a manual review found nothing blocking, and found the gap that pack v4 closes (§3, item 1).
 - **PR #30** (merge `9069f5c1`, 2026-10-06; ADR 0024): the canonical project memory, docs only, brought up to date with PR #29's merge before its own. The automated review's one P2 (the event catalog's subject types) was fixed before the merge. PR CI on `c6b930dd` matched the historical baseline (§7).
 - **PR #29** (merge `33c03771`, 2026-10-06; ADR 0023 §L, SI-81): the review context, the stale-reply closure (the automated review's two P1 fixed before the merge) and pack `health_pt_br.v2`. Migrations `20261012120000_front_desk_review_context.sql` and `20261013120000_front_desk_stale_reply_closure.sql`. PR CI on `d35325da` and the post-merge run 37453392364 on `33c03771` both match the historical baseline (§7): Build, ESLint, Typecheck, Test and Database pass; e2e exactly 9 failed and 1 skipped; Prettier exactly the two baseline files.
 
-1. **PR #31, `feature/front-desk-prompt-v4`, the receptionist the owner chose (Gemini 3.8 Flash; ADR 0023 §C, §E in the PR):**
-   - **Prompt `lead_triage.v4`:** voice and rules from the round-two model test; persona and locale as configuration; it says it cannot book.
-   - **Pack `health_pt_br.v3`.**
-   - **The grounding check's duration rule.**
-   - **Migration `20261014120000_front_desk_context_received_at.sql`:** the message's instant and up to ten slots in the context.
-   - **Verification:** unit, SQL and pipeline tests are green locally.
-   - **Integration:** `feature/clinical-phase-1` at `9069f5c1` is merged into it (a normal merge; the integration side's CLAUDE.md kept, since its historical cell is closed to new entries).
-   - **Next:** CI against the baseline, the automated review, the merge, then migration `20261014120000` on staging.
+1. **`feature/front-desk-pack-v4`, how leads ask for a person (ADR 0023 §C):** packs v1 to v3 recognise only "falar com uma pessoa / um atendente / alguém". Refusing the assistant ("não quero falar com robô"), asking for a named person or a role, asking to be called and asking whether anyone is there all come out unrecognised (the clarification text, no person) or reach the model. Measured on a synthetic corpus of 180 messages, v3 misses 99 of its 120 requests for a person. Pack `health_pt_br.v4` adds them. A request for a person never reaches a model, so v4 sends nothing more to one than v3 did.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
 - **Supabase** `erhrochojnugszkkoqrv` (sa-east-1, PostgreSQL 17):
-  - the 73 integrated migrations through `20261013120000`, never the seed: PR #29's two were applied on 2026-10-06 (pinned CLI, dry run first); the hosted verifier then reported 0 blocking and 0 advisory findings;
-  - it lacks PR #31's `20261014120000` (PR #31's worker also runs on a database without it: the context then has no `receivedAt`).
-- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-06 from the integrated code (PR #29; Netlify deploy `6ac4dff19a75e014e31006e8`; preflight 0 blocking, live check 0/0). The review page shows the screened message and the reply draft (checked in the browser).
+  - all 74 integrated migrations through `20261014120000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06 (pinned CLI, dry run first); the hosted verifier then reported 0 blocking and 0 advisory findings.
+- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-06 from the integrated code (PR #29; Netlify deploy `6ac4dff19a75e014e31006e8`; preflight 0 blocking, live check 0/0). The review page shows the screened message and the reply draft (checked in the browser). PR #31 changed no frontend code.
 - **Runtime:** local only (`scripts/with-staging.mjs`: worker, gateway). No Fly, no always-on webhook.
 - **Tenant** `265b8fb8-839f-4351-a503-fe38f75822d1`; Receptionist agent `2ed31fc7-3509-46aa-99ff-507d06c90b7d`.
 - **Channels (both `test` mode, the owner's device registered):**
@@ -89,7 +82,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 - **Front-desk configuration published:**
   - operating policy v3 and playbook v3, 2026-10-06 (persona "Lia", provisional; locale `pt-BR`; pack `health_pt_br.v3`; scheduling connected to a test agenda);
   - knowledge v2 and fixed messages v2.
-  - ⚠️ **Pack v3 exists only in PR #31 until it merges.** A worker run from the integrated code (which knows packs v1 and v2) refuses every front-desk run (`screening_pack_unknown`, fail closed). Run the worker from PR #31's branch, or publish a policy that names `health_pt_br.v2`.
+  - the integrated worker knows pack v3, so it runs this configuration. Once pack v4 merges, publish an operating policy that names `health_pt_br.v4`.
 - **Test agenda:**
   - resource `26e8a919…` and booking type `4d29d51d…` (50 minutes);
   - weekly rules built from the owner's free times of the week of 2026-10-05 (times only, no patient), valid until 2026-10-31.
@@ -132,7 +125,7 @@ A PR is accepted only if its reds are exactly these:
 ## 8. Next three implementation milestones
 
 From the ROADMAP program map:
-1. **Receptionist v4, supervised and live (workstream A):** PR #29 is integrated and on staging; integrate PR #31 and apply its migration, then run the owner's live supervised WhatsApp test on Gemini.
+1. **Receptionist v4, supervised and live (workstream A):** PR #29 and PR #31 are integrated and on staging; integrate pack v4 and publish it on staging, then run the owner's live supervised WhatsApp test on Gemini.
 2. **The lead journey core (workstreams A and E):**
    - lead creation for new numbers (after the W6 decision);
    - deterministic identity resolution;
@@ -143,7 +136,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **PR #31:** verify CI against the baseline (§7) and address the automated review; merge it with a normal merge commit once the owner asks; then apply `20261014120000` to staging (pinned CLI, dry run first, never the seed) and run the hosted verifier.
+1. **Pack v4 (§3, item 1):** finish it on `feature/front-desk-pack-v4` against an adversarial corpus, open its PR, verify CI against the baseline (§7), merge it with a normal merge commit once the owner asks, then publish on staging an operating policy that names `health_pt_br.v4`.
 2. **Run the live supervised receptionist test** on the Meta test number:
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
    - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;

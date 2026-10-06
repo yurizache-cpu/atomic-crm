@@ -25,12 +25,12 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 | Item | Status |
 | --- | --- |
-| Local screen before any model, reviewed packs | ✅ pack v2 (PR #29) · 🟡 v3 in PR #31 |
+| Local screen before any model, reviewed packs | ✅ pack v3 (PR #31) · 🟡 v4, how leads ask for a person, on `feature/front-desk-pack-v4` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
 | Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
 | Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |
 | The review shows the screened message and the draft; stale replies never sent | ✅ (PR #29, ADR 0023 §L, SI-81) |
-| Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | 🟡 PR #31 |
+| Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | ✅ (PR #31) |
 | Follow-up engine (cadences, plans, due jobs) | ✅ (Phase 3A) |
 | Creating a CRM lead for a new WhatsApp number | 🚫 ADR 0021 W6 (owner decision) |
 | Structured triage (pre-filled from a form, or conversational) | ⬜ |
@@ -44,7 +44,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 | --- | --- |
 | Booking foundation: resources, types, weekly rules, bookings without overlap, reschedule, cancel | ✅ (Phase 3A) |
 | Agenda screen | ✅ |
-| Real availability in the receptionist's context | ✅ (integrated) · 🟡 ten slots with labels in PR #31; a test agenda on staging |
+| Real availability in the receptionist's context | ✅ (integrated; ten slots with labels since PR #31) · a test agenda on staging |
 | Booking page (self-service, mobile-first) | ⬜ |
 | Slot holds with expiry | ⬜ |
 | Rescheduling and cancellation through the conversation | ⬜ |
@@ -134,7 +134,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 ### Next three implementation milestones
 
-1. **Receptionist v4, supervised and live:** PR #29 is integrated and on staging; PR #31 (prompt v4) integrated and its migration applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
+1. **Receptionist v4, supervised and live:** PR #29 and PR #31 (prompt v4) are integrated and on staging; pack v4 integrated, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
 2. **Lead journey core:**
    - lead creation for new numbers (after W6);
    - identity resolution and attribution capture at entry;
