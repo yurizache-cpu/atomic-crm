@@ -150,7 +150,8 @@ From the ROADMAP program map:
    - verify the review page in the browser.
 3. **Bring the integration branch into `feature/front-desk-prompt-v4`**, open its PR, verify CI against the baseline, address the automated review, merge, and apply migration `20261014120000` to staging.
 4. **Run the live supervised receptionist test** on the Meta test number:
-   - a fresh tunnel and verify token, which the owner pastes into Meta;
-   - the gateway, the worker from the integrated code and the autopilot fenced to the test channel;
+   - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
+   - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;
+   - each reply accepted by the owner in the browser at AAL2, then carried by `npm run messaging -- send`. The 2026-10-05 autonomous test used a session-local auto-accept script that is not in the repository and is not a product feature;
    - then stop everything and rotate the verify token.
 5. **Then start milestone 2 of §8.**
