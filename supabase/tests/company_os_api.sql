@@ -3632,7 +3632,7 @@ begin
     from unnest(array['request_agent_run', 'start_agent_run', 'assign_task', 'record_event', 'open_review_for_settled_job',
                       'enforce_spend_ceiling', 'spend_admission', 'set_agent_status', 'clear_execution_stop',
                       'trip_execution_stop', 'configure_whatsapp_channel', 'request_outbound_send', 'begin_outbound_send',
-                      'settle_outbound_send', 'mark_outbound_indeterminate', 'whatsapp_send_eligibility',
+                      'confirm_outbound_send', 'settle_outbound_send', 'mark_outbound_indeterminate', 'whatsapp_send_eligibility',
                       'admit_inbound_message', 'admit_inbound_core', 'receive_whatsapp_message', 'receive_whatsapp_status',
                       'lease_job', 'complete_job', 'fail_job', 'claim_agent_run', 'refuse_agent_run', 'complete_agent_run',
                       'fail_agent_run', 'settle_stale_agent_runs', 'job_execution_stop', 'defer_job', 'reap_expired_leases',

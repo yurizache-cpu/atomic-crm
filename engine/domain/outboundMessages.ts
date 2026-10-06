@@ -243,6 +243,45 @@ export async function beginOutboundSend(
   return Object.freeze({ state });
 }
 
+/** What the last gate answered: make the call now, or why it was not made. */
+export type ConfirmedSend =
+  | { readonly state: "send" }
+  | {
+      readonly state: Exclude<OutboundStatus, "authorized" | "sending">;
+      readonly reason: string | null;
+    };
+
+/**
+ * ADR 0023 §L: the last gate, run in the transaction that then makes the one
+ * call and settles it. It holds the send's conversation, so the contact's next
+ * message waits at its admission until that transaction ends, and reads the
+ * stale-reply predicate again. A send it stops was never called.
+ */
+export async function confirmOutboundSend(
+  tx: TxClient,
+  tenantId: string,
+  outboundMessageId: string,
+): Promise<ConfirmedSend> {
+  const answer = await callJson(
+    tx,
+    "select ops.confirm_outbound_send($1, $2) as result",
+    [
+      requireUuid(tenantId, "tenantId"),
+      requireUuid(outboundMessageId, "outboundMessageId"),
+    ],
+    "ops.confirm_outbound_send",
+  );
+  if (answer.state === "send") return Object.freeze({ state: "send" });
+  const state = statusOf(answer.state, "ops.confirm_outbound_send");
+  if (state === "authorized" || state === "sending") {
+    throw new Error("ops.confirm_outbound_send answered an impossible state");
+  }
+  return Object.freeze({
+    state,
+    reason: typeof answer.reason === "string" ? answer.reason : null,
+  });
+}
+
 /** Records what the one call produced. False when the send had already moved on. */
 export async function settleOutboundSend(
   tx: TxClient,

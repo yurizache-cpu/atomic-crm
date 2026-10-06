@@ -11,8 +11,13 @@
 //   TX2   begin    ops.begin_outbound_send: eligibility checked AGAIN, then
 //                  `sending` COMMITTED before the call leaves the process.
 //                  Only this transaction's answer carries the text.
-//   CALL           exactly one OutboundTransport.send, no transaction.
-//   TX3   settle   ops.settle_outbound_send: sent | failed | indeterminate.
+//   TX3   confirm  ops.confirm_outbound_send holds the send's conversation
+//         + CALL   and reads the stale-reply predicate again (ADR 0023 §L);
+//         + settle then exactly one OutboundTransport.send, and
+//                  ops.settle_outbound_send: sent | failed | indeterminate.
+//                  One transaction, so the contact's next message waits at its
+//                  admission until the call is settled: the reply that leaves
+//                  was the conversation's latest when it left.
 //
 // WHAT A CRASH LEAVES, and why it is safe:
 //   * before TX2 commits: the send is `authorized`; asking again begins it,
@@ -20,17 +25,19 @@
 //   * after TX2 commits: the send is `sending` and may have left. Nothing here
 //     calls it again: a second run finds it `sending` and stops. A status
 //     callback can still resolve it (the correlation travels with the call),
-//     and a person may record it indeterminate after the client's timeout.
+//     and a person may record it indeterminate after the client's timeout. A
+//     crash inside TX3 rolls back only the settlement, and the same holds.
+//   * a send TX3 stops was never called: `failed`, class `newer_message`.
 //
 // Nothing here decides whether a message may be sent; the database does, in
-// TX1 and TX2. Nothing here retries.
+// TX1, TX2 and TX3. Nothing here retries.
 //
 // Phase 2E.1: the CALL is observed through TelemetryPort (a span and the
 // external-call metrics), with the operation, the provider kind and the
 // outcome class only: never the recipient, the text or the provider's answer.
 // Telemetry cannot change the call, the settlement or the report.
 
-import type { WorkerDatabase } from "../db/types.ts";
+import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import {
   guardTelemetry,
   NOOP_TELEMETRY,
@@ -42,6 +49,7 @@ import type {
 } from "../communication/types.ts";
 import {
   beginOutboundSend,
+  confirmOutboundSend,
   requestOutboundSend,
   settleOutboundSend,
   type OutboundStatus,
@@ -55,6 +63,7 @@ export interface SendReport {
   readonly created: boolean;
   /** True only when THIS invocation made the provider call. */
   readonly providerCalled: boolean;
+  /** Why no call was made, as the database answered it (a block or a stop). */
   readonly blockedReason: string | null;
   /**
    * False when the call happened but its outcome could not be recorded: the
@@ -73,9 +82,30 @@ export interface SendReport {
 export interface SendSeams {
   /** Tests only: runs after TX2 committed `sending`, before the call. */
   readonly afterBegin?: (outboundMessageId: string) => Promise<void>;
-  /** Tests only: runs after the call, before TX3. A throw behaves like a crash. */
+  /** Tests only: runs after the call, before its settlement. A throw behaves like a crash. */
   readonly afterCall?: (outboundMessageId: string) => Promise<void>;
 }
+
+/**
+ * How long the send's last transaction may sit idle while the one call is in
+ * flight: longer than any call a transport may make (the Meta transport's
+ * timeout is at most 60 s), so a slow call is still settled, and bounded, so a
+ * stalled sender cannot hold a conversation forever.
+ */
+const CALL_HOLD_LIMIT_MS = 75_000;
+
+const holdThroughTheCall = (tx: TxClient) =>
+  tx.query(
+    `set local idle_in_transaction_session_timeout = ${CALL_HOLD_LIMIT_MS}`,
+  );
+
+/** What the one call produced, for the report: an id and a class, never text. */
+const evidenceOf = (outcome: OutboundOutcome) => ({
+  providerCalled: true,
+  providerOutcome: outcome.kind,
+  providerMessageId:
+    outcome.kind === "accepted" ? outcome.providerMessageId : null,
+});
 
 /** A transport that broke its no-throw contract is treated as ambiguous. */
 const callOnce = async (
@@ -161,33 +191,49 @@ export async function sendApprovedReview(
   }
   if (seams.afterBegin) await seams.afterBegin(requested.outboundMessageId);
 
-  // --- CALL: exactly one. -------------------------------------------------
-  const outcome = await observedCall(observed, input.tenantId, () =>
-    callOnce(transport, begun.request),
-  );
-  const evidence = {
-    providerCalled: true,
-    providerOutcome: outcome.kind,
-    providerMessageId:
-      outcome.kind === "accepted" ? outcome.providerMessageId : null,
+  // --- TX3: confirm, then the one call, then settle. ------------------------
+  const attempt: { outcome: OutboundOutcome | null; settling: boolean } = {
+    outcome: null,
+    settling: false,
   };
-  if (seams.afterCall) await seams.afterCall(requested.outboundMessageId);
-
-  // --- TX3: settle. -------------------------------------------------------
   try {
-    const settled = await owner.withTransaction((tx) =>
-      settleOutboundSend(
+    return await owner.withTransaction(async (tx) => {
+      await holdThroughTheCall(tx);
+      const gate = await confirmOutboundSend(
+        tx,
+        input.tenantId,
+        requested.outboundMessageId,
+      );
+      if (gate.state !== "send") {
+        return report(gate.state, { blockedReason: gate.reason });
+      }
+
+      // --- CALL: exactly one. -----------------------------------------------
+      const outcome = await observedCall(observed, input.tenantId, () =>
+        callOnce(transport, begun.request),
+      );
+      attempt.outcome = outcome;
+      if (seams.afterCall) await seams.afterCall(requested.outboundMessageId);
+
+      attempt.settling = true;
+      const settled = await settleOutboundSend(
         tx,
         input.tenantId,
         requested.outboundMessageId,
         outcome,
-      ),
-    );
-    return report(settled.status, evidence);
-  } catch {
+      );
+      return report(settled.status, evidenceOf(outcome));
+    });
+  } catch (error) {
+    // Before the call nothing left: the error is the caller's, as for TX1 and
+    // TX2 (the send stays `sending`, which a person may record).
+    if (attempt.outcome === null || !attempt.settling) throw error;
     // The call happened; its outcome is not on the record. The send stays
     // `sending`, which is the truth: it may have been delivered. What the call
     // produced goes back to the operator, so it is not lost with the settle.
-    return report("sending", { ...evidence, settlementRecorded: false });
+    return report("sending", {
+      ...evidenceOf(attempt.outcome),
+      settlementRecorded: false,
+    });
   }
 }

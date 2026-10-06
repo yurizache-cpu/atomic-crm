@@ -890,7 +890,7 @@
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
-          "newerMessage": false,
+          "newerMessage": true,
           "contentRedacted": false
         },
         "decisionNote": "Call back tomorrow",
@@ -949,7 +949,7 @@
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
-          "newerMessage": false,
+          "newerMessage": true,
           "contentRedacted": false
         },
         "decisionNote": null,
@@ -983,7 +983,7 @@
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
-          "newerMessage": false,
+          "newerMessage": true,
           "contentRedacted": false
         },
         "decisionNote": null,

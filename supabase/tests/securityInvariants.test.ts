@@ -4600,7 +4600,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-81",
     statement:
-      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again, the send request refuses the review (newer_message) and nothing is recorded, and the last gate before the provider call, which reads the conversation again, blocks the send on the record, so a message that arrives between the request and the call still stops it; the review page shows the same predicate.",
+      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4631,9 +4631,43 @@ const INVARIANTS: Invariant[] = [
         file: "supabase/tests/front_desk_agent.sql",
         marker: /F7: a newer message did not mark the review superseded/,
       },
+      {
+        file: "supabase/migrations/20261013120000_front_desk_stale_reply_closure.sql",
+        marker:
+          /raise exception 'the stale-reply predicate does not count a refused message';/,
+      },
+      {
+        file: "supabase/migrations/20261013120000_front_desk_stale_reply_closure.sql",
+        marker:
+          /raise exception 'the last send gate does not hold the conversation and read the predicate';/,
+      },
+      {
+        file: "engine/domain/outboundSend.ts",
+        marker: /const gate = await confirmOutboundSend\(/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /refuses the request once the contact sent an image, which the store refused on the record/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /stops the call when the contact writes after the last check: never called, settled failed/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /holds the contact's next message at its admission while the call is in flight/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /still sends when the conversation's other message is an image sent before the reviewed one/,
+      },
     ],
     caveat:
-      "Order is the provider's message timestamp, in seconds, with the admission instant breaking a tie; two messages admitted in one transaction cannot be ordered, which the gateway never does. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
+      "Recording order is the insertion order of each message's facts, which the conversation's row serialises at admission; two messages the provider delivers out of order therefore hold both replies for a person (fail closed). While a call is in flight, the contact's next message waits at its admission, bounded by the gateway's statement timeout, and Meta redelivers one the gateway could not take in time. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
   },
 ];
 
