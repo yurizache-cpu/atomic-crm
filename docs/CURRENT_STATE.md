@@ -2,7 +2,7 @@
 
 **What this is:** the operational state a fresh session reads after CLAUDE.md. It changes with every merged milestone (the maintenance rule in CLAUDE.md). The stable product and architecture are in [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md). The long-term program map is in [ROADMAP.md](ROADMAP.md).
 
-**Updated:** 2026-10-06, after PR #31's merge (`90be88dc`) and staging's update to it, on `feature/front-desk-pack-v4` ([ADR 0023](adr/0023-front-desk-agent.md) §C).
+**Updated:** 2026-10-06, after PR #31's merge (`90be88dc`) and staging's update to it, in PR #32 (pack v4, [ADR 0023](adr/0023-front-desk-agent.md) §C, §D).
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -17,7 +17,7 @@
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
 | Integration branch | `feature/clinical-phase-1` at `90be88dc`: PR #31's normal merge (2026-10-06; parents `9069f5c1`, PR #30's merge, and `af6d12b3`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Active branch | `feature/front-desk-pack-v4`, from `90be88dc` (§3) |
+| Open PR #32 | `feature/front-desk-pack-v4`, from `90be88dc`, into `feature/clinical-phase-1` (§3) |
 | Retained, integrated | `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
@@ -63,7 +63,12 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 - **PR #30** (merge `9069f5c1`, 2026-10-06; ADR 0024): the canonical project memory, docs only, brought up to date with PR #29's merge before its own. The automated review's one P2 (the event catalog's subject types) was fixed before the merge. PR CI on `c6b930dd` matched the historical baseline (§7).
 - **PR #29** (merge `33c03771`, 2026-10-06; ADR 0023 §L, SI-81): the review context, the stale-reply closure (the automated review's two P1 fixed before the merge) and pack `health_pt_br.v2`. Migrations `20261012120000_front_desk_review_context.sql` and `20261013120000_front_desk_stale_reply_closure.sql`. PR CI on `d35325da` and the post-merge run 37453392364 on `33c03771` both match the historical baseline (§7): Build, ESLint, Typecheck, Test and Database pass; e2e exactly 9 failed and 1 skipped; Prettier exactly the two baseline files.
 
-1. **`feature/front-desk-pack-v4`, how leads ask for a person (ADR 0023 §C):** packs v1 to v3 recognise only "falar com uma pessoa / um atendente / alguém". Refusing the assistant ("não quero falar com robô"), asking for a named person or a role, asking to be called and asking whether anyone is there all come out unrecognised (the clarification text, no person) or reach the model. Measured on a synthetic corpus of 180 messages, v3 misses 99 of its 120 requests for a person. Pack `health_pt_br.v4` adds them. A request for a person never reaches a model, so v4 sends nothing more to one than v3 did.
+1. **PR #32, `feature/front-desk-pack-v4`: how leads ask for a person** (ADR 0023 §C, §D).
+   - **The gap:** packs v1 to v3 recognise only "falar com uma pessoa / um atendente / alguém". Refusing the assistant, asking for a named person or a role, asking to be called and asking whether anyone is there came out unrecognised (the clarification text, no person) or reached the model.
+   - **Pack `health_pt_br.v4`:** precision-first request patterns (`engine/frontDesk/packs/personRequestPtBr.ts`). What reaches a model is unchanged, and a request for a person never reaches one.
+   - **Configured names:** the operating policy's `handoffNames` lists the team members a contact may ask for by name. Migration `20261015120000_front_desk_handoff_names.sql` holds its shape and gives the names to the worker.
+   - **Measured** on two blind samples of ordinary traffic: v4 recognised 65 and 62 of 77 requests (v3: 25 and 20), with no false handoff in about 550 ordinary messages. On the whole judged corpus (1,961 messages, both adversarial rounds included), 0.41% false handoffs.
+   - **Next:** CI against the baseline (§7), the automated review, the merge, then on staging an operating policy that names `health_pt_br.v4` and the team's names.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -82,7 +87,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 - **Front-desk configuration published:**
   - operating policy v3 and playbook v3, 2026-10-06 (persona "Lia", provisional; locale `pt-BR`; pack `health_pt_br.v3`; scheduling connected to a test agenda);
   - knowledge v2 and fixed messages v2.
-  - the integrated worker knows pack v3, so it runs this configuration. Once pack v4 merges, publish an operating policy that names `health_pt_br.v4`.
+  - the integrated worker knows pack v3, so it runs this configuration. Once PR #32 merges, apply its migration, then publish an operating policy that names `health_pt_br.v4` and the team's `handoffNames`.
 - **Test agenda:**
   - resource `26e8a919…` and booking type `4d29d51d…` (50 minutes);
   - weekly rules built from the owner's free times of the week of 2026-10-05 (times only, no patient), valid until 2026-10-31.
@@ -136,7 +141,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **Pack v4 (§3, item 1):** finish it on `feature/front-desk-pack-v4` against an adversarial corpus, open its PR, verify CI against the baseline (§7), merge it with a normal merge commit once the owner asks, then publish on staging an operating policy that names `health_pt_br.v4`.
+1. **PR #32 (§3, item 1):** verify CI against the baseline (§7) and address the automated review; merge it with a normal merge commit once the owner asks; then apply `20261015120000` to staging (pinned CLI, dry run first, never the seed), run the hosted verifier, and publish an operating policy that names `health_pt_br.v4` and the team's `handoffNames` (the owner confirms the names).
 2. **Run the live supervised receptionist test** on the Meta test number:
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
    - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;

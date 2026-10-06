@@ -25,7 +25,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 | Item | Status |
 | --- | --- |
-| Local screen before any model, reviewed packs | ✅ pack v3 (PR #31) · 🟡 v4, how leads ask for a person, on `feature/front-desk-pack-v4` |
+| Local screen before any model, reviewed packs | ✅ pack v3 (PR #31) · 🟡 v4, how leads ask for a person, with configured names, in PR #32 |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
 | Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
 | Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |

@@ -56,6 +56,24 @@ The screen itself moved to `front_desk_screen.v3`: in a run of omissions, the la
 
 **`health_pt_br.v3` (2026-10-05), the default.** The owner's round-two test of receptionist models showed two kinds of over-omission. A connector split a short administrative question, and its opener was omitted as unrecognised: "Como faço pra pagar?" read "[trecho omitido] pagar?", and "Consigo trocar pra sexta?" and "vocês mandam quando?" lost their verbs the same way. And two questions about the assistant itself never reached a model: "qual seu nome?" was held as unknown and got the clarification text, and "você é robô?" moved the conversation to a person, which the owner's receptionist should answer as its disclosure says. v3 keeps every v2 pattern. It knows those openers and that small talk as benign, but only as whole clauses, so what follows an opener is still screened ("Como faço pra parar de pensar nisso?" sends nothing). The question about the assistant is no longer a request for a person; asking for a person still is.
 
+**`health_pt_br.v4` (2026-10-06), the default: how leads ask for a person.** Reviewing PR #31 found that packs v1 to v3 knew only "falar com uma pessoa / um atendente / alguém" and "atendimento humano". Refusing the assistant ("não quero falar com robô"), asking for a named person or a role, asking to be called and asking whether anyone is there came out unrecognised, and so got the clarification text and no person; or they reached the model, which answered the administrative part. Meanwhile "preciso falar com alguém da minha família antes de decidir" moved a conversation to a person.
+- **What changes.** v4 keeps every v3 list but replaces the request list with `engine/frontDesk/packs/personRequestPtBr.ts`. So what reaches a model is unchanged (a test compares every corpus text under v3 and v4), and a request for a person never reaches one.
+- **Written for precision, because a false handoff takes a booking or a payment question away from the receptionist:**
+  - an imperative counts only where a clause starts (a line break ends one), never in quoted speech;
+  - whom the contact asks for comes from a closed list of the people a front desk has, never from any word after "com" ("gente" and "atendimento" are not people here);
+  - the professional counts only when the contact asks to talk to them, not when the clause is about the session;
+  - "is anyone there" counts only when the clause ends there;
+  - being called counts, being notified does not;
+  - a transfer counts only of the contact, never of money.
+- **Names are configuration** (§D). No reviewed pack can know a tenant's team: "quero falar com o Rafael" asks for a person only if Rafael is on it, and "preciso falar com o Bruno, meu marido" asks for no one. So the operating policy lists `handoffNames` (at most 20). The worker receives them from `ops.front_desk_policy_for_run` (migration `20261015120000_front_desk_handoff_names.sql`). A configured name counts only in a request, and never next to a relationship anywhere in the message ("meu filho Rafael", "minha prima Marina me liga").
+- **Measured** on synthetic messages, each labelled the same way by two independent judges (`engine/frontDesk/testSupport/personRequestCorpus.json`, 1,961 messages, 729 requests):
+  - **Two adversarial rounds** of breakers who saw the screen's decisions confirmed 502 and 581 breaks (1,083 in all), and drove the design to precision first.
+  - **Two blind samples of ordinary traffic**, about 350 messages each, written by generators who never saw the screen:
+    - first sample, measured before it informed a few small additions: v3 recognised 25 of 77 requests and v4 65 of 77, with no false handoff in 275;
+    - second sample, measured on the frozen patterns: v3 recognised 20 of 77 and v4 62 of 77, with no false handoff in 274. One alignment found there (an administrative topic after "sobre" no longer excludes a named request) brings it to 63.
+  - **On the whole corpus:** v4 hands over 5 of 1,232 messages that ask for no one (0.41%, quoted speech and a joke) and misses 165 requests. Both lists are pinned in the corpus file, so any change to a pattern shows up in the test.
+- **The limit, stated:** the patterns are lexical, and the long tail of phrasings is real. A missed request is not lost: an administrative message still reaches the model, and in supervised mode a person reviews every reply.
+
 ### D. The four kinds of configuration are versioned system data
 
 The owner's planning page (the Claude artifact "Recepção IA da Clínica") stays a planning and authoring aid. The database is the source of truth.
@@ -67,7 +85,7 @@ The owner's planning page (the Claude artifact "Recepção IA da Clínica") stay
   - `fixed_messages`: the exact texts where wording must not depend on a model.
 - Each version is draft, published or superseded; only the published version is read. A version is immutable; a change is a new draft. Each version carries a content hash, who drafted and published it, and when.
 - Each screening records the version ids it used, so "which version answered this conversation" is a join, not a copy.
-- The database checks what the runtime relies on (`ops.agent_configuration_valid`): the send mode (never autonomous), the pack, the context length, the AI disclosure, the playbook stages' shape, and every fixed text present. `engine/frontDesk/configuration.ts` checks the full authoring shape first.
+- The database checks what the runtime relies on (`ops.agent_configuration_valid`): the send mode (never autonomous), the pack, the context length, the AI disclosure, the playbook stages' shape, every fixed text present, and, when an operating policy has it, the shape of `handoffNames` (at most 20 names; migration `20261015120000_front_desk_handoff_names.sql`, §C). `engine/frontDesk/configuration.ts` checks the full authoring shape first.
 - Owner tool: `npm run front-desk -- config draft|publish|list|show`.
 - **UI decision (option B for this milestone):** a settings screen in the CRM is the next step. It needs new browser acts under the OD-8a pinning, and no browser authority is added here.
 

@@ -53,7 +53,7 @@ const ADMIN_TOPIC =
   "(?:o |a |os |as |meu |minha )?(?:pagamento|boleto|pix|cartao|horario|horarios|valor|valores|preco|reembolso|nota|recibo|agendamento|agenda|sessao|consulta|pacote|link|cancelamento|remarcacao|comprovante|plano|convenio)";
 
 /** What makes "alguém" or "uma pessoa" someone other than the team. */
-const NOT_STAFF = `(?: (?:da minha|do meu|da familia|de casa|aqui de casa|la de casa|do rh|do banco|do trabalho|da empresa|da escola|antes,? (?:minha|meu)|que|q|mais|pra cuidar|pra me ajudar com|pra conversar|pra desabafar|pra me ouvir)\\b|,? (?:por isso|pq|porque)\\b| sobre (?!${ADMIN_TOPIC}\\b))`;
+const NOT_STAFF = `(?: (?:da minha|do meu|da familia|de casa|aqui de casa|la de casa|do rh|do banco|do trabalho|da empresa|da escola|antes,? (?:minha|meu)|que|q|mais|pra cuidar|pra me ajudar com|pra conversar|pra desabafar|pra me ouvir)\\b|,? por isso\\b| sobre (?!${ADMIN_TOPIC}\\b))`;
 
 /** Where a manager, the finance team or the team is someone else's. */
 const ELSEWHERE =
@@ -67,8 +67,7 @@ const PROFESSIONAL =
   "(?:(?:o|a) )?(?:propri[oa] )?(?:psicologo|psicologa|psi|terapeuta|doutora|doutor|dra|dr|profissional)\\b(?! d[oa] (?:minha|meu|escola|empresa|trabalho|posto|convenio|plano)\\b)";
 
 /** A clause about the session, a process or a booking, not a request to talk now. */
-const ABOUT_THE_SESSION =
-  "(?![^.?!]*\\b(?:na sessao|nas sessoes|na primeira|na consulta|durante a sessao|por video|por audio|em ingles|sobre (?!o pagamento|os horarios|o valor|a agenda)|ou (?:ja|eu|so|da|posso|e)|antes ou|pra (?:desmarcar|remarcar|confirmar|cancelar|marcar|agendar))\\b)";
+const ABOUT_THE_SESSION = `(?![^.?!]*\\b(?:na sessao|nas sessoes|na primeira|na consulta|durante a sessao|por video|por audio|em ingles|sobre (?!${ADMIN_TOPIC}\\b)|ou (?:ja|eu|so|da|posso|e)|antes ou|pra (?:desmarcar|remarcar|confirmar|cancelar|marcar|agendar))\\b)`;
 
 /** What the assistant is, as a lead refuses it. */
 const ASSISTANT =
@@ -91,7 +90,7 @@ const TALK =
 
 /** What a contact may do with the team only (never with a name or the professional). */
 const TALK_TO_STAFF =
-  "(?:falar|conversar|tirar (?:essa |uma |umas |a |as |minhas )?duvidas?|bater um papo|trocar uma ideia|dar uma palavrinha|ligar|resolver(?: isso)?|tratar(?: isso)?|ver isso|fazer uma (?:chamada|ligacao|videochamada))";
+  "(?:falar|conversar|tirar(?: (?:essa |uma |umas |a |as |minhas )?duvidas?)?|bater um papo|trocar uma ideia|dar uma palavrinha|ligar|resolver(?: isso)?|tratar(?: isso)?|ver isso|fazer uma (?:chamada|ligacao|videochamada))";
 
 /** Adverbs between talking and its object. */
 const HOW =
@@ -110,7 +109,7 @@ const CALL_ME =
 
 /** A person reaching the contact. */
 const CONTACTS =
-  "(?:me (?:liga|ligar|ligue|ligasse|ligassem|retorna|retornar|retorne|retornasse|retornassem|chama|chamar|chame|chamasse|chamassem|responde|responder|responda|respondesse|respondessem|explicar por (?:ligacao|telefone)|dar um retorno|de um retorno)|(?:fala|falar|falasse|fale|falassem) comigo|falar cmg|entrar em contato|entrasse em contato|entre em contato|entrassem em contato|olhar meu caso|ver meu caso)\\b(?! de\\b)";
+  "(?:me (?:liga|ligar|ligue|ligasse|ligassem|retorna|retornar|retorne|retornasse|retornassem|chama|chamar|chame|chamasse|chamassem|responde|responder|responda|respondesse|respondessem|(?:explicar|explicasse|explique|explica) por (?:ligacao|telefone)|dar um retorno|de um retorno)|(?:fala|falar|falasse|fale|falassem) comigo|falar cmg|entrar em contato|entrasse em contato|entre em contato|entrassem em contato|olhar meu caso|ver meu caso)\\b(?! de\\b)";
 
 /** A person attending the contact. */
 const ATTENDS = "me (?:atende|atender|atenda|atendesse)";
@@ -139,7 +138,9 @@ export const PERSON_REQUEST_PT_BR: readonly RegExp[] = Object.freeze([
   ),
   pattern(`\\bcomo (?:eu )?falo (?:com|c) (?:${STAFF}|${PROFESSIONAL})`),
   // "falar c atendente", "pfv falar c alguem": the bare request.
-  pattern(`${START}${LEAD_IN}(?:falar|conversar)${HOW} ${WITH} ${STAFF}`),
+  pattern(
+    `${START}${LEAD_IN}(?:falar|conversar)${HOW} ${WITH} (?:${STAFF}|(?:pessoa|humano|gente)${END})`,
+  ),
   // "gostaria de ser atendida por uma pessoa", "ser contatada por alguém da equipe".
   pattern(`\\bser (?:atendid|contatad)[oa]s? (?:por|pel[oa]) ${STAFF}`),
   // "quero falar por telefone com vocês", "prefiro falar ao vivo com vcs".
@@ -151,7 +152,7 @@ export const PERSON_REQUEST_PT_BR: readonly RegExp[] = Object.freeze([
     `${UNQUOTED}\\b(?:quero|queria|qro|kero|prefiro(?: mil vezes)?|preciso de|so quero|eu quero e|quero e) ${STAFF}(?:${END}| (?:pra|para) (?:remarcar|marcar|agendar|resolver|me atender|me responder)\\b)`,
   ),
   pattern(
-    `\\b(?:quero|prefiro|preciso|eu quero e|quero e) (?:falar com )?gente(?: me atendendo)?${END}`,
+    `\\b(?:quero|queria|prefiro|preciso|eu quero e|quero e) (?:falar com )?gente(?: me atendendo| msm| mesmo)?${END}`,
   ),
   // "prefiro esperar um atendente", "tô esperando um atendente há horas".
   pattern(
@@ -236,7 +237,7 @@ export const PERSON_REQUEST_PT_BR: readonly RegExp[] = Object.freeze([
   ),
   // "alguém aí?", "algueeem??", "alguém de carne e osso pfvr".
   pattern(
-    `${START}(?:e |mas )?(?:alguem|algue+m+|algm|alguen)(?: (?:ai|ae|por ai|vivo|de verdade|de vdd|de carne e osso|online|me atendendo|lendo isso|le essas mensagens))*${END}`,
+    `${START}(?:e |mas )?(?:alguem|algue+m+|algm|alguen)(?: (?:ai|ae|por ai|vivo|real|de verdade|de vdd|de carne e osso|online|me atendendo|lendo isso|le essas mensagens))*${END}`,
   ),
   // "ninguém pra me atender?", "ninguém vai me atender?".
   pattern(
@@ -376,7 +377,6 @@ export function namedPersonRequests(names: readonly string[]): RegExp[] {
     named(
       `${UNQUOTED}\\b${WANT_NAMED}(?: eu)?(?: [a-z]+ e)? ${TALK}${HOW} ${WITH} ${NAME}${NOT_CHECKING}${ABOUT_THE_SESSION}`,
     ),
-    named(`${START}${LEAD_IN}(?:falar|conversar)${HOW} ${WITH} ${NAME}`),
     named(`\\b(?:so|somente) (?:falo|converso) ${WITH} ${NAME}`),
     // "preciso da Marina urgente", "quero a resposta da Marina".
     named(`\\b(?:preciso|quero|queria) (?:d[ao]|de) ${BARE}`),
@@ -384,16 +384,13 @@ export function namedPersonRequests(names: readonly string[]): RegExp[] {
       `\\b(?:aguardo|solicito|quero|queria|gostaria de)(?: um| o| a)? (?:contato|retorno|uma ligacao|ligacao|resposta)(?: direto)? (?:de|com|da|do) ${NAME}`,
     ),
     // "passa pro Rafael", "me passa a Marina", "passa a Carla aí", "chama a
-    // Marina", "cadê a Marina?", "bota a Carla na conversa", "pode transferir
-    // pro Dr. Paulo?", "pq tô falando com bot? quero a Marina".
+    // Marina", "cadê a Marina?", "bota a Carla na conversa", "pq tô falando
+    // com bot? quero a Marina".
     named(
       `${START}${LEAD_IN}(?:me )?(?:passa|passe|passar|repassa|repasse|encaminha|encaminhe|encaminhar|poe|joga|conecta|redireciona)(?: (?:meu atendimento|meu contato|minha conversa|meu caso|minha mensagem|minha msg))? (?:pra|pro|para|com|em contato com) ${NAME}`,
     ),
     named(
       `${START}${LEAD_IN}me (?:coloca|coloque|poe|bota) em contato (?:com|c) ${NAME}`,
-    ),
-    named(
-      `${START}${LEAD_IN}(?:me )?(?:transfere|transfira|transferir) (?:pra|pro|para) (?:(?:o|a) )?(?:dr|dra|doutor|doutora)\\.? (?:${alternatives})\\b`,
     ),
     named(`${START}${LEAD_IN}me (?:passa|passe) ${NAME}`),
     named(`${START}${LEAD_IN}(?:passa|passe) ${NAME}(?: (?:ai|aqui))?${END}`),
@@ -409,7 +406,7 @@ export function namedPersonRequests(names: readonly string[]): RegExp[] {
     // "a Marina tá aí?", "a Carla tá?", "Rafael, você tá aí?", "responde aí,
     // Rafael", "Marina, me responde".
     named(
-      `${START}${NAME},?(?:(?: (?:vc|voce))?(?: (?:ta|esta|ja ta|ja esta))? (?:ai|online|por ai)| (?:ta|esta|tai))${END}`,
+      `${START}${NAME}(?: ou ${NAME})?,?(?:(?: (?:vc|voce))?(?: (?:ta|esta|estao|tao|ja ta|ja esta))? (?:ai|online|por ai)| (?:ta|esta|tai)(?: disponivel)?)${END}`,
     ),
     named(`${START}(?:me )?(?:responde|atende) ai,? ${NAME}`),
     named(`${START}${NAME},? ${CONTACTS}${END}`),

@@ -56,7 +56,7 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | --- | --- | --- |
 | Signed WhatsApp gateway, channels, conversations, test-sender registration | ✅ Exists | ADR 0018, ADR 0021; `engine/communication/whatsapp/` |
 | Exactly-once admission of an inbound message as a task | ✅ Exists | SI-43, SI-44; `ops.admit_inbound_core` |
-| Local screen before any model; reviewed packs | ✅ Exists (pack v3 integrated; v4, how leads ask for a person, on a branch) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
+| Local screen before any model; reviewed packs | ✅ Exists (pack v3 integrated; v4, how leads ask for a person, in PR #32) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ Exists | ADR 0023 §D; `npm run front-desk -- config …` |
 | Conversation state: party kind, phase, holder; append-only transitions | ✅ Exists | ADR 0023 §G, §J |
 | Human takeover, release and a person's reply | ✅ Exists (owner CLI) | ADR 0023 §G |
