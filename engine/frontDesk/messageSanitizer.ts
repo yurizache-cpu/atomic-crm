@@ -26,7 +26,7 @@
 // the omitted text never leaves the store it came from.
 
 import { redactStructuredIdentifiers } from "../models/identifierRedaction.ts";
-import { HEALTH_PT_BR_V2 } from "./packs/healthPtBr.ts";
+import { HEALTH_PT_BR_V3 } from "./packs/healthPtBr.ts";
 
 export const SANITIZER_VERSION = "front_desk_screen.v3";
 export const OMISSION_MARKER = "[trecho omitido]";
@@ -212,7 +212,7 @@ const isPunctuation = (separator: string) => /^[.!?;:,\n]+ ?$/u.test(separator);
  */
 export function sanitizeMessage(
   text: string,
-  pack: SanitizerPack = HEALTH_PT_BR_V2,
+  pack: SanitizerPack = HEALTH_PT_BR_V3,
 ): SanitizedMessage {
   const truncated = text.length > MAX_SCREENED_LENGTH;
   // Line breaks are clause boundaries, so they survive until the split: only

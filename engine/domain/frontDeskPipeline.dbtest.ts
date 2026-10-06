@@ -387,6 +387,10 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
     // The prompt carries the published knowledge, never the raw task.
     expect(input).toContain("A primeira sessão custa R$ 200.");
     expect(provider.calls[0].instructions).toContain("virtual front desk");
+    // Prompt v4: the database says when the contact wrote, on the agent's clock.
+    expect(input).toMatch(
+      /"receivedAt":\{"at":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}","label":/,
+    );
     const business = decisions.asked.find((r) => "intent" in r.questions)!;
     expect(business.state).toMatchObject({
       message: "Qual o valor da primeira sessão?",

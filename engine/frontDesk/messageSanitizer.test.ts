@@ -11,6 +11,7 @@ import {
 import {
   HEALTH_PT_BR_V1,
   HEALTH_PT_BR_V2,
+  HEALTH_PT_BR_V3,
   SANITIZER_PACKS,
 } from "./packs/healthPtBr.ts";
 
@@ -66,7 +67,6 @@ describe("the six owner cases", () => {
     for (const text of [
       "Quero falar com uma pessoa, por favor.",
       "Posso falar com um atendente?",
-      "Você é um robô?",
       "Queria atendimento humano",
     ]) {
       expect(sanitizeMessage(text)).toMatchObject({
@@ -176,7 +176,7 @@ describe("the screen's mechanics", () => {
       "Oi, estou ansiosa e queria saber o valor",
     );
     expect(screened.sanitizerVersion).toBe(SANITIZER_VERSION);
-    expect(screened.packId).toBe("health_pt_br.v2");
+    expect(screened.packId).toBe("health_pt_br.v3");
     expect(sanitizeMessage("Qual o valor?", HEALTH_PT_BR_V1).packId).toBe(
       "health_pt_br.v1",
     );
@@ -200,6 +200,7 @@ describe("the screen's mechanics", () => {
     expect(Object.keys(SANITIZER_PACKS)).toEqual([
       HEALTH_PT_BR_V1.id,
       HEALTH_PT_BR_V2.id,
+      HEALTH_PT_BR_V3.id,
     ]);
   });
 });
@@ -327,7 +328,7 @@ const CORPUS: readonly Entry[] = [
 ];
 
 describe("the synthetic corpus", () => {
-  it.each([HEALTH_PT_BR_V1, HEALTH_PT_BR_V2])(
+  it.each([HEALTH_PT_BR_V1, HEALTH_PT_BR_V2, HEALTH_PT_BR_V3])(
     "leaks no omitted clause under $id either (hard requirement)",
     (pack) => {
       const leaks = CORPUS.flatMap((entry) => {
@@ -553,5 +554,78 @@ describe("the form's vocabulary in free text (pack v2)", () => {
       ];
     });
     expect(leaks).toEqual([]);
+  });
+});
+
+// v3 (2026-10-05): the round-two receptionist test, read through the screen.
+describe("the receptionist's round two (pack v3)", () => {
+  it("keeps the short administrative questions a connector used to cut", () => {
+    for (const text of [
+      "Como faço pra pagar?",
+      "Na verdade surgiu um compromisso na quinta. Consigo trocar pra sexta?",
+      "Perfeito. E o link da chamada, vocês mandam quando?",
+    ]) {
+      expect(sanitizeMessage(text, HEALTH_PT_BR_V3)).toMatchObject({
+        messageClass: "administrative",
+        safeText: text,
+      });
+    }
+  });
+
+  it("lets small talk about the assistant reach the model, which answers it", () => {
+    for (const text of [
+      "Qual seu nome mesmo?",
+      "Você é um robô?",
+      "Com quem eu falo?",
+      "Tudo bem sim, e com você?",
+    ]) {
+      expect(sanitizeMessage(text, HEALTH_PT_BR_V3)).toMatchObject({
+        safeText: text,
+        humanRequested: false,
+        requiresHuman: false,
+      });
+    }
+  });
+
+  it("still moves a request for a person to a person", () => {
+    for (const text of [
+      "Quero falar com uma pessoa, por favor.",
+      "Posso falar com um atendente?",
+      "Queria atendimento humano",
+    ]) {
+      expect(sanitizeMessage(text, HEALTH_PT_BR_V3)).toMatchObject({
+        humanRequested: true,
+        requiresHuman: true,
+      });
+    }
+  });
+
+  it("knows the new openers only alone: what follows them is still screened", () => {
+    expect(
+      sanitizeMessage("Como faço pra parar de pensar nisso?", HEALTH_PT_BR_V3)
+        .safeText,
+    ).toBeNull();
+    for (const [text, clause] of [
+      ["Consigo trocar pra outro remédio?", "remédio"],
+      ["Você é robô? Tô muito ansioso", "ansioso"],
+      ["Como faço pra pagar? Minha ansiedade piorou", "ansiedade"],
+    ]) {
+      expect(
+        (sanitizeMessage(text, HEALTH_PT_BR_V3).safeText ?? "").toLowerCase(),
+      ).not.toContain(clause);
+    }
+  });
+
+  it("records why v3 exists: v2 cut the opener and held the question about the assistant", () => {
+    expect(
+      sanitizeMessage("Como faço pra pagar?", HEALTH_PT_BR_V2).safeText,
+    ).toBe(`${OMISSION_MARKER} pagar?`);
+    expect(sanitizeMessage("Você é um robô?", HEALTH_PT_BR_V2)).toMatchObject({
+      humanRequested: true,
+      safeText: null,
+    });
+    expect(
+      sanitizeMessage("Qual seu nome mesmo?", HEALTH_PT_BR_V2).safeText,
+    ).toBeNull();
   });
 });
