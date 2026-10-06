@@ -56,14 +56,14 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | --- | --- | --- |
 | Signed WhatsApp gateway, channels, conversations, test-sender registration | ✅ Exists | ADR 0018, ADR 0021; `engine/communication/whatsapp/` |
 | Exactly-once admission of an inbound message as a task | ✅ Exists | SI-43, SI-44; `ops.admit_inbound_core` |
-| Local screen before any model; reviewed packs | ✅ Exists (pack v1 integrated; v2 in PR #29; v3 on the prompt v4 branch) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
+| Local screen before any model; reviewed packs | ✅ Exists (pack v2 integrated; v3 on the prompt v4 branch) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ Exists | ADR 0023 §D; `npm run front-desk -- config …` |
 | Conversation state: party kind, phase, holder; append-only transitions | ✅ Exists | ADR 0023 §G, §J |
 | Human takeover, release and a person's reply | ✅ Exists (owner CLI) | ADR 0023 §G |
 | Bounded context: screened turns, configuration, availability, next booking | ✅ Exists | ADR 0023 §E, §H |
 | Reply drafting under the lead triage contract, grounding check | ✅ Exists (prompt `lead_triage.v3`; v4 on a branch) | ADR 0023 §E; `engine/frontDesk/prompt.ts`, `grounding.ts` |
 | Review queue; supervised send as a separate act; at most once | ✅ Exists | ADR 0018 §4, SI-49, SI-50 |
-| The review shows the screened message and the draft; a stale reply is never sent | 🟡 Open PR #29 | ADR 0023 §L (in the PR) |
+| The review shows the screened message and the draft; a stale reply is never sent | ✅ Exists (PR #29) | ADR 0023 §L, SI-81 |
 | Privacy notice on the first reply; identifier retention clock | ✅ Exists | ADR 0021 W4/W5, SI-79 |
 | Follow-up engine (cadences, plans, due jobs; a due follow-up is operator work) | ✅ Exists | Phase 3A, SI-62 |
 | Booking foundation (resources, types, weekly rules, bookings, no overlap, reschedule, cancel) | ✅ Exists | Phase 3A, SI-63 |
@@ -134,7 +134,7 @@ Two paths, one structured result:
 
 Rules:
 - **Triage fields are structured CRM data**, stored as fields, not only as chat messages. The question set is versioned configuration (a new kind or a playbook stage; decided in the implementation milestone).
-- **Each field has a data class.** A field that carries health content (for example the intake form's "what brings you" sentence, its duration and its intensity rating) is `health`. It stays in the clinic's system and never reaches a model, Jev or an ad platform. Pack `health_pt_br.v2` (open PR #29) removes the intake form's demand sentence before any model.
+- **Each field has a data class.** A field that carries health content (for example the intake form's "what brings you" sentence, its duration and its intensity rating) is `health`. It stays in the clinic's system and never reaches a model, Jev or an ad platform. Pack `health_pt_br.v2` removes the intake form's demand sentence before any model.
 - **Collect only what the administrative journey needs.** No unnecessary sensitive information.
 - `triage_completed` is a deterministic event once the required fields are present, not a model's opinion.
 
@@ -330,7 +330,7 @@ Each exception has a type, a subject, a priority and a resolution. The inbox and
   - is preceded by an accepted review;
   - is checked afresh against the 24-hour window, a single CRM contact, opt-out, an active test channel and no stop (SI-49);
   - happens at most once (SI-50);
-  - is never sent when the contact wrote again after the reviewed message (ADR 0023 §L, in open PR #29).
+  - is never sent when the contact wrote again after the reviewed message (ADR 0023 §L, SI-81).
 - **Production WhatsApp** stays CLOSED until ADR 0021's remaining decisions (W7 hosting, W8 Meta actions) and the owner's go-live.
 
 ## 21. Data and model constraints

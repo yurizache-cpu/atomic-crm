@@ -25,11 +25,11 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 | Item | Status |
 | --- | --- |
-| Local screen before any model, reviewed packs | ✅ pack v1 · 🟡 v2 in PR #29 · 🟡 v3 on `feature/front-desk-prompt-v4` |
+| Local screen before any model, reviewed packs | ✅ pack v2 (PR #29) · 🟡 v3 on `feature/front-desk-prompt-v4` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
 | Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
 | Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |
-| The review shows the screened message and the draft; stale replies never sent | 🟡 PR #29 |
+| The review shows the screened message and the draft; stale replies never sent | ✅ (PR #29, ADR 0023 §L, SI-81) |
 | Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | 🟡 `feature/front-desk-prompt-v4` |
 | Follow-up engine (cadences, plans, due jobs) | ✅ (Phase 3A) |
 | Creating a CRM lead for a new WhatsApp number | 🚫 ADR 0021 W6 (owner decision) |
@@ -134,7 +134,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 ### Next three implementation milestones
 
-1. **Receptionist v4, supervised and live:** PR #29 and the prompt v4 PR integrated, staging migrations applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
+1. **Receptionist v4, supervised and live:** PR #29 is integrated; the prompt v4 PR integrated, staging migrations applied, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
 2. **Lead journey core:**
    - lead creation for new numbers (after W6);
    - identity resolution and attribution capture at entry;

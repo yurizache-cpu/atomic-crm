@@ -27,7 +27,7 @@ The Company OS operator surface (`src/company-os/`, ADR 0019) is the foundation 
 | --- | --- | --- |
 | Overview | Tenant-scoped company state | ✅ Exists |
 | Tasks, runs, activity | Work, agent runs and events | ✅ Exists |
-| Reviews | Pending reviews with the Jev shadow decisions; decide (accept, reject, needs edit) | ✅ Exists (one browser act); the screened message and the draft on the review: 🟡 open PR #29 |
+| Reviews | Pending reviews with the Jev shadow decisions; decide (accept, reject, needs edit) | ✅ Exists (one browser act), with the screened message and the reply draft for synthetic or test data (ADR 0023 §L) |
 | Decisões → Inteligência | Shadow agreement counts per policy and provider version, never accuracy | ✅ Exists |
 | Saúde operacional | Queue, executions, failures, uncertain results, reviews, stops, cost; "Precisa de atenção" from concrete states | ✅ Exists |
 | Agenda | Bookings and follow-ups | ✅ Exists (read-only) |
@@ -181,7 +181,7 @@ The only place several capabilities contribute to one question. Never an agent s
 ## 10. Data and model constraints
 
 - Everything in the Command Center is tenant-scoped, minimised and behind AAL2 (Gate A).
-- No browser projection returns raw message bodies (SI-52). Open PR #29 makes the review's screened text and reply draft the one deliberate exception, for synthetic and test data (ADR 0023 §L in that PR).
+- No browser projection returns raw message bodies (SI-52). ADR 0023 §L makes the review's screened text and reply draft the one deliberate exception, for synthetic and test data.
 - Models used in this layer (brief phrasing, owner questions, Decision Room synthesis) read only aggregated operational data authorized by Q8, through OpenRouter's authorized pools. Never health data.
 
 ## 11. Implementation milestones (workstreams G and H)
