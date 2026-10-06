@@ -20,6 +20,7 @@ import { REVIEW_NOT_A_SEND_NOTE } from "../../copy";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useOperatorScope } from "../../session/runtime";
 import { AdviceView } from "./AdviceView";
+import { ConversationSection } from "./ConversationSection";
 import { DecisionPanel } from "./DecisionPanel";
 import { ReviewSummaryFields } from "./ReviewSummaryFields";
 import { ShadowDecisionSection } from "./ShadowDecisionSection";
@@ -29,9 +30,10 @@ import { StructuredDecisionsSection } from "./StructuredDecisionsSection";
 // open, the one browser act (S7.1): the member's decision, confirmed, which
 // sends nothing. The structured advice is a separate read, made only when the
 // operator opens it and dropped from memory when they close it
-// (docs/PHASE_2C_BRIEF.md §13 item 3). The reply draft is never shown. The
-// shadow decision (Phase 2D.1) and the structured decisions (ADR 0022) are
-// shown read only, and decide nothing.
+// (docs/PHASE_2C_BRIEF.md §13 item 3). The message the assistant read and the
+// reply draft the send would carry are shown before the decision, read only
+// (ADR 0023 §L). The shadow decision (Phase 2D.1) and the structured decisions
+// (ADR 0022) are shown read only, and decide nothing.
 
 const Decision = ({ review }: { review: ReviewDetailData }) => (
   <Section title="Decisão">
@@ -88,6 +90,8 @@ const ReviewDetailBody = ({ review }: { review: ReviewDetailData }) => (
         <ReviewSummaryFields review={review} />
       </Fields>
     </Section>
+    {/* ADR 0023 §L: what is read and what would be sent, before deciding. */}
+    <ConversationSection review={review} />
     <Decision review={review} />
     {/* Phase 2D.1: advisory, read only; it changes nothing above. */}
     <ShadowDecisionSection review={review} />

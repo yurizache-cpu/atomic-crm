@@ -450,8 +450,13 @@ describe("the read gates over runs the real worker produced", () => {
     const value = <T>(fn: CompanyOsRead, index = 0): T =>
       outputs.filter((o) => o.fn === fn)[index].value as T;
 
-    // Nothing secret leaves, by value or by key.
+    // Nothing secret leaves, by value or by key, but the review's own draft
+    // in its conversation (ADR 0023 §L).
     expect(leaks(outputs, forbidden)).toEqual([]);
+    expect(
+      value<{ conversation: { replyDraft: string | null } }>("get_review")
+        .conversation.replyDraft,
+    ).toBe(ADVICE.response_draft);
     const keys = new Set(outputs.flatMap((o) => keysOf(o.value)));
     expect(FORBIDDEN_KEYS.filter((key) => keys.has(key))).toEqual([]);
     // The unlisted label is among what is swept for, and its event is listed

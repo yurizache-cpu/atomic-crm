@@ -188,9 +188,12 @@ export async function deleteCrmContacts(admin: Pool): Promise<void> {
 export interface InboundItem {
   readonly id: string;
   readonly from: string;
+  /** The text; an image carries none, so it is not sent for one. */
   readonly body: string;
   /** Unix seconds; defaults to now. */
   readonly timestamp?: number;
+  /** An image is what the store refuses on the record (unsupported content). */
+  readonly kind?: "text" | "image";
 }
 
 export interface StatusItem {
@@ -231,8 +234,12 @@ export function metaPayload(
                 from: m.from,
                 id: m.id,
                 timestamp: String(m.timestamp ?? now),
-                type: "text",
-                text: { body: m.body },
+                ...(m.kind === "image"
+                  ? {
+                      type: "image",
+                      image: { id: `media.${m.id}`, mime_type: "image/jpeg" },
+                    }
+                  : { type: "text", text: { body: m.body } }),
               })),
               statuses: (items.statuses ?? []).map((s) => ({
                 id: s.id,

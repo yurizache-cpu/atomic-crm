@@ -78,6 +78,8 @@ import {
   actAs,
   buildFixture,
   createAuthUser,
+  DRAFT,
+  withoutReplyDrafts,
   must,
   type AuthUser,
 } from "./testSupport/companyOsContractFixture.ts";
@@ -597,6 +599,44 @@ afterAll(async () => {
   await admin?.end();
 });
 
+/**
+ * The draft a recording shows in a review's conversation (ADR 0023 §L). The
+ * fixture plants a sentinel draft so the sweeps can prove it leaves nowhere
+ * else; a recording, which the browser tests read, carries this neutral
+ * synthetic reply in its place, and any other draft fails the recording.
+ */
+const RECORDED_REPLY_DRAFT = "A synthetic reply about opening hours.";
+
+const withRecordedDraft = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withRecordedDraft);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) => {
+      if (
+        key === "conversation" &&
+        child !== null &&
+        typeof child === "object" &&
+        "replyDraft" in child
+      ) {
+        const { replyDraft } = child as { replyDraft: unknown };
+        if (replyDraft !== null && replyDraft !== DRAFT) {
+          throw new Error(
+            "a recorded review carries a draft the fixture did not plant",
+          );
+        }
+        return [
+          key,
+          {
+            ...child,
+            replyDraft: replyDraft === null ? null : RECORDED_REPLY_DRAFT,
+          },
+        ];
+      }
+      return [key, withRecordedDraft(child)];
+    }),
+  );
+};
+
 describe("the recorded company_os_api responses of the browser tests", () => {
   let session: Session;
   let files: Record<string, unknown>;
@@ -605,7 +645,10 @@ describe("the recorded company_os_api responses of the browser tests", () => {
     session = await rolledBack(recordSession);
     const normalised = normalise(session.scenarios, session.idMap, session.now);
     files = filesOf(
-      normalised.scenarios as Record<string, readonly RecordedCall[]>,
+      withRecordedDraft(normalised.scenarios) as Record<
+        string,
+        readonly RecordedCall[]
+      >,
       session.idMap.labels,
     );
   });
@@ -633,8 +676,15 @@ describe("the recorded company_os_api responses of the browser tests", () => {
   });
 
   it("holds synthetic values only: no identity, contact, message or call value the fixture planted", () => {
+    // The review's own reply draft is shown in its conversation (ADR 0023
+    // §L): the recordings carry the neutral synthetic reply in its place, and
+    // the live answers are swept with it blanked.
     const text = JSON.stringify(files).toLowerCase();
-    const raw = JSON.stringify(session.scenarios).toLowerCase();
+    const raw = JSON.stringify(
+      withoutReplyDrafts(session.scenarios),
+    ).toLowerCase();
+    expect(JSON.stringify(files)).toContain(RECORDED_REPLY_DRAFT);
+    expect(JSON.stringify(session.scenarios)).toContain(DRAFT);
     const planted: [string, string][] = [
       ["a raw actor label", ACTOR],
       ["the price's recorded_by", PRICE_RECORDER],

@@ -26,6 +26,7 @@ import {
   type CompanyOsOperation,
 } from "../../../contracts/company-os-api/index.ts";
 import type { TxClient, WorkerDatabase } from "../../db/types.ts";
+import { withoutReplyDrafts } from "./companyOsContractFixture.ts";
 
 /**
  * The Phase 2C read catalogue (brief §8 rows 1-15), taken from the contracts,
@@ -345,15 +346,23 @@ export async function evidenceFaults(
   return faults;
 }
 
-/** The forbidden values found in any output, as `<fn>: <label>`. */
+/**
+ * The forbidden values found in any output, as `<fn>: <label>`. A review
+ * detail's own reply draft is the one exception (ADR 0023 §L): it is blanked
+ * in its conversation, and every other byte of the answer is swept.
+ */
 export function leaks(
   outputs: readonly ApiOutput<unknown>[],
   forbidden: ReadonlyMap<string, string>,
 ): string[] {
   const found: string[] = [];
   for (const output of outputs) {
+    const text =
+      output.fn === "get_review"
+        ? JSON.stringify(withoutReplyDrafts(output.value))
+        : output.text;
     for (const [label, value] of forbidden) {
-      if (value !== "" && output.text.includes(value)) {
+      if (value !== "" && text.includes(value)) {
         found.push(`${output.fn}: ${label}`);
       }
     }

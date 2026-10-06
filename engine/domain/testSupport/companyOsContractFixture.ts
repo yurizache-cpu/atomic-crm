@@ -20,9 +20,31 @@ const MODEL = "dbtest-cos-contract-model";
 const PROMPT_VERSION = "lead_triage.v1";
 
 // Values that must never reach a response. None is placed in free text that a
-// projection returns as content (a note, a reason, a label).
+// projection returns as content (a note, a reason, a label). The one
+// exception is the reply draft, which a review detail shows in its
+// conversation (ADR 0023 §L): the sweeps blank exactly that field first.
 export const BODY = "COS-SENTINEL-BODY synthetic question about opening hours";
-const DRAFT = "COS-SENTINEL-DRAFT synthetic reply";
+export const DRAFT = "COS-SENTINEL-DRAFT synthetic reply";
+
+/**
+ * `value` with every review conversation's reply draft blanked, at any depth:
+ * the one place a draft may leave (ADR 0023 §L), so a sweep reads every other
+ * byte.
+ */
+export function withoutReplyDrafts(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutReplyDrafts);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) =>
+      key === "conversation" &&
+      child !== null &&
+      typeof child === "object" &&
+      "replyDraft" in child
+        ? [key, { ...child, replyDraft: null }]
+        : [key, withoutReplyDrafts(child)],
+    ),
+  );
+}
 export const PHONE = "5511900000771";
 // Every label a person or a service writes, each distinct so a leak names its
 // column: stops, reviews, channels, sends and marks; price and limit rows;

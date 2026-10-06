@@ -26,6 +26,7 @@ export * from "./governance.ts";
 export * from "./health.ts";
 export * from "./operations.ts";
 export * from "./primitives.ts";
+export * from "./reviewConversation.ts";
 export * from "./reviews.ts";
 export * from "./runs.ts";
 export * from "./stops.ts";

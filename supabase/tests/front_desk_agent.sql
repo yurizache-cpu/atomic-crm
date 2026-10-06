@@ -9,7 +9,8 @@
 --
 -- WHAT THIS SUITE PROVES, and what it leaves to the driver-backed suite:
 --   * Here: the access posture, the configuration and screening guards, the
---     run trigger, the redaction trigger, the owner acts on a conversation.
+--     run trigger, the redaction trigger, the owner acts on a conversation,
+--     and what a review shows (ADR 0023 §L).
 --   * There (engine/domain/frontDeskPipeline.dbtest.ts): signed deliveries
 --     through the gateway's own login, the real worker, the local screen, the
 --     dispositions, the bounded context, and the proof that an omitted clause
@@ -224,7 +225,7 @@ declare
   v_policy uuid;
 begin
   v_answer := ops.receive_whatsapp_message('300000000000071', 'wamid.FD1', '5511900000071',
-                                           'Synthetic question about prices', now());
+                                           'Synthetic question about prices', now() - interval '10 minutes');
   if v_answer ->> 'state' <> 'admitted' then
     raise exception 'setup: the test message was not admitted: %', v_answer;
   end if;
@@ -404,6 +405,90 @@ begin
   -- The task's text is redacted now (F4): nothing is left to decide on.
   if ops.structured_decision_input(v_decision) is not null then
     raise exception 'F6: a business route was built after the screened text was redacted';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F7. ADR 0023 §L: a review shows the screened text and the draft the send
+--     would carry, never the raw message; the contact's newer message marks
+--     it superseded; anything outside synthetic or test data reads unavailable.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_run    ops.agent_runs;
+  v_item   ops.review_items;
+  v_health ops.review_items;
+  v_conv   jsonb;
+  v_detail text;
+  v_policy uuid;
+  v_review uuid;
+begin
+  perform ops.receive_whatsapp_message('300000000000071', 'wamid.FD7A', '5511900000071',
+                                       'FD7-RAW-MARKER synthetic worry, and what is the price', now() - interval '5 minutes');
+  select r.* into v_run from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7A');
+  v_policy := (ops.published_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy')).id;
+  insert into ops.inbound_screenings (tenant_id, company_id, task_id, agent_run_id, screener_version, pack_id,
+    message_class, safety_class, segments_redacted, segments_sensitive, segments_unrecognised,
+    administrative_intent, person_requested, opt_out_requested, model_input, party_kind, disposition,
+    policy_version_id)
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'front_desk_screen.v2',
+    'health_pt_br.v1', 'mixed', 'none', 1, 1, 0, true, false, false, '[trecho omitido] what is the price',
+    'prospect', 'model', v_policy);
+  v_review := ops.open_scripted_review(v_run, 'FD7 synthetic draft', 'person', null, 'front-desk-suite');
+  select r.* into v_item from ops.review_items r where r.id = v_review;
+
+  v_conv := ops.read_review_detail(pg_temp.id('tenant_a'), v_item.id) -> 'conversation';
+  if v_conv is distinct from jsonb_build_object(
+       'status', 'available',
+       'screening', jsonb_build_object('messageClass', 'mixed', 'disposition', 'model', 'fixedMessageKey', null,
+                                       'screenedMessage', '[trecho omitido] what is the price'),
+       'replyDraft', 'FD7 synthetic draft', 'contentRedacted', false, 'newerMessage', false) then
+    raise exception 'F7: the review does not show the screened text and the draft: %', v_conv;
+  end if;
+  v_detail := ops.read_review_detail(pg_temp.id('tenant_a'), v_item.id)::text;
+  if strpos(v_detail, 'FD7-RAW-MARKER') > 0 or strpos(v_detail, 'worry') > 0 then
+    raise exception 'F7: the raw message reached the review';
+  end if;
+
+  -- The contact writes again: the reply is now out of context.
+  perform ops.receive_whatsapp_message('300000000000071', 'wamid.FD7B', '5511900000071',
+                                       'Synthetic follow-up question', now() - interval '1 minute');
+  if not (ops.read_review_detail(pg_temp.id('tenant_a'), v_item.id) #>> '{conversation,newerMessage}')::boolean
+     or not ops.cos_review_superseded(pg_temp.id('tenant_a'), v_item) then
+    raise exception 'F7: a newer message did not mark the review superseded';
+  end if;
+  -- The newer message's own reply is not superseded by the older message.
+  select r.* into v_run from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7B');
+  v_review := ops.open_scripted_review(v_run, 'FD7 second draft', 'person', null, 'front-desk-suite');
+  if ops.cos_review_superseded(pg_temp.id('tenant_a'), (select r from ops.review_items r where r.id = v_review)) then
+    raise exception 'F7: the newest message read as superseded';
+  end if;
+
+  -- Once its content is redacted, the review shows no draft.
+  v_health := v_item;
+  v_health.content_redacted_at := now();
+  if (ops.cos_review_conversation(pg_temp.id('tenant_a'), v_health) ->> 'replyDraft') is not null
+     or not (ops.cos_review_conversation(pg_temp.id('tenant_a'), v_health) ->> 'contentRedacted')::boolean then
+    raise exception 'F7: a redacted review still showed its draft';
+  end if;
+
+  -- Outside synthetic or test data, or another capability: nothing of it.
+  v_health := v_item;
+  v_health.capability := 'task_assessment';
+  if ops.cos_review_conversation(pg_temp.id('tenant_a'), v_health) <> '{"status": "unavailable"}'::jsonb then
+    raise exception 'F7: another capability showed its conversation';
+  end if;
+  alter table ops.tasks disable trigger tasks_guard_update;
+  alter table ops.tasks disable trigger tasks_data_class_immutable;
+  update ops.tasks set data_class = 'health' where id = v_item.task_id;
+  alter table ops.tasks enable always trigger tasks_data_class_immutable;
+  alter table ops.tasks enable always trigger tasks_guard_update;
+  if ops.cos_review_conversation(pg_temp.id('tenant_a'), v_item) <> '{"status": "unavailable"}'::jsonb then
+    raise exception 'F7: a review of health data showed its conversation';
   end if;
 end
 $$;

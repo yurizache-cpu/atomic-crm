@@ -118,7 +118,7 @@ begin
    cross join (values ('anon'), ('authenticated'), ('service_role'), ('ops_worker')) as r(rolname)
    where n.nspname = 'ops'
      and p.proname in ('receive_whatsapp_message', 'receive_whatsapp_status', 'configure_whatsapp_channel',
-                       'request_outbound_send', 'begin_outbound_send', 'settle_outbound_send',
+                       'request_outbound_send', 'begin_outbound_send', 'confirm_outbound_send', 'settle_outbound_send',
                        'mark_outbound_indeterminate', 'crm_contact_by_phone', 'whatsapp_send_eligibility',
                        'admit_inbound_core')
      and has_function_privilege(r.rolname, p.oid, 'execute');
@@ -135,7 +135,7 @@ begin
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'ops'
      and p.proname in ('receive_whatsapp_message', 'receive_whatsapp_status', 'configure_whatsapp_channel',
-                       'request_outbound_send', 'begin_outbound_send', 'settle_outbound_send',
+                       'request_outbound_send', 'begin_outbound_send', 'confirm_outbound_send', 'settle_outbound_send',
                        'mark_outbound_indeterminate', 'crm_contact_by_phone', 'whatsapp_send_eligibility',
                        'admit_inbound_core', 'admit_inbound_message')
      and (p.prosecdef <> (p.proname in ('receive_whatsapp_message', 'receive_whatsapp_status'))

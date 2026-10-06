@@ -29,6 +29,7 @@ import {
   NEXT_ACTIONS,
   OBJECTIONS,
 } from "../decision/structured/leadIntelligence.ts";
+import { FIXED_MESSAGE_KEYS } from "../frontDesk/configuration.ts";
 import * as leadTriage from "../models/leadTriage.ts";
 import { MODEL_ERROR_CATEGORIES } from "../models/errors.ts";
 import { FAILURE_CLASSES } from "../worker/failures.ts";
@@ -106,6 +107,13 @@ describe("the contract vocabularies equal the engine's", () => {
       leadTriage.NEXT_ACTION_MAX_LENGTH,
     );
     expect(contracts.MAX_TRIAGE_FLAGS).toBe(leadTriage.MAX_TRIAGE_FLAGS);
+  });
+
+  it("bounds the review's draft as the lead_triage output contract does, and names the front desk's fixed texts (ADR 0023 §L)", () => {
+    expect(contracts.RESPONSE_DRAFT_MAX_LENGTH).toBe(
+      leadTriage.RESPONSE_DRAFT_MAX_LENGTH,
+    );
+    expect([...contracts.FIXED_MESSAGE_KEYS]).toEqual([...FIXED_MESSAGE_KEYS]);
   });
 
   it("records every model error category, plus exactly the three the runtime adds", () => {
