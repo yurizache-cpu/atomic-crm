@@ -25,7 +25,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 | Item | Status |
 | --- | --- |
-| Local screen before any model, reviewed packs | ✅ pack v3 (PR #31) · 🟡 v4, how leads ask for a person, with configured names, in PR #32 |
+| Local screen before any model, reviewed packs | ✅ pack v4, how leads ask for a person, with configured names (PR #32) |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ (ADR 0023 §D) |
 | Conversation state, human takeover, a person's reply | ✅ (owner CLI) |
 | Review queue; supervised send at most once; privacy notice; identifier clock | ✅ (ADR 0018, ADR 0021) |
@@ -134,7 +134,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 
 ### Next three implementation milestones
 
-1. **Receptionist v4, supervised and live:** PR #29 and PR #31 (prompt v4) are integrated and on staging; pack v4 integrated, the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
+1. **Receptionist v4, supervised and live:** PR #29, PR #31 (prompt v4) and PR #32 (pack v4) are integrated and on staging; the owner's live supervised WhatsApp test on Gemini 3.8 Flash (A).
 2. **Lead journey core:**
    - lead creation for new numbers (after W6);
    - identity resolution and attribution capture at entry;
