@@ -207,6 +207,7 @@ export const EVENT_SOURCES = [
   "agent-runtime",
   "agent-runtime-smoke",
   "company-os-ui",
+  "exception-queue",
   "lead-triage-demo",
   "operator-cli",
   "scheduling-demo",
@@ -246,6 +247,30 @@ export const TRIAGE_SUMMARY_MAX_LENGTH = 1000;
 export const NEXT_ACTION_MAX_LENGTH = 300;
 export const MAX_TRIAGE_FLAGS = 5;
 
+/** ops.exceptions.kind (ADR 0025): what a person must act on. */
+export const EXCEPTION_KINDS = [
+  "safety",
+  "opt_out",
+  "person_requested",
+  "configuration_missing",
+  "message_waiting",
+  "contact_unresolved",
+  "do_not_contact",
+  "send_failed",
+  "send_indeterminate",
+] as const;
+
+/** ops.exceptions.priority, derived from the kind. */
+export const EXCEPTION_PRIORITIES = ["urgent", "high", "normal"] as const;
+
+/** ops.exceptions.resolution: released, reconciled (by the database), resolved, dismissed (by a person). */
+export const EXCEPTION_RESOLUTIONS = [
+  "released",
+  "reconciled",
+  "resolved",
+  "dismissed",
+] as const;
+
 /** Why the advice of a review is not shown (brief §13 item 3). */
 export const ADVICE_WITHHELD_REASONS = [
   "capability_not_pinned",
@@ -277,6 +302,9 @@ export const TenantAdmissionSchema = z.enum(TENANT_ADMISSIONS);
 export const EventSubjectTypeSchema = z.enum(EVENT_SUBJECT_TYPES);
 export const EventSourceSchema = z.enum([...EVENT_SOURCES, OTHER_EVENT_SOURCE]);
 export const AdviceWithheldReasonSchema = z.enum(ADVICE_WITHHELD_REASONS);
+export const ExceptionKindSchema = z.enum(EXCEPTION_KINDS);
+export const ExceptionPrioritySchema = z.enum(EXCEPTION_PRIORITIES);
+export const ExceptionResolutionSchema = z.enum(EXCEPTION_RESOLUTIONS);
 
 export type TaskStatus = z.infer<typeof TaskStatusSchema>;
 export type AgentRunStatus = z.infer<typeof AgentRunStatusSchema>;

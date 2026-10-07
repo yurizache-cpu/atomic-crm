@@ -287,6 +287,16 @@ export async function runMessagingCli(
         );
         return EXIT_REFUSED;
       }
+      if (!report.exceptionsSynced) {
+        // ADR 0025: the settlement stands; only its exception is missing.
+        stderr(
+          jsonLine({
+            warning: "exception_not_recorded",
+            message:
+              "the send is settled, but its exception could not be recorded; run npm run front-desk -- exceptions sync --tenant <uuid>",
+          }),
+        );
+      }
       return EXIT_OK;
     } catch (error) {
       stderr(jsonLine(describeFailure(error, opened)));

@@ -11,14 +11,52 @@ import {
 const TENANT = "00000000-0000-4000-8000-0000000000a1";
 
 describe("the front-desk tool", () => {
-  it("changes state only through its five acts", () => {
+  it("changes state only through its seven acts", () => {
     expect(FRONT_DESK_ACTS).toEqual([
       "config draft",
       "config publish",
       "takeover",
       "release",
       "reply",
+      "exception resolve",
+      "exceptions sync",
     ]);
+  });
+
+  it("lists exceptions read-only, open by default and all with --all", () => {
+    const open = parseFrontDeskArgs(["exceptions", "--tenant", TENANT]);
+    expect(open).toMatchObject({ kind: "exceptions" });
+    expect(open.kind !== "usage_error" && open.switches.has("all")).toBe(false);
+    const all = parseFrontDeskArgs(["exceptions", "--tenant", TENANT, "--all"]);
+    expect(all.kind !== "usage_error" && all.switches.has("all")).toBe(true);
+    expect(FRONT_DESK_ACTS).not.toContain("exceptions");
+    expect(
+      parseFrontDeskArgs(["exceptions", "--tenant", TENANT, "--all", "x"]).kind,
+    ).toBe("usage_error");
+  });
+
+  it("resolves an exception only with its tenant, id, resolution and actor", () => {
+    const full = [
+      "exception",
+      "resolve",
+      "--tenant",
+      TENANT,
+      "--id",
+      TENANT,
+      "--resolution",
+      "dismissed",
+      "--actor",
+      "owner",
+    ];
+    expect(parseFrontDeskArgs(full).kind).toBe("exception resolve");
+    for (const flag of ["--tenant", "--id", "--resolution", "--actor"]) {
+      const index = full.indexOf(flag);
+      const without = [...full.slice(0, index), ...full.slice(index + 2)];
+      expect(parseFrontDeskArgs(without).kind).toBe("usage_error");
+    }
+    expect(
+      parseFrontDeskArgs(["exceptions", "sync", "--tenant", TENANT]).kind,
+    ).toBe("exceptions sync");
   });
 
   it("parses a two-word command and its flags", () => {

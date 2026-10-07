@@ -259,6 +259,7 @@ PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
 1. **The owner** starts a fresh `cloudflared` quick tunnel. The verify token is rotated in `%USERPROFILE%\.atomic-crm\staging.env`, and the owner pastes the tunnel URL and the token into the "Webhook" app's callback in Meta.
 2. **The gateway:** `node scripts/with-staging.mjs --as gateway --pass WHATSAPP_APP_SECRET --pass WHATSAPP_VERIFY_TOKEN -- npm run whatsapp:gateway`.
 3. **The owner** sends a message from the registered test device to the Meta test number. No real patient content is used.
+   - **The device must be a CRM contact on staging, with the opt-out recorded false.** A reply reaches only such a contact (ADR 0021 W6), and once ADR 0025 Part A is integrated a front-desk agent holds every message from any other number before any model (A3), listing it as `contact_unresolved` in `npm run front-desk -- exceptions`.
 4. **The worker:** `AGENT_MODEL_GATEWAY=openrouter STRUCTURED_DECISIONS_GATEWAY=openrouter node scripts/with-staging.mjs --as worker --pass OPENROUTER_API_KEY -- npm run staging:gateway-worker`.
 5. **Verify:** the `test` class, the pool and candidates, the model served, the provider and the cost, the three Jev decisions, and the pending review. Nothing is sent unless the owner accepts the review and runs `npm run messaging -- send`.
 

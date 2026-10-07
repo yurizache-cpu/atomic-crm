@@ -94,22 +94,25 @@ describe("the Activity screen", () => {
     );
     const feed = screen.getByRole("list", { name: "Atividade da empresa" });
     await expect.element(feed).toHaveTextContent("dbtest.contract_probe");
-    // On the second page, an agent_run.started whose agent_run.requested is
-    // on the third page, not loaded yet.
+    // On the first two pages, a fact whose cause is on the third page, not
+    // loaded yet (which fact straddles the break depends on the recording).
     await screen.getByRole("button", { name: "Carregar mais" }).click();
-    const started = FEED().find(
-      (event) =>
-        event.type === "agent_run.started" &&
-        !FEED().some((cause) => cause.id === event.causationId),
+    const third = recorded("list_events", {
+      p_cursor: recorded("list_events", {
+        p_cursor: recorded("list_events").nextCursor,
+      }).nextCursor,
+    }).items;
+    const caused = FEED().find((event) =>
+      third.some((cause) => cause.id === event.causationId),
     )!;
-    await expect.element(feed).toHaveTextContent(started.id);
-    const cause = started.causationId!;
+    await expect.element(feed).toHaveTextContent(caused.id);
+    const cause = caused.causationId!;
     expandDetails();
     expect(
       screen.getByRole("button", { name: `Ir para o evento ${cause}` }).query(),
     ).toBeNull();
     expect(
-      document.getElementById(eventEntryId(started.id))?.textContent,
+      document.getElementById(eventEntryId(caused.id))?.textContent,
     ).toContain(`causado por${cause}`);
 
     await screen.getByRole("button", { name: "Carregar mais" }).click();
@@ -126,10 +129,10 @@ describe("the Activity screen", () => {
     await link.click();
     expect(document.activeElement?.id).toBe(eventEntryId(cause));
     await screen
-      .getByRole("button", { name: `Ir para o evento ${started.id}` })
+      .getByRole("button", { name: `Ir para o evento ${caused.id}` })
       .first()
       .click();
-    expect(document.activeElement?.id).toBe(eventEntryId(started.id));
+    expect(document.activeElement?.id).toBe(eventEntryId(caused.id));
   });
 
   it("lists the stops naming this tenant from their own rows, labelled as writing no event", async () => {

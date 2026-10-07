@@ -662,9 +662,16 @@ describe("every company_os_api response parses with its contract", () => {
       "agent.status_changed",
       "department.status_changed",
       "company.status_changed",
+      // ADR 0025: the uncertain send the fixture marks reaches the queue.
+      "exception.raised",
     ]) {
       expect(types, type).toContain(type);
     }
+    expect(events.find((e) => e.type === "exception.raised")).toMatchObject({
+      source: "exception-queue",
+      facts: { kind: "send_indeterminate", priority: "high" },
+      factsWithheld: false,
+    });
     const probe = events.find((e) => e.type === "dbtest.contract_probe");
     expect(probe).toMatchObject({
       source: contracts.OTHER_EVENT_SOURCE,

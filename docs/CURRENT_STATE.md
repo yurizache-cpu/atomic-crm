@@ -64,7 +64,16 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 - **PR #30** (merge `9069f5c1`, 2026-10-06; ADR 0024): the canonical project memory, docs only, brought up to date with PR #29's merge before its own. The automated review's one P2 (the event catalog's subject types) was fixed before the merge. PR CI on `c6b930dd` matched the historical baseline (§7).
 - **PR #29** (merge `33c03771`, 2026-10-06; ADR 0023 §L, SI-81): the review context, the stale-reply closure (the automated review's two P1 fixed before the merge) and pack `health_pt_br.v2`. Migrations `20261012120000_front_desk_review_context.sql` and `20261013120000_front_desk_stale_reply_closure.sql`. PR CI on `d35325da` and the post-merge run 37453392364 on `33c03771` both match the historical baseline (§7): Build, ESLint, Typecheck, Test and Database pass; e2e exactly 9 failed and 1 skipped; Prettier exactly the two baseline files.
 
-1. **`feature/lead-journey-core`:** this record, then milestone 2 of §8 (the parts that need no owner decision; lead creation for a new number waits for ADR 0021 W6).
+1. **`feature/lead-journey-core`: the exception queue** ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) Part A, Proposed for the owner's review; SI-82, SI-80 amended).
+   - **What it is:** `ops.exceptions`, one store of the moments a person must act on. The database raises them where the facts are decided:
+     - the screening raises danger, a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach;
+     - a send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
+   - Exceptions are deduplicated while open, resolved once (by a release, provider evidence, a reachable contact, or a person's act), and recorded as `exception.raised` and `exception.resolved` (source `exception-queue`).
+   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model; on acceptance this amends ADR 0023 §G. A release is refused while danger or an opt-out is open.
+   - **Owner tool:** `npm run front-desk -- exceptions | exception resolve | exceptions sync`.
+   - **Migration:** `20261016120000_exception_queue.sql`.
+   - **Local evidence (2026-10-07):** typecheck and ESLint clean; the `functions` project passes (one 5 s timeout under load passed when re-run alone); 27 SQL suites pass (new F8); 450 driver-backed cases pass (new `exceptionQueue.dbtest.ts`) after the committed browser recordings were re-recorded (the tenant feed has one more event, `exception.raised`); the `app` project passes; the upgrade replay passes.
+   - **Next:** the PR into `feature/clinical-phase-1`, CI against the baseline (§7), the automated review, the owner's review of ADR 0025 Part A; merge only on the owner's request. After the merge, on staging: apply `20261016120000` (pinned CLI, dry run first, never the seed), run the hosted verifier, then `front-desk exceptions sync` once for the sends that already exist.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -95,7 +104,8 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 | # | Item | Blocks |
 | --- | --- | --- |
 | 1 | The persona name ("Lia" is provisional), how and when the video-call link is sent (missing from the knowledge), and whether to test Gemini with less reasoning | The live receptionist test's quality |
-| 2 | ADR 0021 W6: may a lead be created for a new WhatsApp number? | Real lead entry (workstream A) |
+| 2 | ADR 0021 W6: may a lead be created for a new WhatsApp number? ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) B1 recommends an owner act from a held conversation) | Real lead entry (workstream A) |
+| 2a | ADR 0025: accept or amend Part A (the exception queue, and A3, which amends ADR 0023 §G); decide Part B, B1 to B7 (lead creation, CRM contact writes, identity resolution, attribution, structured triage and its health fields, lead event subjects, a message from a contact who opted out) | The exception queue's merge; the rest of milestone 2 |
 | 3 | ADR 0021 W7 (a production webhook host; Netlify recommended) and W8 (Meta actions: templates, app live); the system-user token expires 2026-12-01 | Production WhatsApp; messages outside the 24-hour window |
 | 4 | A payment provider | Workstream C |
 | 5 | Calendar provider authentication, token storage and data-processing terms (Google Calendar, Meet) | Workstream B's calendar part |
@@ -132,15 +142,16 @@ From the ROADMAP program map:
    - deterministic identity resolution;
    - attribution capture at entry;
    - structured triage (paths A and B);
-   - the first catalogued events (`lead.created`, `lead.attribution_captured`, `triage.completed`, `exception.raised`).
+   - the first catalogued events (`lead.created`, `lead.attribution_captured`, `triage.completed`, `exception.raised`). `exception.raised` and `exception.resolved` are built on `feature/lead-journey-core` (ADR 0025 Part A); the rest waits on ADR 0025 Part B.
 3. **Scheduling in the journey (workstream B):** offering real slots in conversation, the booking page with holds, `outcome.first_appointment_booked`, and rescheduling and cancellation through the conversation. Calendar and Meet follow once the provider decision is made.
 
 ## 9. Exactly next action
 
-1. **When the owner confirms the team's names:** publish on staging an operating policy v5 with `handoffNames`.
-2. **Run the live supervised receptionist test** on the Meta test number:
+1. **Open the exception queue's PR** (§3, item 1): CI against the baseline (§7), the automated review, then the owner's review of ADR 0025 Part A.
+2. **When the owner confirms the team's names:** publish on staging an operating policy v5 with `handoffNames`.
+3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
    - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;
    - each reply accepted by the owner in the browser at AAL2, then carried by `npm run messaging -- send`. The 2026-10-05 autonomous test used a session-local auto-accept script that is not in the repository and is not a product feature;
    - then stop everything and rotate the verify token.
-3. **Then start milestone 2 of §8.**
+4. **Then the rest of milestone 2 of §8,** once the owner decides ADR 0025 Part B.

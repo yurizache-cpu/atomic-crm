@@ -513,4 +513,201 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- F8. ADR 0025: the exception queue's store. Backend only; raised open, once
+--     per subject and kind while open, with its kind's priority; identity
+--     immutable; resolved once; never deleted or truncated on its own; a
+--     release resolves what it ends, and waits for a person on danger.
+--     (Where each kind is raised: exceptionQueue.dbtest.ts and
+--     whatsappOutbound.dbtest.ts.)
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_bad    text;
+  v_conv   uuid;
+  v_task   uuid;
+  v_id     uuid;
+  v_again  uuid;
+  v_n      integer;
+  v_answer jsonb;
+  ta       uuid := pg_temp.id('tenant_a');
+  ca       uuid := pg_temp.id('company_a');
+begin
+  select string_agg(format('%s on ops.exceptions to %s', v.p, v.r), ', ') into v_bad
+    from (select r, p
+            from unnest(array['public', 'anon', 'authenticated', 'service_role', 'ops_worker', 'ops_gateway',
+                              'ops_operator_api']) r,
+                 unnest(array['select', 'insert', 'update', 'delete', 'truncate', 'references', 'trigger']) p) v
+   where has_table_privilege(v.r, 'ops.exceptions', v.p);
+  if v_bad is not null then
+    raise exception 'F8: the exception store is reachable: %', v_bad;
+  end if;
+  select string_agg(p.oid::regprocedure::text, ', ') into v_bad
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'ops'
+     and p.proname in ('guard_exception', 'refuse_exception_truncate', 'open_exception', 'close_exception',
+                       'sync_send_exceptions', 'sync_tenant_send_exceptions', 'resolve_exception')
+     and (p.prosecdef
+          or has_function_privilege('ops_worker', p.oid, 'execute') or has_function_privilege('ops_gateway', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute') or has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('ops_operator_api', p.oid, 'execute'));
+  if v_bad is not null then
+    raise exception 'F8: an exception function is a definer or reachable: %', v_bad;
+  end if;
+  if (select count(*) from pg_trigger t
+       where t.tgrelid = 'ops.exceptions'::regclass and not t.tgisinternal and t.tgenabled = 'A') <> 2 then
+    raise exception 'F8: the exception store''s two guards are not both ENABLE ALWAYS';
+  end if;
+
+  select m.conversation_id, m.task_id into v_conv, v_task from ops.inbound_messages m
+   where m.external_message_id = 'wamid.FD1';
+
+  -- Raised open, once while open, with its kind's priority and one event.
+  v_id := ops.open_exception(ta, ca, v_task, 'person_requested', v_conv, null, null, 'fd-suite');
+  v_again := ops.open_exception(ta, ca, v_task, 'person_requested', v_conv, null, null, 'fd-suite');
+  if v_id is null or v_again is not null then
+    raise exception 'F8: an open episode was raised twice';
+  end if;
+  if (select e.priority from ops.exceptions e where e.id = v_id) <> 'high' then
+    raise exception 'F8: a request for a person is not high priority';
+  end if;
+  select count(*) into v_n from ops.events e
+   where e.tenant_id = ta and e.type = 'exception.raised' and e.payload ->> 'exception_id' = v_id::text
+     and e.source = 'exception-queue' and e.subject_type = 'task' and e.subject_id = v_task;
+  if v_n <> 1 then
+    raise exception 'F8: the raise recorded % events about its task, expected 1', v_n;
+  end if;
+
+  -- Shapes the store refuses.
+  begin
+    insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
+                                conversation_id, raised_by)
+    values (ta, ca, v_task, 'safety', 'normal', 'conversation', v_conv, v_conv, 'fd-suite');
+    raise exception 'F8: danger was stored below urgent';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
+                                conversation_id, raised_by)
+    values (ta, ca, v_task, 'send_failed', 'normal', 'conversation', v_conv, v_conv, 'fd-suite');
+    raise exception 'F8: a send exception was stored about a conversation';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
+                                conversation_id, raised_by)
+    values (ta, ca, v_task, 'contact_unresolved', 'high', 'conversation', v_conv, v_conv, 'fd-suite');
+    raise exception 'F8: an unresolved contact was stored without why';
+  exception when check_violation then null;
+  end;
+  begin
+    insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
+                                conversation_id, raised_by, resolved_at, resolved_by, resolution)
+    values (ta, ca, v_task, 'message_waiting', 'normal', 'conversation', v_conv, v_conv, 'fd-suite',
+            now(), 'fd-suite', 'dismissed');
+    raise exception 'F8: an exception was born resolved';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
+                                conversation_id, raised_by)
+    values (ta, ca, v_task, 'person_requested', 'high', 'conversation', v_conv, v_conv, 'fd-suite');
+    raise exception 'F8: a second open episode was stored';
+  exception when unique_violation then null;
+  end;
+
+  -- Identity immutable; never deleted or truncated on its own.
+  begin
+    update ops.exceptions set kind = 'opt_out', priority = 'normal' where id = v_id;
+    raise exception 'F8: an exception changed kind';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    delete from ops.exceptions where id = v_id;
+    raise exception 'F8: an exception was deleted while its subject exists';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    truncate ops.exceptions;
+    raise exception 'F8: the exception store was truncated';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- The release resolves what it ends, once, by the person who released it.
+  perform ops.take_over_conversation(ta, v_conv, 'fd-person');
+  if ops.release_conversation(ta, v_conv, 'fd-person') ->> 'state' <> 'released' then
+    raise exception 'F8: the release was not recorded';
+  end if;
+  if not exists (select 1 from ops.exceptions e
+                  where e.id = v_id and e.resolution = 'released' and e.resolved_by = 'fd-person'
+                    and e.resolved_at is not null) then
+    raise exception 'F8: the release did not resolve the request for a person';
+  end if;
+  select count(*) into v_n from ops.events e
+   where e.tenant_id = ta and e.type = 'exception.resolved' and e.payload ->> 'exception_id' = v_id::text
+     and e.payload ->> 'resolution' = 'released';
+  if v_n <> 1 then
+    raise exception 'F8: the resolution recorded % events, expected 1', v_n;
+  end if;
+  if ops.close_exception(v_id, 'dismissed', 'fd-suite') then
+    raise exception 'F8: a resolved exception was resolved again';
+  end if;
+  begin
+    update ops.exceptions set resolution = 'dismissed', resolved_by = 'fd-suite' where id = v_id;
+    raise exception 'F8: a resolved exception changed';
+  exception when sqlstate 'OS403' then null;
+  end;
+  v_answer := ops.resolve_exception(ta, v_id, 'dismissed', 'fd-person');
+  if v_answer ->> 'state' <> 'already_resolved' or v_answer ->> 'resolution' <> 'released' then
+    raise exception 'F8: a repeated resolution did not answer the recorded one: %', v_answer;
+  end if;
+
+  -- A new occurrence is a new episode.
+  v_again := ops.open_exception(ta, ca, v_task, 'person_requested', v_conv, null, null, 'fd-suite');
+  if v_again is null or v_again = v_id then
+    raise exception 'F8: a resolved episode absorbed a new occurrence';
+  end if;
+
+  -- Danger is resolved by a person, never by a release.
+  v_id := ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
+  perform ops.take_over_conversation(ta, v_conv, 'fd-person');
+  begin
+    perform ops.release_conversation(ta, v_conv, 'fd-person');
+    raise exception 'F8: a conversation was released with danger open';
+  exception when sqlstate 'OS409' then null;
+  end;
+  begin
+    perform ops.resolve_exception(pg_temp.id('tenant_b'), v_id, 'resolved', 'fd-person');
+    raise exception 'F8: another tenant resolved the exception';
+  exception when sqlstate 'OS404' then null;
+  end;
+  begin
+    perform ops.resolve_exception(ta, v_id, 'released', 'fd-person');
+    raise exception 'F8: a person recorded a release as a resolution';
+  exception when sqlstate 'OS400' then null;
+  end;
+  begin
+    perform ops.resolve_exception(ta, v_id, 'resolved', 'two words');
+    raise exception 'F8: a malformed actor resolved an exception';
+  exception when sqlstate 'OS400' then null;
+  end;
+  -- One statement each: an expression reads the snapshot taken before its own calls.
+  if ops.resolve_exception(ta, v_id, 'resolved', 'fd-person') ->> 'state' <> 'resolved' then
+    raise exception 'F8: a person could not resolve danger';
+  end if;
+  if ops.release_conversation(ta, v_conv, 'fd-person') ->> 'state' <> 'released' then
+    raise exception 'F8: the conversation was not released once danger was resolved';
+  end if;
+  if exists (select 1 from ops.exceptions e where e.conversation_id = v_conv and e.resolved_at is null) then
+    raise exception 'F8: the release left an exception open';
+  end if;
+
+  -- A send the tenant does not have syncs to nothing, and raises nothing.
+  if ops.sync_send_exceptions(ta, gen_random_uuid(), 'fd-suite') <> '{"opened": 0, "closed": 0}'::jsonb then
+    raise exception 'F8: an unknown send was synced';
+  end if;
+end
+$$;
+
 rollback;

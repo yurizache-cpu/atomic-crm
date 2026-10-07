@@ -2147,7 +2147,7 @@
         "events": {
           "items": [
             {
-              "id": "00000000-0000-4000-8000-00300000007d",
+              "id": "00000000-0000-4000-8000-00300000007e",
               "type": "communication.delivery_updated",
               "facts": {
                 "status": "failed",
@@ -3851,6 +3851,17 @@
         "events": {
           "items": [
             {
+              "id": "00000000-0000-4000-8000-00300000007d",
+              "type": "exception.raised",
+              "facts": { "kind": "send_indeterminate", "priority": "high" },
+              "source": "exception-queue",
+              "createdAt": "2026-09-22T10:00:00.000000Z",
+              "subjectId": "00000000-0000-4000-8000-00200000000d",
+              "causationId": null,
+              "subjectType": "task",
+              "factsWithheld": false
+            },
+            {
               "id": "00000000-0000-4000-8000-00300000007c",
               "type": "communication.outbound_indeterminate",
               "facts": {
@@ -4021,7 +4032,7 @@
         "events": {
           "items": [
             {
-              "id": "00000000-0000-4000-8000-00300000007f",
+              "id": "00000000-0000-4000-8000-003000000080",
               "type": "dbtest.contract_probe",
               "facts": {},
               "source": "other",
@@ -4318,11 +4329,22 @@
     },
     {
       "operation": "list_events",
-      "args": { "p_cursor": "ev1:00000000-0000-4000-8000-00300000001c" },
+      "args": { "p_cursor": "ev1:00000000-0000-4000-8000-00300000001d" },
       "response": {
         "v": 1,
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
+          {
+            "id": "00000000-0000-4000-8000-00300000001c",
+            "type": "agent_run.started",
+            "facts": { "to_status": "running", "from_status": "pending" },
+            "source": "agent-runtime",
+            "createdAt": "2026-09-22T10:00:00.000000Z",
+            "subjectId": "00000000-0000-4000-8000-002100000001",
+            "causationId": "00000000-0000-4000-8000-003000000018",
+            "subjectType": "agent_run",
+            "factsWithheld": false
+          },
           {
             "id": "00000000-0000-4000-8000-00300000001b",
             "type": "lead_triage.admitted",
@@ -4634,11 +4656,22 @@
     },
     {
       "operation": "list_events",
-      "args": { "p_cursor": "ev1:00000000-0000-4000-8000-00300000004e" },
+      "args": { "p_cursor": "ev1:00000000-0000-4000-8000-00300000004f" },
       "response": {
         "v": 1,
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
+          {
+            "id": "00000000-0000-4000-8000-00300000004e",
+            "type": "task.assigned",
+            "facts": { "to_status": "assigned", "from_status": "queued" },
+            "source": "other",
+            "createdAt": "2026-09-22T10:00:00.000000Z",
+            "subjectId": "00000000-0000-4000-8000-002000000008",
+            "causationId": null,
+            "subjectType": "task",
+            "factsWithheld": false
+          },
           {
             "id": "00000000-0000-4000-8000-00300000004d",
             "type": "task.created",
@@ -5177,20 +5210,9 @@
             "causationId": "00000000-0000-4000-8000-00300000001c",
             "subjectType": "agent_run",
             "factsWithheld": false
-          },
-          {
-            "id": "00000000-0000-4000-8000-00300000001c",
-            "type": "agent_run.started",
-            "facts": { "to_status": "running", "from_status": "pending" },
-            "source": "agent-runtime",
-            "createdAt": "2026-09-22T10:00:00.000000Z",
-            "subjectId": "00000000-0000-4000-8000-002100000001",
-            "causationId": "00000000-0000-4000-8000-003000000018",
-            "subjectType": "agent_run",
-            "factsWithheld": false
           }
         ],
-        "nextCursor": "ev1:00000000-0000-4000-8000-00300000001c"
+        "nextCursor": "ev1:00000000-0000-4000-8000-00300000001d"
       }
     },
     {
@@ -5286,7 +5308,7 @@
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
           {
-            "id": "00000000-0000-4000-8000-00300000007d",
+            "id": "00000000-0000-4000-8000-00300000007e",
             "type": "communication.delivery_updated",
             "facts": {
               "status": "failed",
@@ -6159,6 +6181,17 @@
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
           {
+            "id": "00000000-0000-4000-8000-00300000007d",
+            "type": "exception.raised",
+            "facts": { "kind": "send_indeterminate", "priority": "high" },
+            "source": "exception-queue",
+            "createdAt": "2026-09-22T10:00:00.000000Z",
+            "subjectId": "00000000-0000-4000-8000-00200000000d",
+            "causationId": null,
+            "subjectType": "task",
+            "factsWithheld": false
+          },
+          {
             "id": "00000000-0000-4000-8000-00300000007c",
             "type": "communication.outbound_indeterminate",
             "facts": {
@@ -6267,7 +6300,7 @@
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
           {
-            "id": "00000000-0000-4000-8000-00300000007f",
+            "id": "00000000-0000-4000-8000-003000000080",
             "type": "dbtest.contract_probe",
             "facts": {},
             "source": "other",
@@ -6796,7 +6829,7 @@
         "asOf": "2026-09-22T11:00:00.000000Z",
         "items": [
           {
-            "id": "00000000-0000-4000-8000-00300000007f",
+            "id": "00000000-0000-4000-8000-003000000080",
             "type": "dbtest.contract_probe",
             "facts": {},
             "source": "other",
@@ -6807,7 +6840,7 @@
             "factsWithheld": true
           },
           {
-            "id": "00000000-0000-4000-8000-00300000007e",
+            "id": "00000000-0000-4000-8000-00300000007f",
             "type": "communication.inbound_refused",
             "facts": {
               "reason": "empty_body",
@@ -6821,7 +6854,7 @@
             "factsWithheld": false
           },
           {
-            "id": "00000000-0000-4000-8000-00300000007d",
+            "id": "00000000-0000-4000-8000-00300000007e",
             "type": "communication.delivery_updated",
             "facts": {
               "status": "failed",
@@ -6831,6 +6864,17 @@
             "source": "whatsapp-gateway",
             "createdAt": "2026-09-22T10:00:00.000000Z",
             "subjectId": "00000000-0000-4000-8000-002000000002",
+            "causationId": null,
+            "subjectType": "task",
+            "factsWithheld": false
+          },
+          {
+            "id": "00000000-0000-4000-8000-00300000007d",
+            "type": "exception.raised",
+            "facts": { "kind": "send_indeterminate", "priority": "high" },
+            "source": "exception-queue",
+            "createdAt": "2026-09-22T10:00:00.000000Z",
+            "subjectId": "00000000-0000-4000-8000-00200000000d",
             "causationId": null,
             "subjectType": "task",
             "factsWithheld": false
@@ -7356,20 +7400,9 @@
             "causationId": null,
             "subjectType": "agent_run",
             "factsWithheld": false
-          },
-          {
-            "id": "00000000-0000-4000-8000-00300000004e",
-            "type": "task.assigned",
-            "facts": { "to_status": "assigned", "from_status": "queued" },
-            "source": "other",
-            "createdAt": "2026-09-22T10:00:00.000000Z",
-            "subjectId": "00000000-0000-4000-8000-002000000008",
-            "causationId": null,
-            "subjectType": "task",
-            "factsWithheld": false
           }
         ],
-        "nextCursor": "ev1:00000000-0000-4000-8000-00300000004e"
+        "nextCursor": "ev1:00000000-0000-4000-8000-00300000004f"
       }
     },
     {

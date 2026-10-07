@@ -29,6 +29,13 @@
 //     crash inside TX3 rolls back only the settlement, and the same holds.
 //   * a send TX3 stops was never called: `failed`, class `newer_message`.
 //
+//   TX4   queue    ADR 0025: a send TX3 settled failed or indeterminate gets
+//                  its exception (ops.sync_send_exceptions), in a transaction
+//                  of its own AFTER TX3 committed, never inside the settlement
+//                  of a call that was made. If TX4 fails, the settlement
+//                  stands; the report says so, and `front-desk exceptions
+//                  sync` records it later.
+//
 // Nothing here decides whether a message may be sent; the database does, in
 // TX1, TX2 and TX3. Nothing here retries.
 //
@@ -47,6 +54,7 @@ import type {
   OutboundOutcome,
   OutboundTransport,
 } from "../communication/types.ts";
+import { syncSendExceptions } from "./exceptionQueue.ts";
 import {
   beginOutboundSend,
   confirmOutboundSend,
@@ -77,6 +85,12 @@ export interface SendReport {
    */
   readonly providerOutcome: OutboundOutcome["kind"] | null;
   readonly providerMessageId: string | null;
+  /**
+   * False only when a send settled failed or indeterminate and its exception
+   * could not be recorded after the settlement (ADR 0025); the settlement
+   * stands either way.
+   */
+  readonly exceptionsSynced: boolean;
 }
 
 export interface SendSeams {
@@ -172,6 +186,7 @@ export async function sendApprovedReview(
       settlementRecorded: true,
       providerOutcome: null,
       providerMessageId: null,
+      exceptionsSynced: true,
       ...overrides,
     });
   if (requested.status !== "authorized") {
@@ -196,8 +211,9 @@ export async function sendApprovedReview(
     outcome: null,
     settling: false,
   };
+  let settled: SendReport;
   try {
-    return await owner.withTransaction(async (tx) => {
+    settled = await owner.withTransaction(async (tx) => {
       await holdThroughTheCall(tx);
       const gate = await confirmOutboundSend(
         tx,
@@ -216,13 +232,13 @@ export async function sendApprovedReview(
       if (seams.afterCall) await seams.afterCall(requested.outboundMessageId);
 
       attempt.settling = true;
-      const settled = await settleOutboundSend(
+      const recorded = await settleOutboundSend(
         tx,
         input.tenantId,
         requested.outboundMessageId,
         outcome,
       );
-      return report(settled.status, evidenceOf(outcome));
+      return report(recorded.status, evidenceOf(outcome));
     });
   } catch (error) {
     // Before the call nothing left: the error is the caller's, as for TX1 and
@@ -235,5 +251,18 @@ export async function sendApprovedReview(
       ...evidenceOf(attempt.outcome),
       settlementRecorded: false,
     });
+  }
+
+  // --- TX4: the queue, after the settlement committed. ----------------------
+  if (settled.status !== "failed" && settled.status !== "indeterminate") {
+    return settled;
+  }
+  try {
+    await owner.withTransaction((tx) =>
+      syncSendExceptions(tx, input.tenantId, requested.outboundMessageId),
+    );
+    return settled;
+  } catch {
+    return Object.freeze({ ...settled, exceptionsSynced: false });
   }
 }

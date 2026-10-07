@@ -4535,7 +4535,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability, the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability, the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4602,6 +4602,16 @@ const INVARIANTS: Invariant[] = [
         file: "engine/frontDesk/frontDeskModules.test.ts",
         marker:
           /refuses a price, a time, a date, a link or a number the agent was not given/,
+      },
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /if v_reason is null and v_inbound\.conversation_id is not null and not v_reachable then/,
+      },
+      {
+        file: "engine/domain/exceptionQueue.dbtest.ts",
+        marker:
+          /holds a number with no CRM contact before any model, and lists it once/,
       },
     ],
     caveat:
@@ -4678,6 +4688,72 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "Recording order is the insertion order of each message's facts, which the conversation's row serialises at admission; two messages the provider delivers out of order therefore hold both replies for a person (fail closed). While a call is in flight, the contact's next message waits at its admission, bounded by the gateway's statement timeout, and Meta redelivers one the gateway could not take in time. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
+  },
+  {
+    id: "SI-82",
+    statement:
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises danger, a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, a message waiting in a conversation a person holds that nothing else lists, and a contact no reply can reach; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority; a release resolves only what it ends and is refused while danger or an opt-out is open, which only a person's act resolves; an exception is raised open, its identity never changes, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+    provenBy: ["live database", "migration assertion", "driver-backed test"],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /on conflict \(tenant_id, subject_id, kind\) where resolved_at is null do nothing/,
+      },
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /message = 'ops\.exceptions: an exception leaves only with its subject'/,
+      },
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /message = 'ops\.release_conversation: a safety or opt-out exception is open on this conversation; a person resolves it first'/,
+      },
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker: /v_out\.error_class is distinct from 'newer_message'/,
+      },
+      {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /raise exception 'an exception-queue function is reachable or not a pinned INVOKER: %', v_bad;/,
+      },
+      {
+        file: "engine/domain/outboundSend.ts",
+        marker:
+          /syncSendExceptions\(tx, input\.tenantId, requested\.outboundMessageId\)/,
+      },
+      {
+        file: "contracts/company-os-api/events.ts",
+        marker: /export const ExceptionResolvedFactsSchema = z\.strictObject\(/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F8: the exception store is reachable/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F8: a conversation was released with danger open/,
+      },
+      {
+        file: "engine/domain/exceptionQueue.dbtest.ts",
+        marker:
+          /raises an urgent exception for danger in a conversation a person took over/,
+      },
+      {
+        file: "engine/domain/exceptionQueue.dbtest.ts",
+        marker:
+          /records each exception event with its kind and priority only, about the message's task/,
+      },
+      {
+        file: "engine/domain/whatsappOutbound.dbtest.ts",
+        marker:
+          /keeps the settlement when the send's exception cannot be recorded, and the owner's sync records it later/,
+      },
+    ],
+    caveat:
+      "The queue lists; it pages no one, and no inbox screen reads it yet (Layer 3). A run refused before its screening (an execution stop, the Q8 gate, an exhausted budget) raises nothing, because nothing screened its message. Nothing is backfilled: the owner's sync lists past sends, and a held conversation's next message lists it. The refusal of a direct delete is a tripwire: the database owner can disable triggers.",
   },
 ];
 
