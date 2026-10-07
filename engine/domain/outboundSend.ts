@@ -29,12 +29,13 @@
 //     crash inside TX3 rolls back only the settlement, and the same holds.
 //   * a send TX3 stops was never called: `failed`, class `newer_message`.
 //
-//   TX4   queue    ADR 0025: a send TX3 settled failed or indeterminate gets
+//   TX4   queue    ADR 0025: a send that ends failed or indeterminate gets
 //                  its exception (ops.sync_send_exceptions), in a transaction
 //                  of its own AFTER TX3 committed, never inside the settlement
-//                  of a call that was made. If TX4 fails, the settlement
-//                  stands; the report says so, and `front-desk exceptions
-//                  sync` records it later.
+//                  of a call that was made. Asking again for a send already
+//                  settled so runs TX4 again (it is idempotent). If TX4 fails,
+//                  the settlement stands; the report says so, and asking
+//                  again or `front-desk exceptions sync` records it.
 //
 // Nothing here decides whether a message may be sent; the database does, in
 // TX1, TX2 and TX3. Nothing here retries.
@@ -86,9 +87,11 @@ export interface SendReport {
   readonly providerOutcome: OutboundOutcome["kind"] | null;
   readonly providerMessageId: string | null;
   /**
-   * False only when a send settled failed or indeterminate and its exception
+   * False only when the send ends failed or indeterminate and its exception
    * could not be recorded after the settlement (ADR 0025); the settlement
-   * stands either way.
+   * stands either way. A send still `sending` calls for none yet: it reaches
+   * the queue through a status callback, `outbound mark-indeterminate` or
+   * `front-desk exceptions sync` once five minutes have passed.
    */
   readonly exceptionsSynced: boolean;
 }
@@ -189,9 +192,27 @@ export async function sendApprovedReview(
       exceptionsSynced: true,
       ...overrides,
     });
+  // --- TX4: the queue, after any settlement committed. ----------------------
+  const withQueue = async (result: SendReport): Promise<SendReport> => {
+    if (
+      !result.settlementRecorded ||
+      (result.status !== "failed" && result.status !== "indeterminate")
+    ) {
+      return result;
+    }
+    try {
+      await owner.withTransaction((tx) =>
+        syncSendExceptions(tx, input.tenantId, requested.outboundMessageId),
+      );
+      return result;
+    } catch {
+      return Object.freeze({ ...result, exceptionsSynced: false });
+    }
+  };
+
   if (requested.status !== "authorized") {
     // Already begun, settled or still blocked: never a second call.
-    return report(requested.status);
+    return withQueue(report(requested.status));
   }
 
   // --- TX2: begin. `sending` is durable before anything leaves. -----------
@@ -202,7 +223,7 @@ export async function sendApprovedReview(
     return report("blocked", { blockedReason: begun.reason });
   }
   if (begun.state !== "send") {
-    return report(begun.state);
+    return withQueue(report(begun.state));
   }
   if (seams.afterBegin) await seams.afterBegin(requested.outboundMessageId);
 
@@ -253,16 +274,5 @@ export async function sendApprovedReview(
     });
   }
 
-  // --- TX4: the queue, after the settlement committed. ----------------------
-  if (settled.status !== "failed" && settled.status !== "indeterminate") {
-    return settled;
-  }
-  try {
-    await owner.withTransaction((tx) =>
-      syncSendExceptions(tx, input.tenantId, requested.outboundMessageId),
-    );
-    return settled;
-  } catch {
-    return Object.freeze({ ...settled, exceptionsSynced: false });
-  }
+  return withQueue(settled);
 }

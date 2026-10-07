@@ -383,6 +383,7 @@ describe("at most one provider call", () => {
     expect(await send(scenario, transport)).toMatchObject({
       status: "failed",
       providerCalled: true,
+      exceptionsSynced: true,
     });
     expect(await outboundOf(scenario)).toMatchObject({
       status: "failed",
@@ -428,7 +429,7 @@ describe("at most one provider call", () => {
     ]);
   });
 
-  it("keeps the settlement when the send's exception cannot be recorded, and the owner's sync records it later", async () => {
+  it("keeps the settlement when the send's exception cannot be recorded, and asking again records it", async () => {
     const scenario = await acceptedReview();
     const transport = fakeTransport(() => ({
       kind: "rejected",
@@ -456,14 +457,21 @@ describe("at most one provider call", () => {
     expect(await outboundOf(scenario)).toMatchObject({ status: "failed" });
     expect(await sendExceptions(scenario)).toEqual([]);
 
+    // Asking again calls nothing, and records the exception.
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "failed",
+      providerCalled: false,
+      exceptionsSynced: true,
+    });
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_failed", resolution: null },
+    ]);
+    // The owner's sync finds nothing left to record.
     expect(
       await owner.withTransaction((tx) =>
         syncTenantSendExceptions(tx, { tenantId: TENANT_A }),
       ),
-    ).toEqual({ sends: 1, opened: 1, closed: 0 });
-    expect(await sendExceptions(scenario)).toMatchObject([
-      { kind: "send_failed", resolution: null },
-    ]);
+    ).toEqual({ sends: 1, opened: 0, closed: 0 });
     expect(transport.calls).toHaveLength(1);
   });
 
@@ -701,6 +709,7 @@ describe("provider status callbacks", () => {
         exceptionId: rows[0].id,
         resolution: "resolved",
         actor: "dbtest-person",
+        occurrences: 1,
       }),
     );
     const answer = await deliver(

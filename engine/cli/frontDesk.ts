@@ -10,7 +10,7 @@
 //   npm run front-desk -- reply --tenant <uuid> --conversation <uuid> --text-file <path.txt> --actor <label>
 //   npm run front-desk -- screenings --tenant <uuid>
 //   npm run front-desk -- exceptions --tenant <uuid> [--all]
-//   npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --actor <label>
+//   npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>
 //   npm run front-desk -- exceptions sync --tenant <uuid>
 //
 // READ-ONLY BY DEFAULT. config list, config show, conversations, screenings
@@ -59,7 +59,7 @@ import {
 } from "./cliOutput.ts";
 
 export const FRONT_DESK_SYNOPSIS =
-  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --actor <label> | exceptions sync --tenant <uuid>";
+  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid>";
 
 type CommandName =
   | "config list"
@@ -111,7 +111,7 @@ const COMMANDS: ReadonlyMap<CommandName, Grammar> = new Map([
   ["exceptions", grammar(true, ["tenant"], ["tenant"], ["all"])],
   [
     "exception resolve",
-    grammar(false, ["tenant", "id", "resolution", "actor"]),
+    grammar(false, ["tenant", "id", "resolution", "occurrences", "actor"]),
   ],
   ["exceptions sync", grammar(false, ["tenant"])],
 ]);
@@ -263,6 +263,11 @@ async function run(
           exceptionId: get("id"),
           resolution: get("resolution"),
           actor: get("actor"),
+          // The count the listing showed; the domain refuses anything but a
+          // positive integer.
+          occurrences: /^[0-9]{1,7}$/.test(get("occurrences"))
+            ? Number(get("occurrences"))
+            : Number.NaN,
         }),
       ];
     case "exceptions sync":

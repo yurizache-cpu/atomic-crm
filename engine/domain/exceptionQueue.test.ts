@@ -31,6 +31,7 @@ describe("resolving an exception", () => {
           exceptionId: EXCEPTION,
           resolution,
           actor: "owner",
+          occurrences: 1,
         }),
       ).rejects.toMatchObject({ code: "invalid_argument" });
       expect(queried()).toBe(false);
@@ -45,6 +46,7 @@ describe("resolving an exception", () => {
         exceptionId: "not-a-uuid",
         resolution: "dismissed",
         actor: "owner",
+        occurrences: 1,
       }),
     ).rejects.toBeInstanceOf(CompanyOsError);
     await expect(
@@ -53,8 +55,25 @@ describe("resolving an exception", () => {
         exceptionId: EXCEPTION,
         resolution: "dismissed",
         actor: "two words",
+        occurrences: 1,
       }),
     ).rejects.toMatchObject({ code: "invalid_argument" });
+    expect(queried()).toBe(false);
+  });
+
+  it("refuses a count that is not the positive whole number a listing shows", async () => {
+    const { tx, queried } = untouched();
+    for (const occurrences of [0, -1, 1.5, Number.NaN]) {
+      await expect(
+        resolveException(tx, {
+          tenantId: TENANT,
+          exceptionId: EXCEPTION,
+          resolution: "dismissed",
+          actor: "owner",
+          occurrences,
+        }),
+      ).rejects.toMatchObject({ code: "invalid_argument" });
+    }
     expect(queried()).toBe(false);
   });
 });

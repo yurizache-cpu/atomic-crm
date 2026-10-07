@@ -38,6 +38,7 @@ import {
 import {
   addCrmContact,
   deleteCrmContacts,
+  setDoNotContact,
   gatewayDatabase,
   provisionGatewayRole,
 } from "./testSupport/whatsappFixture.ts";
@@ -82,6 +83,7 @@ interface ExceptionRecord {
   kind: string;
   priority: string;
   detail: string | null;
+  occurrences: number;
   resolution: string | null;
   resolved_by: string | null;
 }
@@ -89,7 +91,7 @@ interface ExceptionRecord {
 const exceptions = async (): Promise<ExceptionRecord[]> =>
   (
     await admin.query<ExceptionRecord>(
-      `select id, kind, priority, detail, resolution, resolved_by from ops.exceptions
+      `select id, kind, priority, detail, occurrences, resolution, resolved_by from ops.exceptions
         where tenant_id = $1 order by raised_at, kind`,
       [TENANT_A],
     )
@@ -160,10 +162,12 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
     ]);
     expect(await eventCount("exception.raised")).toBe(1);
 
-    // The open episode absorbs the next message.
+    // The open episode counts the next message, with no second event.
     await send("E vocês atendem online?");
     await drain(registry);
-    expect(await exceptions()).toHaveLength(1);
+    expect(await exceptions()).toMatchObject([
+      { kind: "contact_unresolved", occurrences: 2, resolution: null },
+    ]);
     expect(await eventCount("exception.raised")).toBe(1);
     expect(provider.calls).toHaveLength(0);
   });
@@ -230,6 +234,58 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
+  it("reconciles a contact marked do-not-contact once the CRM lifts the mark", async () => {
+    await frontDesk();
+    const contact = await addCrmContact(admin, DEVICE, { doNotContact: true });
+    const { provider, registry } = runtime();
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    await setDoNotContact(admin, contact, false);
+    await send("Pode ser terça às 19h?");
+    await drain(registry);
+    expect(await exceptions()).toMatchObject([
+      { kind: "do_not_contact", resolution: "reconciled" },
+    ]);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("decides the contact from the conversation's newest message, whatever order the messages are screened in", async () => {
+    await frontDesk();
+    const contact = await addCrmContact(admin, DEVICE);
+    const { provider, registry } = runtime();
+    // The older message, reachable, waits (a retry's backoff, another worker).
+    await send(ADMINISTRATIVE);
+    const { rows } = await admin.query<{ job_id: string }>(
+      `select r.job_id from ops.inbound_messages i join ops.agent_runs r on r.id = i.agent_run_id
+        where i.tenant_id = $1`,
+      [TENANT_A],
+    );
+    const held = rows[0].job_id;
+    await admin.query(
+      "update ops.jobs set available_at = now() + interval '1 hour' where id = $1",
+      [held],
+    );
+    // The contact is then marked do-not-contact, and writes again.
+    await setDoNotContact(admin, contact, true);
+    await send("Pode ser terça às 19h?");
+    await drain(registry);
+    expect(await open()).toEqual([
+      { kind: "do_not_contact", priority: "normal" },
+    ]);
+
+    // The older message, screened last, reconciles nothing.
+    await admin.query(
+      "update ops.jobs set available_at = now() where id = $1",
+      [held],
+    );
+    await drain(registry);
+    expect(await exceptions()).toMatchObject([
+      { kind: "do_not_contact", occurrences: 2, resolution: null },
+    ]);
+    // Its own admission found the contact reachable, so the model drafted it.
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("keeps a person's reply out of a message no reply can reach", async () => {
     await frontDesk();
     const { registry } = runtime();
@@ -248,11 +304,58 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
         ),
       ),
     ).toBe("invalid_state");
-    const { rows } = await admin.query(
-      "select 1 from ops.review_items where tenant_id = $1",
-      [TENANT_A],
+    const reviews = () =>
+      admin.query("select 1 from ops.review_items where tenant_id = $1", [
+        TENANT_A,
+      ]);
+    expect((await reviews()).rows).toHaveLength(0);
+
+    // Taken over, the reply binds to the held message, whose admission said
+    // no reply could reach the contact: the accept is refused, and nothing
+    // of the act is left.
+    await act((tx) =>
+      takeOverConversation(tx, {
+        tenantId: TENANT_A,
+        conversationId: out.conversation_id,
+        actor: PERSON,
+      }),
     );
-    expect(rows).toHaveLength(0);
+    expect(
+      await refusal(
+        act((tx) =>
+          recordPersonReply(tx, {
+            tenantId: TENANT_A,
+            conversationId: out.conversation_id,
+            text: "Oi!",
+            actor: PERSON,
+          }),
+        ),
+      ),
+    ).toBe("refused");
+    expect((await reviews()).rows).toHaveLength(0);
+  });
+
+  it("leaves an unreachable contact listed when a person releases the request for a person", async () => {
+    await frontDesk();
+    const { registry } = runtime();
+    await send("Quero falar com uma pessoa, por favor.");
+    await drain(registry);
+    const out = await latest();
+    await act((tx) =>
+      releaseConversation(tx, {
+        tenantId: TENANT_A,
+        conversationId: out.conversation_id,
+        actor: PERSON,
+      }),
+    );
+    const rows = await exceptions();
+    expect(rows.find((row) => row.kind === "person_requested")).toMatchObject({
+      resolution: "released",
+    });
+    // A release ends only what it ends.
+    await expect(open()).resolves.toEqual([
+      { kind: "contact_unresolved", priority: "high" },
+    ]);
   });
 });
 
@@ -314,8 +417,11 @@ describe("what a message tells a person reaches the queue, whoever holds the con
       holder: "person",
       holder_reason: "operator",
     });
-    // Danger is listed; nothing else needs saying.
-    expect(await open()).toEqual([{ kind: "safety", priority: "urgent" }]);
+    // Danger is listed, and the held message is counted for the person.
+    expect(await open()).toEqual([
+      { kind: "message_waiting", priority: "normal" },
+      { kind: "safety", priority: "urgent" },
+    ]);
     expect(provider.calls).toHaveLength(1);
   });
 
@@ -342,6 +448,7 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     expect(await open()).toEqual([
       { kind: "message_waiting", priority: "normal" },
     ]);
+    expect((await exceptions())[0]).toMatchObject({ occurrences: 2 });
 
     await act((tx) =>
       releaseConversation(tx, {
@@ -389,6 +496,7 @@ describe("what a message tells a person reaches the queue, whoever holds the con
           exceptionId: safety.id,
           resolution: "resolved",
           actor: PERSON,
+          occurrences: 1,
         }),
       ),
     ).toEqual({ state: "resolved" });
@@ -423,6 +531,61 @@ describe("what a message tells a person reaches the queue, whoever holds the con
       { kind: "configuration_missing", priority: "high" },
     ]);
     expect(provider.calls).toHaveLength(0);
+    // The release ends it.
+    await act((tx) =>
+      releaseConversation(tx, {
+        tenantId: TENANT_A,
+        conversationId: out.conversation_id,
+        actor: PERSON,
+      }),
+    );
+    expect(await exceptions()).toMatchObject([
+      { kind: "configuration_missing", resolution: "released" },
+    ]);
+  });
+
+  it("counts a repeat of danger, and refuses a person's act that did not see it", async () => {
+    await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    const { registry } = runtime();
+    await send(DANGER);
+    await drain(registry);
+    const [safety] = await exceptions();
+    expect(safety).toMatchObject({ kind: "safety", occurrences: 1 });
+    // The person listed it once; the contact writes danger again.
+    await send(DANGER);
+    await drain(registry);
+    expect((await exceptions())[0]).toMatchObject({
+      kind: "safety",
+      occurrences: 2,
+      resolution: null,
+    });
+    const resolve = (occurrences: number) =>
+      act((tx) =>
+        resolveException(tx, {
+          tenantId: TENANT_A,
+          exceptionId: safety.id,
+          resolution: "resolved",
+          actor: PERSON,
+          occurrences,
+        }),
+      );
+    expect(await refusal(resolve(1))).toBe("invalid_state");
+    expect(await resolve(2)).toEqual({ state: "resolved" });
+    const listed = await act((tx) =>
+      listExceptions(tx, { tenantId: TENANT_A, all: true }),
+    );
+    const listedSafety = listed.find((row) => row.kind === "safety")!;
+    expect(listedSafety).toMatchObject({
+      occurrences: 2,
+      resolution: "resolved",
+    });
+    expect(listedSafety.lastRaisedAt >= listedSafety.raisedAt).toBe(true);
+    // The held repeat waits for the person too.
+    expect(listed.find((row) => row.kind === "message_waiting")).toMatchObject({
+      occurrences: 1,
+      resolution: null,
+    });
   });
 
   it("records each exception event with its kind and priority only, about the message's task", async () => {
@@ -437,6 +600,7 @@ describe("what a message tells a person reaches the queue, whoever holds the con
         exceptionId: first.id,
         resolution: "dismissed",
         actor: PERSON,
+        occurrences: 1,
       }),
     );
     const out = await latest();
@@ -493,6 +657,7 @@ describe("the owner's act (ADR 0025 A4)", () => {
           exceptionId: row.id,
           resolution,
           actor,
+          occurrences: 1,
         }),
       );
 

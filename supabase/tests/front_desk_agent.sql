@@ -515,9 +515,10 @@ $$;
 
 -- ---------------------------------------------------------------------------
 -- F8. ADR 0025: the exception queue's store. Backend only; raised open, once
---     per subject and kind while open, with its kind's priority; identity
---     immutable; resolved once; never deleted or truncated on its own; a
---     release resolves what it ends, and waits for a person on danger.
+--     per subject and kind while open (a repeat is counted), with its kind's
+--     priority; identity immutable; resolved once, by a person only for the
+--     count the person saw; never deleted or truncated on its own; a release
+--     resolves what it ends, and waits for a person on danger.
 --     (Where each kind is raised: exceptionQueue.dbtest.ts and
 --     whatsappOutbound.dbtest.ts.)
 -- ---------------------------------------------------------------------------
@@ -568,6 +569,9 @@ begin
   v_again := ops.open_exception(ta, ca, v_task, 'person_requested', v_conv, null, null, 'fd-suite');
   if v_id is null or v_again is not null then
     raise exception 'F8: an open episode was raised twice';
+  end if;
+  if (select e.occurrences from ops.exceptions e where e.id = v_id) <> 2 then
+    raise exception 'F8: a repeat of an open episode was not counted';
   end if;
   if (select e.priority from ops.exceptions e where e.id = v_id) <> 'high' then
     raise exception 'F8: a request for a person is not high priority';
@@ -624,6 +628,11 @@ begin
   exception when sqlstate 'OS403' then null;
   end;
   begin
+    update ops.exceptions set occurrences = occurrences + 2 where id = v_id;
+    raise exception 'F8: a count jumped by more than one occurrence';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
     delete from ops.exceptions where id = v_id;
     raise exception 'F8: an exception was deleted while its subject exists';
   exception when sqlstate 'OS403' then null;
@@ -658,7 +667,7 @@ begin
     raise exception 'F8: a resolved exception changed';
   exception when sqlstate 'OS403' then null;
   end;
-  v_answer := ops.resolve_exception(ta, v_id, 'dismissed', 'fd-person');
+  v_answer := ops.resolve_exception(ta, v_id, 'dismissed', 'fd-person', 2);
   if v_answer ->> 'state' <> 'already_resolved' or v_answer ->> 'resolution' <> 'released' then
     raise exception 'F8: a repeated resolution did not answer the recorded one: %', v_answer;
   end if;
@@ -669,8 +678,15 @@ begin
     raise exception 'F8: a resolved episode absorbed a new occurrence';
   end if;
 
-  -- Danger is resolved by a person, never by a release.
+  -- Danger is resolved by a person, never by a release, and only for the
+  -- occurrences the person saw.
   v_id := ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
+  perform ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
+  begin
+    perform ops.resolve_exception(ta, v_id, 'resolved', 'fd-person', 1);
+    raise exception 'F8: a person resolved danger without seeing its repeat';
+  exception when sqlstate 'OS409' then null;
+  end;
   perform ops.take_over_conversation(ta, v_conv, 'fd-person');
   begin
     perform ops.release_conversation(ta, v_conv, 'fd-person');
@@ -678,22 +694,22 @@ begin
   exception when sqlstate 'OS409' then null;
   end;
   begin
-    perform ops.resolve_exception(pg_temp.id('tenant_b'), v_id, 'resolved', 'fd-person');
+    perform ops.resolve_exception(pg_temp.id('tenant_b'), v_id, 'resolved', 'fd-person', 2);
     raise exception 'F8: another tenant resolved the exception';
   exception when sqlstate 'OS404' then null;
   end;
   begin
-    perform ops.resolve_exception(ta, v_id, 'released', 'fd-person');
+    perform ops.resolve_exception(ta, v_id, 'released', 'fd-person', 2);
     raise exception 'F8: a person recorded a release as a resolution';
   exception when sqlstate 'OS400' then null;
   end;
   begin
-    perform ops.resolve_exception(ta, v_id, 'resolved', 'two words');
+    perform ops.resolve_exception(ta, v_id, 'resolved', 'two words', 2);
     raise exception 'F8: a malformed actor resolved an exception';
   exception when sqlstate 'OS400' then null;
   end;
   -- One statement each: an expression reads the snapshot taken before its own calls.
-  if ops.resolve_exception(ta, v_id, 'resolved', 'fd-person') ->> 'state' <> 'resolved' then
+  if ops.resolve_exception(ta, v_id, 'resolved', 'fd-person', 2) ->> 'state' <> 'resolved' then
     raise exception 'F8: a person could not resolve danger';
   end if;
   if ops.release_conversation(ta, v_conv, 'fd-person') ->> 'state' <> 'released' then

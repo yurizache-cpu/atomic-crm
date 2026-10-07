@@ -302,12 +302,18 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
     // A turn the model may not read is shown only as a marker.
     expect(provider.calls[0].input).toContain("[mensagem não mostrada]");
 
-    // ADR 0025: the request reached the queue once, the held message added
-    // nothing, and the release resolved it.
+    // ADR 0025: the request reached the queue once, the held message was
+    // counted for the person, and the release resolved both.
     expect(await exceptionsOn(held.conversation_id)).toEqual([
       {
         kind: "person_requested",
         priority: "high",
+        resolution: "released",
+        resolved_by: "dbtest-person",
+      },
+      {
+        kind: "message_waiting",
+        priority: "normal",
         resolution: "released",
         resolved_by: "dbtest-person",
       },

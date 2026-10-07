@@ -6,9 +6,9 @@
 --
 --   * ops.record_inbound_screening raises what a message tells a person,
 --     whoever holds the conversation: danger, a request for a person, an
---     opt-out, a fixed text the agent needed and has not published, a message
---     waiting in a conversation a person holds, and a contact no reply can
---     reach. A message from such a contact (its admission's do-not-contact
+--     opt-out, a fixed text the agent needed and has not published, each
+--     message held in a conversation a person holds, and a contact no reply
+--     can reach. A message from such a contact (its admission's do-not-contact
 --     snapshot) is held before any model or fixed text, without moving the
 --     conversation (A3); a later message whose admission finds the contact
 --     reachable reconciles the exception.
@@ -45,9 +45,19 @@ create table ops.exceptions (
   detail              text,
   raised_at           timestamptz not null default now(),
   raised_by           text not null,
+  -- A repeat while the episode is open is counted, never absorbed in silence:
+  -- how many occurrences, the latest one's instant and its message's task.
+  -- A person's act names the count it saw (ops.resolve_exception).
+  occurrences         integer not null default 1,
+  last_raised_at      timestamptz not null default now(),
+  last_task_id        uuid not null,
   resolved_at         timestamptz,
   resolved_by         text,
   resolution          text,
+  constraint exceptions_occurrences_check check (occurrences between 1 and 1000000),
+  constraint exceptions_last_task_fkey
+    foreign key (tenant_id, company_id, last_task_id) references ops.tasks (tenant_id, company_id, id)
+    on delete cascade,
   constraint exceptions_conversation_fkey
     foreign key (tenant_id, company_id, conversation_id) references ops.conversations (tenant_id, company_id, id)
     on delete cascade,
@@ -82,10 +92,11 @@ create table ops.exceptions (
 );
 
 comment on table ops.exceptions is
-  'ADR 0025: one row per exception episode. Raised only by the database where the facts are decided, at most one open per subject and kind, resolved once (released, reconciled, resolved, dismissed). Its history is exception.raised and exception.resolved; the row holds no text, number or CRM id.';
+  'ADR 0025: one row per exception episode. Raised only by the database where the facts are decided, at most one open per subject and kind (a repeat is counted on it), resolved once (released, reconciled, resolved, dismissed). Its history is exception.raised and exception.resolved; the row holds no text, number or CRM id.';
 
 -- At most one open episode per subject and kind: raising it again while it is
--- open does nothing; after it is resolved, a new occurrence is a new episode.
+-- open counts one more occurrence; after it is resolved, a new occurrence is a
+-- new episode.
 create unique index exceptions_one_open
   on ops.exceptions (tenant_id, subject_id, kind) where resolved_at is null;
 create index exceptions_open_idx on ops.exceptions (tenant_id, raised_at) where resolved_at is null;
@@ -93,20 +104,27 @@ create index exceptions_conversation_idx on ops.exceptions (tenant_id, conversat
 create index exceptions_outbound_idx on ops.exceptions (tenant_id, outbound_message_id)
   where outbound_message_id is not null;
 
--- Raised open; its identity never changes; it is resolved once and is then
--- final; it leaves only with its subject (a cascade), never on its own.
+-- Raised open; its identity never changes; while open it only counts a repeat;
+-- it is resolved once and is then final; it leaves only with its subject (a
+-- cascade), never on its own.
 create function ops.guard_exception()
 returns trigger
 language plpgsql
 security invoker
 set search_path to ''
 as $function$
+declare
+  c_repeat     constant text[] := array['occurrences', 'last_raised_at', 'last_task_id'];
+  c_resolution constant text[] := array['resolved_at', 'resolved_by', 'resolution'];
 begin
   if tg_op = 'INSERT' then
     if new.resolved_at is not null or new.resolved_by is not null or new.resolution is not null then
       raise exception using errcode = 'OS403', message = 'ops.exceptions: an exception is raised open';
     end if;
     new.raised_at := now();
+    new.last_raised_at := now();
+    new.occurrences := 1;
+    new.last_task_id := new.task_id;
     return new;
   end if;
   if tg_op = 'DELETE' then
@@ -121,11 +139,17 @@ begin
   if old.resolved_at is not null then
     raise exception using errcode = 'OS403', message = 'ops.exceptions: a resolved exception is final';
   end if;
-  if (to_jsonb(new) - array['resolved_at', 'resolved_by', 'resolution'])
-       is distinct from (to_jsonb(old) - array['resolved_at', 'resolved_by', 'resolution'])
+  -- One more occurrence of the open episode: nothing else changes.
+  if new.resolution is null and new.resolved_by is null
+     and (to_jsonb(new) - c_repeat) is not distinct from (to_jsonb(old) - c_repeat)
+     and new.occurrences = old.occurrences + 1 then
+    new.last_raised_at := now();
+    return new;
+  end if;
+  if (to_jsonb(new) - c_resolution) is distinct from (to_jsonb(old) - c_resolution)
      or new.resolved_by is null or new.resolution is null then
     raise exception using errcode = 'OS403',
-      message = 'ops.exceptions: an exception''s identity is immutable; it is only resolved, once';
+      message = 'ops.exceptions: an exception''s identity is immutable; it only counts a repeat, and is resolved once';
   end if;
   new.resolved_at := now();
   return new;
@@ -156,9 +180,13 @@ alter table ops.exceptions enable row level security;
 alter table ops.exceptions force row level security;
 
 -- ---------------------------------------------------------------------------
--- 2. Raising and resolving. Neither raises an error of its own: a repeat is a
---    no-op, and each episode's two events are keyed on its own id.
+-- 2. Raising and resolving. Neither raises an error of its own: a repeat is
+--    counted on the open episode, and each episode's two events are keyed on
+--    its own id.
 -- ---------------------------------------------------------------------------
+
+-- Opens an episode and answers its id, or counts one more occurrence of the
+-- open one and answers null.
 
 create function ops.open_exception(
   p_tenant_id           uuid,
@@ -176,6 +204,7 @@ set search_path to ''
 as $function$
 declare
   v_id       uuid;
+  v_count    integer;
   v_priority text;
   v_subject  text;
 begin
@@ -190,9 +219,10 @@ begin
   values (
     p_tenant_id, p_company_id, p_task_id, p_kind, v_priority, v_subject,
     coalesce(p_outbound_message_id, p_conversation_id), p_conversation_id, p_outbound_message_id, p_detail, p_actor)
-  on conflict (tenant_id, subject_id, kind) where resolved_at is null do nothing
-  returning id into v_id;
-  if v_id is null then
+  on conflict (tenant_id, subject_id, kind) where resolved_at is null
+  do update set occurrences = ops.exceptions.occurrences + 1, last_task_id = excluded.task_id
+  returning id, occurrences into v_id, v_count;
+  if v_count > 1 then
     return null;
   end if;
   perform ops.record_event(
@@ -337,9 +367,13 @@ begin
 end
 $function$;
 
--- The owner's act: a person resolves or dismisses one exception. A repeat
--- answers the recorded resolution and records nothing.
-create function ops.resolve_exception(p_tenant_id uuid, p_exception_id uuid, p_resolution text, p_actor text)
+-- The owner's act: a person resolves or dismisses one exception, naming how
+-- many occurrences the person saw. If it recurred since, the act is refused
+-- and the person lists it again: nobody resolves an occurrence they did not
+-- see. A repeat of the act answers the recorded resolution and records
+-- nothing.
+create function ops.resolve_exception(
+  p_tenant_id uuid, p_exception_id uuid, p_resolution text, p_actor text, p_occurrences integer)
 returns jsonb
 language plpgsql
 security invoker
@@ -354,6 +388,9 @@ begin
   if p_resolution is null or p_resolution not in ('resolved', 'dismissed') then
     raise exception using errcode = 'OS400', message = 'ops.resolve_exception: a person resolves or dismisses an exception';
   end if;
+  if p_occurrences is null or p_occurrences < 1 then
+    raise exception using errcode = 'OS400', message = 'ops.resolve_exception: name the occurrences the listing showed';
+  end if;
   select e.* into v_row from ops.exceptions e
    where e.tenant_id = p_tenant_id and e.id = p_exception_id
      for update;
@@ -362,6 +399,10 @@ begin
   end if;
   if v_row.resolved_at is not null then
     return jsonb_build_object('state', 'already_resolved', 'resolution', v_row.resolution);
+  end if;
+  if v_row.occurrences <> p_occurrences then
+    raise exception using errcode = 'OS409',
+      message = format('ops.resolve_exception: the exception has %s occurrences, not %s; list it again', v_row.occurrences, p_occurrences);
   end if;
   perform ops.close_exception(v_row.id, p_resolution, p_actor);
   return jsonb_build_object('state', p_resolution);
@@ -419,6 +460,9 @@ declare
   v_reachable   boolean;
   v_text_needed boolean := false;
   v_open        uuid;
+  v_newest_dnc        boolean;
+  v_newest_resolution text;
+  v_waiting           boolean := false;
 begin
   -- The input: exactly the screening the engine produces, nothing more.
   if p_screening is null or jsonb_typeof(p_screening) <> 'object'
@@ -502,6 +546,7 @@ begin
   -- The disposition.
   if v_state.holder = 'person' then
     v_disposition := 'held_for_person';
+    v_waiting := true;
   else
     v_key := case
       when v_safety = 'crisis' then 'safety'
@@ -570,7 +615,16 @@ begin
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'configuration_missing',
                                  v_inbound.conversation_id, null, null, 'front-desk');
     end if;
-    if v_reachable then
+    -- Whether a reply can reach the contact now is the conversation's newest
+    -- admission's answer, not this message's: messages are not screened in
+    -- the order they arrived (several workers, a retry), and an older message
+    -- must neither reconcile a newer refusal nor reopen a settled one.
+    select m.do_not_contact, m.contact_resolution into v_newest_dnc, v_newest_resolution
+      from ops.inbound_messages m
+     where m.tenant_id = v_tenant and m.conversation_id = v_inbound.conversation_id
+     order by m.received_at desc, m.created_at desc
+     limit 1;
+    if not coalesce(v_newest_dnc, true) then
       for v_open in
         select e.id from ops.exceptions e
          where e.tenant_id = v_tenant and e.conversation_id = v_inbound.conversation_id
@@ -578,21 +632,19 @@ begin
       loop
         perform ops.close_exception(v_open, 'reconciled', 'front-desk');
       end loop;
-    elsif v_inbound.contact_resolution = 'found' then
+    elsif v_newest_resolution = 'found' then
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'do_not_contact',
                                  v_inbound.conversation_id, null, null, 'front-desk');
     else
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'contact_unresolved',
                                  v_inbound.conversation_id, null,
-                                 case when v_inbound.contact_resolution in ('not_found', 'ambiguous')
-                                      then v_inbound.contact_resolution else 'unavailable' end,
+                                 case when v_newest_resolution in ('not_found', 'ambiguous')
+                                      then v_newest_resolution else 'unavailable' end,
                                  'front-desk');
     end if;
-    -- A held message nothing else lists still reaches the queue.
-    if v_disposition = 'held_for_person' and not exists (
-         select 1 from ops.exceptions e
-          where e.tenant_id = v_tenant and e.conversation_id = v_inbound.conversation_id
-            and e.subject_kind = 'conversation' and e.resolved_at is null) then
+    -- Every message held because a person holds the conversation is counted
+    -- for that person, whatever else is open: none waits unlisted.
+    if v_waiting then
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'message_waiting',
                                  v_inbound.conversation_id, null, null, 'front-desk');
     end if;
@@ -1024,7 +1076,7 @@ revoke all on function
   ops.close_exception(uuid, text, text),
   ops.sync_send_exceptions(uuid, uuid, text),
   ops.sync_tenant_send_exceptions(uuid),
-  ops.resolve_exception(uuid, uuid, text, text),
+  ops.resolve_exception(uuid, uuid, text, text, integer),
   ops.release_conversation(uuid, uuid, text),
   ops.mark_outbound_indeterminate(uuid, uuid, text)
   from public, anon, authenticated, service_role, ops_worker, ops_gateway;

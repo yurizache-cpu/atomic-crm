@@ -68,9 +68,10 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **What it is:** `ops.exceptions`, one store of the moments a person must act on. The database raises them where the facts are decided:
      - the screening raises danger, a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach;
      - a send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
-   - Exceptions are deduplicated while open, resolved once (by a release, provider evidence, a reachable contact, or a person's act), and recorded as `exception.raised` and `exception.resolved` (source `exception-queue`).
-   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model; on acceptance this amends ADR 0023 §G. A release is refused while danger or an opt-out is open.
-   - **Owner tool:** `npm run front-desk -- exceptions | exception resolve | exceptions sync`.
+   - At most one exception is open per subject and kind. A repeat is counted on it, and a person resolves it only by naming the count the person saw. It is resolved once (by a release, provider evidence, a reachable contact, or a person's act) and recorded as `exception.raised` and `exception.resolved` (source `exception-queue`).
+   - **Not covered yet:** a run that ends after its screening sent it to the model (the agent's daily ceiling, a refusal at the run's start, a failed or indeterminate run) raises nothing (ADR 0025 A5).
+   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model. A release is refused while danger or an opt-out is open. On acceptance, both amend ADR 0023 §G.
+   - **Owner tool:** `npm run front-desk -- exceptions | exception resolve (--occurrences) | exceptions sync`.
    - **Migration:** `20261016120000_exception_queue.sql`.
    - **Local evidence (2026-10-07):** typecheck and ESLint clean; the `functions` project passes (one 5 s timeout under load passed when re-run alone); 27 SQL suites pass (new F8); 450 driver-backed cases pass (new `exceptionQueue.dbtest.ts`) after the committed browser recordings were re-recorded (the tenant feed has one more event, `exception.raised`); the `app` project passes; the upgrade replay passes.
    - **Next:** the PR into `feature/clinical-phase-1`, CI against the baseline (§7), the automated review, the owner's review of ADR 0025 Part A; merge only on the owner's request. After the merge, on staging: apply `20261016120000` (pinned CLI, dry run first, never the seed), run the hosted verifier, then `front-desk exceptions sync` once for the sends that already exist.

@@ -66,6 +66,10 @@ export interface ExceptionRow {
   readonly detail: string | null;
   readonly raisedAt: string;
   readonly raisedBy: string;
+  /** How many times the open episode occurred; a person names it to resolve it. */
+  readonly occurrences: number;
+  readonly lastRaisedAt: string;
+  readonly lastTaskId: string;
   readonly resolvedAt: string | null;
   readonly resolvedBy: string | null;
   readonly resolution: string | null;
@@ -92,12 +96,16 @@ export async function listExceptions(
       detail: string | null;
       raised_at: string;
       raised_by: string;
+      occurrences: number;
+      last_raised_at: string;
+      last_task_id: string;
       resolved_at: string | null;
       resolved_by: string | null;
       resolution: string | null;
     }>(
       `select e.id, e.kind, e.priority, e.subject_kind, e.conversation_id, e.outbound_message_id, e.task_id,
-              e.detail, ${UTC("e.raised_at")} as raised_at, e.raised_by, ${UTC("e.resolved_at")} as resolved_at,
+              e.detail, ${UTC("e.raised_at")} as raised_at, e.raised_by, e.occurrences,
+              ${UTC("e.last_raised_at")} as last_raised_at, e.last_task_id, ${UTC("e.resolved_at")} as resolved_at,
               e.resolved_by, e.resolution
          from ops.exceptions e
         where e.tenant_id = $1 and ($2 or e.resolved_at is null)
@@ -118,6 +126,9 @@ export async function listExceptions(
       detail: row.detail,
       raisedAt: row.raised_at,
       raisedBy: row.raised_by,
+      occurrences: row.occurrences,
+      lastRaisedAt: row.last_raised_at,
+      lastTaskId: row.last_task_id,
       resolvedAt: row.resolved_at,
       resolvedBy: row.resolved_by,
       resolution: row.resolution,
@@ -127,7 +138,11 @@ export async function listExceptions(
   }
 }
 
-/** A person resolves or dismisses one exception; a repeat answers `already_resolved`. */
+/**
+ * A person resolves or dismisses one exception, naming the occurrences the
+ * listing showed: if it recurred since, the database refuses (invalid_state)
+ * and the person lists it again. A repeat answers `already_resolved`.
+ */
 export async function resolveException(
   tx: TxClient,
   input: {
@@ -135,6 +150,7 @@ export async function resolveException(
     readonly exceptionId: string;
     readonly resolution: string;
     readonly actor: string;
+    readonly occurrences: number;
   },
 ): Promise<Record<string, unknown>> {
   if (!(PERSON_RESOLUTIONS as readonly string[]).includes(input.resolution)) {
@@ -143,14 +159,21 @@ export async function resolveException(
       `resolution must be one of ${PERSON_RESOLUTIONS.join(", ")}`,
     );
   }
+  if (!Number.isInteger(input.occurrences) || input.occurrences < 1) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "occurrences must be the positive count the listing showed",
+    );
+  }
   const answer = await one<Record<string, unknown>>(
     tx,
-    "select ops.resolve_exception($1, $2, $3, $4) as answer",
+    "select ops.resolve_exception($1, $2, $3, $4, $5) as answer",
     [
       requireUuid(input.tenantId, "tenantId"),
       requireUuid(input.exceptionId, "exceptionId"),
       input.resolution,
       requireActor(input.actor),
+      input.occurrences,
     ],
   );
   if (!answer || typeof answer !== "object")

@@ -35,7 +35,7 @@ describe("the front-desk tool", () => {
     ).toBe("usage_error");
   });
 
-  it("resolves an exception only with its tenant, id, resolution and actor", () => {
+  it("resolves an exception only with its tenant, id, resolution, the count it saw and actor", () => {
     const full = [
       "exception",
       "resolve",
@@ -45,11 +45,19 @@ describe("the front-desk tool", () => {
       TENANT,
       "--resolution",
       "dismissed",
+      "--occurrences",
+      "2",
       "--actor",
       "owner",
     ];
     expect(parseFrontDeskArgs(full).kind).toBe("exception resolve");
-    for (const flag of ["--tenant", "--id", "--resolution", "--actor"]) {
+    for (const flag of [
+      "--tenant",
+      "--id",
+      "--resolution",
+      "--occurrences",
+      "--actor",
+    ]) {
       const index = full.indexOf(flag);
       const without = [...full.slice(0, index), ...full.slice(index + 2)];
       expect(parseFrontDeskArgs(without).kind).toBe("usage_error");
@@ -103,6 +111,74 @@ describe("the front-desk tool", () => {
     });
     expect(code).toBe(2);
     expect(opened).toBe(false);
+  });
+
+  it("carries --all, and the exception's id, resolution, count and actor, to the database in their places", async () => {
+    const EXCEPTION = "00000000-0000-4000-8000-0000000000e1";
+    const run = async (argv: readonly string[]) => {
+      const asked: { sql: string; params: unknown[] }[] = [];
+      const tx = {
+        async query(sql: string, params: unknown[] = []) {
+          asked.push({ sql, params });
+          return sql.includes("ops.resolve_exception")
+            ? { rows: [{ answer: { state: "dismissed" } }] }
+            : { rows: [] };
+        },
+      };
+      const code = await runFrontDeskCli(argv, {
+        env: { ADMIN_DATABASE_URL: "postgres://unit" },
+        stdout: () => undefined,
+        stderr: () => undefined,
+        openDatabase: () =>
+          ({
+            withTransaction: async <T>(fn: (client: never) => Promise<T>) =>
+              fn(tx as never),
+            identity: async () => {
+              throw new Error("unused");
+            },
+            close: async () => {},
+          }) as never,
+        readTextFile: () => "",
+      });
+      return { code, asked };
+    };
+
+    const open = await run(["exceptions", "--tenant", TENANT]);
+    const all = await run(["exceptions", "--tenant", TENANT, "--all"]);
+    for (const [answer, everything] of [
+      [open, false],
+      [all, true],
+    ] as const) {
+      expect(answer.code).toBe(0);
+      expect(answer.asked[0].sql).toBe("set transaction read only");
+      expect(answer.asked[1].params.slice(0, 2)).toEqual([TENANT, everything]);
+    }
+
+    const resolved = await run([
+      "exception",
+      "resolve",
+      "--tenant",
+      TENANT,
+      "--id",
+      EXCEPTION,
+      "--resolution",
+      "dismissed",
+      "--occurrences",
+      "3",
+      "--actor",
+      "owner",
+    ]);
+    expect(resolved.code).toBe(0);
+    expect(resolved.asked.map((q) => q.sql)).not.toContain(
+      "set transaction read only",
+    );
+    expect(resolved.asked[0].params).toEqual([
+      TENANT,
+      EXCEPTION,
+      "dismissed",
+      "owner",
+      3,
+    ]);
   });
 
   it("reads a text file without its byte-order mark or Windows line ends", () => {
