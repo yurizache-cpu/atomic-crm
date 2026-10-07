@@ -26,7 +26,7 @@
 // the omitted text never leaves the store it came from.
 
 import { redactStructuredIdentifiers } from "../models/identifierRedaction.ts";
-import { HEALTH_PT_BR_V3 } from "./packs/healthPtBr.ts";
+import { HEALTH_PT_BR_V4 } from "./packs/healthPtBr.ts";
 
 export const SANITIZER_VERSION = "front_desk_screen.v3";
 export const OMISSION_MARKER = "[trecho omitido]";
@@ -56,6 +56,16 @@ export interface SanitizerPack {
   readonly benign: readonly RegExp[];
   /** The sender asks for a person. */
   readonly humanRequest: readonly RegExp[];
+  /**
+   * The sender asks for one of the people the tenant names (the operating
+   * policy's `handoffNames`), from v4: the patterns for those names.
+   */
+  readonly namedRequest?: (names: readonly string[]) => readonly RegExp[];
+  /**
+   * From v4: the request patterns also read each line break as the end of a
+   * clause, so a request on its own line starts a clause.
+   */
+  readonly lineBreaksEndClauses?: boolean;
   /** The sender asks to stop receiving messages. */
   readonly optOut: readonly RegExp[];
 }
@@ -206,21 +216,21 @@ function classOf(
 
 const isPunctuation = (separator: string) => /^[.!?;:,\n]+ ?$/u.test(separator);
 
+/** What the tenant's configuration adds to a screening. */
+export interface ScreeningOptions {
+  /** The people a contact may ask for by name; read by packs from v4. */
+  readonly handoffNames?: readonly string[];
+}
+
 /**
- * Screen one inbound message. Pure and deterministic: the same text and pack
- * always give the same result.
+ * The message as the screen reads it: cut to the screened length, line breaks
+ * kept (they are clause boundaries, so only the other whitespace is collapsed
+ * here and the kept text is normalised after, PR #28 review), and structured
+ * identifiers replaced first, so an address or a number becomes its marker
+ * before a dot or a dash inside it can read as a boundary.
  */
-export function sanitizeMessage(
-  text: string,
-  pack: SanitizerPack = HEALTH_PT_BR_V3,
-): SanitizedMessage {
-  const truncated = text.length > MAX_SCREENED_LENGTH;
-  // Line breaks are clause boundaries, so they survive until the split: only
-  // the other whitespace is collapsed here, and the kept text is normalised
-  // after (PR #28 review). Structured identifiers go first, so an address or
-  // a number becomes its marker before a dot or a dash inside it can read as
-  // a boundary.
-  const original = redactStructuredIdentifiers(
+function screenedOriginal(text: string): string {
+  return redactStructuredIdentifiers(
     text
       .slice(0, MAX_SCREENED_LENGTH)
       .replace(/\r\n?/gu, "\n")
@@ -228,11 +238,43 @@ export function sanitizeMessage(
       .replace(/ *\n[\s]*/gu, "\n")
       .trim(),
   );
+}
+
+/**
+ * The texts a pack's request patterns read: the folded message on one line,
+ * since a whole-message phrase may run across a line break, and, from v4,
+ * also with each line break read as the end of a clause.
+ */
+export function requestTexts(text: string, pack: SanitizerPack): string[] {
+  const folded = foldForScreening(screenedOriginal(text));
+  const oneLine = folded.replace(/\s+/gu, " ");
+  return pack.lineBreaksEndClauses
+    ? [oneLine, folded.replace(/[^\S\n]*\n\s*/gu, ". ").replace(/\s+/gu, " ")]
+    : [oneLine];
+}
+
+/**
+ * Screen one inbound message. Pure and deterministic: the same text, pack and
+ * options always give the same result.
+ */
+export function sanitizeMessage(
+  text: string,
+  pack: SanitizerPack = HEALTH_PT_BR_V4,
+  options: ScreeningOptions = {},
+): SanitizedMessage {
+  const truncated = text.length > MAX_SCREENED_LENGTH;
+  const original = screenedOriginal(text);
   const folded = foldForScreening(original);
   // Whole-message phrases (danger, a request for a person, an opt-out) may
   // run across a line break, so they are matched on one line.
   const oneLine = folded.replace(/\s+/gu, " ");
-  const humanRequested = matchesAny(pack.humanRequest, oneLine);
+  const requestPatterns = [
+    ...pack.humanRequest,
+    ...(pack.namedRequest?.(options.handoffNames ?? []) ?? []),
+  ];
+  const humanRequested = requestTexts(text, pack).some((line) =>
+    matchesAny(requestPatterns, line),
+  );
   const optOutRequested = matchesAny(pack.optOut, oneLine);
   const base = {
     sanitizerVersion: SANITIZER_VERSION,

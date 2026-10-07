@@ -196,10 +196,18 @@ type RefusalCode =
   | "gateway_candidate_unavailable"
   | "screening_pack_unknown";
 
-/** ops.front_desk_policy_for_run(): whether the run is a front-desk run, and its pack. */
+/**
+ * ops.front_desk_policy_for_run(): whether the run is a front-desk run, its
+ * pack, and the people a contact may ask for by name (a database before
+ * 20261015120000 does not send them).
+ */
 const frontDeskPolicySchema = z.discriminatedUnion("applies", [
   z.strictObject({ applies: z.literal(false) }),
-  z.strictObject({ applies: z.literal(true), packId: z.string() }),
+  z.strictObject({
+    applies: z.literal(true),
+    packId: z.string(),
+    handoffNames: z.array(z.string().max(60)).max(20).optional(),
+  }),
 ]);
 
 /**
@@ -508,7 +516,11 @@ export function createAgentRunExecuteHandler(
               "screening_pack_unknown",
             );
           }
-          const screening = sanitizeMessage(claim.task.description ?? "", pack);
+          const screening = sanitizeMessage(
+            claim.task.description ?? "",
+            pack,
+            { handoffNames: policy.data.handoffNames ?? [] },
+          );
           const answer = screeningAnswerSchema.safeParse(
             await capabilities.recordInboundScreening(screening),
           );

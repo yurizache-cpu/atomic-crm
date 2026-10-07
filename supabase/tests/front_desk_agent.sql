@@ -151,6 +151,26 @@ begin
     raise exception 'F2: a fixed set without the safety text was drafted';
   exception when sqlstate 'OS400' then null;
   end;
+  -- The people a contact may ask for by name are a short list of names
+  -- (20261015120000): a string, a number or a pattern is not one.
+  begin
+    perform ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
+                                          pg_temp.policy('supervised') || '{"handoffNames": "Rafael"}'::jsonb,
+                                          'fd-owner');
+    raise exception 'F2: a name list that is not a list was drafted';
+  exception when sqlstate 'OS400' then null;
+  end;
+  begin
+    perform ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
+                                          pg_temp.policy('supervised') || '{"handoffNames": ["(?:.*)"]}'::jsonb,
+                                          'fd-owner');
+    raise exception 'F2: a pattern was drafted as a name';
+  exception when sqlstate 'OS400' then null;
+  end;
+  if not ops.agent_configuration_valid('operating_policy',
+           pg_temp.policy('supervised') || '{"handoffNames": ["Rafael", "Dra. Helena"]}'::jsonb) then
+    raise exception 'F2: a list of names was refused';
+  end if;
 
   v1 := ops.draft_agent_configuration(pg_temp.id('tenant_a'), pg_temp.id('agent_a'), 'operating_policy',
                                       pg_temp.policy('supervised'), 'fd-owner');

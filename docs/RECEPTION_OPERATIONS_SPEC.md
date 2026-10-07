@@ -56,12 +56,12 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | --- | --- | --- |
 | Signed WhatsApp gateway, channels, conversations, test-sender registration | ✅ Exists | ADR 0018, ADR 0021; `engine/communication/whatsapp/` |
 | Exactly-once admission of an inbound message as a task | ✅ Exists | SI-43, SI-44; `ops.admit_inbound_core` |
-| Local screen before any model; reviewed packs | ✅ Exists (pack v2 integrated; v3 in PR #31) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
+| Local screen before any model; reviewed packs | ✅ Exists (pack v3 integrated; v4, how leads ask for a person, in PR #32) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ Exists | ADR 0023 §D; `npm run front-desk -- config …` |
 | Conversation state: party kind, phase, holder; append-only transitions | ✅ Exists | ADR 0023 §G, §J |
 | Human takeover, release and a person's reply | ✅ Exists (owner CLI) | ADR 0023 §G |
 | Bounded context: screened turns, configuration, availability, next booking | ✅ Exists | ADR 0023 §E, §H |
-| Reply drafting under the lead triage contract, grounding check | ✅ Exists (prompt `lead_triage.v3`; v4 in PR #31) | ADR 0023 §E; `engine/frontDesk/prompt.ts`, `grounding.ts` |
+| Reply drafting under the lead triage contract, grounding check | ✅ Exists (prompt `lead_triage.v4`) | ADR 0023 §E; `engine/frontDesk/prompt.ts`, `grounding.ts` |
 | Review queue; supervised send as a separate act; at most once | ✅ Exists | ADR 0018 §4, SI-49, SI-50 |
 | The review shows the screened message and the draft; a stale reply is never sent | ✅ Exists (PR #29) | ADR 0023 §L, SI-81 |
 | Privacy notice on the first reply; identifier retention clock | ✅ Exists | ADR 0021 W4/W5, SI-79 |
@@ -153,7 +153,7 @@ Rules:
 - Every reply is a review item. A send is a separate act after acceptance (ADR 0023 §F).
 - A reply stating a price, time, date, link or number it was not given is marked for a person (the grounding check).
 - Small talk and questions about the assistant are answered simply. Asking for a person, danger and opt-out are handled deterministically with fixed messages and a person (ADR 0023 §B, §G).
-- The voice is configuration (persona name, locale, tone examples), never engine text (prompt `lead_triage.v4`, in PR #31).
+- The voice is configuration (persona name, locale, tone examples), never engine text (prompt `lead_triage.v4`).
 
 The persona's naturalness is tested on real model candidates with synthetic conversations ([CURRENT_STATE.md](CURRENT_STATE.md) records the latest choice).
 

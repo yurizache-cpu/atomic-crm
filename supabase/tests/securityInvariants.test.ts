@@ -4535,7 +4535,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names, keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability, the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability, the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4560,7 +4560,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/handlers/agentRunExecute.ts",
         marker:
-          /const screening = sanitizeMessage\(claim\.task\.description \?\? "", pack\);/,
+          /const screening = sanitizeMessage\(\s*claim\.task\.description \?\? "",\s*pack,/,
       },
       {
         file: "engine/frontDesk/messageSanitizer.ts",
@@ -4587,6 +4587,16 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/frontDesk/messageSanitizer.test.ts",
         marker: /leaks no omitted clause \(hard requirement\)/,
+      },
+      {
+        file: "supabase/migrations/20261015120000_front_desk_handoff_names.sql",
+        marker:
+          /raise exception 'the front-desk policy capability is no longer the worker''s alone';/,
+      },
+      {
+        file: "engine/frontDesk/personRequests.test.ts",
+        marker:
+          /changes nothing else: every text reaches a model exactly as under v3/,
       },
       {
         file: "engine/frontDesk/frontDeskModules.test.ts",

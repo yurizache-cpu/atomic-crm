@@ -12,6 +12,7 @@ import {
   HEALTH_PT_BR_V1,
   HEALTH_PT_BR_V2,
   HEALTH_PT_BR_V3,
+  HEALTH_PT_BR_V4,
   SANITIZER_PACKS,
 } from "./packs/healthPtBr.ts";
 
@@ -176,7 +177,7 @@ describe("the screen's mechanics", () => {
       "Oi, estou ansiosa e queria saber o valor",
     );
     expect(screened.sanitizerVersion).toBe(SANITIZER_VERSION);
-    expect(screened.packId).toBe("health_pt_br.v3");
+    expect(screened.packId).toBe("health_pt_br.v4");
     expect(sanitizeMessage("Qual o valor?", HEALTH_PT_BR_V1).packId).toBe(
       "health_pt_br.v1",
     );
@@ -201,6 +202,7 @@ describe("the screen's mechanics", () => {
       HEALTH_PT_BR_V1.id,
       HEALTH_PT_BR_V2.id,
       HEALTH_PT_BR_V3.id,
+      HEALTH_PT_BR_V4.id,
     ]);
   });
 });
