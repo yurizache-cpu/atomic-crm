@@ -75,14 +75,21 @@ export interface ExceptionRow {
   readonly resolution: string | null;
 }
 
+export interface ExceptionListing {
+  readonly exceptions: readonly ExceptionRow[];
+  /** True when more rows matched than the listing shows (MAX_LISTED_EXCEPTIONS). */
+  readonly truncated: boolean;
+}
+
 /**
- * The tenant's open exceptions (or, with `all`, every one), most urgent first,
- * then oldest first. Ids, kinds and instants only.
+ * The tenant's open exceptions (or, with `all`, every one), open first, most
+ * urgent first, then oldest first. Ids, kinds and instants only. At most
+ * MAX_LISTED_EXCEPTIONS rows, and `truncated` says when more matched.
  */
 export async function listExceptions(
   tx: TxClient,
   input: { readonly tenantId: string; readonly all?: boolean },
-): Promise<readonly ExceptionRow[]> {
+): Promise<ExceptionListing> {
   const tenantId = requireUuid(input.tenantId, "tenantId");
   try {
     const { rows } = await tx.query<{
@@ -113,9 +120,9 @@ export async function listExceptions(
                  case e.priority when 'urgent' then 0 when 'high' then 1 else 2 end,
                  e.raised_at, e.id
         limit $3`,
-      [tenantId, input.all === true, MAX_LISTED_EXCEPTIONS],
+      [tenantId, input.all === true, MAX_LISTED_EXCEPTIONS + 1],
     );
-    return rows.map((row) => ({
+    const exceptions = rows.slice(0, MAX_LISTED_EXCEPTIONS).map((row) => ({
       id: row.id,
       kind: row.kind,
       priority: row.priority,
@@ -133,6 +140,7 @@ export async function listExceptions(
       resolvedBy: row.resolved_by,
       resolution: row.resolution,
     }));
+    return { exceptions, truncated: rows.length > MAX_LISTED_EXCEPTIONS };
   } catch (error) {
     throw toDomainError(error);
   }

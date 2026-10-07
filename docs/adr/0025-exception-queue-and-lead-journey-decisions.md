@@ -34,7 +34,7 @@ An adversarial design review of the first draft found that raising only on a hol
 - the tenant, the company, and the task of the message or send it came from;
 - a **kind** from a closed engine vocabulary, and a **priority** the database derives from it;
 - a **subject**: a conversation, or a send of that conversation, by its ops id. It never holds a CRM id, a phone number or text;
-- for `contact_unresolved`, **why**: the admission's own answer (`not_found`, `ambiguous` or `unavailable`);
+- for `contact_unresolved`, **why**: `not_found`, `ambiguous` or `unavailable` (the CRM adapter's answer), or `consent_unknown` (a CRM contact with no recorded opt-out state, which is not an opt-out);
 - when and by whom it was raised and resolved, and the **resolution**;
 - how many times it **occurred** while open, with the latest occurrence's instant and message.
 
@@ -57,8 +57,8 @@ An exception is raised open. While open it only counts a repeat; otherwise its i
 | `person_requested` | The contact asked for a person (pack v4), whoever holds the conversation | high | `released` by the release, or a person's act |
 | `configuration_missing` | The screen needed a fixed text the agent has not published, so a person holds the conversation | high | `released`, or a person's act |
 | `message_waiting` | A message was held because a person holds the conversation (each one counted, whatever else is open) | normal | `released`, or a person's act |
-| `contact_unresolved` | The conversation's newest admission found no single CRM contact (`not_found`, `ambiguous`, `unavailable`) | high | `reconciled` once the newest admission finds the contact reachable, or a person's act |
-| `do_not_contact` | The conversation's newest admission found a CRM contact marked do-not-contact | normal | `reconciled` once the newest admission finds it reachable, or a person's act |
+| `contact_unresolved` | The conversation's newest admission found no single CRM contact (`not_found`, `ambiguous`, `unavailable`), or one with no recorded consent (`consent_unknown`) | high | `reconciled` once the newest admission finds the contact reachable, or a person's act |
+| `do_not_contact` | The conversation's newest admission found a CRM contact whose opt-out flag is recorded (the label reads the read-only CRM adapter again, since the admission stores an unknown consent as unreachable too) | normal | `reconciled` once the newest admission finds it reachable, or a person's act |
 | `send_failed` | A send settled failed, except one the stale-reply gate stopped before any call (`newer_message`, ADR 0023 §L) | normal | `reconciled` by delivery evidence, or a person's act |
 | `send_indeterminate` | A send's outcome is uncertain: settled indeterminate, or left `sending` past the five minutes after which a person may mark it | high | `reconciled` when it leaves indeterminate (to sent, delivered, read or failed), or a person's act |
 
@@ -109,7 +109,7 @@ The holder does **not** move. The agent keeps the conversation, so once a person
 
 ### A4. Who reads and resolves
 
-- **Owner tool, read-only by default:** `npm run front-desk -- exceptions --tenant <uuid> [--all]` lists open exceptions (or all), most urgent first. It shows kinds, priorities, ids and instants, never text.
+- **Owner tool, read-only by default:** `npm run front-desk -- exceptions --tenant <uuid> [--all]` lists open exceptions (or all), most urgent first. It shows kinds, priorities, counts, ids and instants, never text. It lists at most 200; a capped listing ends with a `truncated` line.
 - **Owner act:** `npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>`. `<n>` is the count the listing showed; a stale count is refused. A repeat answers the recorded resolution and records nothing.
 - **Owner act:** `npm run front-desk -- exceptions sync --tenant <uuid>` derives every send's exceptions once. It skips a send a transaction holds. Use it after a send whose exception could not be recorded, and once after applying this migration, for the sends that already exist.
 - **The browser** sees `exception.raised` and `exception.resolved` in the activity feed. The Layer 3 inbox screen is not built here.

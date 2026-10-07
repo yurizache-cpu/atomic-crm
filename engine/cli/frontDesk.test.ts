@@ -1,6 +1,7 @@
 // The owner's front-desk tool: syntax, the act list, and the read-only default.
 
 import { describe, expect, it } from "vitest";
+import { MAX_LISTED_EXCEPTIONS } from "../domain/exceptionQueue.ts";
 import {
   FRONT_DESK_ACTS,
   parseFrontDeskArgs,
@@ -179,6 +180,56 @@ describe("the front-desk tool", () => {
       "owner",
       3,
     ]);
+  });
+
+  it("ends a capped exception listing with a truncated line", async () => {
+    const row = (i: number) => ({
+      id: `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`,
+      kind: "message_waiting",
+      priority: "normal",
+      subject_kind: "conversation",
+      conversation_id: TENANT,
+      outbound_message_id: null,
+      task_id: TENANT,
+      detail: null,
+      raised_at: "2026-10-07T00:00:00.000000Z",
+      raised_by: "front-desk",
+      occurrences: 1,
+      last_raised_at: "2026-10-07T00:00:00.000000Z",
+      last_task_id: TENANT,
+      resolved_at: null,
+      resolved_by: null,
+      resolution: null,
+    });
+    const lines: string[] = [];
+    const tx = {
+      async query(sql: string, params: unknown[] = []) {
+        if (sql === "set transaction read only") return { rows: [] };
+        const limit = params[2] as number;
+        return { rows: Array.from({ length: limit }, (_, i) => row(i)) };
+      },
+    };
+    const code = await runFrontDeskCli(["exceptions", "--tenant", TENANT], {
+      env: { ADMIN_DATABASE_URL: "postgres://unit" },
+      stdout: (line) => lines.push(line),
+      stderr: () => undefined,
+      openDatabase: () =>
+        ({
+          withTransaction: async <T>(fn: (client: never) => Promise<T>) =>
+            fn(tx as never),
+          identity: async () => {
+            throw new Error("unused");
+          },
+          close: async () => {},
+        }) as never,
+      readTextFile: () => "",
+    });
+    expect(code).toBe(0);
+    expect(lines).toHaveLength(MAX_LISTED_EXCEPTIONS + 1);
+    expect(JSON.parse(lines.at(-1) as string)).toEqual({
+      truncated: true,
+      shown: MAX_LISTED_EXCEPTIONS,
+    });
   });
 
   it("reads a text file without its byte-order mark or Windows line ends", () => {

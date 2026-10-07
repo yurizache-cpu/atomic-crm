@@ -251,11 +251,19 @@ async function run(
       ];
     case "screenings":
       return screeningSummary(tx, { tenantId });
-    case "exceptions":
-      return listExceptions(tx, {
+    case "exceptions": {
+      const listing = await listExceptions(tx, {
         tenantId,
         all: command.switches.has("all"),
       });
+      // A capped listing says so on its last line, never silently.
+      return listing.truncated
+        ? [
+            ...listing.exceptions,
+            { truncated: true, shown: listing.exceptions.length },
+          ]
+        : listing.exceptions;
+    }
     case "exception resolve":
       return [
         await resolveException(tx, {

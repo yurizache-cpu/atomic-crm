@@ -221,6 +221,28 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
+  it("does not call a contact with no recorded consent an opt-out", async () => {
+    await frontDesk();
+    const contact = await addCrmContact(admin, DEVICE);
+    // A pre-existing contact may have no lead profile: its consent is unknown.
+    await admin.query(
+      "delete from public.lead_profiles where contact_id = $1",
+      [contact],
+    );
+    const { provider, registry } = runtime();
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    expect(await latest()).toMatchObject({ disposition: "held_for_person" });
+    expect(await exceptions()).toMatchObject([
+      {
+        kind: "contact_unresolved",
+        priority: "high",
+        detail: "consent_unknown",
+      },
+    ]);
+    expect(provider.calls).toHaveLength(0);
+  });
+
   it("holds a contact marked do-not-contact, at normal priority", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE, { doNotContact: true });
@@ -572,9 +594,11 @@ describe("what a message tells a person reaches the queue, whoever holds the con
       );
     expect(await refusal(resolve(1))).toBe("invalid_state");
     expect(await resolve(2)).toEqual({ state: "resolved" });
-    const listed = await act((tx) =>
+    const listing = await act((tx) =>
       listExceptions(tx, { tenantId: TENANT_A, all: true }),
     );
+    expect(listing.truncated).toBe(false);
+    const listed = listing.exceptions;
     const listedSafety = listed.find((row) => row.kind === "safety")!;
     expect(listedSafety).toMatchObject({
       occurrences: 2,
@@ -686,8 +710,8 @@ describe("the owner's act (ADR 0025 A4)", () => {
         listExceptions(tx, { tenantId: TENANT_A, all: true }),
       ]),
     );
-    expect(listed[0]).toHaveLength(0);
-    expect(listed[1]).toMatchObject([
+    expect(listed[0]).toEqual({ exceptions: [], truncated: false });
+    expect(listed[1].exceptions).toMatchObject([
       {
         id: row.id,
         kind: "contact_unresolved",

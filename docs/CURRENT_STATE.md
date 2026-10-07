@@ -17,7 +17,7 @@
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
 | Integration branch | `feature/clinical-phase-1` at `02ae43e7`: PR #32's normal merge (2026-10-07; parents `90be88dc`, PR #31's merge, and `ddd4b162`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Active branch | `feature/lead-journey-core`, from `02ae43e7` (§3) |
+| Open PR #33 | `feature/lead-journey-core`, from `02ae43e7`, into `feature/clinical-phase-1`: the exception queue (§3) |
 | Retained, integrated | `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
@@ -73,8 +73,19 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model. A release is refused while danger or an opt-out is open. On acceptance, both amend ADR 0023 §G.
    - **Owner tool:** `npm run front-desk -- exceptions | exception resolve (--occurrences) | exceptions sync`.
    - **Migration:** `20261016120000_exception_queue.sql`.
-   - **Local evidence (2026-10-07):** typecheck and ESLint clean; the `functions` project passes (one 5 s timeout under load passed when re-run alone); 27 SQL suites pass (new F8); 450 driver-backed cases pass (new `exceptionQueue.dbtest.ts`) after the committed browser recordings were re-recorded (the tenant feed has one more event, `exception.raised`); the `app` project passes; the upgrade replay passes.
-   - **Next:** the PR into `feature/clinical-phase-1`, CI against the baseline (§7), the automated review, the owner's review of ADR 0025 Part A; merge only on the owner's request. After the merge, on staging: apply `20261016120000` (pinned CLI, dry run first, never the seed), run the hosted verifier, then `front-desk exceptions sync` once for the sends that already exist.
+   - **Reviews:**
+     - an adversarial review of the implementation (four lenses, each verified) confirmed 11 findings, answered in `d3e0e61c`. The main one: an open episode absorbed a repeat in silence, so a person could resolve danger without seeing a newer danger message. A repeat is now counted, and the act names the count it saw.
+     - The automated review of PR #33 posted two P2, answered in the next commit: an unknown consent is labelled `contact_unresolved` / `consent_unknown`, never an opt-out, and a capped listing says it is capped.
+   - **Local evidence (2026-10-07, last head):**
+     - typecheck, ESLint and Prettier clean;
+     - `functions` 2,527 tests;
+     - 27 SQL suites (new F8);
+     - 455 driver-backed cases (new `exceptionQueue.dbtest.ts`). The committed browser recordings were re-recorded: the tenant feed has one more event, `exception.raised`;
+     - the `app` project and the upgrade replay pass.
+   - **PR CI on `d3e0e61c`:**
+     - the push run matches the historical baseline (§7): core PASS, e2e exactly 9 failed and 1 skipped, Prettier exactly the two baseline files;
+     - the pull_request run's e2e job ran no test: the runner hit a container-registry rate limit while starting the stack, an infrastructure failure.
+   - **Next:** CI on the new head, then the owner's review of ADR 0025 Part A; merge only on the owner's request. After the merge, on staging: apply `20261016120000` (pinned CLI, dry run first, never the seed), run the hosted verifier, then `front-desk exceptions sync` once for the sends that already exist.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -148,7 +159,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **Open the exception queue's PR** (§3, item 1): CI against the baseline (§7), the automated review, then the owner's review of ADR 0025 Part A.
+1. **PR #33, the exception queue** (§3, item 1): CI on its new head against the baseline (§7), then the owner's review of ADR 0025 Part A and the merge on the owner's request.
 2. **When the owner confirms the team's names:** publish on staging an operating policy v5 with `handoffNames`.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);

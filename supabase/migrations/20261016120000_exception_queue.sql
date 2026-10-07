@@ -81,7 +81,7 @@ create table ops.exceptions (
     and subject_id = coalesce(outbound_message_id, conversation_id)),
   constraint exceptions_detail_shape check (
         (kind = 'contact_unresolved') = (detail is not null)
-    and (detail is null or detail in ('not_found', 'ambiguous', 'unavailable'))),
+    and (detail is null or detail in ('not_found', 'ambiguous', 'unavailable', 'consent_unknown'))),
   constraint exceptions_resolution_shape check (
         (resolved_at is null) = (resolved_by is null)
     and (resolved_at is null) = (resolution is null)
@@ -463,6 +463,7 @@ declare
   v_newest_dnc        boolean;
   v_newest_resolution text;
   v_waiting           boolean := false;
+  v_crm               jsonb;
 begin
   -- The input: exactly the screening the engine produces, nothing more.
   if p_screening is null or jsonb_typeof(p_screening) <> 'object'
@@ -633,8 +634,22 @@ begin
         perform ops.close_exception(v_open, 'reconciled', 'front-desk');
       end loop;
     elsif v_newest_resolution = 'found' then
-      perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'do_not_contact',
-                                 v_inbound.conversation_id, null, null, 'front-desk');
+      -- The admission stores an unknown consent (a contact with no lead
+      -- profile) as unreachable, like an opt-out. Only the label needs the
+      -- difference, so it asks the read-only CRM adapter again: a recorded
+      -- flag is do_not_contact, an unknown one is not an opt-out.
+      v_crm := ops.crm_contact_by_phone(
+        v_tenant, (select c.contact_ref from ops.conversations c where c.id = v_inbound.conversation_id));
+      if v_crm ->> 'state' = 'found' and jsonb_typeof(v_crm -> 'do_not_contact') = 'boolean' then
+        perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'do_not_contact',
+                                   v_inbound.conversation_id, null, null, 'front-desk');
+      else
+        perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'contact_unresolved',
+                                   v_inbound.conversation_id, null,
+                                   case when v_crm ->> 'state' in ('not_found', 'ambiguous', 'unavailable')
+                                        then v_crm ->> 'state' else 'consent_unknown' end,
+                                   'front-desk');
+      end if;
     else
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'contact_unresolved',
                                  v_inbound.conversation_id, null,
