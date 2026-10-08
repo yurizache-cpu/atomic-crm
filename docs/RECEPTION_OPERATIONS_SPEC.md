@@ -56,7 +56,7 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | --- | --- | --- |
 | Signed WhatsApp gateway, channels, conversations, test-sender registration | ✅ Exists | ADR 0018, ADR 0021; `engine/communication/whatsapp/` |
 | Exactly-once admission of an inbound message as a task | ✅ Exists | SI-43, SI-44; `ops.admit_inbound_core` |
-| Local screen before any model; reviewed packs | ✅ Exists (pack v3 integrated; v4, how leads ask for a person, in PR #32) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
+| Local screen before any model; reviewed packs | ✅ Exists (pack v4: how leads ask for a person, with configured names) | ADR 0023 §B, §C; `engine/frontDesk/messageSanitizer.ts` |
 | Versioned configuration: operating policy, playbook, knowledge, fixed messages | ✅ Exists | ADR 0023 §D; `npm run front-desk -- config …` |
 | Conversation state: party kind, phase, holder; append-only transitions | ✅ Exists | ADR 0023 §G, §J |
 | Human takeover, release and a person's reply | ✅ Exists (owner CLI) | ADR 0023 §G |
@@ -73,8 +73,9 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | CRM contact policy for WhatsApp (read-only lookup by phone) | ✅ Exists | SI-48 |
 | Acquisition attribution table (UTM, gclid, campaign, landing page) | 🟡 Table exists; nothing captures into it at entry | CRM `acquisition_attributions` |
 | Jev shadow decisions on the review (business route, lead intelligence, model route) | ✅ Exists, shadow only | ADR 0022 §E, §F |
-| Creating a CRM lead for a new WhatsApp number | 🚫 Blocked by ADR 0021 W6 (replies only to CRM contacts) | Needs an owner decision |
-| Structured triage questionnaire, booking page, holds, payments, packages, session ledger, reminders, renewal, waitlist, exception inbox | ⬜ Planned | §7 to §19 |
+| Exception queue: danger, a request for a person, an opt-out, a missing fixed text, a message waiting with a person, a contact no reply can reach, a failed or uncertain send; a message no reply can reach gets no model | 🟡 Built on `feature/lead-journey-core`, Proposed for the owner's review | ADR 0025 Part A, SI-82; `npm run front-desk -- exceptions` |
+| Creating a CRM lead for a new WhatsApp number | 🚫 Blocked by ADR 0021 W6 (replies only to CRM contacts) | Needs an owner decision (ADR 0025 B1) |
+| Structured triage questionnaire, booking page, holds, payments, packages, session ledger, reminders, renewal, waitlist, exception inbox screen | ⬜ Planned | §7 to §19; ADR 0025 Part B |
 | Autonomous sending | ⬜ Planned; not representable today (ADR 0023 §F) | A later owner decision and ADR |
 
 ## 4. The journey
@@ -152,7 +153,7 @@ The Receptionist answers within administrative and commercial scope, using only:
 Rules:
 - Every reply is a review item. A send is a separate act after acceptance (ADR 0023 §F).
 - A reply stating a price, time, date, link or number it was not given is marked for a person (the grounding check).
-- Small talk and questions about the assistant are answered simply. Asking for a person, danger and opt-out are handled deterministically with fixed messages and a person (ADR 0023 §B, §G).
+- Small talk and questions about the assistant are answered simply. Asking for a person and opt-out are handled deterministically with fixed messages and a person (ADR 0023 §B, §G); danger gets the fixed safety text and stays with the agent (owner decision, 2026-10-08, ADR 0025).
 - The voice is configuration (persona name, locale, tone examples), never engine text (prompt `lead_triage.v4`).
 
 The persona's naturalness is tested on real model candidates with synthetic conversations ([CURRENT_STATE.md](CURRENT_STATE.md) records the latest choice).
@@ -322,6 +323,14 @@ Only unresolved exceptions reach a person. Reception raises `exception_raised` f
 - a provider outage.
 
 Each exception has a type, a subject, a priority and a resolution. The inbox and its UX are Layer 3 ([MANAGEMENT_OS_SPEC.md](MANAGEMENT_OS_SPEC.md) §4).
+
+**Built (ADR 0025 Part A, Proposed for the owner's review):**
+- `ops.exceptions`, raised by the database where the fact is decided:
+  - from the screening: a request for a person, an opt-out, a missing fixed text, a message waiting with a person, and a contact no reply can reach (`contact_unresolved` with its reason, `do_not_contact`). Danger is not one (owner decision, 2026-10-08): the front desk answers leads, and danger gets the owner's fixed safety text while the conversation stays with the agent;
+  - from a send's state, after its settlement: failed, uncertain.
+- Deduplicated while open; resolved by a release, by evidence, or by a person's act; recorded as `exception.raised` and `exception.resolved`.
+- An ambiguous identity is `contact_unresolved` with reason `ambiguous`.
+- **Not yet:** the unknown question, payment inconsistencies, booking conflicts, a low-confidence Jev route, and a provider outage.
 
 ## 20. Send modes and channel rules
 

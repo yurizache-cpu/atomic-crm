@@ -2011,7 +2011,9 @@ begin
          ('task.cancelled', '{from_status,to_status}'), ('task.assigned', '{from_status,to_status}'),
          ('agent_run.started', '{from_status,to_status}'), ('agent_run.succeeded', '{from_status,to_status}'),
          ('agent_run.failed', '{from_status,to_status}'), ('agent_run.indeterminate', '{from_status,to_status}'),
-         ('agent_run.cancelled', '{from_status,to_status}'))
+         ('agent_run.cancelled', '{from_status,to_status}'),
+         -- ADR 0025: the kind and priority, and how it was resolved; never an id.
+         ('exception.raised', '{kind,priority}'), ('exception.resolved', '{kind,priority,resolution}'))
   select string_agg(distinct format('%s %s: facts %s, withheld %s, source %s (stored %s)', i.e ->> 'type', i.e ->> 'id',
                                     i.e -> 'facts', i.e -> 'factsWithheld', i.e ->> 'source', ev.source), '; ')
     into v_bad
@@ -2022,8 +2024,8 @@ begin
            is distinct from coalesce(x.facts, '{}')
       or (i.e -> 'factsWithheld') is distinct from to_jsonb(not ops.cos_event_known(ev.type))
       or (i.e ->> 'source') is distinct from
-           (case when ev.source in ('agent-runtime', 'agent-runtime-smoke', 'company-os-ui', 'lead-triage-demo',
-                                    'operator-cli', 'seed', 'whatsapp-gateway')
+           (case when ev.source in ('agent-runtime', 'agent-runtime-smoke', 'company-os-ui', 'exception-queue',
+                                    'lead-triage-demo', 'operator-cli', 'seed', 'whatsapp-gateway')
                  then ev.source else 'other' end);
   if v_bad is not null then
     raise exception 'N5: an event left with more than its allowlisted facts, or an unlisted source: %', v_bad;

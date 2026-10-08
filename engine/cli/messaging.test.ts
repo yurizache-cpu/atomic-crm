@@ -228,6 +228,74 @@ describe("running the messaging tool", () => {
     expect(out.join("\n")).not.toMatch(/SENTINEL/);
   });
 
+  it("exits 0 with a warning when a settled send's exception cannot be recorded (ADR 0025)", async () => {
+    const OUTBOUND = "00000000-0000-4000-8000-00000000000d";
+    const answers: Record<string, unknown> = {
+      request_outbound_send: {
+        outbound_message_id: OUTBOUND,
+        status: "authorized",
+        created: true,
+      },
+      begin_outbound_send: {
+        state: "send",
+        outbound_message_id: OUTBOUND,
+        provider_target: "200000000000001",
+        to: "5511900000001",
+        body: "SENTINEL-DRAFT",
+      },
+      confirm_outbound_send: { state: "send" },
+      settle_outbound_send: { state: "failed", settled: true },
+    };
+    const asked: string[] = [];
+    const tx = {
+      async query(sql: string) {
+        const fn = /ops\.([a-z_]+)\(/.exec(sql)?.[1] ?? "";
+        asked.push(fn);
+        if (fn === "sync_send_exceptions") {
+          throw Object.assign(new Error("connection terminated"), {
+            code: "08006",
+          });
+        }
+        return { rows: [{ result: answers[fn] }] };
+      },
+    } as unknown as TxClient;
+    const database = {
+      withTransaction: async <T>(fn: (client: TxClient) => Promise<T>) =>
+        fn(tx),
+      identity: async () => {
+        throw new Error("unused");
+      },
+      close: async () => {},
+    } as unknown as WorkerDatabase;
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await runMessagingCli(SEND, {
+      env: { ADMIN_DATABASE_URL: ADMIN, WHATSAPP_ACCESS_TOKEN: TOKEN },
+      stdout: (line) => out.push(line),
+      stderr: (line) => err.push(line),
+      openDatabase: () => database,
+      openTransport: () => ({
+        provider: "meta_whatsapp",
+        async send() {
+          return {
+            kind: "rejected",
+            errorCode: "131047",
+            errorClass: "service_window_closed",
+          };
+        },
+      }),
+    });
+    expect(code).toBe(0);
+    expect(asked).toContain("sync_send_exceptions");
+    expect(JSON.parse(out[0])).toMatchObject({
+      status: "failed",
+      settlementRecorded: true,
+      exceptionsSynced: false,
+    });
+    expect(err.join("\n")).toContain("exception_not_recorded");
+    expect([...out, ...err].join("\n")).not.toMatch(/SENTINEL/);
+  });
+
   it("prints neither the access token nor the database password when the database refuses", async () => {
     const refusal = Object.assign(
       new Error(`password authentication failed ${ADMIN}`),

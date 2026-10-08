@@ -132,6 +132,7 @@ export const sourceLabel = labelFrom({
   "agent-runtime": "Execução do agente",
   "agent-runtime-smoke": "Teste do agente",
   "company-os-ui": "Company OS",
+  "exception-queue": "Fila de exceções",
   "lead-triage-demo": "Demonstração",
   "operator-cli": "Operador",
   "scheduling-demo": "Demonstração de agenda",
@@ -242,6 +243,8 @@ export const eventSentence = labelFrom({
   "calendar.sync_failed": "Sincronização de calendário falhou",
   "calendar.sync_indeterminate": "Sincronização de calendário incerta",
   "calendar.sync_skipped": "Sincronização de calendário sem evento",
+  "exception.raised": "Exceção aberta para uma pessoa",
+  "exception.resolved": "Exceção resolvida",
 });
 
 export const yesNoLabel = (value: boolean): string => (value ? "Sim" : "Não");

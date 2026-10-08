@@ -29,6 +29,14 @@
 //     crash inside TX3 rolls back only the settlement, and the same holds.
 //   * a send TX3 stops was never called: `failed`, class `newer_message`.
 //
+//   TX4   queue    ADR 0025: a send that ends failed or indeterminate gets
+//                  its exception (ops.sync_send_exceptions), in a transaction
+//                  of its own AFTER TX3 committed, never inside the settlement
+//                  of a call that was made. Asking again for a send already
+//                  settled so runs TX4 again (it is idempotent). If TX4 fails,
+//                  the settlement stands; the report says so, and asking
+//                  again or `front-desk exceptions sync` records it.
+//
 // Nothing here decides whether a message may be sent; the database does, in
 // TX1, TX2 and TX3. Nothing here retries.
 //
@@ -47,6 +55,7 @@ import type {
   OutboundOutcome,
   OutboundTransport,
 } from "../communication/types.ts";
+import { syncSendExceptions } from "./exceptionQueue.ts";
 import {
   beginOutboundSend,
   confirmOutboundSend,
@@ -77,6 +86,14 @@ export interface SendReport {
    */
   readonly providerOutcome: OutboundOutcome["kind"] | null;
   readonly providerMessageId: string | null;
+  /**
+   * False only when the send ends failed or indeterminate and its exception
+   * could not be recorded after the settlement (ADR 0025); the settlement
+   * stands either way. A send still `sending` calls for none yet: it reaches
+   * the queue through a status callback, `outbound mark-indeterminate` or
+   * `front-desk exceptions sync` once five minutes have passed.
+   */
+  readonly exceptionsSynced: boolean;
 }
 
 export interface SendSeams {
@@ -172,11 +189,30 @@ export async function sendApprovedReview(
       settlementRecorded: true,
       providerOutcome: null,
       providerMessageId: null,
+      exceptionsSynced: true,
       ...overrides,
     });
+  // --- TX4: the queue, after any settlement committed. ----------------------
+  const withQueue = async (result: SendReport): Promise<SendReport> => {
+    if (
+      !result.settlementRecorded ||
+      (result.status !== "failed" && result.status !== "indeterminate")
+    ) {
+      return result;
+    }
+    try {
+      await owner.withTransaction((tx) =>
+        syncSendExceptions(tx, input.tenantId, requested.outboundMessageId),
+      );
+      return result;
+    } catch {
+      return Object.freeze({ ...result, exceptionsSynced: false });
+    }
+  };
+
   if (requested.status !== "authorized") {
     // Already begun, settled or still blocked: never a second call.
-    return report(requested.status);
+    return withQueue(report(requested.status));
   }
 
   // --- TX2: begin. `sending` is durable before anything leaves. -----------
@@ -187,7 +223,7 @@ export async function sendApprovedReview(
     return report("blocked", { blockedReason: begun.reason });
   }
   if (begun.state !== "send") {
-    return report(begun.state);
+    return withQueue(report(begun.state));
   }
   if (seams.afterBegin) await seams.afterBegin(requested.outboundMessageId);
 
@@ -196,8 +232,9 @@ export async function sendApprovedReview(
     outcome: null,
     settling: false,
   };
+  let settled: SendReport;
   try {
-    return await owner.withTransaction(async (tx) => {
+    settled = await owner.withTransaction(async (tx) => {
       await holdThroughTheCall(tx);
       const gate = await confirmOutboundSend(
         tx,
@@ -216,13 +253,13 @@ export async function sendApprovedReview(
       if (seams.afterCall) await seams.afterCall(requested.outboundMessageId);
 
       attempt.settling = true;
-      const settled = await settleOutboundSend(
+      const recorded = await settleOutboundSend(
         tx,
         input.tenantId,
         requested.outboundMessageId,
         outcome,
       );
-      return report(settled.status, evidenceOf(outcome));
+      return report(recorded.status, evidenceOf(outcome));
     });
   } catch (error) {
     // Before the call nothing left: the error is the caller's, as for TX1 and
@@ -236,4 +273,6 @@ export async function sendApprovedReview(
       settlementRecorded: false,
     });
   }
+
+  return withQueue(settled);
 }

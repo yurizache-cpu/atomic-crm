@@ -9,13 +9,17 @@
 //   npm run front-desk -- release --tenant <uuid> --conversation <uuid> --actor <label>
 //   npm run front-desk -- reply --tenant <uuid> --conversation <uuid> --text-file <path.txt> --actor <label>
 //   npm run front-desk -- screenings --tenant <uuid>
+//   npm run front-desk -- exceptions --tenant <uuid> [--all]
+//   npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>
+//   npm run front-desk -- exceptions sync --tenant <uuid>
 //
-// READ-ONLY BY DEFAULT. config list, config show, conversations and
-// screenings run inside a read-only transaction. The acts are drafting and
+// READ-ONLY BY DEFAULT. config list, config show, conversations, screenings
+// and exceptions run inside a read-only transaction. The acts are drafting and
 // publishing a configuration version, taking a conversation over, releasing
-// it, and recording a person's reply (an accepted review that `npm run
-// messaging -- send` then sends). No act sends a message, calls a model or
-// writes the CRM. The kinds: operating_policy, playbook, knowledge,
+// it, recording a person's reply (an accepted review that `npm run
+// messaging -- send` then sends), resolving or dismissing an exception (ADR
+// 0025), and syncing a tenant's send exceptions after a send could not record
+// its own. No act sends a message, calls a model or writes the CRM. The kinds: operating_policy, playbook, knowledge,
 // fixed_messages; a send mode is staging or supervised, never autonomous.
 //
 // OWNER ONLY. The one variable read is ADMIN_DATABASE_URL. OUTPUT: one JSON
@@ -39,6 +43,11 @@ import {
   takeOverConversation,
 } from "../domain/frontDesk.ts";
 import {
+  listExceptions,
+  resolveException,
+  syncTenantSendExceptions,
+} from "../domain/exceptionQueue.ts";
+import {
   EXIT_USAGE,
   isEntryPoint,
   missingAdminUrlLine,
@@ -50,7 +59,7 @@ import {
 } from "./cliOutput.ts";
 
 export const FRONT_DESK_SYNOPSIS =
-  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --actor <label> | screenings --tenant <uuid>";
+  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid>";
 
 type CommandName =
   | "config list"
@@ -61,7 +70,10 @@ type CommandName =
   | "takeover"
   | "release"
   | "reply"
-  | "screenings";
+  | "screenings"
+  | "exceptions"
+  | "exception resolve"
+  | "exceptions sync";
 
 interface Grammar {
   readonly flags: ReadonlyMap<string, FlagArity>;
@@ -73,8 +85,12 @@ const grammar = (
   readOnly: boolean,
   flags: readonly string[],
   required: readonly string[] = flags,
+  switches: readonly string[] = [],
 ): Grammar => ({
-  flags: new Map(flags.map((name) => [name, "value" as FlagArity])),
+  flags: new Map([
+    ...flags.map((name): [string, FlagArity] => [name, "value"]),
+    ...switches.map((name): [string, FlagArity] => [name, "switch"]),
+  ]),
   required,
   readOnly,
 });
@@ -92,6 +108,12 @@ const COMMANDS: ReadonlyMap<CommandName, Grammar> = new Map([
   ["release", grammar(false, ["tenant", "conversation", "actor"])],
   ["reply", grammar(false, ["tenant", "conversation", "text-file", "actor"])],
   ["screenings", grammar(true, ["tenant"])],
+  ["exceptions", grammar(true, ["tenant"], ["tenant"], ["all"])],
+  [
+    "exception resolve",
+    grammar(false, ["tenant", "id", "resolution", "occurrences", "actor"]),
+  ],
+  ["exceptions sync", grammar(false, ["tenant"])],
 ]);
 
 /** The only commands that change state, in order. */
@@ -104,6 +126,7 @@ export type FrontDeskCommand =
   | {
       readonly kind: CommandName;
       readonly values: ReadonlyMap<string, string>;
+      readonly switches: ReadonlySet<string>;
     };
 
 /** Pure: syntax only. What a value means is the domain's and the database's. */
@@ -131,7 +154,11 @@ export function parseFrontDeskArgs(argv: readonly string[]): FrontDeskCommand {
       [...COMMANDS.values()].some((other) => other.flags.has(flag)),
   });
   if (!parsed.ok) return { kind: "usage_error", message: parsed.message };
-  return { kind: name, values: parsed.flags.values };
+  return {
+    kind: name,
+    values: parsed.flags.values,
+    switches: parsed.flags.switches,
+  };
 }
 
 export interface FrontDeskCliDependencies {
@@ -224,6 +251,35 @@ async function run(
       ];
     case "screenings":
       return screeningSummary(tx, { tenantId });
+    case "exceptions": {
+      const listing = await listExceptions(tx, {
+        tenantId,
+        all: command.switches.has("all"),
+      });
+      // A capped listing says so on its last line, never silently.
+      return listing.truncated
+        ? [
+            ...listing.exceptions,
+            { truncated: true, shown: listing.exceptions.length },
+          ]
+        : listing.exceptions;
+    }
+    case "exception resolve":
+      return [
+        await resolveException(tx, {
+          tenantId,
+          exceptionId: get("id"),
+          resolution: get("resolution"),
+          actor: get("actor"),
+          // The count the listing showed; the domain refuses anything but a
+          // positive integer.
+          occurrences: /^[0-9]{1,7}$/.test(get("occurrences"))
+            ? Number(get("occurrences"))
+            : Number.NaN,
+        }),
+      ];
+    case "exceptions sync":
+      return [await syncTenantSendExceptions(tx, { tenantId })];
   }
 }
 

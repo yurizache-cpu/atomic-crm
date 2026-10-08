@@ -25,6 +25,9 @@ import {
 import {
   ChannelModeSchema,
   EventSourceSchema,
+  ExceptionKindSchema,
+  ExceptionPrioritySchema,
+  ExceptionResolutionSchema,
   EventSubjectTypeSchema,
   ReviewDecisionSchema,
 } from "./vocabulary.ts";
@@ -77,6 +80,8 @@ export const KNOWN_EVENT_TYPES = [
   "calendar.sync_failed",
   "calendar.sync_indeterminate",
   "calendar.sync_skipped",
+  "exception.raised",
+  "exception.resolved",
 ] as const;
 
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
@@ -151,6 +156,19 @@ export const CalendarSyncFactsSchema = z.strictObject({
   error_code: ReasonCodeSchema.nullable(),
 });
 
+/** ADR 0025: an exception's kind and priority; never its id or its subject's. */
+export const ExceptionRaisedFactsSchema = z.strictObject({
+  kind: ExceptionKindSchema.nullable(),
+  priority: ExceptionPrioritySchema.nullable(),
+});
+
+/** ADR 0025: and how it was resolved. */
+export const ExceptionResolvedFactsSchema = z.strictObject({
+  kind: ExceptionKindSchema.nullable(),
+  priority: ExceptionPrioritySchema.nullable(),
+  resolution: ExceptionResolutionSchema.nullable(),
+});
+
 /** The one facts shape each known type may carry (ops.cos_event_facts). */
 export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "company.created": NoFactsSchema,
@@ -199,6 +217,8 @@ export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "calendar.sync_failed": CalendarSyncFactsSchema,
   "calendar.sync_indeterminate": CalendarSyncFactsSchema,
   "calendar.sync_skipped": CalendarSyncFactsSchema,
+  "exception.raised": ExceptionRaisedFactsSchema,
+  "exception.resolved": ExceptionResolvedFactsSchema,
 };
 
 const EventFactsSchema = z.union([
@@ -214,6 +234,8 @@ const EventFactsSchema = z.union([
   FollowUpFactsSchema,
   BookingCancelledFactsSchema,
   CalendarSyncFactsSchema,
+  ExceptionRaisedFactsSchema,
+  ExceptionResolvedFactsSchema,
 ]);
 
 export const EventSummarySchema = z

@@ -2,7 +2,9 @@
 // leaves only by an explicit operator send, after consent is read FRESH, and the
 // provider is called at most once whatever happens. Provider status callbacks,
 // through the gateway's own login, move a send forward and never backward, and
-// never across tenants.
+// never across tenants. A send that fails or whose outcome is uncertain
+// reaches the exception queue (ADR 0025), after its settlement committed, and
+// provider evidence reconciles it.
 //
 // ALL DATA IS SYNTHETIC (BASELINE Q8). The transport is a counting fake.
 
@@ -16,6 +18,10 @@ import {
   TENANT_B,
 } from "../worker/testSupport/dbFixture.ts";
 import { tripExecutionStop } from "./executionStops.ts";
+import {
+  resolveException,
+  syncTenantSendExceptions,
+} from "./exceptionQueue.ts";
 import {
   markOutboundIndeterminate,
   readOutbound,
@@ -138,6 +144,32 @@ const outboundCount = (tenantId: string) =>
     admin,
     "select count(*)::text as count from ops.outbound_messages where tenant_id = $1",
     [tenantId],
+  );
+
+/** ADR 0025: the exceptions of the scenario's send, oldest first. */
+const sendExceptions = async (scenario: Scenario) =>
+  (
+    await admin.query<{
+      kind: string;
+      priority: string;
+      raised_by: string;
+      resolution: string | null;
+      resolved_by: string | null;
+    }>(
+      `select e.kind, e.priority, e.raised_by, e.resolution, e.resolved_by
+         from ops.exceptions e
+         join ops.outbound_messages o on o.id = e.outbound_message_id
+        where o.review_item_id = $1
+        order by e.raised_at, e.kind`,
+      [scenario.reviewId],
+    )
+  ).rows;
+
+const exceptionEvents = (tenantId: string, type: string) =>
+  countRows(
+    admin,
+    "select count(*)::text as count from ops.events where tenant_id = $1 and type = $2",
+    [tenantId, type],
   );
 
 const outboundOf = async (scenario: Scenario) => {
@@ -351,6 +383,7 @@ describe("at most one provider call", () => {
     expect(await send(scenario, transport)).toMatchObject({
       status: "failed",
       providerCalled: true,
+      exceptionsSynced: true,
     });
     expect(await outboundOf(scenario)).toMatchObject({
       status: "failed",
@@ -363,6 +396,17 @@ describe("at most one provider call", () => {
       providerCalled: false,
     });
     expect(transport.calls).toHaveLength(1);
+    // ADR 0025: one exception, recorded after the settlement, once.
+    expect(await sendExceptions(scenario)).toEqual([
+      {
+        kind: "send_failed",
+        priority: "normal",
+        raised_by: "operator-cli",
+        resolution: null,
+        resolved_by: null,
+      },
+    ]);
+    expect(await exceptionEvents(TENANT_A, "exception.raised")).toBe(1);
   });
 
   it("records an ambiguous outcome as indeterminate and never calls again", async () => {
@@ -379,6 +423,55 @@ describe("at most one provider call", () => {
       status: "indeterminate",
       providerCalled: false,
     });
+    expect(transport.calls).toHaveLength(1);
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_indeterminate", priority: "high", resolution: null },
+    ]);
+  });
+
+  it("keeps the settlement when the send's exception cannot be recorded, and asking again records it", async () => {
+    const scenario = await acceptedReview();
+    const transport = fakeTransport(() => ({
+      kind: "rejected",
+      errorCode: "131047",
+      errorClass: "service_window_closed",
+    }));
+    // Fault injection: the queue's function is out of reach for this one send.
+    await admin.query(
+      "alter function ops.sync_send_exceptions(uuid, uuid, text) rename to sync_send_exceptions_dbtest_off",
+    );
+    let report: Awaited<ReturnType<typeof send>>;
+    try {
+      report = await send(scenario, transport);
+    } finally {
+      await admin.query(
+        "alter function ops.sync_send_exceptions_dbtest_off(uuid, uuid, text) rename to sync_send_exceptions",
+      );
+    }
+    expect(report).toMatchObject({
+      status: "failed",
+      providerCalled: true,
+      settlementRecorded: true,
+      exceptionsSynced: false,
+    });
+    expect(await outboundOf(scenario)).toMatchObject({ status: "failed" });
+    expect(await sendExceptions(scenario)).toEqual([]);
+
+    // Asking again calls nothing, and records the exception.
+    expect(await send(scenario, transport)).toMatchObject({
+      status: "failed",
+      providerCalled: false,
+      exceptionsSynced: true,
+    });
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_failed", resolution: null },
+    ]);
+    // The owner's sync finds nothing left to record.
+    expect(
+      await owner.withTransaction((tx) =>
+        syncTenantSendExceptions(tx, { tenantId: TENANT_A }),
+      ),
+    ).toEqual({ sends: 1, opened: 0, closed: 0 });
     expect(transport.calls).toHaveLength(1);
   });
 
@@ -452,6 +545,61 @@ describe("at most one provider call", () => {
       providerMessageId: "wamid.OUT1601",
     });
     expect(transport.calls).toHaveLength(1);
+    // Never uncertain on the record, so never an exception.
+    expect(await sendExceptions(scenario)).toEqual([]);
+  });
+
+  it("lists a send left sending past the client's timeout, once, until evidence settles it", async () => {
+    const scenario = await acceptedReview();
+    const transport = fakeTransport(() => accepted("wamid.OUT1611"));
+    await expect(
+      send(scenario, transport, {
+        afterCall: async () => {
+          throw new Error("dbtest: the process died after the call");
+        },
+      }),
+    ).rejects.toThrow(/process died/);
+    const inFlight = await outboundOf(scenario);
+    const sync = () =>
+      owner.withTransaction((tx) =>
+        syncTenantSendExceptions(tx, { tenantId: TENANT_A }),
+      );
+    // Still within the window the call may take: nothing to list.
+    expect(await sync()).toEqual({ sends: 1, opened: 0, closed: 0 });
+    await admin.query(
+      "update ops.outbound_messages set sending_at = now() - interval '6 minutes' where id = $1",
+      [inFlight!.id],
+    );
+    expect(await sync()).toEqual({ sends: 1, opened: 1, closed: 0 });
+    // A person's mark records the same uncertainty, not a second one.
+    await owner.withTransaction((tx) =>
+      markOutboundIndeterminate(tx, TENANT_A, inFlight!.id, OPERATOR),
+    );
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_indeterminate", resolution: null },
+    ]);
+    await deliver(
+      gateway,
+      metaPayload(TARGET_A, {
+        statuses: [
+          {
+            id: "wamid.OUT1611",
+            status: "delivered",
+            recipient: LEAD,
+            correlation: inFlight!.id,
+          },
+        ],
+      }),
+    );
+    expect(await sendExceptions(scenario)).toEqual([
+      {
+        kind: "send_indeterminate",
+        priority: "high",
+        raised_by: "operator-cli",
+        resolution: "reconciled",
+        resolved_by: "whatsapp-gateway",
+      },
+    ]);
   });
 });
 
@@ -504,11 +652,84 @@ describe("provider status callbacks", () => {
       status: "failed",
       errorCode: "131026",
     });
+    // ADR 0025: the gateway raised it inside its own entry...
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_failed", raised_by: "whatsapp-gateway", resolution: null },
+    ]);
     await deliver(gateway, status("wamid.OUT1701", "delivered"));
     expect(await outboundOf(scenario)).toMatchObject({
       status: "delivered",
       errorCode: null,
     });
+    // ...and the delivery evidence reconciles it.
+    expect(await sendExceptions(scenario)).toMatchObject([
+      {
+        kind: "send_failed",
+        resolution: "reconciled",
+        resolved_by: "whatsapp-gateway",
+      },
+    ]);
+  });
+
+  it("reconciles an uncertain send that then fails, and lists the failure", async () => {
+    const scenario = await acceptedReview();
+    await send(
+      scenario,
+      fakeTransport(() => ({ kind: "ambiguous", errorClass: "timeout" })),
+    );
+    const pending = await outboundOf(scenario);
+    await deliver(
+      gateway,
+      status("wamid.OUT1751", "failed", {
+        correlation: pending!.id,
+        errorCode: 131026,
+      }),
+    );
+    expect(await outboundOf(scenario)).toMatchObject({ status: "failed" });
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_indeterminate", resolution: "reconciled" },
+      { kind: "send_failed", resolution: null },
+    ]);
+  });
+
+  it("still takes a late delivery for a send a person already resolved", async () => {
+    const scenario = await acceptedReview();
+    await send(
+      scenario,
+      fakeTransport(() => ({ kind: "ambiguous", errorClass: "timeout" })),
+    );
+    const pending = await outboundOf(scenario);
+    const { rows } = await admin.query<{ id: string }>(
+      "select id from ops.exceptions where outbound_message_id = $1",
+      [pending!.id],
+    );
+    await owner.withTransaction((tx) =>
+      resolveException(tx, {
+        tenantId: TENANT_A,
+        exceptionId: rows[0].id,
+        resolution: "resolved",
+        actor: "dbtest-person",
+        occurrences: 1,
+      }),
+    );
+    const answer = await deliver(
+      gateway,
+      status("wamid.OUT1761", "delivered", { correlation: pending!.id }),
+    );
+    expect(answer.status).toBe(200);
+    expect(await outboundOf(scenario)).toMatchObject({
+      status: "delivered",
+      providerMessageId: "wamid.OUT1761",
+    });
+    expect(await sendExceptions(scenario)).toEqual([
+      {
+        kind: "send_indeterminate",
+        priority: "high",
+        raised_by: "operator-cli",
+        resolution: "resolved",
+        resolved_by: "dbtest-person",
+      },
+    ]);
   });
 
   it("resolves an indeterminate send only when the correlation AND the recipient match", async () => {
@@ -531,6 +752,11 @@ describe("provider status callbacks", () => {
       providerMessageId: null,
     });
 
+    // A status the recipient check refused settles nothing.
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_indeterminate", resolution: null },
+    ]);
+
     await deliver(
       gateway,
       status("wamid.OUT1801", "sent", { correlation: pending!.id }),
@@ -539,6 +765,10 @@ describe("provider status callbacks", () => {
       status: "sent",
       providerMessageId: "wamid.OUT1801",
     });
+    expect(await sendExceptions(scenario)).toMatchObject([
+      { kind: "send_indeterminate", resolution: "reconciled" },
+    ]);
+    expect(await exceptionEvents(TENANT_A, "exception.resolved")).toBe(1);
   });
 
   it("cannot reach another tenant's send through its own target", async () => {
@@ -723,6 +953,8 @@ describe("a reply the contact's newer message made stale is never sent (ADR 0023
       errorClass: "newer_message",
       providerMessageId: null,
     });
+    // Never called: nothing for a person to chase (ADR 0025).
+    expect(await sendExceptions(scenario)).toEqual([]);
   });
 
   /** True once a WhatsApp admission waits on a lock; gives up after about five seconds. */

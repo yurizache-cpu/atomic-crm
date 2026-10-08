@@ -108,6 +108,13 @@ const FORBIDDEN_KEYS = [
   "cleared_by",
   "clearedBy",
   "marked_by",
+  // ADR 0025: who raised or resolved an exception, and its id.
+  "raised_by",
+  "raisedBy",
+  "resolved_by",
+  "resolvedBy",
+  "exception_id",
+  "exceptionId",
   "markedBy",
   "configured_by",
   "configuredBy",
