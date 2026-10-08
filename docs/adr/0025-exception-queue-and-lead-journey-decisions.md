@@ -69,7 +69,7 @@ A person resolves with `resolved` or `dismissed`, naming the count of occurrence
 
 A model never raises or resolves an exception (DOMAIN_EVENT_CATALOG §13.6).
 
-**The screening.** `ops.record_inbound_screening`, the worker's lease-bound capability, raises the conversation kinds after it records the screening. It raises from the screening's own facts, not from a holder move, so a later danger message in a conversation that is already held still raises `safety`. It raises:
+**The screening.** `ops.record_inbound_screening`, the worker's lease-bound capability, raises the conversation kinds after it records the screening. It raises from the screening's own facts, not from a holder move, so a later request for a person in a conversation that is already held still raises `person_requested`. It raises:
 - `person_requested` and `opt_out` from the screen's classes, whoever holds the conversation;
 - `configuration_missing` when it held a message for want of a published fixed text;
 - `contact_unresolved` or `do_not_contact` while the conversation's newest admission says no reply can reach the contact;

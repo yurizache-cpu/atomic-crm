@@ -2,7 +2,7 @@
 
 **What this is:** the operational state a fresh session reads after CLAUDE.md. It changes with every merged milestone (the maintenance rule in CLAUDE.md). The stable product and architecture are in [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md). The long-term program map is in [ROADMAP.md](ROADMAP.md).
 
-**Updated:** 2026-10-07, after PR #32's merge (`02ae43e7`) and staging's update to it, on `feature/lead-journey-core`.
+**Updated:** 2026-10-08, after PR #33's merge (`1bcefd50`) and staging's update to it, on `feature/autonomous-front-desk`.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -15,10 +15,10 @@
 | Item | State |
 | --- | --- |
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
-| Integration branch | `feature/clinical-phase-1` at `02ae43e7`: PR #32's normal merge (2026-10-07; parents `90be88dc`, PR #31's merge, and `ddd4b162`, the tree equal to the reviewed head) |
+| Integration branch | `feature/clinical-phase-1` at `1bcefd50`: PR #33's normal merge (2026-10-08; parents `02ae43e7`, PR #32's merge, and `4aecf2a8`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Open PR #33 | `feature/lead-journey-core`, from `02ae43e7`, into `feature/clinical-phase-1`: the exception queue (§3) |
-| Retained, integrated | `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
+| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record and ADR 0026 (§3) |
+| Retained, integrated | `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
 
@@ -59,38 +59,38 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 
 **Just integrated:**
 
+- **PR #33** (merge `1bcefd50`, 2026-10-08; [ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) Part A, SI-82, SI-80 amended): the exception queue, `ops.exceptions` (migration `20261016120000_exception_queue.sql`).
+  - The screening raises a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach (`contact_unresolved` with its reason, `do_not_contact`). A send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
+  - Danger is not an exception (owner decision, 2026-10-08): the front desk answers leads, danger gets the owner's fixed safety text, and the conversation stays with the agent. The safety and sensitive-subject fixed texts reach a later model call only as the neutral marker (W1, `4aecf2a8`).
+  - At most one exception is open per subject and kind; a repeat is counted, and a person resolves it only by naming the count they saw. A release is refused while an opt-out is open.
+  - A3: a front-desk message whose admission says no reply can reach the contact gets no model.
+  - Owner tool: `npm run front-desk -- exceptions | exception resolve | exceptions sync`.
+  - Reviews: an adversarial review (11 findings, answered in `d3e0e61c`), the automated review's two P2 (answered in `ed8155a7`) and the design mapper's W1 finding (`4aecf2a8`).
+  - CI: PR CI on `4aecf2a8` (both runs) matches the historical baseline (§7); the post-merge run 37840048356 on `1bcefd50` matches it too.
+  - Not covered yet (ADR 0025 A5): a run that ends after its screening sent it to the model raises nothing.
 - **PR #32** (merge `02ae43e7`, 2026-10-07; ADR 0023 §C, §D): pack `health_pt_br.v4` and configured `handoffNames` (migration `20261015120000_front_desk_handoff_names.sql`). On two blind samples of ordinary traffic v4 recognised 65 and 62 of 77 requests for a person (v3: 25 and 20), with no false handoff in about 550 messages. The automated review's P2 (a relative's name discounted every configured name) was fixed before the merge; its P1 (declare the two functions in `supabase/schemas`) does not apply, since the `ops` schema has always lived in migrations only. PR CI on `ddd4b162` (both runs) and the post-merge run 37610865276 on `02ae43e7` match the historical baseline (§7).
 - **PR #31** (merge `90be88dc`, 2026-10-06; ADR 0023 §C, §E): receptionist v4. It brings prompt `lead_triage.v4`, pack `health_pt_br.v3`, the grounding check's duration rule and migration `20261014120000_front_desk_context_received_at.sql`. PR CI on `af6d12b3` (both runs) and the post-merge run 37466466840 on `90be88dc` match the historical baseline (§7). The automated review did not run (the Codex account reached its usage limit); a manual review found nothing blocking, and found the gap that pack v4 closes (§3, item 1).
 - **PR #30** (merge `9069f5c1`, 2026-10-06; ADR 0024): the canonical project memory, docs only, brought up to date with PR #29's merge before its own. The automated review's one P2 (the event catalog's subject types) was fixed before the merge. PR CI on `c6b930dd` matched the historical baseline (§7).
 - **PR #29** (merge `33c03771`, 2026-10-06; ADR 0023 §L, SI-81): the review context, the stale-reply closure (the automated review's two P1 fixed before the merge) and pack `health_pt_br.v2`. Migrations `20261012120000_front_desk_review_context.sql` and `20261013120000_front_desk_stale_reply_closure.sql`. PR CI on `d35325da` and the post-merge run 37453392364 on `33c03771` both match the historical baseline (§7): Build, ESLint, Typecheck, Test and Database pass; e2e exactly 9 failed and 1 skipped; Prettier exactly the two baseline files.
 
-1. **`feature/lead-journey-core`: the exception queue** ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) Part A, Proposed for the owner's review; SI-82, SI-80 amended).
-   - **What it is:** `ops.exceptions`, one store of the moments a person must act on. The database raises them where the facts are decided:
-     - the screening raises a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach. Danger is not one (owner decision, 2026-10-08): it gets the fixed safety text and the conversation stays with the agent;
-     - a send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
-   - At most one exception is open per subject and kind. A repeat is counted on it, and a person resolves it only by naming the count the person saw. It is resolved once (by a release, provider evidence, a reachable contact, or a person's act) and recorded as `exception.raised` and `exception.resolved` (source `exception-queue`).
-   - **Not covered yet:** a run that ends after its screening sent it to the model (the agent's daily ceiling, a refusal at the run's start, a failed or indeterminate run) raises nothing (ADR 0025 A5).
-   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model. A release is refused while an opt-out is open. On acceptance, these and danger staying with the agent amend ADR 0023 §G.
-   - **Owner tool:** `npm run front-desk -- exceptions | exception resolve (--occurrences) | exceptions sync`.
-   - **Migration:** `20261016120000_exception_queue.sql`.
-   - **Reviews:**
-     - an adversarial review of the implementation (four lenses, each verified) confirmed 11 findings, answered in `d3e0e61c`. The main one: an open episode absorbed a repeat in silence, so a person could resolve danger without seeing a newer danger message. A repeat is now counted, and the act names the count it saw.
-     - The automated review of PR #33 posted two P2, answered in the next commit: an unknown consent is labelled `contact_unresolved` / `consent_unknown`, never an opt-out, and a capped listing says it is capped.
-   - **Local evidence (2026-10-07, last head):**
-     - typecheck, ESLint and Prettier clean;
-     - `functions` 2,527 tests;
-     - 27 SQL suites (new F8);
-     - 455 driver-backed cases (new `exceptionQueue.dbtest.ts`). The committed browser recordings were re-recorded: the tenant feed has one more event, `exception.raised`;
-     - the `app` project and the upgrade replay pass.
-   - **PR CI on `d3e0e61c`:**
-     - the push run matches the historical baseline (§7): core PASS, e2e exactly 9 failed and 1 skipped, Prettier exactly the two baseline files;
-     - the pull_request run's e2e job ran no test: the runner hit a container-registry rate limit while starting the stack, an infrastructure failure.
-   - **Next:** CI on the new head, then the owner's review of ADR 0025 Part A; merge only on the owner's request. After the merge, on staging: apply `20261016120000` (pinned CLI, dry run first, never the seed), run the hosted verifier, then `front-desk exceptions sync` once for the sends that already exist.
+**Active:**
+
+1. **`feature/autonomous-front-desk`: ADR 0026, the autonomous front desk for leads** (design; the owner's product decisions of 2026-10-08). The WhatsApp receptionist answers leads, not patients; a patient talks to the owner directly. The owner decided:
+   - the receptionist sends its fixed texts by itself now, and its model replies once the supervised test shows it can;
+   - a new WhatsApp number becomes a CRM lead automatically (B1 revised from (b) to (c)), which needs the contact write adapter (B2) and an automatic opt-out record;
+   - the site's qualification triage is kept for the owner to read; the receptionist may ask the same qualification questions, but a health answer never reaches a model (W1 holds);
+   - a request for a person puts the conversation on a waiting list and notifies the owner on WhatsApp; the owner reads, replies and sends from the browser;
+   - patient reminders (confirmation, five hours before, the video-call link five minutes before) belong to the scheduling milestone;
+   - after a danger message, no booking: a booking request then goes to the waiting list (delegated to the design);
+   - no team names for now; B7 (b).
+
+   ADR 0026 is written next on this branch, Proposed, with its slices; each slice is its own PR.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
 - **Supabase** `erhrochojnugszkkoqrv` (sa-east-1, PostgreSQL 17):
-  - all 75 integrated migrations through `20261015120000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07 (pinned CLI, dry run first); the hosted verifier then reported 0 blocking and 0 advisory findings.
+  - all 76 integrated migrations through `20261016120000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07 and PR #33's one on 2026-10-08 (pinned CLI, dry run first); the hosted verifier then reported 0 blocking and 0 advisory findings.
+  - `front-desk exceptions sync` ran once on 2026-10-08 over the 10 existing sends: it opened one `send_failed`, the 2026-10-02 Meta probe send refused with 131005 (a user token's permission error, before the system-user token), and nothing else.
 - **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-06 from the integrated code (PR #29; Netlify deploy `6ac4dff19a75e014e31006e8`; preflight 0 blocking, live check 0/0). The review page shows the screened message and the reply draft (checked in the browser). PR #31 changed no frontend code.
 - **Runtime:** local only (`scripts/with-staging.mjs`: worker, gateway). No Fly, no always-on webhook.
 - **Tenant** `265b8fb8-839f-4351-a503-fe38f75822d1`; Receptionist agent `2ed31fc7-3509-46aa-99ff-507d06c90b7d`.
@@ -116,8 +116,9 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 | # | Item | Blocks |
 | --- | --- | --- |
 | 1 | The persona name ("Lia" is provisional), how and when the video-call link is sent (missing from the knowledge), and whether to test Gemini with less reasoning | The live receptionist test's quality |
-| 2 | ADR 0021 W6, lead creation for a new WhatsApp number: **decided 2026-10-08** ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) B1 (b)): an owner act creates the contact from a held conversation, marked do-not-contact until a person confirms. It needs B2 (the contact write adapter) to be built | Real lead entry (workstream A) |
-| 2a | ADR 0025: accept or amend Part A (the exception queue, and A3, which amends ADR 0023 §G); decide Part B, B2 to B6 (CRM contact writes, identity resolution, attribution, structured triage and its health fields, lead event subjects). B1 and B7 were decided on 2026-10-08, option (b) each | The exception queue's merge; the rest of milestone 2 |
+| 2 | ADR 0021 W6, lead creation for a new WhatsApp number: **decided 2026-10-08, then revised the same day** to automatic creation (ADR 0025 B1 (c), carried by ADR 0026). It needs B2 (the contact write adapter) | Real lead entry (workstream A) |
+| 2a | ADR 0026 (written next, Proposed): accept or amend it, and answer its few open decisions. ADR 0025 Part A is integrated (PR #33); its Part B items are carried by ADR 0026 | The autonomous front desk's slices |
+| 2b | Register the owner's own WhatsApp number for notifications, by the owner's own act (never written in the repository), and approve a Meta utility template for the notification | The owner's WhatsApp notification (ADR 0026) |
 | 3 | ADR 0021 W7 (a production webhook host; Netlify recommended) and W8 (Meta actions: templates, app live); the system-user token expires 2026-12-01 | Production WhatsApp; messages outside the 24-hour window |
 | 4 | A payment provider | Workstream C |
 | 5 | Calendar provider authentication, token storage and data-processing terms (Google Calendar, Meet) | Workstream B's calendar part |
@@ -154,16 +155,17 @@ From the ROADMAP program map:
    - deterministic identity resolution;
    - attribution capture at entry;
    - structured triage (paths A and B);
-   - the first catalogued events (`lead.created`, `lead.attribution_captured`, `triage.completed`, `exception.raised`). `exception.raised` and `exception.resolved` are built on `feature/lead-journey-core` (ADR 0025 Part A); the rest waits on ADR 0025 Part B.
+   - the first catalogued events (`lead.created`, `lead.attribution_captured`, `triage.completed`, `exception.raised`). `exception.raised` and `exception.resolved` are integrated (PR #33); the rest is planned in ADR 0026.
+   - the autonomous front desk for leads (ADR 0026): automatic fixed replies, automatic lead creation, the waiting list with the owner's notification, and the browser inbox.
 3. **Scheduling in the journey (workstream B):** offering real slots in conversation, the booking page with holds, `outcome.first_appointment_booked`, and rescheduling and cancellation through the conversation. Calendar and Meet follow once the provider decision is made.
 
 ## 9. Exactly next action
 
-1. **PR #33, the exception queue** (§3, item 1): CI on its new head against the baseline (§7), then the owner's review of ADR 0025 Part A and the merge on the owner's request.
+1. **ADR 0026** (§3, item 1): write it on `feature/autonomous-front-desk`, Proposed, and present its slices and open decisions to the owner; then implement the slices in order, each its own PR, merged only on the owner's request.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
    - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;
    - each reply accepted by the owner in the browser at AAL2, then carried by `npm run messaging -- send`. The 2026-10-05 autonomous test used a session-local auto-accept script that is not in the repository and is not a product feature;
    - then stop everything and rotate the verify token.
-4. **Then the rest of milestone 2 of §8,** once the owner decides ADR 0025 Part B.
+4. **Then the rest of milestone 2 of §8,** following ADR 0026's slices.
