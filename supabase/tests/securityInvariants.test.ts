@@ -4606,7 +4606,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/migrations/20261016120000_exception_queue.sql",
         marker:
-          /if v_reason is null and v_inbound\.conversation_id is not null and not v_reachable then/,
+          /and v_inbound\.conversation_id is not null and not v_reachable then/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
@@ -4692,7 +4692,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises danger, a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message held in a conversation a person holds, and a contact no reply can reach, judged by the conversation's newest admission; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while danger or an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message held in a conversation a person holds, and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4717,7 +4717,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/migrations/20261016120000_exception_queue.sql",
         marker:
-          /message = 'ops\.release_conversation: a safety or opt-out exception is open on this conversation; a person resolves it first'/,
+          /message = 'ops\.release_conversation: an opt-out exception is open on this conversation; a person resolves it first'/,
       },
       {
         file: "supabase/migrations/20261016120000_exception_queue.sql",
@@ -4743,12 +4743,12 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/tests/front_desk_agent.sql",
-        marker: /F8: a conversation was released with danger open/,
+        marker: /F8: a conversation was released with an opt-out open/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
         marker:
-          /raises an urgent exception for danger in a conversation a person took over/,
+          /answers danger with the safety text and keeps it off the queue: the conversation stays with the agent/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
@@ -4763,7 +4763,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
         marker:
-          /counts a repeat of danger, and refuses a person's act that did not see it/,
+          /counts a repeat, and refuses a person's act that did not see it/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",

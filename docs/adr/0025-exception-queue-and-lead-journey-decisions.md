@@ -1,6 +1,6 @@
 # ADR 0025 — The exception queue, and the decisions the lead journey core needs
 
-**Status:** Part A **Proposed for the owner's review**. It is implemented on `feature/lead-journey-core` (migration `20261016120000_exception_queue.sql`, SI-82) and not integrated. On acceptance it amends Accepted ADR 0023 §G in three ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each)**; B2 to B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
+**Status:** Part A **Proposed for the owner's review**. It is implemented on `feature/lead-journey-core` (migration `20261016120000_exception_queue.sql`, SI-82) and not integrated. On acceptance it amends Accepted ADR 0023 §G in four ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each)**; B2 to B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -28,6 +28,8 @@ An adversarial design review of the first draft found that raising only on a hol
 
 ## Part A. The exception queue
 
+**Owner product decision, 2026-10-08.** The WhatsApp receptionist answers leads, not patients; a patient talks to the owner directly. A person in crisis is a lead, and the owner does not take a crisis: danger gets the owner's fixed safety text, the same referral to CVV (188) as the site, and the conversation stays with the agent. Danger is therefore not an exception kind. (ADR 0026 carries the rest of that day's decisions: automatic fixed replies, automatic lead creation, the site triage, the owner's notification and the browser inbox.)
+
 ### A1. One store, with its events
 
 `ops.exceptions` holds one row per exception episode. Each row carries:
@@ -52,7 +54,6 @@ An exception is raised open. While open it only counts a repeat; otherwise its i
 
 | Kind | Raised when | Priority | Resolved |
 | --- | --- | --- | --- |
-| `safety` | The screen found danger, whoever holds the conversation | urgent | only by a person's act |
 | `opt_out` | The contact asked to stop, whoever holds the conversation | normal | only by a person's act |
 | `person_requested` | The contact asked for a person (pack v4), whoever holds the conversation | high | `released` by the release, or a person's act |
 | `configuration_missing` | The screen needed a fixed text the agent has not published, so a person holds the conversation | high | `released`, or a person's act |
@@ -69,7 +70,7 @@ A person resolves with `resolved` or `dismissed`, naming the count of occurrence
 A model never raises or resolves an exception (DOMAIN_EVENT_CATALOG §13.6).
 
 **The screening.** `ops.record_inbound_screening`, the worker's lease-bound capability, raises the conversation kinds after it records the screening. It raises from the screening's own facts, not from a holder move, so a later danger message in a conversation that is already held still raises `safety`. It raises:
-- `safety`, `person_requested` and `opt_out` from the screen's classes, whoever holds the conversation;
+- `person_requested` and `opt_out` from the screen's classes, whoever holds the conversation;
 - `configuration_missing` when it held a message for want of a published fixed text;
 - `contact_unresolved` or `do_not_contact` while the conversation's newest admission says no reply can reach the contact;
 - `message_waiting` for each message held because a person holds the conversation.
@@ -83,7 +84,7 @@ An open `contact_unresolved` or `do_not_contact` is reconciled once the conversa
 
 A send blocked at the last gate, or refused at the request, raises nothing: it was never called, and the person who ran the send act sees the refusal in its answer.
 
-**The release.** `ops.release_conversation` locks the conversation's state first. It is refused (OS409) while a `safety` or `opt_out` exception is open on the conversation: a person resolves those with the act, then releases. A release resolves `person_requested`, `configuration_missing` and `message_waiting` as `released`, by the person who released. It never resolves a send's exception. An operator's takeover raises nothing: a person chose to hold the conversation, and a message that then arrives raises `message_waiting`.
+**The release.** `ops.release_conversation` locks the conversation's state first. It is refused (OS409) while an `opt_out` exception is open on the conversation: a person resolves it with the act, then releases. A release resolves `person_requested`, `configuration_missing` and `message_waiting` as `released`, by the person who released. It never resolves a send's exception. An operator's takeover raises nothing: a person chose to hold the conversation, and a message that then arrives raises `message_waiting`.
 
 Lock order: the conversation's state, then a send, then the exceptions. The owner's act locks only the exception it resolves.
 
@@ -101,15 +102,16 @@ The holder does **not** move. The agent keeps the conversation, so once a person
 **Limits:**
 - The held message itself stays unanswerable through the system: its admission snapshot says do-not-contact. `front-desk reply` refuses it, because the person does not hold the conversation, and an accept of such a review is refused anyway. A person waits for the contact's next message. Answering the held message after a person links the contact is a Part B decision (B1).
 - A3 applies to agents with a published operating policy (the front desk). A lead-triage agent without one is unchanged; Q8 keeps its data synthetic or test.
-- **On acceptance, Part A amends ADR 0023 §G in three ways:**
+- **On acceptance, Part A amends ADR 0023 §G in four ways:**
   1. its automatic holds gain "a contact no reply can reach", a hold the agent keeps (the holder does not move);
-  2. a release is no longer unconditional: it is refused while a `safety` or `opt_out` exception is open;
-  3. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact.
+  2. a release is no longer unconditional: it is refused while an `opt_out` exception is open;
+  3. **danger no longer moves the conversation to a person** (owner decision, 2026-10-08): it gets the owner's fixed safety text (the site's referral to CVV, 188), the conversation stays with the agent, and no exception is raised;
+  4. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact.
 - It also changes the owner's test procedure: a registered test device needs a CRM contact, with the opt-out recorded false, or every message from it is held.
 
 ### A4. Who reads and resolves
 
-- **Owner tool, read-only by default:** `npm run front-desk -- exceptions --tenant <uuid> [--all]` lists open exceptions (or all), most urgent first. It shows kinds, priorities, counts, ids and instants, never text. It lists at most 200; a capped listing ends with a `truncated` line.
+- **Owner tool, read-only by default:** `npm run front-desk -- exceptions --tenant <uuid> [--all]` lists open exceptions (or all), high priority first. It shows kinds, priorities, counts, ids and instants, never text. It lists at most 200; a capped listing ends with a `truncated` line.
 - **Owner act:** `npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>`. `<n>` is the count the listing showed; a stale count is refused. A repeat answers the recorded resolution and records nothing.
 - **Owner act:** `npm run front-desk -- exceptions sync --tenant <uuid>` derives every send's exceptions once. It skips a send a transaction holds. Use it after a send whose exception could not be recorded, and once after applying this migration, for the sends that already exist.
 - **The browser** sees `exception.raised` and `exception.resolved` in the activity feed. The Layer 3 inbox screen is not built here.
@@ -181,7 +183,7 @@ Each decision lists the options and a recommendation. Nothing in Part B is built
 
 - Reception's exceptions become durable, deterministic, deduplicated facts with a recorded resolution. The Layer 3 inbox later reads them. Nothing moves out of its own authority: reviews stay reviews, and stops stay stops.
 - A message whose reply could never be sent costs nothing on the front desk, and a person is told.
-- Danger and an opt-out keep the conversation with a person until a person says they were dealt with.
+- An opt-out keeps the conversation with a person until a person says it was dealt with. Danger is answered with the owner's fixed safety text and stays with the agent.
 - The rest of the lead journey core waits on B1 to B7.
 
 ## What this record does NOT do

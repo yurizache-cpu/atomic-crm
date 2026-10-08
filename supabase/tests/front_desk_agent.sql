@@ -518,7 +518,7 @@ $$;
 --     per subject and kind while open (a repeat is counted), with its kind's
 --     priority; identity immutable; resolved once, by a person only for the
 --     count the person saw; never deleted or truncated on its own; a release
---     resolves what it ends, and waits for a person on danger.
+--     resolves what it ends, and waits for a person on an opt-out.
 --     (Where each kind is raised: exceptionQueue.dbtest.ts and
 --     whatsappOutbound.dbtest.ts.)
 -- ---------------------------------------------------------------------------
@@ -587,8 +587,8 @@ begin
   begin
     insert into ops.exceptions (tenant_id, company_id, task_id, kind, priority, subject_kind, subject_id,
                                 conversation_id, raised_by)
-    values (ta, ca, v_task, 'safety', 'normal', 'conversation', v_conv, v_conv, 'fd-suite');
-    raise exception 'F8: danger was stored below urgent';
+    values (ta, ca, v_task, 'person_requested', 'normal', 'conversation', v_conv, v_conv, 'fd-suite');
+    raise exception 'F8: a request for a person was stored below high';
   exception when check_violation then null;
   end;
   begin
@@ -678,19 +678,25 @@ begin
     raise exception 'F8: a resolved episode absorbed a new occurrence';
   end if;
 
-  -- Danger is resolved by a person, never by a release, and only for the
-  -- occurrences the person saw.
-  v_id := ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
-  perform ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
+  -- An opt-out is resolved by a person, never by a release, and only for
+  -- the occurrences the person saw. Danger is no kind at all (owner decision,
+  -- 2026-10-08: the front desk answers leads, not patients).
+  begin
+    perform ops.open_exception(ta, ca, v_task, 'safety', v_conv, null, null, 'fd-suite');
+    raise exception 'F8: danger was raised as an exception';
+  exception when check_violation then null;
+  end;
+  v_id := ops.open_exception(ta, ca, v_task, 'opt_out', v_conv, null, null, 'fd-suite');
+  perform ops.open_exception(ta, ca, v_task, 'opt_out', v_conv, null, null, 'fd-suite');
   begin
     perform ops.resolve_exception(ta, v_id, 'resolved', 'fd-person', 1);
-    raise exception 'F8: a person resolved danger without seeing its repeat';
+    raise exception 'F8: a person resolved an opt-out without seeing its repeat';
   exception when sqlstate 'OS409' then null;
   end;
   perform ops.take_over_conversation(ta, v_conv, 'fd-person');
   begin
     perform ops.release_conversation(ta, v_conv, 'fd-person');
-    raise exception 'F8: a conversation was released with danger open';
+    raise exception 'F8: a conversation was released with an opt-out open';
   exception when sqlstate 'OS409' then null;
   end;
   begin
@@ -710,10 +716,10 @@ begin
   end;
   -- One statement each: an expression reads the snapshot taken before its own calls.
   if ops.resolve_exception(ta, v_id, 'resolved', 'fd-person', 2) ->> 'state' <> 'resolved' then
-    raise exception 'F8: a person could not resolve danger';
+    raise exception 'F8: a person could not resolve the opt-out';
   end if;
   if ops.release_conversation(ta, v_conv, 'fd-person') ->> 'state' <> 'released' then
-    raise exception 'F8: the conversation was not released once danger was resolved';
+    raise exception 'F8: the conversation was not released once the opt-out was resolved';
   end if;
   if exists (select 1 from ops.exceptions e where e.conversation_id = v_conv and e.resolved_at is null) then
     raise exception 'F8: the release left an exception open';

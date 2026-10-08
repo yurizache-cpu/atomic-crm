@@ -3,7 +3,8 @@
 // runtime and the real screening, against a real Postgres. What a message
 // tells a person reaches ops.exceptions once, whoever holds the conversation;
 // a message no reply can reach gets no model (A3); a release resolves what it
-// ends and waits for a person on danger and an opt-out; the owner's act
+// ends and waits for a person on an opt-out; danger stays off it (owner
+// decision, 2026-10-08: leads, not patients); the owner's act
 // resolves once, inside its tenant. Send exceptions are proven in
 // whatsappOutbound.dbtest.ts.
 //
@@ -48,6 +49,7 @@ const DEVICE = "5511900000929";
 const ADMINISTRATIVE = "Qual o valor da primeira sessão?";
 const DANGER = "Não quero mais viver.";
 const OPT_OUT = "Não quero mais receber mensagens.";
+const PERSON_REQUEST = "Quero falar com uma pessoa, por favor.";
 const PERSON = "dbtest-person";
 
 let admin: Pool;
@@ -382,7 +384,33 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
 });
 
 describe("what a message tells a person reaches the queue, whoever holds the conversation (ADR 0025 A2)", () => {
-  it("raises danger and the unreachable contact together, and calls no model", async () => {
+  it("answers danger with the safety text and keeps it off the queue: the conversation stays with the agent", async () => {
+    // Owner decision, 2026-10-08: the front desk answers leads, not patients,
+    // and the owner does not take a crisis.
+    await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    const { provider, decisions, registry } = runtime();
+    await send(DANGER);
+    await drain(registry);
+    const out = await latest();
+    expect(out).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "safety",
+    });
+    expect(await holder(out.conversation_id)).toMatchObject({
+      holder: "agent",
+    });
+    expect(await exceptions()).toEqual([]);
+    expect(provider.calls).toHaveLength(0);
+    expect(decisions.asked).toHaveLength(0);
+    // The next administrative question is answered as usual.
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    expect(await latest()).toMatchObject({ disposition: "model" });
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("answers danger from a number no reply can reach with the safety text, listing only the contact", async () => {
     await frontDesk();
     const { provider, registry } = runtime();
     await send(DANGER);
@@ -393,32 +421,15 @@ describe("what a message tells a person reaches the queue, whoever holds the con
       fixed_message_key: "safety",
     });
     expect(await holder(out.conversation_id)).toMatchObject({
-      holder: "person",
-      holder_reason: "safety",
+      holder: "agent",
     });
-    expect((await open()).sort((a, b) => a.kind.localeCompare(b.kind))).toEqual(
-      [
-        { kind: "contact_unresolved", priority: "high" },
-        { kind: "safety", priority: "urgent" },
-      ],
-    );
+    expect(await open()).toEqual([
+      { kind: "contact_unresolved", priority: "high" },
+    ]);
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("raises an urgent exception for danger after a held message", async () => {
-    await frontDesk();
-    const { registry } = runtime();
-    await send(ADMINISTRATIVE);
-    await drain(registry);
-    await send(DANGER);
-    await drain(registry);
-    expect(await open()).toEqual([
-      { kind: "contact_unresolved", priority: "high" },
-      { kind: "safety", priority: "urgent" },
-    ]);
-  });
-
-  it("raises an urgent exception for danger in a conversation a person took over", async () => {
+  it("counts a message held in a conversation a person took over, whatever it says", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE);
     const { provider, registry } = runtime();
@@ -439,10 +450,9 @@ describe("what a message tells a person reaches the queue, whoever holds the con
       holder: "person",
       holder_reason: "operator",
     });
-    // Danger is listed, and the held message is counted for the person.
+    // The person holding it sees the waiting message; danger is no item.
     expect(await open()).toEqual([
       { kind: "message_waiting", priority: "normal" },
-      { kind: "safety", priority: "urgent" },
     ]);
     expect(provider.calls).toHaveLength(1);
   });
@@ -490,13 +500,18 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     expect(await eventCount("exception.resolved")).toBe(1);
   });
 
-  it("refuses the release while danger or an opt-out is open, until a person resolves it", async () => {
+  it("refuses the release while an opt-out is open, until a person resolves it", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE);
     const { provider, registry } = runtime();
-    await send(DANGER);
+    await send(OPT_OUT);
     await drain(registry);
     const out = await latest();
+    expect(out).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "opt_out_ack",
+    });
+    expect(await open()).toEqual([{ kind: "opt_out", priority: "normal" }]);
     const release = () =>
       act((tx) =>
         releaseConversation(tx, {
@@ -508,14 +523,15 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     expect(await refusal(release())).toBe("invalid_state");
     expect(await holder(out.conversation_id)).toMatchObject({
       holder: "person",
+      holder_reason: "opt_out",
     });
 
-    const [safety] = await exceptions();
+    const [optOut] = await exceptions();
     expect(
       await act((tx) =>
         resolveException(tx, {
           tenantId: TENANT_A,
-          exceptionId: safety.id,
+          exceptionId: optOut.id,
           resolution: "resolved",
           actor: PERSON,
           occurrences: 1,
@@ -526,11 +542,6 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     await send(ADMINISTRATIVE);
     await drain(registry);
     expect(provider.calls).toHaveLength(1);
-
-    await send(OPT_OUT);
-    await drain(registry);
-    expect(await open()).toEqual([{ kind: "opt_out", priority: "normal" }]);
-    expect(await refusal(release())).toBe("invalid_state");
   });
 
   it("says when the agent has not published a fixed text it needed", async () => {
@@ -566,27 +577,28 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     ]);
   });
 
-  it("counts a repeat of danger, and refuses a person's act that did not see it", async () => {
+  it("counts a repeat, and refuses a person's act that did not see it", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE);
     const { registry } = runtime();
-    await send(DANGER);
+    await send(PERSON_REQUEST);
     await drain(registry);
-    const [safety] = await exceptions();
-    expect(safety).toMatchObject({ kind: "safety", occurrences: 1 });
-    // The person listed it once; the contact writes danger again.
-    await send(DANGER);
-    await drain(registry);
-    expect((await exceptions())[0]).toMatchObject({
-      kind: "safety",
-      occurrences: 2,
-      resolution: null,
+    const [request] = await exceptions();
+    expect(request).toMatchObject({
+      kind: "person_requested",
+      occurrences: 1,
     });
+    // The person listed it once; the contact asks again.
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    expect(
+      (await exceptions()).find((row) => row.kind === "person_requested"),
+    ).toMatchObject({ occurrences: 2, resolution: null });
     const resolve = (occurrences: number) =>
       act((tx) =>
         resolveException(tx, {
           tenantId: TENANT_A,
-          exceptionId: safety.id,
+          exceptionId: request.id,
           resolution: "resolved",
           actor: PERSON,
           occurrences,
@@ -599,12 +611,14 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     );
     expect(listing.truncated).toBe(false);
     const listed = listing.exceptions;
-    const listedSafety = listed.find((row) => row.kind === "safety")!;
-    expect(listedSafety).toMatchObject({
+    const listedRequest = listed.find(
+      (row) => row.kind === "person_requested",
+    )!;
+    expect(listedRequest).toMatchObject({
       occurrences: 2,
       resolution: "resolved",
     });
-    expect(listedSafety.lastRaisedAt >= listedSafety.raisedAt).toBe(true);
+    expect(listedRequest.lastRaisedAt >= listedRequest.raisedAt).toBe(true);
     // The held repeat waits for the person too.
     expect(listed.find((row) => row.kind === "message_waiting")).toMatchObject({
       occurrences: 1,
@@ -615,7 +629,7 @@ describe("what a message tells a person reaches the queue, whoever holds the con
   it("records each exception event with its kind and priority only, about the message's task", async () => {
     await frontDesk();
     const { registry } = runtime();
-    await send(DANGER);
+    await send(PERSON_REQUEST);
     await drain(registry);
     const [first] = await exceptions();
     await act((tx) =>

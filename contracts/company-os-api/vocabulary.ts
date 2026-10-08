@@ -249,7 +249,6 @@ export const MAX_TRIAGE_FLAGS = 5;
 
 /** ops.exceptions.kind (ADR 0025): what a person must act on. */
 export const EXCEPTION_KINDS = [
-  "safety",
   "opt_out",
   "person_requested",
   "configuration_missing",
@@ -261,7 +260,7 @@ export const EXCEPTION_KINDS = [
 ] as const;
 
 /** ops.exceptions.priority, derived from the kind. */
-export const EXCEPTION_PRIORITIES = ["urgent", "high", "normal"] as const;
+export const EXCEPTION_PRIORITIES = ["high", "normal"] as const;
 
 /** ops.exceptions.resolution: released, reconciled (by the database), resolved, dismissed (by a person). */
 export const EXCEPTION_RESOLUTIONS = [

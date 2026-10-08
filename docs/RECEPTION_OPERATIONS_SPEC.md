@@ -153,7 +153,7 @@ The Receptionist answers within administrative and commercial scope, using only:
 Rules:
 - Every reply is a review item. A send is a separate act after acceptance (ADR 0023 §F).
 - A reply stating a price, time, date, link or number it was not given is marked for a person (the grounding check).
-- Small talk and questions about the assistant are answered simply. Asking for a person, danger and opt-out are handled deterministically with fixed messages and a person (ADR 0023 §B, §G).
+- Small talk and questions about the assistant are answered simply. Asking for a person and opt-out are handled deterministically with fixed messages and a person (ADR 0023 §B, §G); danger gets the fixed safety text and stays with the agent (owner decision, 2026-10-08, ADR 0025).
 - The voice is configuration (persona name, locale, tone examples), never engine text (prompt `lead_triage.v4`).
 
 The persona's naturalness is tested on real model candidates with synthetic conversations ([CURRENT_STATE.md](CURRENT_STATE.md) records the latest choice).
@@ -326,7 +326,7 @@ Each exception has a type, a subject, a priority and a resolution. The inbox and
 
 **Built (ADR 0025 Part A, Proposed for the owner's review):**
 - `ops.exceptions`, raised by the database where the fact is decided:
-  - from the screening: danger, a request for a person, an opt-out, a missing fixed text, a message waiting with a person, and a contact no reply can reach (`contact_unresolved` with its reason, `do_not_contact`);
+  - from the screening: a request for a person, an opt-out, a missing fixed text, a message waiting with a person, and a contact no reply can reach (`contact_unresolved` with its reason, `do_not_contact`). Danger is not one (owner decision, 2026-10-08): the front desk answers leads, and danger gets the owner's fixed safety text while the conversation stays with the agent;
   - from a send's state, after its settlement: failed, uncertain.
 - Deduplicated while open; resolved by a release, by evidence, or by a person's act; recorded as `exception.raised` and `exception.resolved`.
 - An ambiguous identity is `contact_unresolved` with reason `ambiguous`.

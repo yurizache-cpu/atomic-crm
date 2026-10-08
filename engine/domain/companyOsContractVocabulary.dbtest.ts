@@ -398,8 +398,8 @@ describe("the contract vocabularies equal the database's", () => {
       operation: "update",
       error_code: "provider_timeout",
       // ADR 0025: the exception facts, and what an exception event must keep in.
-      kind: "safety",
-      priority: "urgent",
+      kind: "person_requested",
+      priority: "high",
       resolution: "released",
       exception_id: randomUUID(),
       subject_kind: "conversation",
@@ -420,12 +420,12 @@ describe("the contract vocabularies equal the database's", () => {
     const factsOf = (type: string) =>
       rows.find((row) => row.type === type)?.facts;
     expect(factsOf("exception.raised")).toEqual({
-      kind: "safety",
-      priority: "urgent",
+      kind: "person_requested",
+      priority: "high",
     });
     expect(factsOf("exception.resolved")).toEqual({
-      kind: "safety",
-      priority: "urgent",
+      kind: "person_requested",
+      priority: "high",
       resolution: "released",
     });
     for (const { type, facts } of rows) {

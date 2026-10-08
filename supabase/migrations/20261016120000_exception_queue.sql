@@ -5,10 +5,12 @@
 -- one.
 --
 --   * ops.record_inbound_screening raises what a message tells a person,
---     whoever holds the conversation: danger, a request for a person, an
---     opt-out, a fixed text the agent needed and has not published, each
---     message held in a conversation a person holds, and a contact no reply
---     can reach. A message from such a contact (its admission's do-not-contact
+--     whoever holds the conversation: a request for a person, an opt-out, a
+--     fixed text the agent needed and has not published, each message held
+--     in a conversation a person holds, and a contact no reply can reach.
+--     Danger is not one (owner decision, 2026-10-08): the front desk answers
+--     leads, not patients, and the owner does not take a crisis; danger gets
+--     the owner's fixed safety text and the conversation stays with the agent. A message from such a contact (its admission's do-not-contact
 --     snapshot) is held before any model or fixed text, without moving the
 --     conversation (A3); a later message whose admission finds the contact
 --     reachable reconciles the exception.
@@ -17,7 +19,7 @@
 --     and the send act runs it in a transaction of its own AFTER the one that
 --     called the provider and settled the send: never inside that settlement.
 --   * ops.release_conversation resolves what the release ends, and is refused
---     while a safety or opt-out exception is open: a person resolves those.
+--     while an opt-out exception is open: a person resolves it.
 --
 -- Nothing here reaches a model, writes the CRM, sends, or adds a capability to
 -- an application role.
@@ -68,10 +70,9 @@ create table ops.exceptions (
     foreign key (tenant_id, company_id, task_id) references ops.tasks (tenant_id, company_id, id)
     on delete cascade,
   constraint exceptions_kind_check check (kind in (
-    'safety', 'opt_out', 'person_requested', 'configuration_missing', 'message_waiting',
+    'opt_out', 'person_requested', 'configuration_missing', 'message_waiting',
     'contact_unresolved', 'do_not_contact', 'send_failed', 'send_indeterminate')),
   constraint exceptions_priority_matches_kind check (priority = case
-    when kind = 'safety' then 'urgent'
     when kind in ('person_requested', 'configuration_missing', 'contact_unresolved', 'send_indeterminate') then 'high'
     else 'normal' end),
   constraint exceptions_subject_shape check (
@@ -209,7 +210,6 @@ declare
   v_subject  text;
 begin
   v_priority := case
-    when p_kind = 'safety' then 'urgent'
     when p_kind in ('person_requested', 'configuration_missing', 'contact_unresolved', 'send_indeterminate') then 'high'
     else 'normal' end;
   v_subject := case when p_outbound_message_id is null then 'conversation' else 'outbound_message' end;
@@ -557,10 +557,13 @@ begin
         case when v_party = 'client' then 'sensitive_only_client' else 'sensitive_only_prospect' end
       when v_class = 'unknown' then 'clarification'
       else null end;
-    v_reason := case when v_safety = 'crisis' then 'safety'
+    -- Owner decision, 2026-10-08: danger gets the fixed safety text and the
+    -- conversation stays with the agent; it is no person's to take.
+    v_reason := case when v_safety = 'crisis' then null
                      when v_person then 'person_requested'
                      when v_opt_out then 'opt_out' end;
-    if v_reason is null and v_inbound.conversation_id is not null and not v_reachable then
+    if v_reason is null and v_safety <> 'crisis'
+       and v_inbound.conversation_id is not null and not v_reachable then
       -- ADR 0025 A3: no reply can reach this contact, so neither a model nor a
       -- fixed text drafts one. The agent keeps the conversation: once the
       -- contact is reachable, the next message is answered as usual.
@@ -600,10 +603,6 @@ begin
   -- ADR 0025 A2: what this message tells a person, whoever holds the
   -- conversation. An episode already open absorbs the repeat.
   if v_inbound.conversation_id is not null then
-    if v_safety = 'crisis' then
-      perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'safety',
-                                 v_inbound.conversation_id, null, null, 'front-desk');
-    end if;
     if v_person then
       perform ops.open_exception(v_tenant, v_run.company_id, v_run.task_id, 'person_requested',
                                  v_inbound.conversation_id, null, null, 'front-desk');
@@ -763,8 +762,7 @@ end
 $function$;
 
 -- ---------------------------------------------------------------------------
--- 4. The release resolves what it ends; a person resolves danger and an
---    opt-out first. As 20261011120000, with the state locked first, the
+-- 4. The release resolves what it ends; a person resolves an opt-out first. As 20261011120000, with the state locked first, the
 --    refusal and the resolution.
 -- ---------------------------------------------------------------------------
 
@@ -789,9 +787,9 @@ begin
   end if;
   if exists (select 1 from ops.exceptions e
               where e.tenant_id = p_tenant_id and e.conversation_id = p_conversation_id
-                and e.kind in ('safety', 'opt_out') and e.resolved_at is null) then
+                and e.kind = 'opt_out' and e.resolved_at is null) then
     raise exception using errcode = 'OS409',
-      message = 'ops.release_conversation: a safety or opt-out exception is open on this conversation; a person resolves it first';
+      message = 'ops.release_conversation: an opt-out exception is open on this conversation; a person resolves it first';
   end if;
   v_moved := ops.move_conversation_state(p_conversation_id, 'holder', 'agent', 'operator', p_actor);
   for v_open in
@@ -1052,18 +1050,18 @@ language sql stable security invoker set search_path = '' as $$
     -- never its id or its subject's.
     when p_type = 'exception.raised' then
       pg_catalog.jsonb_build_object(
-        'kind', case when p_payload ->> 'kind' in ('safety', 'opt_out', 'person_requested', 'configuration_missing',
+        'kind', case when p_payload ->> 'kind' in ('opt_out', 'person_requested', 'configuration_missing',
                                                     'message_waiting', 'contact_unresolved', 'do_not_contact',
                                                     'send_failed', 'send_indeterminate')
                      then p_payload ->> 'kind' end,
-        'priority', case when p_payload ->> 'priority' in ('urgent', 'high', 'normal') then p_payload ->> 'priority' end)
+        'priority', case when p_payload ->> 'priority' in ('high', 'normal') then p_payload ->> 'priority' end)
     when p_type = 'exception.resolved' then
       pg_catalog.jsonb_build_object(
-        'kind', case when p_payload ->> 'kind' in ('safety', 'opt_out', 'person_requested', 'configuration_missing',
+        'kind', case when p_payload ->> 'kind' in ('opt_out', 'person_requested', 'configuration_missing',
                                                     'message_waiting', 'contact_unresolved', 'do_not_contact',
                                                     'send_failed', 'send_indeterminate')
                      then p_payload ->> 'kind' end,
-        'priority', case when p_payload ->> 'priority' in ('urgent', 'high', 'normal') then p_payload ->> 'priority' end,
+        'priority', case when p_payload ->> 'priority' in ('high', 'normal') then p_payload ->> 'priority' end,
         'resolution', case when p_payload ->> 'resolution' in ('released', 'reconciled', 'resolved', 'dismissed')
                            then p_payload ->> 'resolution' end)
     else '{}'::pg_catalog.jsonb

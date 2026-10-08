@@ -58,7 +58,7 @@ async function one<T>(
 export interface ExceptionRow {
   readonly id: string;
   readonly kind: string;
-  readonly priority: "urgent" | "high" | "normal";
+  readonly priority: "high" | "normal";
   readonly subjectKind: "conversation" | "outbound_message";
   readonly conversationId: string;
   readonly outboundMessageId: string | null;
@@ -83,7 +83,7 @@ export interface ExceptionListing {
 
 /**
  * The tenant's open exceptions (or, with `all`, every one), open first, most
- * urgent first, then oldest first. Ids, kinds and instants only. At most
+ * high priority first, then oldest first. Ids, kinds and instants only. At most
  * MAX_LISTED_EXCEPTIONS rows, and `truncated` says when more matched.
  */
 export async function listExceptions(
@@ -117,7 +117,7 @@ export async function listExceptions(
          from ops.exceptions e
         where e.tenant_id = $1 and ($2 or e.resolved_at is null)
         order by e.resolved_at is not null,
-                 case e.priority when 'urgent' then 0 when 'high' then 1 else 2 end,
+                 case e.priority when 'high' then 0 else 1 end,
                  e.raised_at, e.id
         limit $3`,
       [tenantId, input.all === true, MAX_LISTED_EXCEPTIONS + 1],

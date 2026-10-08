@@ -66,11 +66,11 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 
 1. **`feature/lead-journey-core`: the exception queue** ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) Part A, Proposed for the owner's review; SI-82, SI-80 amended).
    - **What it is:** `ops.exceptions`, one store of the moments a person must act on. The database raises them where the facts are decided:
-     - the screening raises danger, a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach;
+     - the screening raises a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach. Danger is not one (owner decision, 2026-10-08): it gets the fixed safety text and the conversation stays with the agent;
      - a send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
    - At most one exception is open per subject and kind. A repeat is counted on it, and a person resolves it only by naming the count the person saw. It is resolved once (by a release, provider evidence, a reachable contact, or a person's act) and recorded as `exception.raised` and `exception.resolved` (source `exception-queue`).
    - **Not covered yet:** a run that ends after its screening sent it to the model (the agent's daily ceiling, a refusal at the run's start, a failed or indeterminate run) raises nothing (ADR 0025 A5).
-   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model. A release is refused while danger or an opt-out is open. On acceptance, both amend ADR 0023 §G.
+   - **A3:** a front-desk message whose admission says no reply can reach the contact gets no model. A release is refused while an opt-out is open. On acceptance, these and danger staying with the agent amend ADR 0023 §G.
    - **Owner tool:** `npm run front-desk -- exceptions | exception resolve (--occurrences) | exceptions sync`.
    - **Migration:** `20261016120000_exception_queue.sql`.
    - **Reviews:**

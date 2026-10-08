@@ -340,7 +340,7 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
     expect(second.proposed?.flags).not.toContain("unclear");
   });
 
-  it("answers danger with the fixed safety text, flags it, and hands the conversation to a person", async () => {
+  it("answers danger with the fixed safety text and flags it; the conversation stays with the agent", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE);
     const { provider, decisions, registry } = runtime();
@@ -358,21 +358,16 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
       flags: ["possible_crisis"],
     });
     expect(out.proposed?.response_draft).toBe(FIXED.messages.safety);
+    // Owner decision, 2026-10-08: the front desk answers leads, not
+    // patients, and the owner does not take a crisis: the conversation stays
+    // with the agent, and nothing reaches the exception queue (ADR 0025).
     expect(await holder(out.conversation_id)).toMatchObject({
-      holder: "person",
-      holder_reason: "safety",
+      holder: "agent",
+      holder_reason: null,
     });
     expect(provider.calls).toHaveLength(0);
     expect(decisions.asked).toHaveLength(0);
-    // ADR 0025: one urgent exception, open until a person resolves it.
-    expect(await exceptionsOn(out.conversation_id)).toEqual([
-      {
-        kind: "safety",
-        priority: "urgent",
-        resolution: null,
-        resolved_by: null,
-      },
-    ]);
+    expect(await exceptionsOn(out.conversation_id)).toEqual([]);
   });
 
   it("pack v4: asking for someone the policy names hands the conversation over; asking for anyone else does not", async () => {
