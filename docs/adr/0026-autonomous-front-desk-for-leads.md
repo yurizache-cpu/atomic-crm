@@ -1,0 +1,217 @@
+# ADR 0026 — An autonomous front desk for leads, and the owner's waiting list
+
+**Status:** Proposed for the owner's review. The owner's decisions (2026-10-08) are recorded as decided, delegated defaults marked *(delegated)*; how each is built is Proposed. Built and integrated: the danger part (PR #33, merge `1bcefd50`). On acceptance it amends Accepted ADR 0018 (§4 and its residual trust), Accepted ADR 0019 (§2, §5, §6, narrowly: decision S), ADR 0021 W6 (a), Accepted ADR 0023 (§E, §F, §G, §K) and Proposed ADR 0025 (B1 becomes (c); B2 decided by delegation; B5 decided: the site intake is detected and kept for the owner, never read by a model (decision 5); B7 (b) built in slice 3). **Date:** 2026-10-08.
+
+**PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
+
+## Context
+
+### The owner's decisions (2026-10-08)
+
+The owner decides; there is no counsel.
+
+1. **Danger stays with the AI.** A person in crisis is a lead; the owner does not treat crisis. Danger gets the site's text, the referral to CVV (188): no handover, no exception of its own.
+2. **After a crisis, keep answering, never book.** The safety text goes again on every crisis message; a booking request goes to the owner's waiting list. The rule is delegated ("decide o melhor").
+3. **Automatic sending, delegated:** "o que for melhor para o sistema, se a IA der conta, ela que faça".
+4. **Every new WhatsApp number becomes a CRM lead automatically, and the AI answers it.** Confirmed ("Sim, automático"): ADR 0025 B1 is (c), replacing that morning's (b).
+5. **The site's triage** (a prefilled message with the demand, how long, a 0-10 rating) is kept for the owner; the AI never reads it (W1) and knows only that it was done. The owner reads these as lead-qualification and awareness questions, not a health triage ("é mais uma triagem de qualificacao de lead"), keeps the site's message as it is, and holds that the AI may ask them on WhatsApp. Under W1 a model still never reads an answer's health content (§G, §H).
+6. **A request for a person** joins a first-in, first-out waiting list; the owner is notified on the owner's own WhatsApp number (name and time, never content) and replies from the system.
+7. **Patients:** confirmation, a reminder 5 hours before, the Meet link 5 minutes before; clinical conversation stays outside the system.
+8. No team `handoffNames` for now; ADR 0025 B7 is (b).
+
+**W1 holds:** no health information reaches AI through OpenRouter (SI-78, SI-80). **Delegation:** each item whose recommendation was an engineering or product default is decided by delegation; an owner's fact or policy stays an open decision or a slice's need.
+
+### Where the system stands (`feature/clinical-phase-1` at `1bcefd50`)
+
+- **Danger is integrated (PR #33).** `948a0e69`: a crisis keeps the conversation with the agent and raises no exception, A3 never holds it, and a release is refused only while an opt-out is open. `4aecf2a8`: the earlier turns show the safety and `sensitive_only_*` texts only as the marker (a deny-list). Not done: the safety text in a held conversation; the review's "A person should look at this conversation now." ADR 0025 A2 was corrected in `b35d4832`.
+- **Fixed texts** are pending reviews, sent only by a person's accept and `messaging send`, the Meta token's only holder.
+- **Person replies** anchor only on a message held for a person, which alone keeps them out of the model's earlier turns (keyed on the screening, not the author). A non-text message (audio, image) is refused on the record: no task, counted nowhere, every earlier reply stale (SI-81).
+- **New numbers:** W6 (a); the admission's do-not-contact snapshot is immutable. **Triage:** packs v2 to v4 omit it; nothing stores it. **Booking:** the AI never books but sees up to ten free slots. **Real data:** Q8 refuses a `health` run (SI-70); production channels stay inactive (SI-47).
+
+One record: these capabilities share one machine (a worker job carrying a send the database authorized) and the same functions.
+
+### What Meta says (verified 2026-10-08)
+
+- **Window:** a user's message opens a 24-hour customer-service window: free-form messages inside; outside, only approved templates to users who opted in. Inside it, non-template messages and utility templates are free; marketing and authentication templates are charged even there.
+- **Templates:** review within 24 hours, which can reject; Meta may recategorize utility as marketing; parameters need examples and may not open or close the text.
+- **Webhooks** carry `contacts[].profile.name`, `wa_id` and `messages[].from`; since April 2026 also a BSUID, and `from` may be absent for a username-only user.
+- **Business Messaging Policy** (updated 2026-09-23): automation inside the window needs "prompt, clear, and direct escalation paths" to a person; and "Don't use WhatsApp for telemedicine or to send or request any health related information" where regulations prohibit sending it to systems without heightened safeguards. The site's prefilled triage carries a demand, a duration and a rating. The owner reads it as lead qualification and keeps it (decision 5); that reading of Meta's policy, and its risk, are the owner's.
+
+**To verify:** an owner alert as a utility template, and its rate; template parameter limits and permanent errors; whether a development-mode number sends a custom template; the `wa.me/?text=` format; Brazil's ninth digit in `wa_id`; referral fields (B4); when sending to a BSUID starts; the terms on general-purpose AI chatbots; redelivery up to 7 days (ADR 0018 cites no Meta page); how the duty to honour a request to stop applies to the contact's own later message.
+
+## Decision
+
+### Principles
+
+- **W1:** nothing adds health content, or a crisis-derived signal, to a model's input.
+- **Deterministic code decides:** a model's output never sends, raises or resolves an exception, sets a hold or writes the CRM (SI-45, SI-82).
+- **Every send keeps every gate** (SI-49, SI-50, SI-81), at most one provider call, with one exception: SI-49's "exactly one CRM contact" is relaxed for the safety text only (§B); a yes to open decision 1 would relax its opt-out gate for that text, amending SI-49 again.
+- **The database authorizes, the worker carries, a person asks;** no browser or handler holds the Meta token.
+- **Test and synthetic data only** until the production gate's ADR (SI-47). **Tenant words are data:** texts, templates and placeholders are owner configuration.
+
+### A. Who wrote a review, and a person's reply to the newest message
+
+- **Authorship.** `review_items.author`: `agent`, `fixed` or `person`; immutable, backfilled exactly from each run's ending. An insert guard binds it: `agent` only on a succeeded run; `fixed` only on a run cancelled `front_desk_fixed_reply` with a `fixed_reply` screening; `person` only inside `ops.record_person_reply` or the inbox's reply (a transaction-local mark they set).
+- **The earlier turns become an allowlist keyed on author:** an `agent` reply verbatim; a `fixed` text verbatim only for `clarification`, `human_handoff_ack` (never one the scheduling hold caused, §F) and `opt_out_ack`; anything else, a person's reply included, as the neutral marker. This replaces `4aecf2a8`'s deny-list: a key added later stays hidden.
+- **A person's reply** anchors on the newest admitted message, whatever its disposition, while the conversation's 24-hour window is open (a refused message also opens it). It is stale only when a message, admitted or refused, arrived after the conversation revision the person saw (the inbox's token, or the one `front-desk conversations` prints and `front-desk reply` names); a refused message inside it does not. A refused message in a held conversation counts on `message_waiting` (`ops.receive_whatsapp_message`).
+- **One non-`person` review per run** (a partial unique index; every `on conflict` names its predicate); up to 5 person reviews per anchor *(delegated)*. Review events are keyed on the review (`review:<review id>:pending`), since `ops.record_event` refuses a second review's event under the run's key; every lookup by run (the post-settlement opener, triage recover, `ops.request_shadow_decision_for_settled_job`, structured decisions) selects the non-person review, `strict`. No review opens on a redacted task (SI-72).
+- **Protective texts whoever holds** *(delegated)*: `safety` and `opt_out_ack` are chosen before the holder check; the message still counts as waiting.
+- **Wording:** "Send the safety text."; for `opt_out_ack`, "Send the acknowledgement; the opt-out is recorded after it."
+- **With no fixed texts published (m1),** every message that needs a fixed text, a crisis included, goes to a person (`configuration_missing`); the others still reach the model.
+- **Tests, failing by name:** a person's reply on a model run or a `human_handoff_ack` run never reaches the provider; an audio after a request for a person, then a person's reply that leaves; a person's reply to a `fixed_reply` run records its event and asks no second structured decision; each author-guard mutant; a crisis in a held conversation gets its safety review.
+
+### B. Published fixed texts leave on their own (decision 3)
+
+AI-written replies stay supervised; their autonomy needs its own ADR, once the supervised live test shows the AI can handle it.
+
+**Provenance.** `ops.review_is_published_fixed_text(review)` holds exactly SI-83's conditions (the key K must be in `automaticFixedTexts` of the policy version the screening recorded and of the one published when the send begins, m3; for `safety`, eligibility judges the contact afresh) and only on a task not redacted.
+
+**Authorization as policy.** When K is automatic, `ops.authorize_fixed_reply`, in the screening's transaction, records `decision_basis = published_fixed_text` with reviewer `policy:fixed-text`, requests the send (`authorization_kind = fixed_text`, key, version, job id) and queues one `outbound.reply_send` job. `ENABLE ALWAYS` guards check the predicate on every such row; a send with a `job_id` must be `fixed_text` or `person_reply`, and a `person_reply` send's review author `person`, so a model-written reply leaves only by the operator's send, which refuses a send a job carries. The browser shows "Texto fixo publicado".
+
+**The switch:** the operating policy's `automaticFixedTexts`, a closed array of fixed-text keys (absent: supervised); no field can name a model's output; `sendMode` stays unread *(delegated)*. First list *(delegated)*: `safety`, `human_handoff_ack`, `opt_out_ack`, `clarification`, `sensitive_only_*`.
+
+**The safety text's contact** *(delegated)* may also be a number the CRM does not know (`not_found`, `possible_match`, a capped or failed creation) or a contact with no lead profile (`consent_unknown`); never an ambiguous number or a recorded opt-out, a near match's included (open decision 1). This relaxes SI-49 for the safety text only.
+
+**The reply-send job** *(delegated: the worker, for the kill switch and a `job_kind` stop)*. `outbound.reply_send` is external and carries exactly one send the database authorized before the job existed (`fixed_text`, or §E's `person_reply`), never an AI draft: not ADR 0018's rejected generic kind. Every stop scope holds it (SI-37); the lease resolves the send by `job_id` (SI-30). A held-call variant of `engine/worker/externalCall.ts`, through four pinned lease-bound capabilities taking no tenant, review or text:
+- **TX2a** `beginReplySend` re-checks the authority, eligibility under the kill-switch lock, redaction, the stale rule, freshness and the privacy notice, and commits `sending`; a block is recorded, never raised.
+- **TX2b** `confirmReplySend` locks the conversation (SI-81), re-reads the predicate and makes the one call inside the transaction (at most 60 s); `settleReplySend` records the outcome; exceptions sync after. An attempt finding its send `sending` records it `indeterminate` without calling.
+- **No transport:** `deferReplySend` defers the job, attempt restored, until its bound passes (a fixed text's freshness, a person reply's window), then blocks the send `transport_not_configured` and raises `send_blocked`; tested, so no send waits forever.
+
+**Transports:** `meta`, with `WHATSAPP_ACCESS_TOKEN` read at start by no handler; `fake` only under `DEPLOYMENT_ENVIRONMENT=local`; each send records its transport. On staging, only a token whose system user holds the test WhatsApp Business Account alone: today's `atomic-crm` token also holds the clinic number's account, so the worker never gets it (slice 2).
+
+**Pre-checks:** channel `85ae4f8b…` (the clinic number) is deactivated before any key is listed; pre-checks move to the test-number channel under a worker without a transport, so their texts end `transport_not_configured`, or reach only the owner's registered device from Meta's test number if a token-holding worker runs within the bound.
+
+**Safeguards** *(delegated)*:
+- **Freshness:** a text not begun within 30 minutes of the earlier of its message's provider timestamp and admission instant is blocked `fixed_text_expired`; a job's window reads the same instant.
+- **Cap:** 3 automatic texts per conversation per hour, safety exempt; past it a person holds the conversation (`automatic_cap`), ending auto-responder loops.
+- **Acknowledgements answer the request, not the words:** only a newer automatic text of the same key makes `safety`, `human_handoff_ack` or `opt_out_ack` stale. Its job waits, within the freshness bound, while a newer message is neither screened nor ended (M2), so a newer opt-out blocks it and two close crisis messages send one text (m2). Other keys keep SI-81.
+- **Nothing fails silently:** a refused or blocked automatic text raises `send_blocked` (high) on the send, or on the conversation when no send row exists; never for `newer_message`, never naming the text.
+- **The privacy notice** still rides the first reply, safety included (SI-79), and names how to reach a person, the escalation path Meta requires (the owner writes it).
+
+**Gateway residual (M10).** ADR 0018 says a compromised gateway can never make a send. Now a forged call or leaked app secret can, for a registered test sender on a test channel: cause one fixed text per forged message (safety exempt from the cap), create a lead (§C), set a scheduling hold that never expires (§F), write `do_not_contact` through a forged opt-out (§C), and notify the owner through a forged request for a person, within the caps (§D). Never a model-written or person reply, a booking or a resend.
+
+### C. Every new number becomes a lead; the opt-out reaches the CRM (decision 4)
+
+**The lead, inside the admission:** in `ops.receive_whatsapp_message`, after the conversation upsert and before the CRM lookup, so the snapshot reads `found` and the first message is answered.
+- **When:** only on `not_found`; never on a redelivery of an id already admitted or refused, nor for a null sender (username-only stays refused). While Q8 and the production gate are closed, only for a registered test sender on a test channel *(delegated)*; a message refused on the record creates it too.
+- **Failures and races:** a sub-block with `lock_timeout = '2s'`; a transient failure (lock, serialization, deadlock, timeout, cancellation) answers 500 so Meta redelivers (SI-53); any other error falls back to `contact_unresolved`. A conversation serializes on the upsert, a number on two channels on an advisory lock; a person creating the same number at that moment yields `ambiguous` until merged.
+- **Adapter** `ops.crm_create_whatsapp_lead` (SI-68 shape, executable by no role): one contact (phone `+` and Meta's digits, no country code guessed), the lead profile the CRM's trigger adds, one `whatsapp` attribution; it answers `created`, `existing`, `ambiguous`, `unavailable` or `skipped:<reason>`; only `created` uses the conversation's one creation slot.
+- **Near-duplicate guard** *(delegated)*: a contact whose digits end with the sender's last eight blocks creation and raises `contact_unresolved` (`possible_match`); it shares the exact match's single pass.
+- **Name** *(delegated)*: `contacts[].profile.name`, chosen by the sender: bounded, control characters and a leading `= + - @` stripped, screened with the agent's pack and used only when benign with nothing omitted, else the owner's placeholder (default `Contato WhatsApp`); first name at creation only, in no event, log, ledger or model. The receive function's sixth parameter has a default; `sales_id` stays null.
+- **Cap** *(delegated)*: 50 creations per tenant per day, recorded by the owner's tool; past it `skipped:cap`; with no cap recorded, nothing is created (`skipped:no_cap`).
+- **Ledger and event:** `ops.crm_contact_acts` (append-only, no number or name) records each act and skip; `lead.created` carries the conversation and channel.
+
+**The opt-out reaches the CRM after its acknowledgement.** Every screening that detects an opt-out, whoever holds, queues one internal `crm.opt_out_record` job due at the window's end, moved to now when the acknowledgement settles terminal or blocked. It is the worker's one CRM write path: `ops.crm_record_opt_out` resolves the contact afresh, sets `lead_profiles.do_not_contact = true` and nothing else, records the act and `lead.opted_out`, and reconciles `opt_out`; an ambiguous or missing contact leaves it open. No stop holds it (an opt-out is protective); until then eligibility refuses every send but the acknowledgement. The gateway records no opt-out.
+
+**The consent ledger** *(delegated)*: every change of the opt-out flag, the CRM form's included, is recorded append-only on SI-66's pattern.
+
+**Lifting follows B7 (b),** the owner's rule, not a delegation. A `lead_profiles` trigger refuses a true-to-false change from any application role while the ledger's latest entry is a system-recorded opt-out; the CRM form (`LeadCommercialPanel.tsx`) can set the flag but no longer clear it. The one lift is the owner's `front-desk -- opt-out lift`, through `ops.crm_lift_opt_out`: it requires an inbound message newer than the opt-out and records its reference as the reason.
+
+**The CRM copy follows the number's retention** *(delegated)*: when a number is tombstoned (SI-79), the identifier job's capability or the owner's erasure deletes a system-created contact no one edited (an `AFTER UPDATE` trigger on SI-66's pattern records a content-free edit) with no deal (`deals.contact_ids`), note, task or recorded opt-out; one a person worked on stays under the CRM's lifecycle, as the notice will say.
+
+### D. The waiting list and the owner's notification (decision 6)
+
+- **The waiting list,** read-only in the existing overview: open `person_requested` and `message_waiting` episodes, first in, first out, with an opaque reference, kinds, age, count, the window's deadline and the last notification's state; no text, number or name.
+- **The target** (`ops.owner_notification_targets`: channel, digits, templates, kinds, quiet hours, caps) is recorded only by the owner's act, `front-desk -- notify target record|retire`; never seeded or printed.
+- **The intent:** when `ops.open_exception` opens a `person_requested` episode, or counts the first waiting message of a holding episode or the first after each person reply, the same transaction inserts one `ops.owner_notifications` row (unique per episode and per person reply it follows) and one `owner_notification.send` job, due after a 60-second debounce or at quiet hours' end. Never for a failure or a crisis message.
+- **The job** (external, held by the kill switch) prepares (stops, target, active test channel, caps; `skipped_resolved` if the episode closed; waiting episodes coalesced into a digest), calls once, never retried.
+- **Content:** two utility templates, one episode ("a person asked to talk to you", first name, time) and a digest (a count); the first name, read at prepare, is cut to the letters and spaces of its first word, at most 20 characters, stored nowhere.
+- **Defaults** *(delegated)*: quiet hours 22:00 to 08:00 (America/Sao_Paulo) with a morning digest; 10 per hour, 30 per day; no e-mail; no window-reopening template for now (revisit after the first weeks on test data).
+- **After danger** *(delegated)*: a crisis message in a held conversation still counts on `message_waiting`, and a blocked safety text raises `send_blocked`; both are content-free and neither notifies.
+- **The owner's number** is recognised at admission before the conversation upsert, so no conversation row holds it, and becomes a content-free fact (no task, model or lead); a registered test sender takes precedence on a test channel, whose conversation holds it as today. It lands before lead creation leaves test senders.
+
+### E. The browser inbox: see, reply, release (decision 6)
+
+Decision S follows from decision 6: the browser may cause the send of a person's own reply. One OD-8a migration adds three functions (ADR 0019: 24 functions, eight acts; its Decisions 2 and 3 unchanged).
+- **`get_conversation(ref)`,** on explicit open, `no-store`, memory only: the last 50 turns *(delegated)*, inbound as the lead's raw text (a person reading is not AI processing), a refused message as the refused-media marker, only sent replies; the holder, the first name, the window's deadline, a revision token. Text only for synthetic or test task classes; plain text. `get_review` still shows an unsent AI draft (ADR 0023 §L): a draft a member pastes into the composer is the member's own act, sent as a person's reply.
+- **`reply_to_conversation(ref, text, expected_revision)`,** in one transaction: requires a person holder, a current revision (OS409), an anchor (§A) and a second factor verified within the hour (the token's `amr`); validates 1 to 2000 characters; opens the person review (source `company-os-ui`) accepted by the principal; requests the send (`person_reply`); queues one `outbound.reply_send` job. The table guard admits it only for a review the same principal accepted in that act; the browser never retries. A reply resolves nothing; the release does.
+- **`release_conversation(ref, expected_revision)`** calls the existing release; refused while an opt-out is open.
+- **The screen** "Fila de atendimento" (pt-BR): the list, the conversation, a composer (memory only) and "Devolver à IA"; "na fila" until the worker settles. Takeover, exception acts, AI drafts and marks stay CLI-only.
+
+### F. No booking after a crisis (decision 2, delegated)
+
+- **The hold:** `ops.conversation_states.scheduling_hold`, each change recorded once; set only by a crisis screening; never expires; cleared only by the owner's recorded act `front-desk -- scheduling-hold release`; never in the CRM, an event or a notification.
+- **No crisis signal to the model:** while held, availability reads `unavailable` with no slots; a hold-caused acknowledgement reaches later turns only as the marker (§A). A model may infer that scheduling is closed, never why.
+- **A booking request goes to a person:** screen v4 (pack v5) adds a lexical `schedulingRequested` (agendar, marcar, remarcar, vaga, encaixe, horário). Under the hold it is a request for a person (`person_requested`), answered `human_handoff_ack` and recorded on the screening as hold-caused.
+- **The guard:** an `ENABLE ALWAYS` guard, `ops.create_booking` and `ops.reschedule_booking` refuse a held conversation's booking (OS409 `scheduling_held`) for every writer, the owner included; an earlier booking is untouched; every future booking path carries `conversation_id`. A lexical false positive holds scheduling until the owner clears it.
+
+### G. The site's triage (decision 5)
+
+- **Detection, always:** a deterministic parser finds the marker ("fiz a triagem no seu site") configured in a fifth kind, `intake_form`, never in the model's context; the database derives `intakeReceived` from intake rows of the run's own data class; prompt `lead_triage.v6` says only: do not ask again or mention it.
+- **Answers, kept for the owner:** templates compile from the form (escaped literals, options, an integer range, one bounded text); a mismatched field is missing, never the nearest option; partial counts as received. `ops.intake_answers` keeps them with the task's data class, no fingerprint, an `ENABLE ALWAYS` guard, nulled at the task's redaction, read by no application role; values show only for synthetic or test rows (`front-desk -- intakes`, "Triagem do site" in `get_review`). Anyone can type the template; a site wording change stops parsing until a new form version.
+- **Tests:** exact parses on the corpus; partial or nothing on edits; bounded time on adversarial input; the leak test on every pack from v2; no value in a screened text, a provider or Jev request, an event or a log.
+
+### H. Later, each under its own record
+
+- **Patients (decision 7)** need Google Calendar and Meet, approved utility templates with recorded opt-in (ADR 0021 W8), §D's template transport, and a non-reply send path with every SI-49 gate.
+- **`service_unavailable`** (ADR 0025 A5's gap) needs its own predicate, SI-83 clause and mutation tests; SI-83 is never widened.
+- **The receptionist asking the qualification questions on WhatsApp** (decision 5): it needs a questionnaire state, a disposition that settles an answer with no model call and deterministic capture into §G's store, so it gets its own design.
+- a link-to-contact act; a BSUID identity; attribution (B4); AI-reply autonomy; real data in the inbox; production (W7, W8).
+
+## Security invariants
+
+**New (drafts; each with a guard that fails by name):**
+
+- **SI-83:** "A reply leaves without a person's send act only when it is a fixed text the owner published and the deterministic screen selected, authorized by the database, never by a model, a handler or a payload: the review's author is fixed; its run was cancelled as a fixed reply; the run's one screening recorded that disposition, the key and the fixed-messages version; the draft is byte-equal to that version's text for that key; the key is listed in the automatic texts of the policy version the screening recorded and of the one published when the send begins; and the do-not-contact snapshot is false unless the key is safety. The authorization is recorded as policy, the table guards check the predicate on every such row, and no configuration field can name a model's output. Only the worker's reply-send job carries it, on the terms of SI-49, SI-50 and SI-81, through a transport the deployment allows (a fake one only where DEPLOYMENT_ENVIRONMENT is local); it is blocked once the freshness bound has passed since the earlier of its message's provider timestamp and admission instant, carried or not; it counts against a per-conversation hourly cap, the safety text exempt; a refused or blocked one raises send_blocked; and the operator's send never carries a send a job carries."
+- **SI-84:** "The Company OS writes the CRM's contact tables only through backend crm_ adapters no application or capability role executes, at four points: the gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the agent's screen finds the profile name benign), its lead profile and one whatsapp attribution, only for a not_found number no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within a recorded daily cap and, while BASELINE Q8 is open, only for a sender the owner registered on a test channel; the worker's opt-out job sets lead_profiles.do_not_contact to true and nothing else; the owner's lift clears it only after a newer inbound message, recorded as the reason, and no application role clears a system opt-out; and a number's retention or erasure (SI-79) deletes a system-created contact no one edited, with no deal, note, task or recorded opt-out. Each act is recorded in ops.crm_contact_acts, with no number or name; every change of the opt-out flag is recorded in the CRM's append-only consent ledger; no adapter sends, starts a run or changes a stop."
+- **SI-85:** "A site intake is read only by reviewed deterministic code from the agent's published intake form; a model learns only whether it was received, derived from rows of the run's own data class; answers, where kept, live only in ops.intake_answers with their task's data class, written only by the lease-bound screening, redacted with the task, with no fingerprint, read by no application role, shown only for synthetic or test rows, and never reach a model or structured-decision input, an event, a log, telemetry, an exception, a notification or the CRM; no automation keys on an answer."
+- **SI-86:** "An owner notification goes only to a target the owner registered by the owner's own act, never to a lead; its parameters are only a bounded first word of the contact's first name or an opaque reference, an instant or a count; the database records its intent with the waiting episode's opening or its first message after a person's reply, never for a failure or a crisis message, and never calls out; the worker makes at most one per intent, under the caps and quiet hours, never retried, held by an execution stop, only from an active test channel while SI-47 holds; and the target's number is recognised before any conversation is written, so only the target table holds it (except as the conversation reference of a sender the owner registered on a test channel), and no event, log line or command output carries it."
+- **SI-87:** "The browser inbox lists only its tenant's waiting conversations, with no text, number or name; on an explicit open, under no-store and into memory only, a member reads the first name and the turns' texts only where the task class is synthetic or test, never a number, a redacted turn or an unsent draft; a member with a second factor verified within the hour may ask to send its own reply only while a person holds the conversation and the revision it saw is current, recording one person review and one send request, carried only by the worker's reply-send job; a member may release a conversation, never while an opt-out is open; and nothing in the inbox takes over a conversation, resolves an exception, resends, retries or sends an AI draft."
+
+**Amended:**
+
+- **SI-49:** its first sentence becomes "A reply leaves only by the operator's send of one accepted review (npm run messaging -- send), or by the worker's reply-send job carrying a published fixed text the database authorized as policy (SI-83) or a person's own reply written and asked to be sent in one recorded act (SI-87); a model-written reply leaves only by the operator's send, as the send table's guard enforces." Preconditions gained: for a job, no stop covering its agent, department or kind; no open opt-out exception but for the acknowledgement's own send; the window read from the earlier of the provider's timestamp and the admission's instant. Relaxed for the safety text only (§B).
+- **SI-80:** its context clause becomes "(the screened text; earlier turns as screened text, as a reply the agent's model wrote, as a fixed text only for clarification, a human_handoff_ack the scheduling hold did not cause, or opt_out_ack, and otherwise as one neutral marker; the published configuration but its intake form; availability, unavailable with no slot under a scheduling hold; whether the site intake was received; the message's instant), never the task's description or an intake answer"; its end, "no autonomous send mode for a model-written reply is representable; the only automatic switch is the closed list of fixed-text keys (SI-83)".
+- **SI-81,** appended: "an automatic safety text or acknowledgement of a request for a person or an opt-out is made stale only by a newer automatic text of the same key, and its job waits, within the freshness bound, while a newer message is neither screened nor ended; a person's reply is stale only when a message, admitted or refused, arrived after the revision the person saw; the last gate holds the conversation through the call in the operator's send and the worker's job alike."
+- **SI-82:** gains `send_blocked` (on a send, or its conversation when no send row exists; never for `newer_message`; content-free, a blocked safety text included) and `possible_match`; `message_waiting` counts every message arriving while a person holds, a refused or crisis one included; the CRM's recording reconciles `opt_out`; SI-86's intents are recorded with the exceptions.
+- **SI-45:** a published fixed text is not a model's answer (SI-83); CRM writes are SI-84's. **SI-48:** reads as before, plus a last-eight-digit suffix read that only refuses a creation or a safety send and never resolves a contact; `ops.crm_contact_first_name` returns only a first name, stored nowhere; the transport's one write is SI-84's. **SI-50:** a send the job began is recorded indeterminate by its next attempt, without calling.
+- **SI-21, SI-30, SI-33, SI-37:** the new capabilities are lease-bound, pinned, and take no tenant, review, send or text; only the messaging tool and the worker's transport read the WhatsApp token, at start; `outbound.reply_send` and `owner_notification.send` are external, `crm.opt_out_record` internal. **SI-46, SI-53:** `ops_gateway` still executes exactly two functions, the receive signature re-pinned; the lead step is failure-isolated.
+- **SI-52, SI-54, SI-56, SI-58, SI-59, SI-74:** `get_conversation` is the one projection with message bodies and a first name; 24 functions, eight browser mutations; AAL2 at every new gate, plus a recent second factor for the reply.
+- **SI-63:** no booking is created or rescheduled under a scheduling hold, by any writer; only a crisis screening sets it; only the owner's recorded act clears it. **SI-72:** intake answers are redacted with their task; no review opens on a redacted task. **SI-79:** a system-created contact no one edited is deleted with its number; a redelivery never restores an erased number.
+
+**Unchanged and binding:** SI-47, SI-60, SI-70, SI-71, SI-78.
+
+## Sequencing
+
+Each slice is one PR into `feature/clinical-phase-1` (at `1bcefd50`), at the historical CI baseline, then applied to staging. The integrated code is safe until slice 1: a person's reply still anchors only on a held message.
+
+**Deployment rules:** a worker that knows a new job kind or context field ships before the migration that queues or emits it; a migration accepting a new screening key ships before the worker that sends it; a gateway parameter arrives with a default; a browser function reaches the database before the frontend.
+
+| # | Slice | Needs from the owner or Meta | Order |
+| --- | --- | --- | --- |
+| 1 | Authorship, person replies and refused media (§A); unblocks asking for a person on staging | Nothing | Database |
+| 2 | Automatic fixed texts (§B; one PR, so no key is authorized without its job) | The owner's texts published (the safety text, the notice's escalation line), then `automaticFixedTexts`; a token holding only the test WhatsApp Business Account (or the clinic number's account removed from `atomic-crm`); channel `85ae4f8b…` deactivated first | Worker, database, policy |
+| 3 | Leads, the opt-out in the CRM, the consent ledger, B7 (b)'s lift, the CRM copy's retention (§C) | The notice's line on CRM records; the placeholder and the daily cap recorded | Worker, database, gateway, frontend |
+| 4 | Waiting list and notification (§D) | The owner's personal number, by the owner's own act; two pt-BR utility templates approved on the test account; Meta: can a development-mode number send them | Worker, database; live probe after approval |
+| 5 | The browser inbox (§E; one OD-8a migration; after 1, 2, 4) | Nothing new | Database, frontend |
+| 6 | No booking after a crisis (§F); before AI-reply autonomy and any other booking path | Nothing | Database, worker, policy names pack v5 |
+| 7 | The site's triage (§G) | The site's exact message and a plain click-to-chat link | Database (`intake`), worker, database (the boolean), frontend |
+| 8 | `service_unavailable` (§H) | Its text, published | Database, worker |
+
+**Function replacements** (slices; each from its latest definition): `ops.record_inbound_screening` 1, 2, 3, 6, 7; `ops.receive_whatsapp_message` 1, 3, 4; `ops.open_scripted_review` 1, 8; `ops.record_person_reply` 1, 5; `ops.cos_review_superseded` 1, 2; `ops.open_review_for_settled_job`, `ops.open_review_for_run`, `ops.open_missing_reviews`, `ops.request_shadow_decision_for_settled_job`, `ops.guard_review_item_update` 1; `ops.whatsapp_send_eligibility`, `ops.sync_send_exceptions`, `ops.begin_outbound_send`, `ops.guard_outbound_message` 2; `ops.request_outbound_send` 2, 5; `ops.open_exception` 2, 3, 4; `ops.read_review_detail`, `ops.agent_configuration_kinds`, `ops.agent_configuration_valid` 2, 7; `ops.cos_event_known`, `ops.cos_event_facts`, `ops.cos_event_source` 2, 3, 7; `ops.erase_due_contact_identifier`, `ops.erase_contact_identifier` 3; `ops.receive_whatsapp_status` 4; `ops.create_booking`, `ops.reschedule_booking` 6; `ops.front_desk_policy_for_run` 7. `ops.release_conversation` is unchanged.
+
+## Owner decisions still open
+
+The triage question (Meta's health-information clause) was settled by the owner's decision 5.
+
+1. **A crisis from someone who asked us to stop.** Should the receptionist still send the CVV (188) text to a contact who opted out and then writes in crisis? Meta's policy asks a business to honour a request to stop (how it applies to the person's own later message is to verify). **Recommended: yes, that text only,** answering their own message; the opt-out stays recorded. A yes amends SI-49 again.
+
+## Consequences
+
+- Leads are answered at any hour by the owner's texts; the owner never handles a crisis; a request for a person reaches the owner in about a minute.
+- Wider footprint: the worker holds the Meta token and writes the CRM; the gateway creates contacts and can cause fixed texts (§B). Mitigated by the opt-in transport, a test-only token, the test-sender gate and the caps.
+- The browser reads message bodies and requests a send for the first time; ADR 0019's counts change, not its architecture. Notifications outside the owner's window are charged (rate unverified).
+- Five invariants added, about twenty amended; many pins move together (job kinds, `CAPABILITY_NAMES`, A4/A5, API and gateway pins).
+- To update as slices land: ADRs 0021, 0023 and 0025, RECEPTION_OPERATIONS_SPEC, DOMAIN_EVENT_CATALOG, COST_FIRST_STAGING, ROADMAP, DECISIONS.md, CURRENT_STATE.
+
+## What this record does NOT do
+
+- Open production or authorize real data: PRODUCTION REAL-DATA AUTHORIZATION stays CLOSED, REAL PATIENT MODEL TRAFFIC stays DISABLED, SI-47 unchanged.
+- Make an AI-written reply autonomous, or let a model's output send, raise an exception, set a hold or write the CRM.
+- Weaken a send gate beyond the safety text's contact rule (§B, SI-49), or the owner's opt-out rule (B7 (b)).
+- Message a patient, connect a calendar, write health-derived data to the CRM, or modify the owner's sites.
+
+## Appendix: review findings and how this record answers them
+
+- **First review,** answered where named: B1, M9, m1 §A; M2, M4, M5, M6, M10, m2 to m5, m14 §B and slice 2; M13 decision 4; M1, M3, M14, m8, m16 §C and SI-84, SI-48; m9, m10 §D and SI-86; m12, m13 §E; M8 §F; M7 §H; M11, M12 decision 5 and §H; m6, m7 Sequencing; m11 "To verify"; m15 `b35d4832`.
+- **Second review:** §A (refused media, event keys, author guard), §B (send guard, deferral, token, pre-checks, residual), §C (B7 (b), name, edit test), §D (notifications, the owner's number), open decisions (the triage question settled by decision 5, its WhatsApp questions designed later, §H; the window template delegated, §D).

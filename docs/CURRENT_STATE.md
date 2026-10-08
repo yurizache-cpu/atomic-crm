@@ -84,7 +84,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - after a danger message, no booking: a booking request then goes to the waiting list (delegated to the design);
    - no team names for now; B7 (b).
 
-   ADR 0026 is written next on this branch, Proposed, with its slices; each slice is its own PR.
+   [ADR 0026](adr/0026-autonomous-front-desk-for-leads.md) (Proposed) records them, with eight slices, each its own PR: (1) who wrote a review, and a person's reply to the newest message; (2) automatic fixed texts; (3) automatic leads, the opt-out in the CRM and B7 (b)'s lift; (4) the waiting list and the owner's WhatsApp notification; (5) the browser inbox; (6) no booking after a crisis; (7) the site's triage kept for the owner; (8) a fixed text when a run ends with no reply. One owner decision stays open: whether a contact who opted out and then writes in crisis still gets the CVV (188) text.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -117,7 +117,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 | --- | --- | --- |
 | 1 | The persona name ("Lia" is provisional), how and when the video-call link is sent (missing from the knowledge), and whether to test Gemini with less reasoning | The live receptionist test's quality |
 | 2 | ADR 0021 W6, lead creation for a new WhatsApp number: **decided 2026-10-08, then revised the same day** to automatic creation (ADR 0025 B1 (c), carried by ADR 0026). It needs B2 (the contact write adapter) | Real lead entry (workstream A) |
-| 2a | ADR 0026 (written next, Proposed): accept or amend it, and answer its few open decisions. ADR 0025 Part A is integrated (PR #33); its Part B items are carried by ADR 0026 | The autonomous front desk's slices |
+| 2a | ADR 0026 (Proposed): accept or amend it, and answer its one open decision (the safety text to an opted-out contact in crisis). ADR 0025 Part A is integrated (PR #33); its Part B items are carried by ADR 0026 | The autonomous front desk's slices |
 | 2b | Register the owner's own WhatsApp number for notifications, by the owner's own act (never written in the repository), and approve a Meta utility template for the notification | The owner's WhatsApp notification (ADR 0026) |
 | 3 | ADR 0021 W7 (a production webhook host; Netlify recommended) and W8 (Meta actions: templates, app live); the system-user token expires 2026-12-01 | Production WhatsApp; messages outside the 24-hour window |
 | 4 | A payment provider | Workstream C |
@@ -161,7 +161,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **ADR 0026** (§3, item 1): write it on `feature/autonomous-front-desk`, Proposed, and present its slices and open decisions to the owner; then implement the slices in order, each its own PR, merged only on the owner's request.
+1. **ADR 0026** (§3, item 1): the owner's review; implement the slices in order, starting with slice 1, each its own PR, merged only on the owner's request.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
