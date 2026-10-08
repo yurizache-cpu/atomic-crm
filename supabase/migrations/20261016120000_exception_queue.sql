@@ -681,7 +681,11 @@ begin
 
   -- The bounded context: the earlier turns of this conversation as the model
   -- may see them (a contact's screened text, the replies the agent or a fixed
-  -- text sent; a person's reply and anything not screened stay out).
+  -- text sent; a person's reply and anything not screened stay out). Since
+  -- danger stays with the agent (owner decision, 2026-10-08), a later message
+  -- reaches the model in a conversation that got the safety text: that text,
+  -- and a sensitive-subject text, would say what the contact wrote, so they
+  -- are shown as the marker too (W1, SI-80).
   v_turn_limit := least(greatest((v_policy.content ->> 'contextTurns')::integer, 0), 12);
   if v_inbound.conversation_id is not null and v_turn_limit > 0 then
     select coalesce(jsonb_agg(t.turn order by t.at), '[]'::jsonb) into v_turns
@@ -698,7 +702,10 @@ begin
           union all
           select coalesce(o.sending_at, o.authorized_at) as at,
                  jsonb_build_object('role', 'agent', 'text',
-                   case when s.disposition in ('model', 'fixed_reply') then ri.proposed ->> 'response_draft' end) as turn
+                   case when s.disposition = 'model'
+                          or (s.disposition = 'fixed_reply'
+                              and s.fixed_message_key not in ('safety', 'sensitive_only_client', 'sensitive_only_prospect'))
+                        then ri.proposed ->> 'response_draft' end) as turn
             from ops.outbound_messages o
             join ops.review_items ri on ri.tenant_id = o.tenant_id and ri.id = o.review_item_id
             left join ops.inbound_screenings s on s.tenant_id = ri.tenant_id and s.agent_run_id = ri.agent_run_id

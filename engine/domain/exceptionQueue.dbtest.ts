@@ -13,6 +13,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import type { TxClient, WorkerDatabase } from "../db/types.ts";
+import { HIDDEN_TURN_MARKER } from "../frontDesk/prompt.ts";
 import {
   removeFixtureModels,
   TENANT_A,
@@ -20,6 +21,7 @@ import {
 } from "../worker/testSupport/dbFixture.ts";
 import { CompanyOsError } from "./errors.ts";
 import { listExceptions, resolveException } from "./exceptionQueue.ts";
+import { sendApprovedReview } from "./outboundSend.ts";
 import {
   recordPersonReply,
   releaseConversation,
@@ -32,12 +34,15 @@ import {
 import {
   createFrontDeskHarness,
   DEAL_NAME,
+  FIXED,
   FRONT_DESK_MODELS,
   KNOWLEDGE,
   POLICY,
 } from "./testSupport/frontDeskHarness.ts";
 import {
+  accepted,
   addCrmContact,
+  fakeTransport,
   deleteCrmContacts,
   setDoNotContact,
   gatewayDatabase,
@@ -384,7 +389,7 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
 });
 
 describe("what a message tells a person reaches the queue, whoever holds the conversation (ADR 0025 A2)", () => {
-  it("answers danger with the safety text and keeps it off the queue: the conversation stays with the agent", async () => {
+  it("answers danger with the safety text and keeps it off the queue: the conversation stays with the agent, and the model never reads that text", async () => {
     // Owner decision, 2026-10-08: the front desk answers leads, not patients,
     // and the owner does not take a crisis.
     await frontDesk();
@@ -403,11 +408,38 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     expect(await exceptions()).toEqual([]);
     expect(provider.calls).toHaveLength(0);
     expect(decisions.asked).toHaveLength(0);
-    // The next administrative question is answered as usual.
+
+    // The safety text is accepted and sent, as a person would today.
+    const { rows } = await admin.query<{ id: string }>(
+      "select id from ops.review_items where tenant_id = $1 and task_id = $2",
+      [TENANT_A, out.task_id],
+    );
+    await admin.query(
+      "select ops.record_review_decision($1, $2, 'accepted', 'dbtest-person', 'operator-cli', null)",
+      [TENANT_A, rows[0].id],
+    );
+    const sent = await sendApprovedReview(
+      owner,
+      fakeTransport(() => accepted("wamid.EQSAFETY1")),
+      {
+        tenantId: TENANT_A,
+        reviewId: rows[0].id,
+        requestedBy: "dbtest operator",
+        source: "dbtest",
+      },
+    );
+    expect(sent).toMatchObject({ status: "sent" });
+
+    // The next administrative question is answered as usual, and the model
+    // never reads the safety text: it would say what the contact wrote (W1).
     await send(ADMINISTRATIVE);
     await drain(registry);
     expect(await latest()).toMatchObject({ disposition: "model" });
     expect(provider.calls).toHaveLength(1);
+    const input = provider.calls[0].input;
+    expect(input).toContain(HIDDEN_TURN_MARKER);
+    expect(input).not.toContain(FIXED.messages.safety);
+    expect(input).not.toContain("188");
   });
 
   it("answers danger from a number no reply can reach with the safety text, listing only the contact", async () => {

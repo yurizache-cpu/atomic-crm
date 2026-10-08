@@ -4609,6 +4609,11 @@ const INVARIANTS: Invariant[] = [
           /and v_inbound\.conversation_id is not null and not v_reachable then/,
       },
       {
+        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        marker:
+          /and s\.fixed_message_key not in \('safety', 'sensitive_only_client', 'sensitive_only_prospect'\)\)/,
+      },
+      {
         file: "engine/domain/exceptionQueue.dbtest.ts",
         marker:
           /holds a number with no CRM contact before any model, and lists it once/,
@@ -4748,7 +4753,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
         marker:
-          /answers danger with the safety text and keeps it off the queue: the conversation stays with the agent/,
+          /answers danger with the safety text and keeps it off the queue: the conversation stays with the agent, and the model never reads that text/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
