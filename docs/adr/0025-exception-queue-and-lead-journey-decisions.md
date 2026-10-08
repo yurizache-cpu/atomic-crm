@@ -1,6 +1,6 @@
 # ADR 0025 — The exception queue, and the decisions the lead journey core needs
 
-**Status:** Part A **Proposed for the owner's review**. It is implemented on `feature/lead-journey-core` (migration `20261016120000_exception_queue.sql`, SI-82) and not integrated. On acceptance it amends Accepted ADR 0023 §G in three ways (A3). Part B **Proposed**: owner decisions, nothing built. **Date:** 2026-10-07.
+**Status:** Part A **Proposed for the owner's review**. It is implemented on `feature/lead-journey-core` (migration `20261016120000_exception_queue.sql`, SI-82) and not integrated. On acceptance it amends Accepted ADR 0023 §G in three ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each)**; B2 to B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -138,6 +138,7 @@ Each decision lists the options and a recommendation. Nothing in Part B is built
     - (b) an owner act creates the CRM contact and its lead profile from a held conversation, marked do-not-contact until a person confirms;
     - (c) automatic creation at admission.
   - **Recommended: (b).** It is one recorded person act. It leaves the gateway path untouched (SI-48, SI-53), and no reply is possible before a person decides. The same act could re-answer the held message, once the contact is reachable.
+  - **Decided by the owner (2026-10-08): (b).** Building it needs B2 (the contact write adapter); W6 (a) stays in force until then.
 - **B2. The first Company OS write into the CRM's contact tables.**
   - The adapter is a `crm_` write adapter, gated on `owns_local_crm` like the deal acts (SI-68), with its own invariant and write-path pins.
   - **Recommended:** one adapter for "create contact with phone, and its lead profile", and one for "append an attribution touch". Nothing else.
@@ -173,6 +174,7 @@ Each decision lists the options and a recommendation. Nothing in Part B is built
     - (b) a person may lift it after the contact writes again, with the message recorded as the reason;
     - (c) a message lifts it automatically.
   - **Recommended: (b).**
+  - **Decided by the owner (2026-10-08): (b).** A person may lift an opt-out after the contact writes again, recording the message as the reason; nothing lifts it automatically. Nothing is built yet.
   - Related: once the flag is recorded, the opt-out acknowledgement can no longer be sent (eligibility refuses do-not-contact), so it must leave before the flag is recorded. That ordering is the owner's call too.
 
 ## Consequences

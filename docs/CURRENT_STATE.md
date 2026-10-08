@@ -116,8 +116,8 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 | # | Item | Blocks |
 | --- | --- | --- |
 | 1 | The persona name ("Lia" is provisional), how and when the video-call link is sent (missing from the knowledge), and whether to test Gemini with less reasoning | The live receptionist test's quality |
-| 2 | ADR 0021 W6: may a lead be created for a new WhatsApp number? ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) B1 recommends an owner act from a held conversation) | Real lead entry (workstream A) |
-| 2a | ADR 0025: accept or amend Part A (the exception queue, and A3, which amends ADR 0023 §G); decide Part B, B1 to B7 (lead creation, CRM contact writes, identity resolution, attribution, structured triage and its health fields, lead event subjects, a message from a contact who opted out) | The exception queue's merge; the rest of milestone 2 |
+| 2 | ADR 0021 W6, lead creation for a new WhatsApp number: **decided 2026-10-08** ([ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) B1 (b)): an owner act creates the contact from a held conversation, marked do-not-contact until a person confirms. It needs B2 (the contact write adapter) to be built | Real lead entry (workstream A) |
+| 2a | ADR 0025: accept or amend Part A (the exception queue, and A3, which amends ADR 0023 §G); decide Part B, B2 to B6 (CRM contact writes, identity resolution, attribution, structured triage and its health fields, lead event subjects). B1 and B7 were decided on 2026-10-08, option (b) each | The exception queue's merge; the rest of milestone 2 |
 | 3 | ADR 0021 W7 (a production webhook host; Netlify recommended) and W8 (Meta actions: templates, app live); the system-user token expires 2026-12-01 | Production WhatsApp; messages outside the 24-hour window |
 | 4 | A payment provider | Workstream C |
 | 5 | Calendar provider authentication, token storage and data-processing terms (Google Calendar, Meet) | Workstream B's calendar part |
@@ -160,7 +160,7 @@ From the ROADMAP program map:
 ## 9. Exactly next action
 
 1. **PR #33, the exception queue** (§3, item 1): CI on its new head against the baseline (§7), then the owner's review of ADR 0025 Part A and the merge on the owner's request.
-2. **When the owner confirms the team's names:** publish on staging an operating policy v5 with `handoffNames`.
+2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
    - the gateway (`npm run whatsapp:gateway`) and the worker (`npm run staging:gateway-worker`), both through `scripts/with-staging.mjs`, from the integrated code;
