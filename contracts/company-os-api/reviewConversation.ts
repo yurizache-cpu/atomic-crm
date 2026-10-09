@@ -38,6 +38,9 @@ export const FIXED_MESSAGE_KEYS = [
   "opt_out_ack",
 ] as const;
 
+/** Who wrote a review (ops.review_items.author, ADR 0026 §A). */
+export const REVIEW_AUTHORS = ["agent", "fixed", "person"] as const;
+
 /** The screened text's bound (inbound_screenings_input_length). */
 export const SCREENED_MESSAGE_MAX_LENGTH = 4000;
 
@@ -81,11 +84,15 @@ export const ReviewConversationSchema = z.union([
   z
     .strictObject({
       status: z.literal("available"),
+      // Who wrote the reply: the agent's model, a fixed text, or a person.
+      author: z.enum(REVIEW_AUTHORS),
       // null: no front-desk screening recorded this message.
       screening: ScreeningSchema.nullable(),
       // null once the task's content is redacted.
       replyDraft: boundedTextSchema(RESPONSE_DRAFT_MAX_LENGTH).nullable(),
       contentRedacted: z.boolean(),
+      // A person already replied to this message: the send refuses this one.
+      answeredByPerson: z.boolean(),
       // The contact wrote again after this message: the send refuses it.
       newerMessage: z.boolean(),
     })
@@ -97,9 +104,17 @@ export const ReviewConversationSchema = z.union([
           message: "a redacted review has no draft left",
         });
       }
+      if (conversation.answeredByPerson && conversation.author === "person") {
+        ctx.addIssue({
+          code: "custom",
+          path: ["answeredByPerson"],
+          message: "a person's reply is never answered by a person",
+        });
+      }
     }),
 ]);
 
 export type ReviewConversation = z.infer<typeof ReviewConversationSchema>;
 export type ScreeningMessageClass = (typeof SCREENING_MESSAGE_CLASSES)[number];
 export type ScreeningDisposition = (typeof SCREENING_DISPOSITIONS)[number];
+export type ReviewAuthor = (typeof REVIEW_AUTHORS)[number];

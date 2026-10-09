@@ -32,9 +32,9 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 | The review shows the screened message and the draft; stale replies never sent | ✅ (PR #29, ADR 0023 §L, SI-81) |
 | Receptionist prompt v4 (persona and locale as configuration), grounding duration rule, message instant in context | ✅ (PR #31) |
 | Follow-up engine (cadences, plans, due jobs) | ✅ (Phase 3A) |
-| Creating a CRM lead for a new WhatsApp number | 🚫 ADR 0021 W6 (owner decision) |
+| Creating a CRM lead for a new WhatsApp number | ⬜ decided 2026-10-08: automatic (ADR 0025 B1 (c), planned in ADR 0026) |
 | Structured triage (pre-filled from a form, or conversational) | ⬜ |
-| Core lead events (`lead.created`, `triage.completed`, `exception.raised`) | 🟡 `exception.raised` and `exception.resolved` built on `feature/lead-journey-core` (ADR 0025 Part A, Proposed) · ⬜ the lead events (ADR 0025 Part B) |
+| Core lead events (`lead.created`, `triage.completed`, `exception.raised`) | 🟡 `exception.raised` and `exception.resolved` integrated (PR #33, ADR 0025 Part A) · ⬜ the lead events (ADR 0026) |
 | Next best action (deterministic, Jev shadow) | ⬜ (Jev's lead intelligence asks for it in shadow already) |
 | CRM settings screen for the receptionist's configuration | ⬜ (needs browser acts under OD-8a) |
 
@@ -98,9 +98,9 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 | Item | Status |
 | --- | --- |
 | Operator surface: overview, tasks, runs, reviews with Jev, decision intelligence, health, agenda, funnel, costs, agents, communications, stops | ✅ (ADR 0019, Phases 2C to 3B) |
-| Exception and approval inbox | 🟡 its parts exist (reviews, health attention, stops, indeterminate work); the exception store, owner tool and feed events built on `feature/lead-journey-core` (ADR 0025 Part A) · ⬜ the unified inbox screen |
+| Exception and approval inbox | 🟡 its parts exist (reviews, health attention, stops, indeterminate work); the exception store, owner tool and feed events integrated (PR #33, ADR 0025 Part A) · ⬜ the browser inbox (ADR 0026) |
 | Daily Brief from structured state | ⬜ |
-| Owner notifications | ⬜ |
+| Owner notifications | ⬜ a WhatsApp notification to the owner for the waiting list (ADR 0026) |
 | Owner questions over analytical tools | ⬜ |
 | Agent KPI surfaces | 🟡 costs and model economics exist · ⬜ per-employee KPIs |
 
@@ -139,7 +139,8 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
    - lead creation for new numbers (after W6);
    - identity resolution and attribution capture at entry;
    - structured triage;
-   - the first catalogued lead events (A, E). The exception queue is built on `feature/lead-journey-core` (ADR 0025 Part A); the rest waits on ADR 0025 Part B.
+   - the first catalogued lead events (A, E). The exception queue is integrated (PR #33, ADR 0025 Part A); the rest is planned in ADR 0026;
+   - the autonomous front desk for leads (ADR 0026): automatic fixed replies, automatic lead creation, the waiting list with the owner's notification, the browser inbox.
 3. **Scheduling in the journey:**
    - real slots offered in conversation;
    - the booking page with holds;

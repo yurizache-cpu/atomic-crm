@@ -7,7 +7,7 @@
 //   npm run front-desk -- conversations --tenant <uuid>
 //   npm run front-desk -- takeover --tenant <uuid> --conversation <uuid> --actor <label>
 //   npm run front-desk -- release --tenant <uuid> --conversation <uuid> --actor <label>
-//   npm run front-desk -- reply --tenant <uuid> --conversation <uuid> --text-file <path.txt> --actor <label>
+//   npm run front-desk -- reply --tenant <uuid> --conversation <uuid> --text-file <path.txt> --revision <n> --actor <label>
 //   npm run front-desk -- screenings --tenant <uuid>
 //   npm run front-desk -- exceptions --tenant <uuid> [--all]
 //   npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>
@@ -59,7 +59,7 @@ import {
 } from "./cliOutput.ts";
 
 export const FRONT_DESK_SYNOPSIS =
-  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid>";
+  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --revision <n> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid>";
 
 type CommandName =
   | "config list"
@@ -106,7 +106,16 @@ const COMMANDS: ReadonlyMap<CommandName, Grammar> = new Map([
   ["conversations", grammar(true, ["tenant"])],
   ["takeover", grammar(false, ["tenant", "conversation", "actor"])],
   ["release", grammar(false, ["tenant", "conversation", "actor"])],
-  ["reply", grammar(false, ["tenant", "conversation", "text-file", "actor"])],
+  [
+    "reply",
+    grammar(false, [
+      "tenant",
+      "conversation",
+      "text-file",
+      "revision",
+      "actor",
+    ]),
+  ],
   ["screenings", grammar(true, ["tenant"])],
   ["exceptions", grammar(true, ["tenant"], ["tenant"], ["all"])],
   [
@@ -247,6 +256,11 @@ async function run(
           conversationId: get("conversation"),
           text: textFromFile(readTextFile(get("text-file"))),
           actor: get("actor"),
+          // The revision the conversation listing showed; the domain refuses
+          // anything but a non-negative integer.
+          expectedRevision: /^[0-9]{1,9}$/.test(get("revision"))
+            ? Number(get("revision"))
+            : Number.NaN,
         }),
       ];
     case "screenings":

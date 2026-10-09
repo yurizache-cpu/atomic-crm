@@ -1,12 +1,14 @@
 import type { RenderResult } from "vitest-browser-react";
 
 import {
+  CONVERSATION_ANSWERED_BY_PERSON,
   CONVERSATION_NEWER_MESSAGE,
   CONVERSATION_NO_SCREENING,
   CONVERSATION_NOTE,
   CONVERSATION_REDACTED,
   CONVERSATION_TITLE,
   CONVERSATION_UNAVAILABLE,
+  PERSON_AUTHOR_LABEL,
   SCREENING_NOTHING_READ,
 } from "../../copy";
 import { ok } from "../../testing/fakeSession";
@@ -38,6 +40,7 @@ const withConversation = (conversation: unknown) => {
 
 const available = (overrides: Record<string, unknown>) => ({
   status: "available",
+  author: "agent",
   screening: {
     messageClass: "mixed",
     disposition: "model",
@@ -46,6 +49,7 @@ const available = (overrides: Record<string, unknown>) => ({
   },
   replyDraft: "Temos terça às 19h. Posso pedir para a equipe confirmar?",
   contentRedacted: false,
+  answeredByPerson: false,
   newerMessage: false,
   ...overrides,
 });
@@ -133,6 +137,38 @@ describe("the message and the reply on a review", () => {
     await expect
       .element(region(screen).getByRole("alert"))
       .toHaveTextContent(CONVERSATION_NEWER_MESSAGE);
+  });
+
+  it("names a person as the author of a person's reply, whatever the message's screening said", async () => {
+    const screen = await renderCompanyOs(
+      withConversation(
+        available({ author: "person", replyDraft: "Oi, aqui é da equipe." }),
+      ),
+      reviewPage("review:opened"),
+    );
+
+    const section = region(screen);
+    await expect
+      .element(section)
+      .toHaveTextContent(`Quem respondeu${PERSON_AUTHOR_LABEL}`);
+    expect(section.element().textContent).not.toContain(
+      "O modelo de IA escreveu a resposta",
+    );
+  });
+
+  it("says a person already answered the message, not that the contact wrote again", async () => {
+    const screen = await renderCompanyOs(
+      withConversation(available({ answeredByPerson: true })),
+      reviewPage("review:opened"),
+    );
+
+    const alert = region(screen).getByRole("alert");
+    await expect
+      .element(alert)
+      .toHaveTextContent(CONVERSATION_ANSWERED_BY_PERSON);
+    expect(alert.element().textContent).not.toContain(
+      CONVERSATION_NEWER_MESSAGE,
+    );
   });
 
   it("shows nothing of a redacted review, and nothing outside synthetic or test data", async () => {

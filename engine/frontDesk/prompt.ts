@@ -3,8 +3,10 @@
 // when it recorded the run's screening (ops.record_inbound_screening).
 //
 // What it may contain: the screened text of the current message, the earlier
-// turns as the model may see them (a contact's screened text, the replies the
-// agent or a fixed text sent), the agent's published configuration, the
+// turns as the model may see them, keyed on who wrote each reply (ADR 0026
+// §A: a contact's screened text, the agent's own reply, a fixed
+// clarification, handoff or opt-out acknowledgement, anything else as the
+// marker), the agent's published configuration, the
 // availability the booking foundation lists, the conversation's party kind and
 // phase, and when the contact wrote. What it never contains:
 // the task's description (the raw message), a person's reply, a phone number,

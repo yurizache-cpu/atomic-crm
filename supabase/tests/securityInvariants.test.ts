@@ -3930,7 +3930,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-72",
     statement:
-      "AI working content of a health or person_text task (its description, every run's result, every review's proposed copy and note) and the unkeyed fingerprints derived from it (the task's request fingerprint, every run's input fingerprint, the admission's body fingerprint) never remains indefinitely: every such task has one retention state from its creation, anchored at the database's decision instant of its latest decided review for the relied-on authorization's own content retention days or 30, or, while no review is decided, 30 days after its latest review opened, else after its latest run finished, else after its creation; the clock only moves forward and no fallback displaces a decided review's; the content is then redacted in place by the worker's one lease-bound capability on the flow's one job, which only a run pending or running defers, always leaving exactly one next job queued, or earlier by the owner's erasure of that one task in its own tenant, and by nothing else: every guard that keeps those rows immutable admits only a redaction the retention ledger records at that instant, which removes the named content, marks the row and changes no other column; a redaction deletes no row and never changes a class, status, decision, reviewer, instant, cost, provider, model, authorization reference, idempotency key or event; content written back or a marker cleared is refused; the ledger holds no content and no application role reads or writes it; a redacted task gets no new run, and a redacted review's send is blocked.",
+      "AI working content of a health or person_text task (its description, every run's result, every review's proposed copy and note) and the unkeyed fingerprints derived from it (the task's request fingerprint, every run's input fingerprint, the admission's body fingerprint) never remains indefinitely: every such task has one retention state from its creation, anchored at the database's decision instant of its latest decided review for the relied-on authorization's own content retention days or 30, or, while no review is decided, 30 days after its latest review opened, else after its latest run finished, else after its creation; the clock only moves forward and no fallback displaces a decided review's; the content is then redacted in place by the worker's one lease-bound capability on the flow's one job, which only a run pending or running defers, always leaving exactly one next job queued, or earlier by the owner's erasure of that one task in its own tenant, and by nothing else: every guard that keeps those rows immutable admits only a redaction the retention ledger records at that instant, which removes the named content, marks the row and changes no other column; a redaction deletes no row and never changes a class, status, decision, reviewer, instant, cost, provider, model, authorization reference, idempotency key or event; content written back or a marker cleared is refused; the ledger holds no content and no application role reads or writes it; a redacted task gets no new run and no new review, and a redacted review's send is blocked.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4029,6 +4029,15 @@ const INVARIANTS: Invariant[] = [
         file: "engine/handlers/contentRetentionDue.test.ts",
         marker:
           /records the database's answer as a status token, a deferral included, so no attempt is spent waiting/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker:
+          /message = 'ops.review_items: no review opens on a redacted task'/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F7b: a review opened on a redacted task/,
       },
     ],
     caveat:
@@ -4535,7 +4544,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text, earlier turns as screened text or a marker, the published configuration, the booking foundation's availability, the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4609,9 +4618,33 @@ const INVARIANTS: Invariant[] = [
           /and v_inbound\.conversation_id is not null and not v_reachable then/,
       },
       {
-        file: "supabase/migrations/20261016120000_exception_queue.sql",
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker: /case when ri\.author = 'agent' and s\.disposition = 'model'/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
         marker:
-          /and s\.fixed_message_key not in \('safety', 'sensitive_only_client', 'sensitive_only_prospect'\)\)/,
+          /and s\.fixed_message_key in \('clarification', 'human_handoff_ack', 'opt_out_ack'\)/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker:
+          /message = 'ops\.review_items: a person''s reply is written only by its own act'/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker:
+          /F7b: the agent was recorded as answering a run the front desk settled/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /shows the model the agent's own reply and the handoff acknowledgement verbatim, and a person's reply only as the marker/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /answers a message the model answered with a person's reply that never reaches the provider, and makes the agent's draft stale/,
       },
       {
         file: "engine/domain/exceptionQueue.dbtest.ts",
@@ -4625,7 +4658,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-81",
     statement:
-      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate.",
+      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate. A person's reply answers the conversation as the person saw it: it names the conversation's revision (how many messages the contact sent, admitted or refused), is refused if the conversation moved since, and is stale only once the contact wrote again after that revision, so a refused message inside it does not make it stale; a reply the agent or a fixed text drafted is stale once a person replied to its message, but for the safety text and the opt-out acknowledgement, which only the contact's next message makes stale.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4690,6 +4723,40 @@ const INVARIANTS: Invariant[] = [
         marker:
           /still sends when the conversation's other message is an image sent before the reviewed one/,
       },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker:
+          /message = format\('ops\.record_person_reply: the conversation is at revision %s, not %s; list it again'/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker: /when p_item\.author = 'person' then coalesce\(\(/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /lets a person answer a request for a person after the contact sent an image, and the reply leaves/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /makes a person's reply stale once the contact writes after the revision the person saw/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker:
+          /F5: a reply was recorded naming a revision the conversation is not at/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker:
+          /and s\.disposition = 'fixed_reply' and s\.fixed_message_key in \('safety', 'opt_out_ack'\)\)\);/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /still sends the safety text after a person replied to the crisis message; only the contact's next message makes it stale/,
+      },
     ],
     caveat:
       "Recording order is the insertion order of each message's facts, which the conversation's row serialises at admission; two messages the provider delivers out of order therefore hold both replies for a person (fail closed). While a call is in flight, the contact's next message waits at its admission, bounded by the gateway's statement timeout, and Meta redelivers one the gateway could not take in time. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
@@ -4697,7 +4764,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message held in a conversation a person holds, and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4774,6 +4841,26 @@ const INVARIANTS: Invariant[] = [
         file: "engine/domain/exceptionQueue.dbtest.ts",
         marker:
           /decides the contact from the conversation's newest message, whatever order the messages are screened in/,
+      },
+      {
+        file: "supabase/migrations/20261017120000_review_authorship.sql",
+        marker:
+          /perform ops\.open_exception\(v_channel\.tenant_id, v_channel\.company_id, v_waiting, 'message_waiting',/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /counts a refused message for the person who holds the conversation, once per message, and none while the agent holds it/,
+      },
+      {
+        file: "engine/domain/exceptionQueue.dbtest.ts",
+        marker:
+          /counts a message held in a conversation a person took over, whatever it says, and a crisis there still gets its safety review/,
+      },
+      {
+        file: "engine/domain/reviewAuthorship.dbtest.ts",
+        marker:
+          /drafts the opt-out acknowledgement in a conversation a person holds; the message still waits, and the release waits for a person/,
       },
     ],
     caveat:

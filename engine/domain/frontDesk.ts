@@ -25,6 +25,8 @@ const ACTOR = /^[A-Za-z0-9._:@-]{1,200}$/;
 const CONTROL = /[\x01-\x09\x0b-\x1f\x7f]/;
 export const MAX_REPLY_LENGTH = 2000;
 export const MAX_LISTED = 200;
+/** The largest conversation revision a person's reply may name. */
+export const MAX_REVISION = 999_999_999;
 
 const invalid = (message: string): CompanyOsError =>
   new CompanyOsError("invalid_argument", message);
@@ -240,6 +242,8 @@ export interface ConversationStateRow {
   readonly holderReason: string | null;
   readonly holderChangedAt: string | null;
   readonly updatedAt: string;
+  /** How many messages the contact sent, admitted or refused: a person's reply names it. */
+  readonly revision: number;
 }
 
 /** The tenant's conversation states, most recently changed first. No number, no text. */
@@ -257,9 +261,11 @@ export async function listConversationStates(
       holder_reason: string | null;
       holder_changed_at: string | null;
       updated_at: string;
+      revision: number;
     }>(
       `select s.conversation_id, s.party_kind, s.phase, s.holder, s.holder_reason,
-              ${UTC("s.holder_changed_at")} as holder_changed_at, ${UTC("s.updated_at")} as updated_at
+              ${UTC("s.holder_changed_at")} as holder_changed_at, ${UTC("s.updated_at")} as updated_at,
+              ops.cos_conversation_revision(s.tenant_id, s.conversation_id) as revision
          from ops.conversation_states s
         where s.tenant_id = $1
         order by s.updated_at desc
@@ -274,6 +280,7 @@ export async function listConversationStates(
       holderReason: row.holder_reason,
       holderChangedAt: row.holder_changed_at,
       updatedAt: row.updated_at,
+      revision: row.revision,
     }));
   } catch (error) {
     throw toDomainError(error);
@@ -310,8 +317,9 @@ export const takeOverConversation = conversationAct("take_over_conversation");
 export const releaseConversation = conversationAct("release_conversation");
 
 /**
- * A person's reply to the latest message waiting in a conversation the person
- * holds: recorded as an accepted review, sent by `messaging send`.
+ * A person's reply to the newest message of a conversation the person holds,
+ * naming the revision the listing showed: recorded as an accepted review, sent
+ * by `messaging send`. A conversation that moved since is refused.
  */
 export async function recordPersonReply(
   tx: TxClient,
@@ -320,9 +328,17 @@ export async function recordPersonReply(
     readonly conversationId: string;
     readonly text: string;
     readonly actor: string;
+    readonly expectedRevision: number;
   },
 ): Promise<Record<string, unknown>> {
   const text = input.text;
+  if (
+    !Number.isInteger(input.expectedRevision) ||
+    input.expectedRevision < 0 ||
+    input.expectedRevision > MAX_REVISION
+  ) {
+    throw invalid("name the revision the conversation listing showed");
+  }
   if (
     typeof text !== "string" ||
     text.length === 0 ||
@@ -336,12 +352,13 @@ export async function recordPersonReply(
   }
   const answer = await one<Record<string, unknown>>(
     tx,
-    "select ops.record_person_reply($1, $2, $3, $4) as answer",
+    "select ops.record_person_reply($1, $2, $3, $4, $5) as answer",
     [
       requireUuid(input.tenantId, "tenantId"),
       requireUuid(input.conversationId, "conversationId"),
       text,
       requireActor(input.actor),
+      input.expectedRevision,
     ],
   );
   if (!answer || typeof answer !== "object")

@@ -377,15 +377,35 @@ begin
     raise exception 'F5: another tenant took the conversation over';
   exception when sqlstate 'OS404' then null;
   end;
-  -- No message waits for a person's reply (the first one was screened to the model).
+  -- ADR 0026 §A: a person's reply names the revision the person saw; a
+  -- conversation that moved since is refused, and so is a reply to a message
+  -- whose content is gone (task_1 was redacted in F4).
   begin
-    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, 'Synthetic reply', 'fd-person');
-    raise exception 'F5: a reply was recorded with no message waiting';
-  exception when sqlstate 'OS409' then null;
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, 'Synthetic reply', 'fd-person',
+                                    ops.cos_conversation_revision(pg_temp.id('tenant_a'), v_conv) + 1);
+    raise exception 'F5: a reply was recorded naming a revision the conversation is not at';
+  exception when sqlstate 'OS409' then
+    if sqlerrm not like '%list it again%' then
+      raise exception 'F5: a stale revision was refused for another reason: %', sqlerrm;
+    end if;
   end;
   begin
-    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, '', 'fd-person');
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, 'Synthetic reply', 'fd-person',
+                                    ops.cos_conversation_revision(pg_temp.id('tenant_a'), v_conv));
+    raise exception 'F5: a reply was recorded to a message whose content was erased';
+  exception when sqlstate 'OS409' then
+    if sqlerrm not like '%erased under retention%' then
+      raise exception 'F5: an erased message was refused for another reason: %', sqlerrm;
+    end if;
+  end;
+  begin
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, '', 'fd-person', 0);
     raise exception 'F5: an empty reply was accepted';
+  exception when sqlstate 'OS400' then null;
+  end;
+  begin
+    perform ops.record_person_reply(pg_temp.id('tenant_a'), v_conv, 'Synthetic reply', 'fd-person', null);
+    raise exception 'F5: a reply naming no revision was accepted';
   exception when sqlstate 'OS400' then null;
   end;
   if ops.release_conversation(pg_temp.id('tenant_a'), v_conv, 'fd-person') ->> 'state' <> 'released' then
@@ -457,15 +477,22 @@ begin
   values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'front_desk_screen.v2',
     'health_pt_br.v1', 'mixed', 'none', 1, 1, 0, true, false, false, '[trecho omitido] what is the price',
     'prospect', 'model', v_policy);
-  v_review := ops.open_scripted_review(v_run, 'FD7 synthetic draft', 'person', null, 'front-desk-suite');
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'lead_triage',
+          jsonb_build_object('outcome', 'triaged', 'summary', 'Synthetic advice.', 'intent', 'other', 'priority', 'normal',
+                             'recommended_next_action', 'Send the reply after review.', 'response_draft', 'FD7 synthetic draft',
+                             'needs_human_review', true, 'flags', '[]'::jsonb),
+          false)
+  returning id into v_review;
   select r.* into v_item from ops.review_items r where r.id = v_review;
 
   v_conv := ops.read_review_detail(pg_temp.id('tenant_a'), v_item.id) -> 'conversation';
   if v_conv is distinct from jsonb_build_object(
-       'status', 'available',
+       'status', 'available', 'author', 'agent',
        'screening', jsonb_build_object('messageClass', 'mixed', 'disposition', 'model', 'fixedMessageKey', null,
                                        'screenedMessage', '[trecho omitido] what is the price'),
-       'replyDraft', 'FD7 synthetic draft', 'contentRedacted', false, 'newerMessage', false) then
+       'replyDraft', 'FD7 synthetic draft', 'contentRedacted', false, 'answeredByPerson', false,
+       'newerMessage', false) then
     raise exception 'F7: the review does not show the screened text and the draft: %', v_conv;
   end if;
   v_detail := ops.read_review_detail(pg_temp.id('tenant_a'), v_item.id)::text;
@@ -483,7 +510,13 @@ begin
   -- The newer message's own reply is not superseded by the older message.
   select r.* into v_run from ops.agent_runs r
    where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7B');
-  v_review := ops.open_scripted_review(v_run, 'FD7 second draft', 'person', null, 'front-desk-suite');
+  insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+  values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'lead_triage',
+          jsonb_build_object('outcome', 'triaged', 'summary', 'Synthetic advice.', 'intent', 'other', 'priority', 'normal',
+                             'recommended_next_action', 'Send the reply after review.', 'response_draft', 'FD7 second draft',
+                             'needs_human_review', true, 'flags', '[]'::jsonb),
+          false)
+  returning id into v_review;
   if ops.cos_review_superseded(pg_temp.id('tenant_a'), (select r from ops.review_items r where r.id = v_review)) then
     raise exception 'F7: the newest message read as superseded';
   end if;
@@ -510,6 +543,115 @@ begin
   if ops.cos_review_conversation(pg_temp.id('tenant_a'), v_item) <> '{"status": "unavailable"}'::jsonb then
     raise exception 'F7: a review of health data showed its conversation';
   end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- F7b. ADR 0026 §A: who wrote a review is bound at insert. The earlier turns
+--      trust the author, so a mislabelled review is refused, and none opens on
+--      a redacted task; one review per run, but a person's.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_run    ops.agent_runs;
+  v_review uuid;
+  v_fixed  ops.agent_runs;
+  v_ctx    jsonb;
+begin
+  select r.* into v_run from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7A');
+  -- A fixed text only on a run the front desk settled with one.
+  begin
+    perform ops.open_scripted_review(v_run, 'FD7b fixed', 'fixed', 'clarification', 'front-desk-suite');
+    raise exception 'F7b: a fixed text answered a run the front desk did not settle with one';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- A person's reply only inside its own act.
+  begin
+    perform ops.open_scripted_review(v_run, 'FD7b person', 'person', null, 'front-desk-suite');
+    raise exception 'F7b: a person''s reply was written outside its own act';
+  exception when sqlstate 'OS403' then null;
+  end;
+  begin
+    perform ops.open_scripted_review(v_run, 'FD7b person', 'nobody', null, 'front-desk-suite');
+    raise exception 'F7b: a review of no known author was opened';
+  exception when sqlstate 'OS400' then null;
+  end;
+  -- One review per run: the agent's review of FD7A is there already (F7).
+  begin
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'lead_triage', '{}'::jsonb, false);
+    raise exception 'F7b: a run got a second review';
+  exception when unique_violation then null;
+  end;
+  -- Who wrote it never changes.
+  begin
+    update ops.review_items set author = 'person', conversation_revision = 1
+     where agent_run_id = v_run.id and author = 'agent';
+    raise exception 'F7b: a review''s author changed';
+  exception when sqlstate 'OS403' then null;
+  end;
+
+  -- The agent's model never answered a run the front desk settled without one.
+  perform ops.receive_whatsapp_message('300000000000071', 'wamid.FD7C', '5511900000071',
+                                       'Synthetic question for the guard', now());
+  select r.* into v_fixed from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7C');
+  alter table ops.agent_runs disable trigger agent_runs_guard_update;
+  v_ctx := ops.push_event_context('agent-runtime', null, null);
+  update ops.agent_runs
+     set status = 'cancelled', error_category = 'refused', error_code = 'front_desk_fixed_reply', completed_at = now()
+   where id = v_fixed.id;
+  perform ops.pop_event_context(v_ctx);
+  alter table ops.agent_runs enable always trigger agent_runs_guard_update;
+  begin
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_fixed.task_id, v_fixed.id, 'lead_triage', '{}'::jsonb, false);
+    raise exception 'F7b: the agent was recorded as answering a run the front desk settled';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- A fixed text still needs its screening's fixed disposition.
+  select r.* into v_fixed from ops.agent_runs r where r.id = v_fixed.id;
+  begin
+    perform ops.open_scripted_review(v_fixed, 'FD7b fixed', 'fixed', 'clarification', 'front-desk-suite');
+    raise exception 'F7b: a fixed text answered a run with no fixed screening';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- Nor on a run the front desk held for a person.
+  perform ops.receive_whatsapp_message('300000000000071', 'wamid.FD7D', '5511900000071',
+                                       'Synthetic question held for a person', now());
+  select r.* into v_fixed from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7D');
+  alter table ops.agent_runs disable trigger agent_runs_guard_update;
+  v_ctx := ops.push_event_context('agent-runtime', null, null);
+  update ops.agent_runs
+     set status = 'cancelled', error_category = 'refused', error_code = 'front_desk_held_for_person', completed_at = now()
+   where id = v_fixed.id;
+  perform ops.pop_event_context(v_ctx);
+  alter table ops.agent_runs enable always trigger agent_runs_guard_update;
+  begin
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_fixed.task_id, v_fixed.id, 'lead_triage', '{}'::jsonb, false);
+    raise exception 'F7b: the agent was recorded as answering a run held for a person';
+  exception when sqlstate 'OS403' then
+    if sqlerrm not like '%did not answer a run the front desk settled%' then
+      raise exception 'F7b: the held run was refused for another reason: %', sqlerrm;
+    end if;
+  end;
+
+  -- SI-72: no review opens on a redacted task (task_1's content went in F4).
+  select r.* into v_run from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD1');
+  begin
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, v_run.id, 'lead_triage', null, true);
+    raise exception 'F7b: a review opened on a redacted task';
+  exception when sqlstate 'OS409' then
+    if sqlerrm not like '%redacted task%' then
+      raise exception 'F7b: the redacted task was refused for another reason: %', sqlerrm;
+    end if;
+  end;
 end
 $$;
 

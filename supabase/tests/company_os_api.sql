@@ -1551,7 +1551,8 @@ begin
     ('get_review', array[
       '.agentRunId', '.allowedDecisions', '.asOf', '.capability',
       -- ADR 0023 §L: what the agent read and what the send would carry.
-      '.conversation', '.conversation.contentRedacted', '.conversation.newerMessage',
+      '.conversation', '.conversation.answeredByPerson', '.conversation.author',
+      '.conversation.contentRedacted', '.conversation.newerMessage',
       '.conversation.replyDraft', '.conversation.screening', '.conversation.status',
       '.createdAt', '.decisionNote',
       '.doNotContact', '.hasNote', '.id', '.outboundStatus', '.reviewedAt', '.shadowDecision',
@@ -3201,6 +3202,8 @@ insert into cos_internal values
   -- predicate the send shares, read only.
   ('ops.cos_review_conversation(uuid, ops.review_items)', 's'),
   ('ops.cos_review_superseded(uuid, ops.review_items)', 's'),
+  ('ops.cos_conversation_revision(uuid, uuid)', 's'),
+  ('ops.cos_review_answered_by_person(uuid, ops.review_items)', 's'),
   -- Phase 2E.2: the overview's operational health, read only.
   ('ops.cos_operational_health(uuid, timestamp with time zone, timestamp with time zone)', 's'),
   -- Phase 3A: the overview's agenda and its two row summaries, read only.

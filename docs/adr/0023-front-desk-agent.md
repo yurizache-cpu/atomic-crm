@@ -116,7 +116,7 @@ The owner's planning page (the Claude artifact "Recepção IA da Clínica") stay
 - `ops.conversation_states.holder` is `agent` or `person`. Every change is recorded once in `ops.conversation_transitions` (append-only; it leaves only with its conversation).
 - **Who moves a conversation to a person:** a request for a person, danger, or an opt-out, automatically. An operator can also take one over or release it (`npm run front-desk -- takeover|release`).
 - **While a person holds it:** a new message is admitted and screened, but its run is cancelled with no model call and no review (`front_desk_held_for_person`).
-- **A person's reply:** recorded with `npm run front-desk -- reply`, which opens an accepted review on the latest message waiting for one. `messaging send` then carries it, with every check. There is one reply per waiting message.
+- **A person's reply:** recorded with `npm run front-desk -- reply`, which opens an accepted review on the latest message waiting for one. `messaging send` then carries it, with every check. There is one reply per waiting message. *(Amended by ADR 0026 §A, 2026-10-08: the reply answers the conversation's newest admitted message, whatever happened to it, names the revision the person saw, and up to five replies may answer one message.)*
 - **No browser authority** is added: the Company OS browser acts are unchanged.
 
 ### H. Memory without a second transcript store

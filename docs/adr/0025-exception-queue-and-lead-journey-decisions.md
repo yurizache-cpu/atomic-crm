@@ -1,6 +1,6 @@
 # ADR 0025 — The exception queue, and the decisions the lead journey core needs
 
-**Status:** Part A **Proposed for the owner's review**. It is implemented on `feature/lead-journey-core` (migration `20261016120000_exception_queue.sql`, SI-82) and not integrated. On acceptance it amends Accepted ADR 0023 §G in four ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each)**; B2 to B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
+**Status:** Part A **Proposed for the owner's review**. It is integrated by PR #33 (merge `1bcefd50`, 2026-10-08; migration `20261016120000_exception_queue.sql`, SI-82) and applied to staging. On acceptance it amends Accepted ADR 0023 §G in four ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each); B1 revised the same day to (c), automatic lead creation, and B7 replaced: a contact's own later message lifts the contact's own opt-out**, carried with B2 and B5 by [ADR 0026](0026-autonomous-front-desk-for-leads.md); B3, B4 and B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -69,7 +69,7 @@ A person resolves with `resolved` or `dismissed`, naming the count of occurrence
 
 A model never raises or resolves an exception (DOMAIN_EVENT_CATALOG §13.6).
 
-**The screening.** `ops.record_inbound_screening`, the worker's lease-bound capability, raises the conversation kinds after it records the screening. It raises from the screening's own facts, not from a holder move, so a later danger message in a conversation that is already held still raises `safety`. It raises:
+**The screening.** `ops.record_inbound_screening`, the worker's lease-bound capability, raises the conversation kinds after it records the screening. It raises from the screening's own facts, not from a holder move, so a later request for a person in a conversation that is already held still raises `person_requested`. It raises:
 - `person_requested` and `opt_out` from the screen's classes, whoever holds the conversation;
 - `configuration_missing` when it held a message for want of a published fixed text;
 - `contact_unresolved` or `do_not_contact` while the conversation's newest admission says no reply can reach the contact;
@@ -106,7 +106,7 @@ The holder does **not** move. The agent keeps the conversation, so once a person
   1. its automatic holds gain "a contact no reply can reach", a hold the agent keeps (the holder does not move);
   2. a release is no longer unconditional: it is refused while an `opt_out` exception is open;
   3. **danger no longer moves the conversation to a person** (owner decision, 2026-10-08): it gets the owner's fixed safety text (the site's referral to CVV, 188), the conversation stays with the agent, and no exception is raised. Because a later message then reaches the model in that conversation, the earlier turns show the safety text, and a sensitive-subject text, only as the neutral marker: each would say what the contact wrote (W1, SI-80);
-  4. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact.
+  4. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact. *(Since ADR 0026 §A, the reply answers the newest admitted message, whatever happened to it; the same refusal holds for a message whose admission said no reply could reach the contact.)*
 - It also changes the owner's test procedure: a registered test device needs a CRM contact, with the opt-out recorded false, or every message from it is held.
 
 ### A4. Who reads and resolves

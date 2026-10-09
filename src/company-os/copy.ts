@@ -28,6 +28,13 @@ export const CONVERSATION_UNAVAILABLE =
 export const CONVERSATION_NEWER_MESSAGE =
   "O contato escreveu de novo depois desta mensagem. Esta resposta não será enviada: decida a revisão da mensagem mais recente.";
 
+// ADR 0026 §A: a person replied to this message; this draft is not sent.
+export const CONVERSATION_ANSWERED_BY_PERSON =
+  "Uma pessoa já respondeu esta mensagem. Esta resposta não será enviada.";
+
+/** "Quem respondeu" for a reply a person wrote (ADR 0026 §A). */
+export const PERSON_AUTHOR_LABEL = "Uma pessoa escreveu a resposta";
+
 export const CONVERSATION_NO_SCREENING =
   "Esta mensagem não passou pelo filtro da recepção; o texto original não é mostrado.";
 
@@ -48,8 +55,7 @@ export const SCREENING_NOTHING_READ = {
   administrative: CONVERSATION_REDACTED,
   mixed: CONVERSATION_REDACTED,
   sensitive_only: "Só assunto sensível: o modelo não leu nada desta mensagem.",
-  safety:
-    "Risco à vida ou à segurança: o modelo não leu nada, e a conversa foi para uma pessoa.",
+  safety: "Risco à vida ou à segurança: o modelo não leu nada desta mensagem.",
   unknown: "Nada foi reconhecido: o modelo não leu nada desta mensagem.",
 } as const;
 
