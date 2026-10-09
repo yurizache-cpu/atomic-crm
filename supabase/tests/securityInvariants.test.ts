@@ -2217,7 +2217,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and no CRM write path exists.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and the Company OS writes the CRM only as SI-84 allows.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2443,7 +2443,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-48",
     statement:
-      "The transport reads the CRM and never writes it. ops.crm_contact_by_phone answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; an unknown number creates no contact, and no country code is guessed. It returns an opaque reference and the opt-out flag, never a name.",
+      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation.",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
       {
@@ -2465,7 +2465,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/whatsappInbound.dbtest.ts",
         marker:
-          /resolves found, not found and ambiguous without creating or changing a contact/,
+          /resolves found, not found and ambiguous for an unregistered sender without creating or changing a contact/,
       },
     ],
     caveat:
@@ -5029,6 +5029,85 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The safety texts can go, one per crisis message, to a registered test sender even when the CRM does not know the number or knows it as opted out (owner decision, 2026-10-08). A forged gateway call or a leaked app secret can cause a fixed text (never a model's or a person's reply), bounded to an active test channel and test data. The transport's own timeout bounds how long the conversation is held. The staging worker exits when idle, so a job it gave back waits for the next run. Real-data authorization stays closed and the production WhatsApp gate is unchanged.",
+  },
+  {
+    id: "SI-84",
+    statement:
+      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. Each creation and each skipped creation is recorded in ops.crm_contact_acts, with no number or name, and a creation emits lead.created; no adapter sends, starts a run or changes a stop.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "driver-backed test",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /raise exception 'the receive function is not the gateway''s pinned DEFINER with the lead step';/,
+      },
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /raise exception 'a lead function is reachable or not an INVOKER: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /when lock_not_available or serialization_failure or deadlock_detected then/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L3: with no policy a lead was created, or the skip was not recorded/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: the daily cap did not stop the third lead/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: a sender the owner did not register became a lead/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: a redelivery or a later message created or recorded again/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L4: a near-duplicate created a lead, or was not raised for a person/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L4: the adapter served a tenant that does not own the local CRM/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L1: a lead function is a DEFINER or reachable by a role/,
+      },
+      {
+        file: "engine/domain/whatsappLeads.dbtest.ts",
+        marker:
+          /creates the lead before the admission reads the CRM, so its first message is answered/,
+      },
+      {
+        file: "engine/domain/whatsappLeads.dbtest.ts",
+        marker:
+          /creates one lead, and records one act, for two deliveries of one message at once/,
+      },
+      {
+        file: "engine/frontDesk/profileName.test.ts",
+        marker: /gives no first name for %s/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaWebhook.test.ts",
+        marker: /still reads the message, with no name, given %s/,
+      },
+    ],
+    caveat:
+      "The sender chooses the profile name: the screen takes a first word that reads as a name, which a sender can still choose to mislead. A system-created contact has no sales owner, so only the owner sees it in the CRM. Two people sharing a number become one lead, and two different numbers sharing their last eight digits both wait for a person. A forged gateway call or a leaked app secret can now create a contact, bounded to a registered test sender, the daily cap and the tenant that owns the CRM. Leads are created only for registered test senders until the production gate's ADR.",
   },
 ];
 

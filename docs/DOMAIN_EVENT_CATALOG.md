@@ -53,7 +53,7 @@ Every important domain event conceptually defines:
 | Canonical name | Type | Status | Semantics | Producer → consumers |
 | --- | --- | --- | --- | --- |
 | `lead_attribution_captured` | `lead.attribution_captured` | PARTIAL: the CRM's `acquisition_attributions` table exists, nothing captures at entry and no event is recorded | Attribution metadata (source, campaign ids, UTM, click id) captured for a resolved person | Entry adapters → Outcome Engine, Analytics, Growth |
-| `lead_created` | `lead.created` | PARTIAL: a CRM contact and its `lead_profiles` row exist (`acquired_at`); no event | A new person entered the funnel (after identity resolution) | Identity resolution → Reception, Analytics, Daily Brief |
+| `lead_created` | `lead.created` | EXISTS (ADR 0026 §C): the WhatsApp admission created a CRM contact, its lead profile and a `whatsapp` attribution for a registered test sender the CRM did not know; producer `ops.crm_create_whatsapp_lead`, source `whatsapp-gateway`, subject the company, payload `{channel_id, conversation_id}` (the browser reads only the channel), once per conversation | A new person entered the funnel (after identity resolution) | Identity resolution → Reception, Analytics, Daily Brief |
 | `triage_started` | `triage.started` | PLANNED | The structured triage questionnaire began (path B) | Reception → Analytics |
 | `triage_completed` | `triage.completed` | PLANNED | Every required triage field is present (path A or B); a deterministic fact | Reception → Outcome Engine, Analytics, next best action |
 

@@ -245,6 +245,7 @@ export const eventSentence = labelFrom({
   "calendar.sync_skipped": "Sincronização de calendário sem evento",
   "exception.raised": "Exceção aberta para uma pessoa",
   "exception.resolved": "Exceção resolvida",
+  "lead.created": "Novo lead criado no CRM",
 });
 
 export const yesNoLabel = (value: boolean): string => (value ? "Sim" : "Não");

@@ -105,6 +105,13 @@ export interface WhatsAppInboundMessage {
    */
   readonly body: string | null;
   readonly receivedAt: Date;
+  /**
+   * The sender's WhatsApp profile name as the notification's contacts list
+   * reports it for this sender (ADR 0026 §C): chosen by the sender, raw,
+   * bounded, never logged. Null when absent, unreadable or ambiguous. The
+   * store decides whether a CRM first name may be taken from it.
+   */
+  readonly profileName: string | null;
 }
 
 /** One delivery status for a message this system may have sent. */
@@ -138,6 +145,8 @@ const DIGITS = /^[0-9]{1,32}$/;
 const WA_ID = /^[0-9]{6,20}$/;
 const PROVIDER_ID = /^[\x21-\x7e]{1,200}$/;
 const UNIX_SECONDS = /^[0-9]{1,12}$/;
+const PROFILE_NAME_MAX_LENGTH = 256;
+const CONTACTS_READ_MAX = 1000;
 
 const envelopeSchema = z.object({
   object: z.literal("whatsapp_business_account"),
@@ -174,6 +183,48 @@ const statusSchema = z.object({
     .array(z.object({ code: z.number().int().nonnegative().optional() }))
     .optional(),
 });
+
+const contactSchema = z.object({
+  wa_id: z.string().regex(WA_ID),
+  profile: z.object({ name: z.string() }),
+});
+
+/**
+ * The sender names a change's contacts list reports, by WhatsApp id. Best
+ * effort and isolated (ADR 0026 §C): the list is read apart from the change's
+ * schema, so nothing in it can make a message unreadable or change what is
+ * counted; an entry that is not readable is skipped, and a WhatsApp id named
+ * twice with different names maps to null.
+ */
+function profileNamesOf(
+  rawChange: unknown,
+): ReadonlyMap<string, string | null> {
+  const names = new Map<string, string | null>();
+  const value =
+    typeof rawChange === "object" && rawChange !== null
+      ? (rawChange as { value?: unknown }).value
+      : undefined;
+  const contacts =
+    typeof value === "object" && value !== null
+      ? (value as { contacts?: unknown }).contacts
+      : undefined;
+  if (!Array.isArray(contacts)) return names;
+  for (const raw of contacts.slice(0, CONTACTS_READ_MAX)) {
+    const contact = contactSchema.safeParse(raw);
+    if (!contact.success) continue;
+    const name = contact.data.profile.name;
+    if (
+      name.length === 0 ||
+      name.length > PROFILE_NAME_MAX_LENGTH ||
+      name.includes("\u0000")
+    ) {
+      continue;
+    }
+    const id = contact.data.wa_id;
+    names.set(id, names.has(id) && names.get(id) !== name ? null : name);
+  }
+  return names;
+}
 
 /** Seconds since the epoch, never later than now: a sender's clock is not ours. */
 const fromUnixSeconds = (seconds: string, now: number): Date =>
@@ -212,6 +263,7 @@ export function parseWebhook(
       }
       const { value } = change.data;
       const providerTarget = value.metadata.phone_number_id;
+      const profileNames = profileNamesOf(rawChange);
       for (const rawMessage of value.messages ?? []) {
         const message = inboundMessageSchema.safeParse(rawMessage);
         if (!message.success) {
@@ -221,11 +273,13 @@ export function parseWebhook(
         const { from, timestamp, type, text } = message.data;
         const textBody =
           type === "text" ? textBodySchema.safeParse(text) : undefined;
+        const sender =
+          typeof from === "string" && WA_ID.test(from) ? from : null;
         messages.push(
           Object.freeze({
             providerTarget,
             externalMessageId: message.data.id,
-            from: typeof from === "string" && WA_ID.test(from) ? from : null,
+            from: sender,
             body:
               textBody?.success === true &&
               !textBody.data.body.includes("\u0000")
@@ -235,6 +289,8 @@ export function parseWebhook(
               typeof timestamp === "string" && UNIX_SECONDS.test(timestamp)
                 ? fromUnixSeconds(timestamp, now)
                 : new Date(now),
+            profileName:
+              sender === null ? null : (profileNames.get(sender) ?? null),
           }),
         );
       }

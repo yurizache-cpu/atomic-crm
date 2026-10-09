@@ -330,7 +330,8 @@ begin
     ('ops_worker',   'ops.settle_reply_send(text, text, text, text)'::regprocedure),
     ('ops_worker',   'ops.sync_send_exceptions_for_settled_job(text, uuid)'::regprocedure),
     ('ops_worker',   'ops.settle_stale_reply_sends()'::regprocedure),
-    ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
+    -- ADR 0026 §C: the sender's first name, a sixth parameter with a default.
+    ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz, text)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
     ('ops_operator_api', 'ops.gate_overview()'::regprocedure),

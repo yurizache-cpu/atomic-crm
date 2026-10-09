@@ -6,7 +6,9 @@
 // ops.receive_whatsapp_status, both SECURITY DEFINER, both of which resolve
 // the tenant from the provider target through ops.communication_channels. The
 // gateway passes what Meta signed; it never names a tenant, a company, an agent
-// or a consent state.
+// or a consent state. ADR 0026 §C: it also passes the first name a new lead
+// may take from the sender's profile name, only when the reviewed screen finds
+// it reads as a name (engine/frontDesk/profileName.ts); never logged.
 //
 // ANSWERS. ops.receive_whatsapp_message answers admitted, refused (it wrote a
 // durable content-free fact) or unrouted (not acknowledged, nothing stored);
@@ -20,6 +22,7 @@
 // repeated in the log rather than acknowledged once and forgotten.
 
 import type { WorkerDatabase } from "../db/types.ts";
+import { profileFirstName } from "../frontDesk/profileName.ts";
 import {
   PermanentStoreError,
   type GatewayStore,
@@ -82,13 +85,14 @@ export function createGatewayStore(db: WorkerDatabase): GatewayStore {
     ): Promise<MessageAnswer> {
       const answer = await callGateway(
         db,
-        "select ops.receive_whatsapp_message($1, $2, $3, $4, $5) as result",
+        "select ops.receive_whatsapp_message($1, $2, $3, $4, $5, $6) as result",
         [
           message.providerTarget,
           message.externalMessageId,
           message.from,
           message.body,
           message.receivedAt,
+          profileFirstName(message.profileName),
         ],
       );
       if (answer.state === "refused") return "refused";

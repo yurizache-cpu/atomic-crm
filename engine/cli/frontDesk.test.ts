@@ -12,7 +12,7 @@ import {
 const TENANT = "00000000-0000-4000-8000-0000000000a1";
 
 describe("the front-desk tool", () => {
-  it("changes state only through its seven acts", () => {
+  it("changes state only through its nine acts", () => {
     expect(FRONT_DESK_ACTS).toEqual([
       "config draft",
       "config publish",
@@ -21,7 +21,64 @@ describe("the front-desk tool", () => {
       "reply",
       "exception resolve",
       "exceptions sync",
+      "lead-policy record",
+      "lead-policy retire",
     ]);
+  });
+
+  it("shows the lead policy read-only, and records or retires it only with every flag (ADR 0026 §C)", () => {
+    expect(
+      parseFrontDeskArgs(["lead-policy", "show", "--tenant", TENANT]),
+    ).toMatchObject({
+      kind: "lead-policy show",
+    });
+    expect(FRONT_DESK_ACTS).not.toContain("lead-policy show");
+    const record = [
+      "lead-policy",
+      "record",
+      "--tenant",
+      TENANT,
+      "--cap",
+      "50",
+      "--time-zone",
+      "America/Sao_Paulo",
+      "--placeholder",
+      "Contato",
+      "--actor",
+      "owner",
+    ];
+    expect(parseFrontDeskArgs(record)).toMatchObject({
+      kind: "lead-policy record",
+    });
+    for (const flag of ["--cap", "--time-zone", "--placeholder", "--actor"]) {
+      const at = record.indexOf(flag);
+      expect(
+        parseFrontDeskArgs([...record.slice(0, at), ...record.slice(at + 2)])
+          .kind,
+      ).toBe("usage_error");
+    }
+    expect(
+      parseFrontDeskArgs([
+        "lead-policy",
+        "retire",
+        "--tenant",
+        TENANT,
+        "--reason",
+        "pause",
+        "--actor",
+        "owner",
+      ]),
+    ).toMatchObject({ kind: "lead-policy retire" });
+    expect(
+      parseFrontDeskArgs([
+        "lead-policy",
+        "retire",
+        "--tenant",
+        TENANT,
+        "--actor",
+        "owner",
+      ]).kind,
+    ).toBe("usage_error");
   });
 
   it("lists exceptions read-only, open by default and all with --all", () => {
