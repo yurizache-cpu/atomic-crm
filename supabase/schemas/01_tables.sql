@@ -289,6 +289,18 @@ create table public.lead_consent_changes (
     constraint lead_consent_changes_reason_matches_origin check ((origin = 'person') = (reason_ref is null))
 );
 
+-- The CRM's edit marks (ADR 0026 §C): a contact a person worked on, by any
+-- write to it, its lead profile or its attributions that no backend adapter
+-- marked as its own. Written only by the mark_crm_contact_edit trigger;
+-- append-only; backend-only (no policy, no grant); content-free. A system-
+-- created lead with no mark may be deleted with its number's retention.
+-- Matches 20261019150000_crm_copy_retention.sql.
+create table public.crm_contact_edits (
+    -- No foreign key: a mark outlives a merge or a contact's deletion.
+    contact_id bigint primary key,
+    first_edited_at timestamp with time zone not null
+);
+
 --
 -- Foreign keys
 --

@@ -55,6 +55,28 @@ create or replace trigger refuse_system_opt_out_clear_trigger
     before update of do_not_contact on public.lead_profiles
     for each row execute function public.refuse_system_opt_out_clear();
 
+-- ADR 0026 §C: a person's work on a contact marks it, so the number's
+-- retention keeps it. Matches 20261019150000_crm_copy_retention.sql.
+create or replace trigger mark_crm_contact_edit_trigger
+    after update on public.contacts
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger mark_crm_contact_edit_trigger
+    after insert or update on public.lead_profiles
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger mark_crm_contact_edit_trigger
+    after insert or update on public.acquisition_attributions
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger crm_contact_edits_append_only_trigger
+    before update or delete on public.crm_contact_edits
+    for each row execute function public.crm_contact_edits_append_only();
+
+create or replace trigger crm_contact_edits_refuse_truncate_trigger
+    before truncate on public.crm_contact_edits
+    for each statement execute function public.crm_contact_edits_append_only();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();

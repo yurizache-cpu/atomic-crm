@@ -74,7 +74,7 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | Acquisition attribution table (UTM, gclid, campaign, landing page) | 🟡 Table exists; nothing captures into it at entry | CRM `acquisition_attributions` |
 | Jev shadow decisions on the review (business route, lead intelligence, model route) | ✅ Exists, shadow only | ADR 0022 §E, §F |
 | Exception queue: danger, a request for a person, an opt-out, a missing fixed text, a message waiting with a person, a contact no reply can reach, a failed or uncertain send; a message no reply can reach gets no model | 🟡 Built on `feature/lead-journey-core`, Proposed for the owner's review | ADR 0025 Part A, SI-82; `npm run front-desk -- exceptions` |
-| Creating a CRM lead for a new WhatsApp number | 🚫 Blocked by ADR 0021 W6 (replies only to CRM contacts) | Needs an owner decision (ADR 0025 B1) |
+| Creating a CRM lead for a new WhatsApp number; the opt-out recorded in the CRM, lifted by the contact's own later message; the CRM copy following the number's retention | 🟡 Built on `feature/crm-leads-and-opt-out` (ADR 0026 slice 3), Proposed: only for a sender the owner registered on a test channel, within the owner's daily cap | ADR 0026 §C, SI-84; `npm run front-desk -- lead-policy record` |
 | Structured triage questionnaire, booking page, holds, payments, packages, session ledger, reminders, renewal, waitlist, exception inbox screen | ⬜ Planned | §7 to §19; ADR 0025 Part B |
 | Autonomous sending | ⬜ Planned; not representable today (ADR 0023 §F) | A later owner decision and ADR |
 
@@ -111,7 +111,7 @@ Every arrow is a deterministic state change with a typed event ([DOMAIN_EVENT_CA
 - **Merge controls:** a merge is an explicit, recorded act by a person (the CRM's `merge_contacts` path, which already keeps consent as an OR, never winner-wins). A merge is never silent and never decided by an LLM.
 - **Ambiguity is an exception:** two contacts match, or a payment cannot be tied to one person. It goes to the exception queue, never to a guess. The WhatsApp contact policy already answers `ambiguous` and refuses to reply in that case (SI-48).
 
-**Known constraint:** ADR 0021 W6 says a reply goes only to an existing CRM contact. Receiving new leads on WhatsApp therefore needs either a lead-creation act for a new number or a revised W6. That is an owner decision, recorded as a dependency of workstream A.
+**Known constraint, decided:** ADR 0021 W6 says a reply goes only to an existing CRM contact. The owner decided automatic lead creation for a new number (ADR 0025 B1 (c), carried by ADR 0026 §C): the gateway creates the contact before the admission reads the CRM, so the first message is answered (built in ADR 0026 slice 3; for registered test senders while BASELINE Q8 is open).
 
 ## 6. Attribution at entry
 

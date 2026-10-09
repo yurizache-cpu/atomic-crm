@@ -626,3 +626,37 @@ CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trig
       return new;
     end;
     $$;
+
+CREATE OR REPLACE FUNCTION "public"."mark_crm_contact_edit"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    declare
+      v_contact bigint;
+    begin
+      -- A backend adapter's own write (the lead's creation, the contact's own
+      -- opt-out or its lift) is not a person's work on the contact.
+      if pg_catalog.current_setting('ops.crm_write', true) = 'system' then
+        return null;
+      end if;
+      if tg_table_name = 'contacts' then
+        v_contact := new.id;
+      else
+        v_contact := new.contact_id;
+      end if;
+      insert into public.crm_contact_edits (contact_id, first_edited_at)
+      values (v_contact, pg_catalog.clock_timestamp())
+      on conflict (contact_id) do nothing;
+      return null;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."crm_contact_edits_append_only"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+    begin
+      raise exception 'public.crm_contact_edits is append-only: % refused', lower(tg_op)
+        using errcode = '42501';
+    end;
+    $$;

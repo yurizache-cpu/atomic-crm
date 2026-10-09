@@ -17,7 +17,7 @@
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
 | Integration branch | `feature/clinical-phase-1` at `1bcefd50`: PR #33's normal merge (2026-10-08; parents `02ae43e7`, PR #32's merge, and `4aecf2a8`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record, ADR 0026 and its slice 1 (§3) |
+| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record, ADR 0026 and its slice 1 (§3), PR #34; stacked on it, `feature/automatic-fixed-texts` (slice 2) and, on that, `feature/crm-leads-and-opt-out` (slice 3) |
 | Retained, integrated | `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
@@ -105,6 +105,14 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **Review:** an adversarial review confirmed nine findings, all answered on this branch (ADR 0026 §B): the gates judge the contact before a stop, a replaced text is settled stale first, the last gate waits a bounded time and puts the send back when it must wait, the cap counts only texts that left or can leave, the worker's reaper closes out a send its job left unsettled, and the missing tests were added (each fix mutation-checked).
    - **Before any key is listed on staging (owner actions):** the fixed texts published with both safety texts and the privacy notice's escalation line; a token whose system user holds the test WhatsApp Business Account alone; channel `85ae4f8b…` (the clinic number) deactivated.
 
+3. **`feature/crm-leads-and-opt-out`, stacked on `feature/automatic-fixed-texts`: slice 3, leads, the opt-out in the CRM, the lift and the CRM copy's retention** (ADR 0026 §C, "Built in slice 3"; SI-84 added, SI-09, SI-39, SI-45, SI-48, SI-79, SI-80 and SI-82 amended). Four migrations, one commit each; its PR opens once slice 2's is merged.
+   - **3a** (`20261019120000_whatsapp_leads.sql`): a registered test sender the CRM does not know becomes a contact, its lead profile and a `whatsapp` attribution before the admission reads the CRM, within the owner's daily cap (`npm run front-desk -- lead-policy record`; none in force, nothing created); a near-duplicate (the last eight digits) waits for a person; the first name only from a profile name that reads as a name, otherwise the owner's placeholder; `lead.created`.
+   - **3b** (`20261019130000_crm_consent_and_opt_out.sql`): the opt-out reaches the CRM after its acknowledgement (or the window's end), through the worker's internal `crm.opt_out_record` job; a person's dismissal records nothing; an erasure records a pending opt-out first; the CRM's append-only consent ledger records every change of the flag with its origin; `lead.opted_out`.
+   - **3c** (`20261019140000_opt_out_lift.sql`): the contact's own later message that is not an opt-out lifts the contact's own opt-out (owner decision 9), as the CRM holds it then, and gives the conversation back to the agent; a crisis message is never held by the lift; the CRM form cannot clear the contact's own opt-out; `lead.opt_out_lifted`.
+   - **3d** (`20261019150000_crm_copy_retention.sql`): an erasure deletes a contact the system created for the number once no live conversation names it and no person worked on it (content-free edit marks), holding the contact before it checks.
+   - **Local evidence:** typecheck and ESLint clean; `functions` 2,603 tests; 30 SQL suites (new `crm_leads.sql`, `crm_consent.sql`, `crm_copy_retention.sql`); the driver-backed suites (new `whatsappLeads`, `crmOptOut`, `optOutLift`, `crmCopyRetention`); the `app` project.
+   - **Before it is enabled on staging (owner actions):** the privacy notice's line on CRM records; the lead policy recorded (placeholder and daily cap).
+
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
 - **Supabase** `erhrochojnugszkkoqrv` (sa-east-1, PostgreSQL 17):
@@ -180,7 +188,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **ADR 0026 and slice 1** (§3, item 1): the PR from this branch, its CI against the baseline (§7), the owner's review and the merge on the owner's request; then, on staging, migration `20261017120000` (pinned CLI, dry run first, never the seed) and the hosted verifier. Then slice 2.
+1. **ADR 0026 and slice 1** (§3, item 1): the PR from this branch, its CI against the baseline (§7), the owner's review and the merge on the owner's request; then, on staging, migration `20261017120000` (pinned CLI, dry run first, never the seed) and the hosted verifier. Then slice 2's PR, then slice 3's (§3, items 2 and 3), each merged on the owner's request and applied to staging the same way.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
