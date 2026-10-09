@@ -20,7 +20,7 @@ const OWNER_SESSION_SEAL: Readonly<Record<string, string>> = Object.freeze({
   "supabase/functions/_shared/db.ts":
     "44f6f4daca16284567817de663fe42ea6727dfec1e592931513ad1808f106b05",
   "supabase/functions/merge_contacts/index.ts":
-    "c714f1f58a166a881bb629f9a304b15c723b1ea04cf71809e453bcfcfd0d559c",
+    "3c9a40c208f405c4335b8eeb8ba1c70a6892fe194104a36046aec738b4d874d3",
 });
 
 const digestOf = (path: string) =>

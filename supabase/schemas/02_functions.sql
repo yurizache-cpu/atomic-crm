@@ -559,7 +559,7 @@ CREATE OR REPLACE FUNCTION "public"."deal_stage_transitions_append_only"() RETUR
 CREATE OR REPLACE FUNCTION "public"."record_lead_consent_change"() RETURNS trigger
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
-    AS $$
+    AS $_$
     declare
       v_mark   text := pg_catalog.current_setting('ops.consent_origin', true);
       v_origin text := 'person';
@@ -588,7 +588,7 @@ CREATE OR REPLACE FUNCTION "public"."record_lead_consent_change"() RETURNS trigg
       end if;
       return null;
     end;
-    $$;
+    $_$;
 
 CREATE OR REPLACE FUNCTION "public"."lead_consent_changes_append_only"() RETURNS trigger
     LANGUAGE "plpgsql"
@@ -603,7 +603,7 @@ CREATE OR REPLACE FUNCTION "public"."lead_consent_changes_append_only"() RETURNS
 CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trigger
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO ''
-    AS $$
+    AS $_$
     declare
       v_origin text;
     begin
@@ -615,8 +615,11 @@ CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trig
          ~ '^system_lift:task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
         return new;
       end if;
+      -- A person naming the flag on again (a merge, a direct write) does not
+      -- take the contact's own opt-out over.
       select c.origin into v_origin from public.lead_consent_changes c
        where c.contact_id = old.contact_id
+         and not (c.origin = 'person' and coalesce(c.from_value, false) and c.to_value)
        order by c.changed_at desc, c.id desc
        limit 1;
       if v_origin = 'system_opt_out' then
@@ -625,7 +628,7 @@ CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trig
       end if;
       return new;
     end;
-    $$;
+    $_$;
 
 CREATE OR REPLACE FUNCTION "public"."mark_crm_contact_edit"() RETURNS trigger
     LANGUAGE "plpgsql" SECURITY DEFINER

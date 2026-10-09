@@ -16,6 +16,7 @@ import {
   removeFixtureModels,
   TENANT_A,
 } from "../worker/testSupport/dbFixture.ts";
+import { waitUntil } from "../worker/testSupport/spendProbes.ts";
 import { recordLeadPolicy } from "./leadPolicy.ts";
 import {
   closeAgentRuntimeDatabases,
@@ -193,6 +194,8 @@ describe("a new WhatsApp number becomes a CRM lead (ADR 0026 §C)", () => {
   });
 
   it("creates one lead, and records one act, for two deliveries of one message at once", async () => {
+    // Pins the one lead; the re-read after the conversation's row is pinned by
+    // the next case, where the two deliveries are made to wait on each other.
     await frontDesk(KNOWLEDGE, POLICY);
     await policy();
     const answers = await Promise.all([
@@ -204,12 +207,43 @@ describe("a new WhatsApp number becomes a CRM lead (ADR 0026 §C)", () => {
     expect(await acts()).toEqual(["created"]);
   });
 
-  it("records one skip for two deliveries of one message at once with no policy", async () => {
+  it("records one skip for two deliveries of one message waiting on each other with no policy", async () => {
     await frontDesk(KNOWLEDGE, POLICY);
-    await Promise.all([
-      send(ADMINISTRATIVE, undefined, "wamid.WLDUP2"),
-      send(ADMINISTRATIVE, undefined, "wamid.WLDUP2"),
-    ]);
+    // The conversation exists and is held, so both deliveries wait at its
+    // upsert; the second then reads what the first made of the message.
+    await admin.query(
+      `insert into ops.conversations (tenant_id, company_id, channel_id, contact_ref, last_inbound_at)
+       select c.tenant_id, c.company_id, c.id, $2, now()
+         from ops.communication_channels c where c.tenant_id = $1`,
+      [TENANT_A, DEVICE],
+    );
+    const holder = await admin.connect();
+    let both: Promise<unknown> | undefined;
+    try {
+      await holder.query("begin");
+      await holder.query(
+        "select 1 from ops.conversations where tenant_id = $1 and contact_ref = $2 for update",
+        [TENANT_A, DEVICE],
+      );
+      both = Promise.all([
+        send(ADMINISTRATIVE, undefined, "wamid.WLDUP2"),
+        send(ADMINISTRATIVE, undefined, "wamid.WLDUP2"),
+      ]);
+      await waitUntil(
+        async () =>
+          (
+            await admin.query<{ n: number }>(
+              "select count(*)::int as n from pg_locks where not granted",
+            )
+          ).rows[0].n >= 2,
+        "the two deliveries did not both wait on the conversation",
+        3_000,
+      );
+      await holder.query("commit");
+    } finally {
+      holder.release();
+    }
+    await both;
     expect(await acts()).toEqual(["skipped:no_cap"]);
   });
 

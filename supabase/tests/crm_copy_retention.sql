@@ -86,7 +86,8 @@ begin
     ta, ca, v_agent, '300000000000096', 'test', 'B test', 'cr-owner'));
   foreach v_number in array array['5511900000951', '5511900000952', '5511900000953', '5511900000954',
                                   '5511900000955', '5511900000956', '5511900000957', '5511900000958',
-                                  '5511900000959', '5511900000960'] loop
+                                  '5511900000959', '5511900000960', '5511900000961', '5511900000962',
+                                  '5511900000963', '5511900000964', '5511900000965'] loop
     perform ops.register_test_sender(ta, pg_temp.id('chan_a'), v_number, 'cr-owner');
     perform ops.register_test_sender(ta, pg_temp.id('chan_b'), v_number, 'cr-owner');
   end loop;
@@ -320,6 +321,93 @@ begin
                                        'erasure', 'cr-owner');
   if exists (select 1 from public.contacts where id = v_contact) then
     raise exception 'R5: the lead outlived both its numbers';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- R6. Each edit mark alone keeps its lead: one edit of the lead profile, of
+--     the contact, or of an attribution.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_number  text;
+  v_contact bigint;
+  v_bad     text[] := array[]::text[];
+begin
+  foreach v_number in array array['5511900000961', '5511900000962', '5511900000963'] loop
+    perform pg_temp.message('300000000000095', 'wamid.CR6' || right(v_number, 1), v_number);
+  end loop;
+  update public.lead_profiles set operational_status = 'active'
+   where contact_id = pg_temp.contact_of('5511900000961');
+  update public.contacts set first_name = 'Synthetic' where id = pg_temp.contact_of('5511900000962');
+  update public.acquisition_attributions set campaign = 'cr-test campaign'
+   where contact_id = pg_temp.contact_of('5511900000963');
+  foreach v_number in array array['5511900000961', '5511900000962', '5511900000963'] loop
+    v_contact := pg_temp.contact_of(v_number);
+    if (select count(*) from public.crm_contact_edits where contact_id = v_contact) <> 1 then
+      v_bad := v_bad || ('unmarked ' || v_number);
+    end if;
+    perform ops.erase_contact_by_number(pg_temp.id('tenant_a'), v_number, 'cr-owner');
+    if not exists (select 1 from public.contacts where id = v_contact) or pg_temp.acts(v_contact) <> 'created, kept' then
+      v_bad := v_bad || ('deleted ' || v_number);
+    end if;
+  end loop;
+  if cardinality(v_bad) > 0 then
+    raise exception 'R6: a single edit did not keep its lead: %', v_bad;
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- R7. An opt-out keeps the lead only while in force: one the contact's own
+--     later message lifted no longer keeps the number. And an erasure records
+--     a pending opt-out first, so the lead it then keeps is opted out.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_contact bigint;
+  v_conv    uuid;
+  v_m       jsonb;
+begin
+  -- Opted out, then lifted by the contact's own later message: deleted.
+  v_m := ops.receive_whatsapp_message('300000000000095', 'wamid.CR71', '5511900000964', 'Synthetic opt-out',
+                                      now() - interval '1 minute');
+  v_conv := (v_m ->> 'conversation_id')::uuid;
+  v_contact := pg_temp.contact_of('5511900000964');
+  if ops.crm_record_opt_out(pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_conv, pg_temp.id('chan_a'),
+                            '5511900000964', (v_m ->> 'task_id')::uuid) <> 'recorded' then
+    raise exception 'R7 setup: the opt-out was not recorded';
+  end if;
+  v_m := ops.receive_whatsapp_message('300000000000095', 'wamid.CR72', '5511900000964', 'Synthetic message after',
+                                      now());
+  if ops.crm_lift_opt_out(pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_conv, pg_temp.id('chan_a'),
+                          '5511900000964', (v_m ->> 'task_id')::uuid) <> 'lifted' then
+    raise exception 'R7 setup: the opt-out was not lifted';
+  end if;
+  perform ops.erase_contact_by_number(pg_temp.id('tenant_a'), '5511900000964', 'cr-owner');
+  if exists (select 1 from public.contacts where id = v_contact) then
+    raise exception 'R7: a lead whose own later message lifted its opt-out was kept with its number';
+  end if;
+
+  -- A pending opt-out is recorded before the erasure decides: kept, opted out.
+  v_m := ops.receive_whatsapp_message('300000000000095', 'wamid.CR73', '5511900000965', 'Synthetic opt-out',
+                                      now());
+  v_conv := (v_m ->> 'conversation_id')::uuid;
+  v_contact := pg_temp.contact_of('5511900000965');
+  perform ops.open_exception(pg_temp.id('tenant_a'), pg_temp.id('company_a'), (v_m ->> 'task_id')::uuid, 'opt_out',
+                             v_conv, null, null, 'cr-suite');
+  if ops.request_crm_opt_out_record(pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_conv,
+                                    (v_m ->> 'task_id')::uuid) is null then
+    raise exception 'R7 setup: the opt-out was not requested';
+  end if;
+  perform ops.erase_contact_by_number(pg_temp.id('tenant_a'), '5511900000965', 'cr-owner');
+  if (select outcome from ops.crm_opt_out_requests where conversation_id = v_conv) is distinct from 'recorded'
+     or not coalesce((select do_not_contact from public.lead_profiles where contact_id = v_contact), false)
+     or pg_temp.acts(v_contact) <> 'created, kept, opted_out' then
+    raise exception 'R7: the erasure did not record the pending opt-out before keeping the lead (%)', pg_temp.acts(v_contact);
   end if;
 end
 $$;

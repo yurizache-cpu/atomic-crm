@@ -77,6 +77,16 @@ begin
     raise exception 'C1: a person''s writes were recorded as %', pg_temp.entries(v_contact);
   end if;
 
+  -- A malformed mark is a person's write.
+  perform set_config('ops.consent_origin', 'system_lift:task:not-a-task', true);
+  update public.lead_profiles set do_not_contact = true where contact_id = v_contact;
+  if (select origin from public.lead_consent_changes
+       where contact_id = v_contact order by changed_at desc, id desc limit 1) <> 'person' then
+    raise exception 'C1: a malformed mark was taken for the system';
+  end if;
+  perform set_config('ops.consent_origin', '', true);
+  update public.lead_profiles set do_not_contact = false where contact_id = v_contact;
+
   -- The system's write names the message, and the mark is spent on it.
   perform set_config('ops.consent_origin', 'system_opt_out:' || v_task, true);
   update public.lead_profiles set do_not_contact = true where contact_id = v_contact;
@@ -92,12 +102,26 @@ begin
     raise exception 'C1: a write after the system''s passed for the system''s';
   end if;
 
-  -- A malformed mark is a person's write.
+  -- A person naming the flag on again took nothing over: the contact's own
+  -- opt-out still refuses a person's clear, and so does a malformed mark.
+  begin
+    update public.lead_profiles set do_not_contact = false where contact_id = v_contact;
+    raise exception 'C1: naming the flag on again let a person clear the contact''s own opt-out';
+  exception when sqlstate 'OS403' then null;
+  end;
   perform set_config('ops.consent_origin', 'system_lift:task:not-a-task', true);
+  begin
+    update public.lead_profiles set do_not_contact = false where contact_id = v_contact;
+    raise exception 'C1: a malformed lift mark cleared the contact''s own opt-out';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- The system's own lift clears it, recorded as the system's.
+  perform set_config('ops.consent_origin', 'system_lift:' || v_task, true);
   update public.lead_profiles set do_not_contact = false where contact_id = v_contact;
-  if (select origin from public.lead_consent_changes
-       where contact_id = v_contact order by changed_at desc, id desc limit 1) <> 'person' then
-    raise exception 'C1: a malformed mark was taken for the system';
+  if (select origin || ' ' || reason_ref from public.lead_consent_changes
+       where contact_id = v_contact order by changed_at desc, id desc limit 1)
+     is distinct from 'system_lift ' || v_task then
+    raise exception 'C1: the system''s lift was not recorded with its message';
   end if;
 end
 $$;
@@ -252,6 +276,32 @@ begin
 end
 $f$;
 
+-- Names the flag on again, then clears it, as a role; undone either way.
+-- Answers 'ok' when the clear went through, or the refusal.
+create function pg_temp.resave_then_clear_as(p_role text, p_contact bigint, p_claims text default null) returns text
+language plpgsql as $f$
+declare
+  v_state text;
+  v_msg   text;
+begin
+  perform set_config('request.jwt.claims', coalesce(p_claims, ''), true);
+  begin
+    if p_role is not null then
+      execute format('set local role %I', p_role);
+    end if;
+    update public.lead_profiles set do_not_contact = true where contact_id = p_contact;
+    update public.lead_profiles set do_not_contact = false where contact_id = p_contact;
+    raise exception using errcode = 'CC001', message = 'undo';
+  exception
+    when sqlstate 'CC001' then
+      return 'ok';
+    when others then
+      get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text;
+      return v_state || ' ' || v_msg;
+  end;
+end
+$f$;
+
 do $$
 declare
   v_contact bigint := pg_temp.id('contact')::bigint;
@@ -303,6 +353,13 @@ begin
   v_answer := pg_temp.clear_as('authenticated', v_contact, v_claims);
   if v_answer <> c_refused then
     raise exception 'C4: an owner at aal2 cleared the contact''s own opt-out through the CRM: %', v_answer;
+  end if;
+  -- Naming the flag on again first takes nothing over.
+  if pg_temp.resave_then_clear_as('service_role', v_contact) <> c_refused then
+    raise exception 'C4: naming the flag on again, then off, cleared it as service_role';
+  end if;
+  if pg_temp.resave_then_clear_as('authenticated', v_contact, v_claims) <> c_refused then
+    raise exception 'C4: naming the flag on again, then off, cleared it through the CRM';
   end if;
   perform set_config('request.jwt.claims', '', true);
 
@@ -415,6 +472,83 @@ begin
   insert into ops.tenants (slug, name) values ('cc-test-beta', 'CC Beta') returning id into v_other;
   if ops.crm_lift_opt_out(v_other, ca, v_conv, v_chan, '5511900000091', v_task) <> 'unresolved' then
     raise exception 'C5: a tenant that does not own the CRM reached it';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- C6. A flag a person set is never cleared by a message, even once the
+--     contact also asked to stop by message and the system recorded it: the
+--     contact's later message lifts the contact's own opt-out, the flag stays,
+--     and the person may then clear it. A flag on before the ledger existed
+--     is a person's.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_contact bigint := pg_temp.id('contact')::bigint;
+  ta        uuid;
+  ca        uuid;
+  v_chan    uuid;
+  v_conv    uuid;
+  v_m       jsonb;
+  v_task    uuid;
+begin
+  select t.id into ta from ops.tenants t where t.slug = 'cc-test-alpha';
+  select c.id into ca from ops.companies c where c.tenant_id = ta and c.slug = 'consent-a';
+  select ch.id into v_chan from ops.communication_channels ch where ch.tenant_id = ta;
+  select c.id into v_conv from ops.conversations c where c.tenant_id = ta;
+  if not (select do_not_contact from public.lead_profiles where contact_id = v_contact)
+     or (select origin from public.lead_consent_changes
+          where contact_id = v_contact order by changed_at desc, id desc limit 1) <> 'person' then
+    raise exception 'C6 setup: C5 did not leave a flag a person set';
+  end if;
+
+  -- The contact asks to stop by message, and the system records it.
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC6', '5511900000091', 'Synthetic opt-out again',
+                                      now() - interval '30 seconds');
+  if ops.crm_record_opt_out(ta, ca, v_conv, v_chan, '5511900000091', (v_m ->> 'task_id')::uuid)
+     <> 'already_recorded' then
+    raise exception 'C6 setup: the opt-out over a person''s flag was not recorded';
+  end if;
+  if pg_temp.clear_as(null, v_contact) not like 'OS403%' then
+    raise exception 'C6: a person cleared the flag while the contact''s own opt-out was in force';
+  end if;
+
+  -- The contact's later message lifts the contact's own opt-out; the flag stays.
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC7', '5511900000091', 'Synthetic message after',
+                                      now());
+  v_task := (v_m ->> 'task_id')::uuid;
+  if ops.crm_lift_opt_out(ta, ca, v_conv, v_chan, '5511900000091', v_task) <> 'kept' then
+    raise exception 'C6: a message lifted a flag a person set, once the contact had opted out by message too';
+  end if;
+  if not (select do_not_contact from public.lead_profiles where contact_id = v_contact)
+     or (select format('%s>%s:%s:%s', from_value::text, to_value::text, origin, reason_ref)
+           from public.lead_consent_changes
+          where contact_id = v_contact order by changed_at desc, id desc limit 1)
+        is distinct from format('true>true:system_lift:task:%s', v_task) then
+    raise exception 'C6: the contact''s own lift was not recorded, or the person''s flag moved';
+  end if;
+  -- Now the person may clear the flag the person set.
+  if pg_temp.clear_as(null, v_contact) <> 'ok' then
+    raise exception 'C6: the person could not clear the flag once the contact lifted its own opt-out';
+  end if;
+
+  -- A flag on before the ledger existed (no entry turned it on) is a person's.
+  alter table public.lead_profiles disable trigger record_lead_consent_change_trigger;
+  update public.lead_profiles set do_not_contact = true where contact_id = v_contact;
+  alter table public.lead_profiles enable trigger record_lead_consent_change_trigger;
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC8', '5511900000091', 'Synthetic opt-out',
+                                      now() - interval '20 seconds');
+  if ops.crm_record_opt_out(ta, ca, v_conv, v_chan, '5511900000091', (v_m ->> 'task_id')::uuid)
+     <> 'already_recorded' then
+    raise exception 'C6 setup: the opt-out over a flag older than the ledger was not recorded';
+  end if;
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC9', '5511900000091', 'Synthetic message after',
+                                      now());
+  if ops.crm_lift_opt_out(ta, ca, v_conv, v_chan, '5511900000091', (v_m ->> 'task_id')::uuid) <> 'kept'
+     or not (select do_not_contact from public.lead_profiles where contact_id = v_contact) then
+    raise exception 'C6: a message lifted a flag that was on before the ledger existed';
   end if;
 end
 $$;

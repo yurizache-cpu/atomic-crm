@@ -6,8 +6,11 @@
 // opt-out, as the CRM holds it when the message is screened, and the
 // conversation the opt-out handed to a person goes back to the agent; a
 // message from before the opt-out never lifts it; a flag a person set is never
-// lifted by a message; a crisis message is never held by a lift that cannot
-// take the profile's lock, and any other message waits for it.
+// lifted by a message, even once the contact also opted out by message (the
+// contact's own opt-out is recorded as lifted and the person's flag stays); a
+// conversation a person took over, or held for another reason, stays with the
+// person; a crisis message is never held by a lift that cannot take the
+// profile's lock, and any other message waits for it.
 //
 // ALL DATA IS SYNTHETIC (BASELINE Q8). Numbers, targets and texts are invented.
 
@@ -27,6 +30,7 @@ import {
   closeAgentRuntimeDatabases,
   openAgentRuntimeDatabases,
 } from "./testSupport/agentRuntimeProbes.ts";
+import { takeOverConversation } from "./frontDesk.ts";
 import {
   createFrontDeskHarness,
   DEAL_NAME,
@@ -158,6 +162,9 @@ const recordDue = () =>
 const optedOut = async (registry: ReturnType<typeof runtime>["registry"]) => {
   await send(OPT_OUT);
   await drain(registry);
+  // An automatic acknowledgement leaves the record at the window's end.
+  await recordDue();
+  await drain(registry);
   const contact = await contactFlag();
   expect(contact?.flag).toBe(true);
   expect(await lastEntry(contact!.id)).toMatchObject({
@@ -268,6 +275,8 @@ describe("a contact who asked to stop and writes again takes messages back (ADR 
     await holdRuns(true);
     await send(OPT_OUT);
     await drain(registry);
+    await recordDue();
+    await drain(registry);
     expect((await contactFlag())?.flag).toBe(true);
 
     await holdRuns(false);
@@ -350,5 +359,145 @@ describe("a contact who asked to stop and writes again takes messages back (ADR 
     await drain(registry);
     expect((await contactFlag())?.flag).toBe(false);
     expect(await latest()).toMatchObject({ disposition: "model" });
+  });
+
+  it("never lifts a flag a person set, even once the contact also asked to stop by message and the system recorded it", async () => {
+    await frontDesk(KNOWLEDGE, AUTO_ACK);
+    const contactId = await addCrmContact(admin, DEVICE, {
+      doNotContact: true,
+    });
+    const { registry } = runtime(undefined, { replyTransport: fake() });
+    await send(OPT_OUT);
+    await drain(registry);
+    await recordDue();
+    await drain(registry);
+    expect(await lastEntry(contactId)).toMatchObject({
+      to_value: true,
+      origin: "system_opt_out",
+    });
+
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    const after = await latest();
+    expect(after).toMatchObject({ disposition: "held_for_person" });
+    expect((await contactFlag())?.flag).toBe(true);
+    // The contact's own opt-out is recorded as lifted; the person's flag stays.
+    expect(await lastEntry(contactId)).toEqual({
+      from_value: true,
+      to_value: true,
+      origin: "system_lift",
+      reason_ref: `task:${after.task_id}`,
+    });
+    expect(await holder(after.conversation_id)).toMatchObject({
+      holder: "person",
+    });
+    expect(await liftEvents()).toBe(0);
+  });
+
+  it("keeps a conversation a person took over with the person when the contact's later message lifts the opt-out", async () => {
+    await frontDesk(KNOWLEDGE, AUTO_ACK);
+    await addCrmContact(admin, DEVICE);
+    const { registry } = runtime(undefined, { replyTransport: fake() });
+    const { conversationId } = await optedOut(registry);
+    await owner.withTransaction((tx) =>
+      takeOverConversation(tx, {
+        tenantId: TENANT_A,
+        conversationId,
+        actor: "dbtest-person",
+      }),
+    );
+
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    expect((await contactFlag())?.flag).toBe(false);
+    expect(await latest()).toMatchObject({ disposition: "held_for_person" });
+    expect(await holder(conversationId)).toMatchObject({
+      holder: "person",
+      holder_reason: "operator",
+    });
+  });
+
+  it("keeps the conversation with a person while another reason for a person is open", async () => {
+    await frontDesk(KNOWLEDGE, AUTO_ACK);
+    await addCrmContact(admin, DEVICE);
+    const { registry } = runtime(undefined, { replyTransport: fake() });
+    const { conversationId } = await optedOut(registry);
+    const optOut = await latest();
+    await admin.query(
+      `select ops.open_exception($1, (select company_id from ops.conversations where id = $2), $3,
+                                 'person_requested', $2, null, null, 'dbtest')`,
+      [TENANT_A, conversationId, optOut.task_id],
+    );
+
+    await send(ADMINISTRATIVE);
+    await drain(registry);
+    expect((await contactFlag())?.flag).toBe(false);
+    expect(await latest()).toMatchObject({ disposition: "held_for_person" });
+    expect(await holder(conversationId)).toMatchObject({
+      holder: "person",
+      holder_reason: "opt_out",
+    });
+  });
+
+  it("answers every message admitted while the opt-out was recorded once one of them lifted it", async () => {
+    await frontDesk(KNOWLEDGE, AUTO_ACK);
+    await addCrmContact(admin, DEVICE);
+    const { registry } = runtime(undefined, { replyTransport: fake() });
+    await optedOut(registry);
+
+    await holdRuns(true);
+    await send(ADMINISTRATIVE);
+    await send("E vocês atendem online?");
+    await holdRuns(false);
+    await drain(registry);
+    const { rows } = await admin.query<{
+      disposition: string;
+      opt_out_cleared: boolean;
+    }>(
+      `select s.disposition, s.opt_out_cleared
+         from ops.inbound_screenings s join ops.inbound_messages m on m.task_id = s.task_id
+        where m.tenant_id = $1 and not s.opt_out_requested
+        order by m.received_at, m.created_at`,
+      [TENANT_A],
+    );
+    expect(rows).toEqual([
+      { disposition: "model", opt_out_cleared: true },
+      { disposition: "model", opt_out_cleared: true },
+    ]);
+    expect(await acts()).toEqual(["opted_out", "opt_out_lifted"]);
+    expect(await liftEvents()).toBe(1);
+    const open = await admin.query(
+      `select 1 from ops.exceptions where tenant_id = $1 and resolved_at is null
+          and kind in ('do_not_contact', 'message_waiting')`,
+      [TENANT_A],
+    );
+    expect(open.rows).toEqual([]);
+  });
+
+  it("lets an automatic fixed text reach the contact once the message lifted the opt-out", async () => {
+    await frontDesk(KNOWLEDGE, {
+      ...POLICY,
+      automaticFixedTexts: ["opt_out_ack", "human_handoff_ack"],
+    });
+    await addCrmContact(admin, DEVICE);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await optedOut(registry);
+    expect(reply.transport.calls).toHaveLength(1);
+
+    await send("Quero falar com uma pessoa.");
+    await drain(registry);
+    const after = await latest();
+    expect(after).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "human_handoff_ack",
+    });
+    const { rows } = await admin.query<{ do_not_contact: boolean }>(
+      "select do_not_contact from ops.review_items where tenant_id = $1 and task_id = $2 and author = 'fixed'",
+      [TENANT_A, after.task_id],
+    );
+    expect(rows).toEqual([{ do_not_contact: false }]);
+    expect(reply.transport.calls).toHaveLength(2);
+    expect(await acts()).toContain("opt_out_lifted");
   });
 });

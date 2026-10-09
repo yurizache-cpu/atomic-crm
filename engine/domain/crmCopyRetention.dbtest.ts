@@ -34,9 +34,11 @@ import {
   gatewayDatabase,
   metaPayload,
   provisionGatewayRole,
+  type Clinic,
 } from "./testSupport/whatsappFixture.ts";
 
 const TARGET = "200000000000937";
+const TARGET_B = "200000000000938";
 const DEVICE = "5511900000937";
 const ADMINISTRATIVE = "Qual o valor da primeira sessão?";
 const THIRTEEN_MONTHS_S = 13 * 31 * 24 * 60 * 60;
@@ -45,6 +47,7 @@ let admin: Pool;
 let owner: WorkerDatabase;
 let db: WorkerDatabase;
 let gateway: WorkerDatabase;
+let clinic: Clinic;
 
 beforeAll(() => {
   ({ admin, owner, db } = openAgentRuntimeDatabases());
@@ -68,7 +71,7 @@ const { prepare, frontDesk, runtime, drain } = createFrontDeskHarness(
 beforeEach(async () => {
   await deleteCrmContacts(admin);
   await prepare();
-  await frontDesk(KNOWLEDGE, POLICY);
+  clinic = await frontDesk(KNOWLEDGE, POLICY);
   await owner.withTransaction((tx) =>
     recordLeadPolicy(tx, {
       tenantId: TENANT_A,
@@ -186,5 +189,70 @@ describe("the CRM copy of a WhatsApp lead follows the number's retention (ADR 00
     );
     expect(notes.rows[0].n).toBe("1");
     expect(await acts()).toEqual(["created", "kept"]);
+  });
+
+  it("holds every conversation of the number before any CRM row, so a screening on its second conversation never waits on it in a cycle", async () => {
+    const { rows: channels } = await admin.query<{ id: string }>(
+      "select ops.configure_whatsapp_channel($1, $2, $3, $4, 'test', 'dbtest channel B', 'dbtest') as id",
+      [TENANT_A, clinic.companyId, clinic.agentId, TARGET_B],
+    );
+    await admin.query("select ops.register_test_sender($1, $2, $3, 'dbtest')", [
+      TENANT_A,
+      channels[0].id,
+      DEVICE,
+    ]);
+    await send();
+    const contactId = await lead();
+    const second = await deliver(
+      gateway,
+      metaPayload(TARGET_B, {
+        messages: [{ id: "wamid.CRB1", from: DEVICE, body: ADMINISTRATIVE }],
+      }),
+    );
+    expect(second.status).toBe(200);
+    const { rows: conversations } = await admin.query<{ id: string }>(
+      "select id from ops.conversations where channel_id = $1",
+      [channels[0].id],
+    );
+
+    // A screening on the second conversation holds it, as the lift does.
+    const screening = await admin.connect();
+    let erasure: Promise<unknown> | undefined;
+    try {
+      await screening.query("begin");
+      await screening.query(
+        "select 1 from ops.conversations where id = $1 for key share",
+        [conversations[0].id],
+      );
+      erasure = owner.withTransaction((tx) =>
+        eraseContactByNumber(tx, {
+          tenantId: TENANT_A,
+          number: DEVICE,
+          actor: "dbtest-owner",
+        }),
+      );
+      await waitUntil(
+        async () =>
+          (
+            await admin.query<{ waiting: boolean }>(
+              "select exists (select 1 from pg_locks where not granted) as waiting",
+            )
+          ).rows[0].waiting,
+        "the erasure did not wait for the second conversation",
+        1_500,
+      );
+      // The erasure holds no CRM row while it waits: the lift can take the profile.
+      await expect(
+        admin.query(
+          "select 1 from public.lead_profiles where contact_id = $1::bigint for update nowait",
+          [contactId],
+        ),
+      ).resolves.toBeDefined();
+      await screening.query("commit");
+    } finally {
+      screening.release();
+    }
+    await expect(erasure).resolves.toEqual({ conversationsErased: 2 });
+    expect(await lead()).toBeUndefined();
   });
 });

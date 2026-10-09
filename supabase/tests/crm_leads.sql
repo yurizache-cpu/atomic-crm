@@ -320,4 +320,69 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- L6. The cap counts the day in the policy's time zone: yesterday's leads do
+--     not count, today's do.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_answer jsonb;
+begin
+  perform ops.register_test_sender(pg_temp.id('tenant_a'), pg_temp.id('chan_a'), '5511900000086', 'cl-owner');
+  perform ops.register_test_sender(pg_temp.id('tenant_a'), pg_temp.id('chan_a'), '5511900000087', 'cl-owner');
+  perform ops.record_crm_lead_policy(pg_temp.id('tenant_a'), 1, 'America/Sao_Paulo', 'Contato Teste', 'cl-owner');
+  -- Every lead so far was created yesterday, as the policy's clock reads it.
+  alter table ops.crm_contact_acts disable trigger crm_contact_acts_guard;
+  update ops.crm_contact_acts set recorded_at = now() - interval '1 day'
+   where tenant_id = pg_temp.id('tenant_a') and act = 'created';
+  alter table ops.crm_contact_acts enable always trigger crm_contact_acts_guard;
+  v_answer := ops.receive_whatsapp_message('300000000000081', 'wamid.CL61', '5511900000086',
+                                           'Synthetic lead question', now());
+  if pg_temp.contacts_with('5511900000086') <> 1 then
+    raise exception 'L6: yesterday''s leads counted against today''s cap';
+  end if;
+  v_answer := ops.receive_whatsapp_message('300000000000081', 'wamid.CL62', '5511900000087',
+                                           'Synthetic lead question', now());
+  if pg_temp.contacts_with('5511900000087') <> 0
+     or (select array_agg(act) from ops.crm_contact_acts
+          where conversation_id = (v_answer ->> 'conversation_id')::uuid) is distinct from array['skipped:cap'] then
+    raise exception 'L6: today''s lead did not count against today''s cap';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- L7. A failure of the lead step leaves the number unknown, on the record, and
+--     the message is still admitted.
+-- ---------------------------------------------------------------------------
+
+create function public.cl_test_refuse_contact() returns trigger
+language plpgsql as $$
+begin
+  raise exception 'cl-test: a synthetic failure of the lead step';
+end
+$$;
+
+do $$
+declare
+  v_answer jsonb;
+begin
+  perform ops.register_test_sender(pg_temp.id('tenant_a'), pg_temp.id('chan_a'), '5511900000088', 'cl-owner');
+  perform ops.record_crm_lead_policy(pg_temp.id('tenant_a'), 100, 'America/Sao_Paulo', 'Contato Teste', 'cl-owner');
+  create trigger cl_test_refuse_contact before insert on public.contacts
+    for each row execute function public.cl_test_refuse_contact();
+  v_answer := ops.receive_whatsapp_message('300000000000081', 'wamid.CL71', '5511900000088',
+                                           'Synthetic lead question', now());
+  drop trigger cl_test_refuse_contact on public.contacts;
+  if v_answer ->> 'state' <> 'admitted'
+     or pg_temp.contacts_with('5511900000088') <> 0
+     or (select contact_resolution from ops.inbound_messages where external_message_id = 'wamid.CL71') <> 'not_found'
+     or (select array_agg(act) from ops.crm_contact_acts
+          where conversation_id = (v_answer ->> 'conversation_id')::uuid) is distinct from array['skipped:error'] then
+    raise exception 'L7: a failed lead step did not leave the number unknown and the message admitted (%)', v_answer;
+  end if;
+end
+$$;
+
 rollback;

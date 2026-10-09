@@ -35,6 +35,9 @@ describe("a profile name a lead may take its first name from", () => {
     ["a request to stop", "Pare de me mandar"],
     ["a request for a person", "Quero falar com uma pessoa"],
     ["danger", "Não quero mais viver"],
+    ["a sensitive word", "Ansiosa"],
+    ["a sensitive word after a name", "Ana Depressiva"],
+    ["a diagnosis", "Bipolar"],
     ["a first word that is not a name", "¿Hola"],
   ])("gives no first name for %s", (_case, raw) => {
     expect(profileFirstName(raw as string | null)).toBeNull();

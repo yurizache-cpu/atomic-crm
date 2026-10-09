@@ -342,7 +342,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-09",
     statement:
-      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins. The merge writes the flag only when the loser opted out, so the consent ledger records the merged opt-out as a person's, and a winner's own opt-out keeps its recorded origin otherwise (SI-84).",
+      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins. The merge writes the flag only when the loser opted out, so the consent ledger records the merged opt-out as a person's, and a winner's own opt-out keeps its recorded origin otherwise (SI-84); it holds both contacts and both lead profiles before it reads them, so an opt-out recorded meanwhile is folded in, never cascaded away.",
     provenBy: ["unit test"],
     enforcedBy: [
       {
@@ -4493,7 +4493,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-79",
     statement:
-      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; an erasure first records the conversation's pending opt-out in the CRM, while the number still finds the contact (SI-84), and then deletes a CRM contact the system created for the number, with its lead profile and attributions, once no conversation whose number is not erased still names it and no person worked on it (an edit of the contact, its lead profile or an attribution, a note, a task, a deal, a consent change of a person or of the contact's own opt-out), holding the contact and those rows before it checks; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
+      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; an erasure first records the conversation's pending opt-out in the CRM, while the number still finds the contact (SI-84), and then deletes a CRM contact the system created for the number, with its lead profile and attributions, once no conversation whose number is not erased still names it and no person worked on it (an edit of the contact, its lead profile or an attribution, a note, a task, a deal, a consent change of a person, or an opt-out in force), holding the contact and those rows before it checks, and an erasure by number holds every conversation of the number before any CRM row; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -5061,7 +5061,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-84",
     statement:
-      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once the opt-out's acknowledgement settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed; a number's erasure first records its conversation's pending opt-out. The screening of the contact's own later WhatsApp message that is not itself an opt-out clears that flag and nothing else, only when the consent ledger's newest entry is the system's record of an opt-out from an older message and no newer message of the number opted out, recorded as the system's lift naming the message; a flag a person set is never cleared by a message, and neither the CRM form, any application role nor the owner in SQL can clear the contact's own system-recorded opt-out. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. A person's work on a contact (any write to it, its lead profile or its attributions that no backend adapter marked as its own) is marked in a content-free, append-only table read by no application role, and the adapters mark their own writes. Each creation, skipped creation, opt-out record, lift, and deletion or keeping at an erasure is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created, a recorded opt-out lead.opted_out and a lift lead.opt_out_lifted; no adapter sends, starts a run or changes a stop.",
+      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once an acknowledgement of it a person accepted settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed, a dismissal committed while it runs included; a contact a merge or a deletion removes while the record or the lift reads it is resolved again; a number's erasure first records its conversation's pending opt-out. The screening of the contact's own later WhatsApp message that is not itself an opt-out clears that flag and nothing else, only when the consent ledger's newest entry is the system's record of an opt-out from an older message and no newer message of the number opted out, recorded as the system's lift naming the message; a flag a person set is never cleared by a message: when a person's flag is part of the opt-out (a person turned it on or named it on again, or it was on before the ledger existed), the contact's own opt-out is recorded as lifted and the flag stays, for the person to clear; and no update of the flag but the lift's clears the contact's own system-recorded opt-out, whoever writes it and whether or not it was first named on again. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. A person's work on a contact (any write to it, its lead profile or its attributions that no backend adapter marked as its own) is marked in a content-free, append-only table read by no application role, and the adapters mark their own writes. Each creation, skipped creation, opt-out record, lift, and deletion or keeping at an erasure is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created, a recorded opt-out lead.opted_out and a lift lead.opt_out_lifted; no adapter sends, starts a run or changes a stop.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -5164,7 +5164,37 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/crmOptOut.dbtest.ts",
         marker:
-          /records the opt-out as the system's once its automatic acknowledgement is sent, and reconciles the exception/,
+          /keeps an automatically acknowledged opt-out until its window ends, then records it as the system's and reconciles the exception/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /sees a person's dismissal that commits while the record runs, and records nothing/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /tries again when a merge removes the contact while the opt-out is recorded/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /never lifts a flag a person set, even once the contact also asked to stop by message and the system recorded it/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C6: a message lifted a flag a person set, once the contact had opted out by message too/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C1: naming the flag on again let a person clear the contact''s own opt-out/,
+      },
+      {
+        file: "supabase/migrations/20261019160000_slice3_review_fixes.sql",
+        marker:
+          /raise exception 'a review correction is missing from: %', v_bad;/,
       },
       {
         file: "engine/domain/crmOptOut.dbtest.ts",
@@ -5235,7 +5265,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "The sender chooses the profile name: the screen takes a first word that reads as a name, which a sender can still choose to mislead. A system-created contact has no sales owner, so only the owner sees it in the CRM. Two people sharing a number become one lead, and two different numbers sharing their last eight digits both wait for a person. A forged gateway call or a leaked app secret can now create a contact, bounded to a registered test sender, the daily cap and the tenant that owns the CRM. Leads are created only for registered test senders until the production gate's ADR.",
+      "The sender chooses the profile name: the screen takes a first word that reads as a name, which a sender can still choose to mislead. A system-created contact has no sales owner, so only the owner sees it in the CRM. Two people sharing a number become one lead, and two different numbers sharing their last eight digits both wait for a person. A forged gateway call or a leaked app secret can now create a contact, bounded to a registered test sender, the daily cap and the tenant that owns the CRM, and a forged message that is not an opt-out lifts that sender's own recorded opt-out (never a person's flag), after which automatic fixed texts and accepted replies can reach the number again. Leads are created only for registered test senders until the production gate's ADR. Outside the clear guard: renumbering a contact, deleting and re-inserting its lead profile as service_role, an owner-set lift mark, and a person deleting the contact (a new lead the number's next conversation creates starts without the opt-out). A deal created at the instant an erasure deletes its lead can still name the deleted id (deals carry no foreign key).",
   },
 ];
 

@@ -921,6 +921,10 @@ const ACCEPTED: Array<[string, string]> = [
   [
     "EXECUTE on a named function granted to the webhook gateway",
     "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz) to ops_gateway;",
+  ],
+  [
+    // ADR 0026 §C: the receive function's sixth parameter (the sender's first name).
+    "EXECUTE on the six-argument receive function granted to the webhook gateway",
     "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz, text) to ops_gateway;",
   ],
   [
