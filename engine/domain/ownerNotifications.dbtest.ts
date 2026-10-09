@@ -29,7 +29,11 @@ import {
   removeFixtureModels,
   TENANT_A,
 } from "../worker/testSupport/dbFixture.ts";
-import { recordPersonReply, releaseConversation } from "./frontDesk.ts";
+import {
+  recordPersonReply,
+  releaseConversation,
+  takeOverConversation,
+} from "./frontDesk.ts";
 import {
   agentRuntimeProbes,
   closeAgentRuntimeDatabases,
@@ -136,6 +140,7 @@ const recordTarget = async (
   options: {
     readonly asleep?: boolean;
     readonly hourlyCap?: number;
+    readonly dailyCap?: number;
     readonly digits?: string;
   } = {},
 ): Promise<string> => {
@@ -145,8 +150,14 @@ const recordTarget = async (
     `select ops.record_owner_notification_target(
        $1, $2, $3, 'aviso_fila_conversa', 'aviso_fila_resumo', 'dbtest-owner', 'pt_BR',
        array['person_requested', 'message_waiting'], (${start})::time, (${end})::time,
-       'America/Sao_Paulo', $4, 30, 'Contato') as id`,
-    [TENANT_A, channelId, options.digits ?? OWNER, options.hourlyCap ?? 10],
+       'America/Sao_Paulo', $4, $5, 'Contato') as id`,
+    [
+      TENANT_A,
+      channelId,
+      options.digits ?? OWNER,
+      options.hourlyCap ?? 10,
+      options.dailyCap ?? 30,
+    ],
   );
   return rows[0].id;
 };
@@ -727,5 +738,346 @@ describe("the owner's own number is never a lead", () => {
     expect(await refusal("5511900000948")).toMatch(/^OS409: .*CRM contact/);
     // The owner's own registered device stays a test sender, and may be the target.
     expect(await refusal(DEVICE)).toBe("recorded");
+  });
+});
+
+/** Puts a notification and its job as an attempt that began the call and never settled it. */
+const leaveSending = async (notificationId: string): Promise<string> => {
+  await admin.query(
+    "alter table ops.owner_notifications disable trigger owner_notifications_guard",
+  );
+  try {
+    await admin.query(
+      `update ops.owner_notifications n
+          set status = 'sending', sending_at = now(), transport = 'fake', job_attempt = 1,
+              send_channel_id = t.channel_id, template_kind = 'episode'
+         from ops.owner_notification_targets t
+        where n.id = $1 and t.id = n.target_id`,
+      [notificationId],
+    );
+  } finally {
+    await admin.query(
+      "alter table ops.owner_notifications enable always trigger owner_notifications_guard",
+    );
+  }
+  const { rows } = await admin.query<{ job_id: string }>(
+    "select job_id from ops.owner_notifications where id = $1",
+    [notificationId],
+  );
+  return rows[0].job_id;
+};
+
+/** The conversation a number writes in, by its contact reference. */
+const conversationOf = async (contact: string): Promise<string> =>
+  (
+    await admin.query<{ id: string }>(
+      "select id from ops.conversations where tenant_id = $1 and contact_ref = $2",
+      [TENANT_A, contact],
+    )
+  ).rows[0].id;
+
+describe("what a person did since, and what is not yet due, is never sent", () => {
+  it("sets aside a request a person answered before it was due, calling no one", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    const out = await latest();
+    const seen = await revision(out.conversation_id);
+    await act((tx) =>
+      recordPersonReply(tx, {
+        tenantId: TENANT_A,
+        conversationId: out.conversation_id,
+        text: "Olá! Já vou te atender.",
+        actor: PERSON,
+        expectedRevision: seen,
+      }),
+    );
+    await dueNow();
+    await drain(registry);
+    expect((await notifications())[0].status).toBe("skipped_answered");
+    expect(reply.templates.templateCalls).toHaveLength(0);
+  });
+
+  it("records nothing for a message a person answered before its screening ran", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    const out = await latest();
+    await dueNow();
+    await drain(registry);
+    expect(reply.templates.templateCalls).toHaveLength(1);
+
+    // Admitted, not yet screened; the person answers it first.
+    await send(FOLLOW_UP);
+    const seen = await revision(out.conversation_id);
+    await act((tx) =>
+      recordPersonReply(tx, {
+        tenantId: TENANT_A,
+        conversationId: out.conversation_id,
+        text: "Respondido antes da triagem.",
+        actor: PERSON,
+        expectedRevision: seen,
+      }),
+    );
+    await drain(registry);
+    expect(await notifications()).toHaveLength(1);
+  });
+
+  it("opens a crisis's request for a person with no notification, and notifies on the next request it counts", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const { registry } = runtime(undefined, { replyTransport: fake() });
+    await send(CRISIS_AND_PERSON);
+    await drain(registry);
+    const { rows: episodes } = await admin.query<{ id: string }>(
+      `select id from ops.exceptions
+        where tenant_id = $1 and kind = 'person_requested' and resolved_at is null`,
+      [TENANT_A],
+    );
+    expect(episodes).toHaveLength(1);
+    expect(await notifications()).toEqual([]);
+
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    const { rows } = await admin.query<{ exception_id: string }>(
+      "select exception_id from ops.owner_notifications where tenant_id = $1",
+      [TENANT_A],
+    );
+    expect(rows).toEqual([{ exception_id: episodes[0].id }]);
+  });
+
+  it("carries only what is due: a notification inside its own minute waits for it", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await addCrmContact(admin, SECOND_DEVICE);
+    await admin.query("select ops.register_test_sender($1, $2, $3, 'dbtest')", [
+      TENANT_A,
+      clinic.channelId,
+      SECOND_DEVICE,
+    ]);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await sendFrom(SECOND_DEVICE, PERSON_REQUEST);
+    await drain(registry);
+    const [first] = await notifications();
+
+    // Only the first is due.
+    await admin.query(
+      "alter table ops.owner_notifications disable trigger owner_notifications_guard",
+    );
+    try {
+      await admin.query(
+        `update ops.owner_notifications
+            set due_at = now() - interval '1 second', recorded_at = recorded_at - interval '61 seconds'
+          where id = $1`,
+        [first.id],
+      );
+    } finally {
+      await admin.query(
+        "alter table ops.owner_notifications enable always trigger owner_notifications_guard",
+      );
+    }
+    await admin.query(
+      "update ops.jobs set available_at = now() where id = $1",
+      [first.job_id],
+    );
+    await drain(registry);
+    expect(reply.templates.templateCalls.map((c) => c.templateName)).toEqual([
+      "aviso_fila_conversa",
+    ]);
+    expect((await notifications()).map((n) => n.status)).toEqual([
+      "sent",
+      "pending",
+    ]);
+
+    await dueNow();
+    await drain(registry);
+    expect(reply.templates.templateCalls.map((c) => c.templateName)).toEqual([
+      "aviso_fila_conversa",
+      "aviso_fila_conversa",
+    ]);
+  });
+
+  it("waits past the daily cap until a day after the first send", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await addCrmContact(admin, SECOND_DEVICE);
+    await admin.query("select ops.register_test_sender($1, $2, $3, 'dbtest')", [
+      TENANT_A,
+      clinic.channelId,
+      SECOND_DEVICE,
+    ]);
+    await recordTarget(clinic.channelId, { hourlyCap: 1, dailyCap: 1 });
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    await dueNow();
+    await drain(registry);
+    await sendFrom(SECOND_DEVICE, PERSON_REQUEST);
+    await drain(registry);
+    await dueNow();
+    await drain(registry);
+    expect(reply.templates.templateCalls).toHaveLength(1);
+    const jobs = await notificationJobs();
+    expect(jobs[1].status).toBe("queued");
+    expect(jobs[1].available_at.getTime()).toBeGreaterThan(
+      Date.now() + 23 * 3_600_000,
+    );
+  });
+});
+
+describe("a send that may have reached the owner is never made again", () => {
+  it("records an earlier attempt's send indeterminate without calling, and keeps the gap told", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    const [note] = await notifications();
+    const job = await leaveSending(note.id);
+    await admin.query(
+      "update ops.jobs set status = 'queued', attempts = 1, available_at = now() where id = $1",
+      [job],
+    );
+    await drain(registry);
+    expect((await notifications())[0]).toMatchObject({
+      status: "indeterminate",
+      error_class: "execution_interrupted",
+    });
+    expect(reply.templates.templateCalls).toHaveLength(0);
+
+    await send(FOLLOW_UP);
+    await drain(registry);
+    expect(await notifications()).toHaveLength(1);
+  });
+
+  it("has the reaper record a send its job left in flight as indeterminate", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const { registry } = runtime();
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    const [note] = await notifications();
+    const job = await leaveSending(note.id);
+    await admin.query(
+      "update ops.jobs set status = 'failed', last_error = 'dbtest' where id = $1",
+      [job],
+    );
+    const settled = await db.withTransaction(async (tx) => {
+      await tx.query("set local role ops_worker");
+      const { rows } = await tx.query<{ n: number }>(
+        "select ops.settle_stale_owner_notifications() as n",
+      );
+      return Number(rows[0].n);
+    });
+    expect(settled).toBe(1);
+    expect((await notifications())[0]).toMatchObject({
+      status: "indeterminate",
+      error_class: "execution_interrupted",
+    });
+  });
+
+  it("never carries a notification a stop on its own unit holds", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await addCrmContact(admin, SECOND_DEVICE);
+    await admin.query("select ops.register_test_sender($1, $2, $3, 'dbtest')", [
+      TENANT_A,
+      clinic.channelId,
+      SECOND_DEVICE,
+    ]);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    // The second device's conversation, held by a person.
+    await sendFrom(SECOND_DEVICE, FOLLOW_UP);
+    await drain(registry);
+    const second = await conversationOf(SECOND_DEVICE);
+    await act((tx) =>
+      takeOverConversation(tx, {
+        tenantId: TENANT_A,
+        conversationId: second,
+        actor: PERSON,
+      }),
+    );
+    // A request for a person on the first unit's watch.
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    expect(await notifications()).toHaveLength(1);
+
+    // The channel moves to another agent; the first is stopped.
+    const { rows: agents } = await admin.query<{ department_id: string }>(
+      "select department_id from ops.agents where id = $1",
+      [clinic.agentId],
+    );
+    const { rows: created } = await admin.query<{ id: string }>(
+      `select ops.create_agent($1, $2, $3, 'other-desk', 'Other Desk', 'Desk assistant', 'dbtest') as id`,
+      [TENANT_A, clinic.companyId, agents[0].department_id],
+    );
+    await admin.query(
+      `select ops.configure_whatsapp_channel($1, $2, $3, $4, 'test', 'dbtest channel', 'dbtest', true)`,
+      [TENANT_A, clinic.companyId, created[0].id, TARGET],
+    );
+    const { rows: stop } = await admin.query<{ id: string }>(
+      "select ops.trip_execution_stop('agent', 'dbtest stop', 'dbtest', $1, $2, null, $3) as id",
+      [TENANT_A, clinic.companyId, clinic.agentId],
+    );
+    try {
+      // A refused image in the held conversation: the second unit's watch.
+      expect(
+        (
+          await deliver(
+            gateway,
+            metaPayload(TARGET, {
+              messages: [
+                {
+                  id: "wamid.ONSTOP1",
+                  from: SECOND_DEVICE,
+                  body: "",
+                  kind: "image",
+                },
+              ],
+            }),
+          )
+        ).status,
+      ).toBe(200);
+      expect(await notifications()).toHaveLength(2);
+      await dueNow();
+      await drain(registry);
+      expect(reply.templates.templateCalls).toHaveLength(1);
+      expect(reply.templates.templateCalls[0].templateName).toBe(
+        "aviso_fila_conversa",
+      );
+      const rows = await notifications();
+      expect(
+        rows.map(({ conversation_id, status }) => [
+          conversation_id === second,
+          status,
+        ]),
+      ).toEqual([
+        [false, "pending"],
+        [true, "sent"],
+      ]);
+    } finally {
+      await admin.query(
+        "select ops.clear_execution_stop($1, 'dbtest clear', 'dbtest')",
+        [stop[0].id],
+      );
+    }
   });
 });

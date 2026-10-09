@@ -78,7 +78,8 @@ create table ops.owner_notification_targets (
   constraint owner_notification_targets_time_zone_format check (time_zone ~ '^[A-Za-z0-9_+/-]{1,64}$'),
   constraint owner_notification_targets_caps check (
     hourly_cap between 1 and 60 and daily_cap between 1 and 200 and hourly_cap <= daily_cap),
-  constraint owner_notification_targets_fallback check (name_fallback ~ '^[[:alpha:]][[:alpha:] ]{0,19}$'),
+  constraint owner_notification_targets_fallback check (
+    char_length(name_fallback) <= 20 and name_fallback ~ '^[[:alpha:]]+( [[:alpha:]]+)*$'),
   constraint owner_notification_targets_actor_format check (
         recorded_by ~ '^[A-Za-z0-9._:@-]{1,200}$'
     and (retired_by is null or retired_by ~ '^[A-Za-z0-9._:@-]{1,200}$')),
@@ -276,7 +277,8 @@ begin
     raise exception using errcode = 'OS400',
       message = 'ops.record_owner_notification_target: the hourly cap is 1 to 60, the daily 1 to 200, and not below it';
   end if;
-  if p_name_fallback is null or p_name_fallback !~ '^[[:alpha:]][[:alpha:] ]{0,19}$' then
+  if p_name_fallback is null or char_length(p_name_fallback) > 20
+     or p_name_fallback !~ '^[[:alpha:]]+( [[:alpha:]]+)*$' then
     raise exception using errcode = 'OS400',
       message = 'ops.record_owner_notification_target: the fallback word is 1 to 20 letters';
   end if;
@@ -298,23 +300,26 @@ begin
   -- contact carries it, in either form, but a sender the owner registered on a
   -- test channel (the owner's own device).
   foreach v_form in array ops.owner_number_forms(p_digits) loop
-    if exists (select 1
-                 from ops.communication_test_senders s
-                 join ops.communication_channels c
-                   on c.tenant_id = s.tenant_id and c.company_id = s.company_id and c.id = s.channel_id
-                where s.tenant_id = p_tenant_id and s.sender = v_form and s.retired_at is null and c.mode = 'test') then
-      continue;
-    end if;
+    -- The gateway's own exemption, channel by channel: a conversation where
+    -- the number is a sender the owner registered on that channel stays a
+    -- test conversation; any other holds a lead.
     select count(*) into v_held from ops.conversations c
-     where c.tenant_id = p_tenant_id and c.contact_ref = v_form;
+     where c.tenant_id = p_tenant_id and c.contact_ref = v_form
+       and not ops.registered_test_sender(p_tenant_id, c.channel_id, v_form);
     if v_held > 0 then
       raise exception using errcode = 'OS409',
-        message = format('ops.record_owner_notification_target: %s conversation(s) of this tenant already hold this number; erase them first (npm run ops -- identifiers erase --number-file <path>, both forms)', v_held);
+        message = format('ops.record_owner_notification_target: %s conversation(s) of this tenant already hold this number; erase them first (npm run ops -- identifiers erase --number-file <path>, once for each form of the number)', v_held);
     end if;
-    v_crm := ops.crm_contact_by_phone(p_tenant_id, v_form);
-    if v_crm ->> 'state' in ('found', 'ambiguous') then
-      raise exception using errcode = 'OS409',
-        message = 'ops.record_owner_notification_target: a CRM contact carries this number; a lead is never the target';
+    -- A CRM contact carries it, exactly or under another format (the same
+    -- last eight digits, SI-48), unless it is a sender the owner registered
+    -- on the target's own channel.
+    if not ops.registered_test_sender(p_tenant_id, v_channel.id, v_form) then
+      v_crm := ops.crm_contact_by_phone(p_tenant_id, v_form);
+      if v_crm ->> 'state' in ('found', 'ambiguous')
+         or (v_crm ->> 'state' is distinct from 'unavailable' and ops.crm_phone_suffix_match(v_form)) then
+        raise exception using errcode = 'OS409',
+          message = 'ops.record_owner_notification_target: a CRM contact carries this number; a lead is never the target';
+      end if;
     end if;
   end loop;
 
@@ -571,9 +576,6 @@ begin
     return new;
   end if;
   if v_rank_new > 0 and old.status in ('indeterminate', 'sent', 'delivered') and v_rank_new > v_rank_old then
-    return new;
-  end if;
-  if old.status = 'failed' and new.status in ('delivered', 'read') then
     return new;
   end if;
   raise exception using errcode = 'OS403', message = 'ops.owner_notifications: that change is not a notification''s';
@@ -835,7 +837,11 @@ begin
      where e.tenant_id = p_tenant_id and e.type = 'communication.inbound_refused'
        and e.payload ->> 'conversation_id' = p_conversation_id::text
      order by e.seq desc limit 1;
-    v_since := now();
+    -- The refused message's arrival, as the gateway recorded it on the
+    -- conversation (its newest message, unless a newer one came since).
+    select least(c.last_inbound_at, now()) into v_since from ops.conversations c
+     where c.tenant_id = p_tenant_id and c.id = p_conversation_id;
+    v_since := coalesce(v_since, now());
   end if;
   if v_trigger is null or v_since is null then
     return 'not_eligible';
@@ -1126,14 +1132,22 @@ begin
   select pg_catalog.array_agg(b.id order by b.recorded_at, b.id) into v_batch
     from (select n.id, n.recorded_at from ops.owner_notifications n
            where n.tenant_id = v_own.tenant_id and n.target_id = v_own.target_id and n.status = 'pending'
-             and (n.id = v_own.id or n.due_at <= now())
+             and (n.id = v_own.id
+                  or (n.due_at <= now()
+                      and ops.job_covering_stop(n.tenant_id, n.job_id, 'owner_notification.send') is null))
            order by n.recorded_at, n.id
              for update) b;
-  perform 1 from ops.exceptions e
-   where e.tenant_id = v_own.tenant_id
-     and e.id in (select n.exception_id from ops.owner_notifications n where n.id = any (v_batch))
-   order by e.id
-     for share;
+  begin
+    perform 1 from ops.exceptions e
+     where e.tenant_id = v_own.tenant_id
+       and e.id in (select n.exception_id from ops.owner_notifications n where n.id = any (v_batch))
+     order by e.id
+       for share nowait;
+  exception when lock_not_available then
+    perform ops.release_owner_notification_job(v_job, now() + interval '5 seconds',
+                                               'waiting for an episode a person or a screening holds');
+    return jsonb_build_object('action', 'released', 'ownerNotificationId', v_own.id);
+  end;
   update ops.owner_notifications n set status = 'expired'
    where n.id = any (v_batch) and n.status = 'pending' and n.expires_at <= now();
   update ops.owner_notifications n set status = 'skipped_resolved'
@@ -1299,7 +1313,13 @@ begin
   elsif v_rank is null then
     return jsonb_build_object('state', 'unsupported');
   elsif p_note.status = 'failed' and v_rank >= 2 then
-    v_next := p_status;
+    -- Delivery news after a failure: the instant is kept, the notification
+    -- stays failed, so it never takes back a gap a later message used.
+    update ops.owner_notifications
+       set delivered_at = coalesce(delivered_at, p_status_at, now()),
+           read_at      = case when p_status = 'read' then coalesce(read_at, p_status_at, now()) else read_at end
+     where id = p_note.id;
+    return jsonb_build_object('state', 'ignored', 'status', p_note.status);
   elsif p_note.status not in ('indeterminate', 'sent', 'delivered') or v_rank <= v_current then
     return jsonb_build_object('state', 'ignored', 'status', p_note.status);
   else
@@ -1748,6 +1768,18 @@ begin
          for update of n;
     end if;
     if v_note.id is null then
+      -- A status for a send still settling (its provider id is recorded only
+      -- when it settles) is refused as transient, so the provider delivers it
+      -- again; bounded, so a send a dead worker left is never waited for.
+      if exists (select 1 from ops.owner_notifications n
+                   join ops.owner_notification_targets t on t.tenant_id = n.tenant_id and t.id = n.target_id
+                  where n.tenant_id = v_channel.tenant_id and n.send_channel_id = v_channel.id
+                    and n.status = 'sending' and n.sending_at > now() - interval '5 minutes'
+                    and (p_recipient = any (ops.owner_number_forms(t.digits))
+                         or p_correlation is not distinct from format('owner-notification:%s', n.id))) then
+        raise exception using errcode = 'OS429',
+          message = 'ops.receive_whatsapp_status: a notification send is still settling';
+      end if;
       return jsonb_build_object('state', 'unmatched');
     end if;
     return ops.apply_owner_notification_status(v_note, p_status, p_status_at, p_provider_message_id, p_error_code);

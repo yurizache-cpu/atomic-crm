@@ -7,8 +7,8 @@ import {
   FRONT_DESK_ACTS,
   parseFrontDeskArgs,
   runFrontDeskCli,
-  withholdDigits,
 } from "./frontDesk.ts";
+import { withholdDigits } from "./ownerInput.ts";
 
 const TENANT = "00000000-0000-4000-8000-0000000000a1";
 const CHANNEL = "00000000-0000-4000-8000-0000000000c2";
@@ -156,6 +156,29 @@ describe("the owner's notification target", () => {
       },
     ]);
     expect(out.join("\n")).not.toContain(NUMBER);
+  });
+
+  it("refuses a fallback word the template transport would refuse, before the database", async () => {
+    for (const word of [
+      "Novo    contato",
+      "Novo  contato",
+      " Contato",
+      "Contato ",
+    ]) {
+      const { code, asked } = await run([...RECORD, "--fallback-name", word]);
+      expect(code).toBe(1);
+      expect(
+        asked.some((q) => q.sql.includes("record_owner_notification_target")),
+      ).toBe(false);
+    }
+    const { code } = await run(
+      [...RECORD, "--fallback-name", "Novo contato"],
+      (sql) =>
+        sql.includes("record_owner_notification_target")
+          ? [{ id: TARGET_ID }]
+          : [{ registered: false }],
+    );
+    expect(code).toBe(0);
   });
 
   it("refuses malformed quiet hours before the database, echoing no value", async () => {

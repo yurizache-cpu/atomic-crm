@@ -105,9 +105,9 @@
 // and the failure line are cliOutput.ts's: 0, 2 on a usage error, 1 when the
 // database or the domain refused.
 
-import { readFileSync } from "node:fs";
 import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
+import { readOwnerTextFile, withholdDigits } from "./ownerInput.ts";
 import {
   AGENT_RUN_STATUSES,
   isAgentRunStatus,
@@ -960,9 +960,9 @@ export interface OperatorCliDependencies {
   readonly readTextFile?: (path: string) => string;
 }
 
-/** A number file's digits: its first line, trimmed. Never echoed. */
+/** A number file's whole content, trimmed: one number, never echoed. */
 const numberFromFile = (raw: string): string =>
-  (raw.split(/\r?\n/u)[0] ?? "").replace(/^\uFEFF/u, "").trim();
+  (raw.startsWith(String.fromCharCode(0xfeff)) ? raw.slice(1) : raw).trim();
 
 /** Runs one command and resolves to the process exit code. Never rejects on a database failure. */
 export async function runOperatorCli(
@@ -972,7 +972,7 @@ export async function runOperatorCli(
   const { stdout, stderr } = dependencies;
   const parsed = parseOperatorArgs(argv);
   if (parsed.kind === "usage_error") {
-    stderr(usageLine(parsed.message, OPERATOR_SYNOPSIS));
+    stderr(usageLine(withholdDigits(parsed.message), OPERATOR_SYNOPSIS));
     return EXIT_USAGE;
   }
   let command = parsed;
@@ -1024,6 +1024,6 @@ if (await isEntryPoint(import.meta.url)) {
     // One connection: a command is one transaction.
     openDatabase: (connectionString) =>
       createWorkerDatabase({ connectionString, max: 1 }),
-    readTextFile: (path) => readFileSync(path, "utf8"),
+    readTextFile: readOwnerTextFile,
   });
 }

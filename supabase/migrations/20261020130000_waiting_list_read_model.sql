@@ -51,9 +51,15 @@ as $$
              when 'skipped_resolved' then 'skipped'
              when 'skipped_answered' then 'skipped'
              else 'blocked' end as nstate,
-           case when n.status = 'coalesced'
-                then coalesce(k.read_at, k.delivered_at, k.settled_at, k.sending_at, k.recorded_at)
-                else coalesce(n.read_at, n.delivered_at, n.settled_at, n.sending_at, n.recorded_at) end as nat
+           case coalesce(case when n.status = 'coalesced' then k.status else n.status end, 'none')
+             when 'none' then null
+             when 'read' then coalesce(case when n.status = 'coalesced' then k.read_at else n.read_at end,
+                                       case when n.status = 'coalesced' then k.settled_at else n.settled_at end)
+             when 'delivered' then coalesce(case when n.status = 'coalesced' then k.delivered_at else n.delivered_at end,
+                                            case when n.status = 'coalesced' then k.settled_at else n.settled_at end)
+             when 'pending' then n.recorded_at
+             when 'sending' then case when n.status = 'coalesced' then k.sending_at else n.sending_at end
+             else case when n.status = 'coalesced' then k.settled_at else n.settled_at end end as nat
       from convs c
       join ops.conversations v on v.tenant_id = p_tenant and v.id = c.conversation_id
       left join lateral (select o.* from ops.owner_notifications o

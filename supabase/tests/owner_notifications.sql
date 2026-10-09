@@ -168,6 +168,69 @@ end
 $$;
 
 -- ---------------------------------------------------------------------------
+-- N1b. The registration exempts a number channel by channel, as the gateway
+--      does; a CRM contact stored under another format is still a lead; the
+--      fallback word is one the template transport always accepts.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  ta   constant uuid := pg_temp.id('tenant');
+  ch   constant uuid := pg_temp.id('chan');
+  v_b  uuid;
+  v_r  text;
+begin
+  -- The device is registered on the test line only; a second test channel
+  -- holds a conversation with it, where it is not a registered sender.
+  v_b := ops.configure_whatsapp_channel(ta, pg_temp.id('company'), pg_temp.id('agent'), '300000000000088', 'test',
+                                        'ON test B', 'on-owner');
+  insert into ops.conversations (tenant_id, company_id, channel_id, contact_ref, last_inbound_at)
+  values (ta, pg_temp.id('company'), v_b, '5511900000086', now());
+  for v_r in
+    select pg_temp.refusal(format(
+      'select ops.record_owner_notification_target(%L, %L, %L, %L, %L, %L)',
+      ta, c, '5511900000086', 'aviso_a', 'aviso_b', 'on-owner'))
+      from unnest(array[ch, v_b]) c
+  loop
+    if v_r is null or v_r !~ '^OS409' or not pg_temp.valueless(v_r) then
+      raise exception 'N1b: a number a conversation on another channel holds was recorded: %', v_r;
+    end if;
+  end loop;
+  delete from ops.conversations where tenant_id = ta;
+
+  -- A CRM contact whose phone was saved without the country code.
+  update ops.tenants set owns_local_crm = false where owns_local_crm and id <> ta;
+  update ops.tenants set owns_local_crm = true where id = ta;
+  insert into public.contacts (first_name, last_name, phone_jsonb)
+  values ('on-test', 'Synthetic', '[{"number": "(11) 90000-0902", "type": "Mobile"}]'::jsonb);
+  v_r := pg_temp.refusal(format('select ops.record_owner_notification_target(%L, %L, %L, %L, %L, %L)',
+                                ta, ch, '5511900000902', 'aviso_a', 'aviso_b', 'on-owner'));
+  if v_r is null or v_r !~ '^OS409.*CRM contact' or not pg_temp.valueless(v_r) then
+    raise exception 'N1b: a number a CRM contact carries under another format was recorded: %', v_r;
+  end if;
+  delete from public.contacts where first_name = 'on-test';
+  update ops.tenants set owns_local_crm = false where id = ta;
+
+  -- Runs of spaces, or a space at an end, the template transport refuses.
+  for v_r in
+    select pg_temp.refusal(format(
+      'select ops.record_owner_notification_target(%L, %L, %L, %L, %L, %L, %L, %L::text[], %L::time, %L::time, %L, 10, 30, %L)',
+      ta, ch, '5511900000087', 'aviso_a', 'aviso_b', 'on-owner', 'pt_BR', '{person_requested}', '22:00', '08:00',
+      'America/Sao_Paulo', f))
+      from unnest(array['Novo    contato', 'Novo  contato', ' Contato', 'Contato ', 'Umnomemuitolongodemais']) f
+  loop
+    if v_r is null or v_r !~ '^OS400' then
+      raise exception 'N1b: a fallback word the transport refuses was recorded: %', v_r;
+    end if;
+  end loop;
+  perform ops.record_owner_notification_target(ta, ch, '5511900000087', 'aviso_a', 'aviso_b', 'on-owner', 'pt_BR',
+                                               array['person_requested'], '22:00', '08:00', 'America/Sao_Paulo',
+                                               10, 30, 'Novo contato');
+  perform ops.retire_owner_notification_target(ta, 'on-test retire', 'on-owner');
+end
+$$;
+
+-- ---------------------------------------------------------------------------
 -- N2. Quiet hours: a window that wraps midnight, its end, and the due instant.
 -- ---------------------------------------------------------------------------
 
@@ -413,6 +476,57 @@ end
 $$;
 
 -- ---------------------------------------------------------------------------
+-- N6b. Delivery news after a failure keeps the notification failed (it never
+--      takes back a gap a later message used); a status for a send still
+--      settling is refused as transient, for the provider to deliver again.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  note constant uuid := pg_temp.id('note');
+  v_a  jsonb;
+  v_r  text;
+begin
+  alter table ops.owner_notifications disable trigger owner_notifications_guard;
+  update ops.owner_notifications
+     set status = 'failed', delivered_at = null, read_at = null,
+         provider_message_key = encode(sha256(convert_to('wamid.ON-NOTE-3', 'UTF8')), 'hex')
+   where id = note;
+  alter table ops.owner_notifications enable always trigger owner_notifications_guard;
+  v_a := ops.receive_whatsapp_status('300000000000086', 'wamid.ON-NOTE-3', 'delivered', now(), '5511900000087', null, null);
+  if v_a <> '{"state": "ignored", "status": "failed"}'::jsonb
+     or (select status from ops.owner_notifications where id = note) <> 'failed'
+     or (select delivered_at from ops.owner_notifications where id = note) is null then
+    raise exception 'N6b: delivery news after a failure made the notification live again: %', v_a;
+  end if;
+
+  alter table ops.owner_notifications disable trigger owner_notifications_guard;
+  update ops.owner_notifications
+     set status = 'sending', provider_message_key = null, settled_at = null, delivered_at = null, read_at = null,
+         error_code = null, error_class = null, sending_at = now()
+   where id = note;
+  alter table ops.owner_notifications enable always trigger owner_notifications_guard;
+  v_r := pg_temp.refusal($q$select ops.receive_whatsapp_status('300000000000086', 'wamid.ON-NOTE-4', 'sent', now(),
+                                                               '5511900000087', null, null)$q$);
+  if v_r !~ '^OS429' then
+    raise exception 'N6b: a status for a send still settling was not refused as transient: %', v_r;
+  end if;
+  if ops.receive_whatsapp_status('300000000000086', 'wamid.ON-NOTE-4', 'sent', now(), '5511900000099', null, null)
+     <> '{"state": "unmatched"}'::jsonb then
+    raise exception 'N6b: a status for another recipient was held for a send in flight';
+  end if;
+
+  -- Back to what N7 reads: delivered.
+  alter table ops.owner_notifications disable trigger owner_notifications_guard;
+  update ops.owner_notifications
+     set status = 'delivered', settled_at = now(), delivered_at = now(),
+         provider_message_key = encode(sha256(convert_to('wamid.ON-NOTE-2', 'UTF8')), 'hex')
+   where id = note;
+  alter table ops.owner_notifications enable always trigger owner_notifications_guard;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
 -- N7. The waiting list: the conversation, by its task, its kinds and counts,
 --     never a number or a conversation id; nothing for an unknown tenant.
 -- ---------------------------------------------------------------------------
@@ -431,6 +545,115 @@ begin
   end if;
   if ops.cos_waiting_list(gen_random_uuid(), clock_timestamp()) <> '{"total": 0, "items": []}'::jsonb then
     raise exception 'N7: an unknown tenant has a waiting list';
+  end if;
+end
+$$;
+
+-- ---------------------------------------------------------------------------
+-- N7b. Every notification status maps to the state and instant the browser
+--      shows (a carried one follows its carrier); at most 50 conversations
+--      are listed, oldest first, with the exact total.
+-- ---------------------------------------------------------------------------
+
+create function pg_temp.set_note(p_id uuid, p_status text, p_carrier uuid) returns void
+language plpgsql as $f$
+declare
+  v_sent constant boolean := p_status in ('sending', 'sent', 'delivered', 'read', 'failed', 'indeterminate');
+begin
+  update ops.owner_notifications
+     set status = p_status,
+         block_reason = case when p_status = 'blocked' then 'job_failed' end,
+         carried_by = case when p_status in ('coalesced', 'carrier_failed') then p_carrier end,
+         sending_at = case when v_sent then now() - interval '3 minutes' end,
+         transport = case when v_sent then 'meta' end,
+         job_attempt = case when v_sent then 1 end,
+         send_channel_id = case when v_sent then pg_temp.id('chan') end,
+         template_kind = case when v_sent then 'episode' end,
+         provider_message_key = case when p_status in ('sent', 'delivered', 'read')
+                                     then encode(sha256(convert_to(p_id::text, 'UTF8')), 'hex') end,
+         settled_at = case when p_status not in ('pending', 'sending', 'coalesced') then now() - interval '2 minutes' end,
+         delivered_at = case when p_status in ('delivered', 'read') then now() - interval '90 seconds' end,
+         read_at = case when p_status = 'read' then now() - interval '1 minute' end
+   where id = p_id;
+end
+$f$;
+
+do $$
+declare
+  ta      constant uuid := pg_temp.id('tenant');
+  note    constant uuid := pg_temp.id('note');
+  v_n     ops.owner_notifications;
+  v_carry uuid := gen_random_uuid();
+  v_ep    uuid;
+  v_case  record;
+  v_item  jsonb;
+  v_list  jsonb;
+  v_task  uuid;
+  v_conv  uuid;
+  v_eps   uuid[] := array[]::uuid[];
+begin
+  select * into v_n from ops.owner_notifications where id = note;
+  -- A carrier on the conversation's request for a person, recorded earlier.
+  v_ep := ops.open_exception(ta, v_n.company_id, (select task_id from ops.exceptions where id = v_n.exception_id),
+                             'person_requested', v_n.conversation_id, null, null, 'on-test');
+  alter table ops.owner_notifications disable trigger owner_notifications_guard;
+  insert into ops.owner_notifications (
+    id, tenant_id, company_id, exception_id, conversation_id, kind, trigger_seq, waiting_since, target_id,
+    unit_company_id, unit_department_id, unit_agent_id, job_id, status, recorded_at, due_at, expires_at)
+  values (
+    v_carry, ta, v_n.company_id, v_ep, v_n.conversation_id, 'person_requested', 1, now() - interval '1 hour',
+    v_n.target_id, v_n.unit_company_id, v_n.unit_department_id, v_n.unit_agent_id,
+    ops.enqueue_job(ta, 'owner_notification.send', jsonb_build_object('owner_notification_id', v_carry)),
+    'pending', now() - interval '1 hour', now() - interval '1 hour', now() + interval '1 day');
+  perform pg_temp.set_note(v_carry, 'read', null);
+
+  for v_case in
+    select * from (values
+      ('pending', 'pending', 'recorded_at'), ('sending', 'pending', 'sending_at'), ('sent', 'sent', 'settled_at'),
+      ('delivered', 'delivered', 'delivered_at'), ('read', 'read', 'read_at'), ('failed', 'failed', 'settled_at'),
+      ('indeterminate', 'indeterminate', 'settled_at'), ('skipped_resolved', 'skipped', 'settled_at'),
+      ('skipped_answered', 'skipped', 'settled_at'), ('blocked', 'blocked', 'settled_at'),
+      ('expired', 'blocked', 'settled_at'), ('carrier_failed', 'failed', 'settled_at'),
+      ('coalesced', 'read', 'carrier_read_at')) as c (status, shown, instant)
+  loop
+    perform pg_temp.set_note(note, v_case.status, v_carry);
+    select * into v_n from ops.owner_notifications where id = note;
+    v_item := ops.cos_waiting_list(ta, clock_timestamp()) -> 'items' -> 0 -> 'notification';
+    if v_item ->> 'state' is distinct from v_case.shown
+       or v_item ->> 'at' is distinct from ops.cos_ts(case v_case.instant
+            when 'recorded_at' then v_n.recorded_at when 'sending_at' then v_n.sending_at
+            when 'settled_at' then v_n.settled_at when 'delivered_at' then v_n.delivered_at
+            when 'read_at' then v_n.read_at
+            else (select read_at from ops.owner_notifications where id = v_carry) end) then
+      raise exception 'N7b: status % shows %, expected % at its %', v_case.status, v_item, v_case.shown, v_case.instant;
+    end if;
+  end loop;
+  alter table ops.owner_notifications enable always trigger owner_notifications_guard;
+
+  -- 51 more conversations waiting, each a minute newer than the last.
+  for i in 1..51 loop
+    insert into ops.conversations (tenant_id, company_id, channel_id, contact_ref, last_inbound_at)
+    values (ta, v_n.company_id, pg_temp.id('chan'), '55119100' || lpad(i::text, 5, '0'), now())
+    returning id into v_conv;
+    v_task := ops.create_task(ta, v_n.company_id, 'lead_triage', 'WhatsApp message', 'on-test', null,
+                              pg_temp.id('department'), null, 100, null, null, null, null, 'test');
+    v_ep := ops.open_exception(ta, v_n.company_id, v_task, 'message_waiting', v_conv, null, null, 'on-test');
+    v_eps := v_eps || v_ep;
+  end loop;
+  alter table ops.exceptions disable trigger exceptions_guard;
+  update ops.exceptions e set raised_at = now() + make_interval(mins => o.k::int)
+    from unnest(v_eps) with ordinality o (id, k) where e.id = o.id;
+  alter table ops.exceptions enable always trigger exceptions_guard;
+  v_list := ops.cos_waiting_list(ta, now() + interval '2 hours');
+  if (v_list ->> 'total')::int <> 52 or jsonb_array_length(v_list -> 'items') <> 50
+     or exists (select 1 from jsonb_array_elements(v_list -> 'items') with ordinality a (item, k)
+                  join jsonb_array_elements(v_list -> 'items') with ordinality b (item, k) on b.k = a.k + 1
+                 where (a.item ->> 'waitingSince') > (b.item ->> 'waitingSince')) then
+    raise exception 'N7b: the waiting list is not the 50 oldest of 52, oldest first';
+  end if;
+  -- Waiting since a later instant than the one read: not listed yet.
+  if (ops.cos_waiting_list(ta, now() + interval '30 minutes 30 seconds') ->> 'total')::int <> 31 then
+    raise exception 'N7b: the waiting list counted an episode raised after the instant it was read for';
   end if;
 end
 $$;

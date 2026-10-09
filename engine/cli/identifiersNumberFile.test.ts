@@ -44,7 +44,7 @@ const run = async (argv: readonly string[], file = `${BOM}${NUMBER}\r\n`) => {
 const ERASE = ["identifiers", "erase", "--tenant", TENANT, "--actor", "owner"];
 
 describe("erasing a number named by a file", () => {
-  it("reads the file's first line, trimmed, binds it, and prints only the count", async () => {
+  it("reads the whole file, trimmed, binds it, and prints only the count", async () => {
     const { code, queries, out, read } = await run([
       ...ERASE,
       "--number-file",
@@ -57,6 +57,26 @@ describe("erasing a number named by a file", () => {
       { result: "erased", conversationsErased: 2 },
     ]);
     expect(out.join("\n")).not.toContain(NUMBER);
+  });
+
+  it("refuses a file holding two numbers, erasing nothing, rather than dropping one", async () => {
+    const { code, queries, out } = await run(
+      [...ERASE, "--number-file", "number.txt"],
+      `${NUMBER}\n551100000858\n`,
+    );
+    expect(code).toBe(1);
+    expect(queries.some((q) => q.sql.includes("erase_contact_by_number"))).toBe(
+      false,
+    );
+    expect(out.join("\n")).not.toContain(NUMBER);
+  });
+
+  it("withholds a number typed where a flag was expected", async () => {
+    const { code, out, queries } = await run([...ERASE, NUMBER]);
+    expect(code).toBe(2);
+    expect(queries).toEqual([]);
+    expect(out.join("\n")).not.toContain(NUMBER);
+    expect(out.join("\n")).toContain("<digits withheld>");
   });
 
   it("takes exactly one of --number and --number-file", () => {

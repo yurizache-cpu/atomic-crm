@@ -121,7 +121,9 @@ export async function showOwnerNotificationTarget(
               exists (select 1 from unnest(ops.owner_number_forms(t.digits)) f
                        where ops.registered_test_sender(t.tenant_id, t.channel_id, f)) as registered,
               exists (select 1 from unnest(ops.owner_number_forms(t.digits)) f
-                       where ops.crm_contact_by_phone(t.tenant_id, f) ->> 'state' in ('found', 'ambiguous')) as crm_holds
+                       where ops.crm_contact_by_phone(t.tenant_id, f) ->> 'state' in ('found', 'ambiguous')
+                          or (ops.crm_contact_by_phone(t.tenant_id, f) ->> 'state' is distinct from 'unavailable'
+                              and ops.crm_phone_suffix_match(f))) as crm_holds
          from ops.owner_notification_targets t
         where t.tenant_id = $1 and t.retired_at is null`,
       [tenantId],
@@ -240,7 +242,7 @@ export async function recordOwnerNotificationTarget(
     throw invalid("the hourly cap is not above the daily cap");
   const fallback = requireMatch(
     input.fallbackName ?? "Contato",
-    /^\p{L}[\p{L} ]{0,19}$/u,
+    /^(?=.{1,20}$)\p{L}+(?: \p{L}+)*$/u,
     "the fallback word is 1 to 20 letters",
   );
   try {

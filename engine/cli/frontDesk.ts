@@ -45,7 +45,6 @@
 // six digits or more. Exit 0, 2 on a usage error, 1 when the database or the
 // domain refused.
 
-import { readFileSync } from "node:fs";
 import type { WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
 import {
@@ -75,6 +74,7 @@ import {
   retireOwnerNotificationTarget,
   showOwnerNotificationTarget,
 } from "../domain/ownerNotificationTarget.ts";
+import { readOwnerTextFile, withholdDigits } from "./ownerInput.ts";
 import {
   EXIT_USAGE,
   isEntryPoint,
@@ -254,10 +254,6 @@ export interface FrontDeskCliDependencies {
 }
 
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
-
-/** A usage message never repeats a number someone typed by mistake (SI-86). */
-export const withholdDigits = (text: string): string =>
-  text.replace(/\d{6,}/gu, "<digits withheld>");
 
 /** An optional small integer flag; anything else is NaN for the domain to refuse. */
 const optionalInteger = (value: string | undefined): number | undefined =>
@@ -489,6 +485,6 @@ if (await isEntryPoint(import.meta.url)) {
     // One connection: a command is one transaction.
     openDatabase: (connectionString) =>
       createWorkerDatabase({ connectionString, max: 1 }),
-    readTextFile: (path) => readFileSync(path, "utf8"),
+    readTextFile: readOwnerTextFile,
   });
 }
