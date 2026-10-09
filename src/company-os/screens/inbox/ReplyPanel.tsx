@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,12 +26,15 @@ import {
   REPLY_UNAVAILABLE_TEXT,
   STEP_UP_DONE,
   STEP_UP_NEW_FACTOR_NOTE,
+  STEP_UP_RETRY,
   STEP_UP_SIGN_OUT,
   STEP_UP_TEXT,
+  STEP_UP_UNAVAILABLE,
   replyCounter,
 } from "./inboxCopy";
 import { replyOnItsWay, replyOutcomeText } from "./inboxOutcomes";
 import { ConfirmDialog, OutcomeNote } from "./inboxParts";
+import { useReturnFocus } from "./useReturnFocus";
 import type { ConversationActs } from "./useConversationActs";
 
 // The browser inbox's reply (ADR 0026 §E, SI-87): the member writes their own
@@ -46,10 +49,13 @@ import type { ConversationActs } from "./useConversationActs";
 /** The authenticator code, for the member's own factor; or why it cannot be asked for here. */
 const ReverifySecondFactor = ({ onVerified }: { onVerified: () => void }) => {
   const { mfa } = useRuntime();
-  // undefined while the provider is asked; null: no factor to verify.
-  const [factorId, setFactorId] = useState<string | null | undefined>(
-    undefined,
-  );
+  // undefined while the provider is asked; null: the provider says there is
+  // no factor; "unavailable": the provider could not be asked (a failed
+  // request is never read as "no factor").
+  const [factorId, setFactorId] = useState<
+    string | null | "unavailable" | undefined
+  >(undefined);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (mfa === undefined) {
@@ -57,20 +63,36 @@ const ReverifySecondFactor = ({ onVerified }: { onVerified: () => void }) => {
       return;
     }
     let active = true;
+    setFactorId(undefined);
     mfa.status().then(
       (status) => {
-        if (active) setFactorId(status?.factorId ?? null);
+        if (active)
+          setFactorId(status === null ? "unavailable" : status.factorId);
       },
       () => {
-        if (active) setFactorId(null);
+        if (active) setFactorId("unavailable");
       },
     );
     return () => {
       active = false;
     };
-  }, [mfa]);
+  }, [mfa, attempt]);
 
   if (factorId === undefined) return null;
+  if (factorId === "unavailable") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Note>{STEP_UP_UNAVAILABLE}</Note>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setAttempt((n) => n + 1)}
+        >
+          {STEP_UP_RETRY}
+        </Button>
+      </div>
+    );
+  }
   if (factorId === null || mfa === undefined) return <Note>{NO_FACTOR}</Note>;
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-3">
@@ -124,6 +146,9 @@ export const ReplyPanel = ({
   const hintId = useId();
   // The revision the confirmation was opened at, while it is open.
   const [confirming, setConfirming] = useState<number | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const group = useRef<HTMLDivElement>(null);
+  useReturnFocus(confirming !== null, trigger, group);
   const count = [...acts.draft].length;
   const valid = ReplyTextSchema.safeParse(acts.draft).success;
   const changed = confirming !== null && confirming !== conversation.revision;
@@ -136,9 +161,11 @@ export const ReplyPanel = ({
 
   return (
     <div
+      ref={group}
+      tabIndex={-1}
       role="group"
       aria-label={REPLY_GROUP_LABEL}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-3 outline-none"
     >
       <ReplyOutcome acts={acts} />
       {!conversation.allowedActs.reply ? (
@@ -176,6 +203,7 @@ export const ReplyPanel = ({
           {!current ? null : confirming === null ? (
             <div>
               <Button
+                ref={trigger}
                 disabled={!valid || acts.replyPending}
                 onClick={() => setConfirming(conversation.revision)}
               >

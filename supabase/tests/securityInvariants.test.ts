@@ -3020,7 +3020,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "contracts/company-os-api/conversation.ts",
         marker:
-          /MINIMISED\. No key carries the contact's number, a conversation id, a CRM/,
+          /export const ConversationSchema = z\.discriminatedUnion\("status", \[/,
       },
       {
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
@@ -3156,12 +3156,12 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/companyOsMigrationGuard.test.ts",
         marker:
-          /ADR 0026 §E \(owner decision S\): exactly the inbox's read and two acts,/,
+          /"reply_to_conversation\\\\\(p_task_id pg_catalog\\\\\.uuid, p_text pg_catalog\\\\\.text,",/,
       },
       {
         file: "supabase/tests/company_os_api.sql",
         marker:
-          /P1\. The catalogue: exactly the 24 exposed functions \(16 reads and the eight/,
+          /raise exception 'P1: the company_os_api catalogue drifted from the pinned signatures: %', v_bad;/,
       },
       {
         // S7.1, S7.2, Phase 3B.2 and decision S: the browser can cause exactly
@@ -5629,7 +5629,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "contracts/company-os-api/conversation.ts",
         marker:
-          /MINIMISED\. No key carries the contact's number, a conversation id, a CRM/,
+          /export const ConversationSchema = z\.discriminatedUnion\("status", \[/,
       },
       {
         file: "supabase/tests/company_os_api.sql",
@@ -5652,12 +5652,12 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/browser_inbox.sql",
         marker:
-          /-- B5\. Every answer the suite received carries none of what SI-87 keeps out:/,
+          /raise exception '% \(B5\): an answer carries what SI-87 keeps out: %', p_label, v_bad;/,
       },
       {
         file: "supabase/tests/browser_inbox.sql",
         marker:
-          /-- B2b\. A reply that left with no draft of 1 to 2000 characters on its review/,
+          /raise exception 'B2b: a reply with no draft is %', v -> 'turns' -> 1;/,
       },
       {
         file: "supabase/tests/browser_inbox.sql",
@@ -5670,7 +5670,7 @@ const INVARIANTS: Invariant[] = [
       },
       {
         file: "supabase/tests/browser_inbox.sql",
-        marker: /-- F\. THE ACTS' PATHS, pinned from the live catalogue/,
+        marker: /raise exception 'F1: % calls %, not exactly %'/,
       },
       {
         file: "engine/domain/browserInbox.dbtest.ts",
@@ -5714,7 +5714,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "Recency narrows token theft and does not remove it: a stolen session that verified within the hour can ask for a reply, only to a test number while SI-47 holds, and a factor enrolled during that session never counts. The send guard binds application paths, not the database owner, who can write ops directly. A conversation a person holds with no open waiting episode (a takeover with no new message, the hourly cap's hold, an opt-out's hold) is not in the inbox and stays with the owner's tools until the contact writes again; an open opt-out blocks both acts, and dismissing or resolving it stays an owner act. An act during a send to the same conversation answers busy after 2 s, since that send holds the conversation through its call.",
+      "Recency narrows token theft and does not remove it: a stolen session that verified within the hour can ask for a reply, only to a test number while SI-47 holds, and a factor enrolled during that session never counts in it; but a factor that session enrols counts in a later session, which a thief can open by setting a new password through the stolen one, so binding the step-up to a factor the owner acknowledged is a follow-up. The send guard binds application paths, not the database owner, who can write ops directly. A conversation a person holds with no open waiting episode (a takeover with no new message, the hourly cap's hold, an opt-out's hold) is not in the inbox and stays with the owner's tools until the contact writes again; an open opt-out blocks both acts, and dismissing or resolving it stays an owner act. An act during a send to the same conversation answers busy after 2 s, since that send holds the conversation through its call.",
   },
 ];
 

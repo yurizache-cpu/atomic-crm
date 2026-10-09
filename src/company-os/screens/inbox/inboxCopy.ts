@@ -239,6 +239,11 @@ export const STEP_UP_DONE = "Código confirmado. Envie a resposta de novo.";
 export const NO_FACTOR =
   "Esta conta não tem um aplicativo autenticador. Saia e entre de novo para configurá-lo.";
 
+export const STEP_UP_UNAVAILABLE =
+  "Não foi possível consultar o seu aplicativo autenticador agora.";
+
+export const STEP_UP_RETRY = "Tentar de novo";
+
 export const STEP_UP_SIGN_OUT =
   "O código foi aceito, mas o envio ainda pede a confirmação. Saia e entre de novo para enviar.";
 

@@ -134,12 +134,21 @@ export interface FakeMfa {
 export const createFakeMfa = (
   status: MfaStatus | null,
   code: string,
+  /** How many first status reads fail, as a provider error would. */
+  failingReads = 0,
 ): FakeMfa => {
   const verified: string[] = [];
+  let failures = failingReads;
   return {
     verified,
     port: {
-      status: async () => status,
+      status: async () => {
+        if (failures > 0) {
+          failures -= 1;
+          throw new Error("synthetic provider failure");
+        }
+        return status;
+      },
       enrollTotp: async () => {
         throw new Error("The inbox never enrols a factor.");
       },

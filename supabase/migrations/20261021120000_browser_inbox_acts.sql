@@ -154,7 +154,8 @@ $$;
 -- admitted message's text only for its own synthetic or test task, not
 -- redacted; a refused message as its reason; a reply once it left or may have
 -- left, or a person's reply asked for from the inbox, with its delivery (held
--- while a stop of its unit holds its job). Never an identifier.
+-- while a stop of its unit holds its job). Never an identifier. An admitted
+-- message stands at the provider's time, a refused one at its event's (D10).
 create function ops.cos_conversation_turns(p_tenant pg_catalog.uuid, p_conversation pg_catalog.uuid)
 returns pg_catalog.jsonb
 language sql stable security invoker set search_path = '' as $$
@@ -455,6 +456,22 @@ $function$;
 -- leave: the later one waits, so replies leave in the order they were written
 -- (the order of their review events, recorded under the conversation's lock).
 -- An earlier reply the contact's newer message made stale never holds it.
+-- Whether a message of a person's reply's conversation, the one it answers
+-- included, is admitted and still to be screened: the reply waits, so that an
+-- opt-out or a crisis in it is seen before the reply leaves (ADR 0026 §E).
+create function ops.person_reply_message_unscreened(p_out ops.outbound_messages)
+returns boolean
+language sql stable security invoker set search_path to '' as $function$
+  select exists (
+    select 1
+      from ops.inbound_messages m
+      join ops.agent_runs r on r.tenant_id = m.tenant_id and r.id = m.agent_run_id
+     where m.tenant_id = p_out.tenant_id and m.conversation_id = p_out.conversation_id
+       and r.status in ('pending', 'running')
+       and not exists (select 1 from ops.inbound_screenings s
+                        where s.tenant_id = r.tenant_id and s.agent_run_id = r.id));
+$function$;
+
 create function ops.person_reply_waits_for_earlier(p_out ops.outbound_messages)
 returns boolean
 language sql stable security invoker set search_path to '' as $function$
@@ -945,6 +962,12 @@ begin
     perform ops.release_reply_job(v_job, v_out.fresh_until, 'waiting for an earlier reply of the conversation');
     return jsonb_build_object('action', 'released', 'outboundMessageId', v_out.id);
   end if;
+  -- ADR 0026 §E: and only once every message it may be answering is screened,
+  -- so that an opt-out or a crisis in the one it answers is seen first.
+  if v_out.authorization_kind = 'person_reply' and ops.person_reply_message_unscreened(v_out) then
+    perform ops.release_reply_job(v_job, v_out.fresh_until, 'waiting for the contact''s messages to be screened');
+    return jsonb_build_object('action', 'released', 'outboundMessageId', v_out.id);
+  end if;
 
   -- Every gate again: the send's eligibility and the opt-out rule (the stop
   -- last), the policy as published now, and the redaction.
@@ -1186,6 +1209,7 @@ revoke all on function
   ops.operator_second_factor_recent(), ops.inbox_preflight(uuid, uuid, integer, text),
   ops.open_person_reply_review(uuid, uuid, text, text, integer, text), ops.review_is_person_reply(ops.review_items),
   ops.authorize_person_reply(uuid, text, jsonb), ops.person_reply_waits_for_earlier(ops.outbound_messages),
+  ops.person_reply_message_unscreened(ops.outbound_messages),
   ops.reply_to_conversation_as_member(uuid, text, uuid, text, integer),
   ops.release_conversation_as_member(uuid, text, uuid, integer),
   ops.record_person_reply(uuid, uuid, text, text, integer), ops.open_scripted_review(ops.agent_runs, text, text, text, text),
@@ -1214,7 +1238,8 @@ declare
     'ops.cos_message_do_not_contact(uuid,uuid)', 'ops.cos_person_reply_refusal(uuid,uuid,integer)',
     'ops.cos_conversation_turns(uuid,uuid)', 'ops.read_conversation(uuid,uuid)',
     'ops.operator_second_factor_recent()', 'ops.review_is_person_reply(ops.review_items)',
-    'ops.person_reply_waits_for_earlier(ops.outbound_messages)'];
+    'ops.person_reply_waits_for_earlier(ops.outbound_messages)',
+    'ops.person_reply_message_unscreened(ops.outbound_messages)'];
   c_volatile constant text[] := array[
     'ops.inbox_preflight(uuid,uuid,integer,text)', 'ops.open_person_reply_review(uuid,uuid,text,text,integer,text)',
     'ops.authorize_person_reply(uuid,text,jsonb)',
@@ -1282,6 +1307,9 @@ begin
      or pg_catalog.strpos((select p.prosrc from pg_catalog.pg_proc p
                             where p.oid = 'ops.begin_reply_send(text)'::pg_catalog.regprocedure),
                           'person_reply_waits_for_earlier') = 0
+     or pg_catalog.strpos((select p.prosrc from pg_catalog.pg_proc p
+                            where p.oid = 'ops.begin_reply_send(text)'::pg_catalog.regprocedure),
+                          'person_reply_message_unscreened') = 0
      or pg_catalog.strpos((select p.prosrc from pg_catalog.pg_proc p
                             where p.oid = 'ops.begin_reply_send(text)'::pg_catalog.regprocedure),
                           'review_is_published_fixed_text') = 0

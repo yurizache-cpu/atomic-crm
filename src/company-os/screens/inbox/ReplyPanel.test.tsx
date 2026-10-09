@@ -9,6 +9,7 @@ import {
   STEP_UP_DONE,
   STEP_UP_SIGN_OUT,
   STEP_UP_TEXT,
+  STEP_UP_UNAVAILABLE,
 } from "./inboxCopy";
 import {
   CONVERSATION_HASH,
@@ -255,6 +256,42 @@ describe("the inbox's reply", () => {
     await write(other);
     await send(other);
     await expect.element(other.getByText(NO_FACTOR)).toBeVisible();
+  });
+
+  it("tells a provider that could not be asked from an account with no factor, and asks again on request", async () => {
+    const mfa = createFakeMfa(
+      { needsSecondFactor: false, factorId: "factor-synthetic" },
+      CODE,
+      1,
+    );
+    const session = createInboxSession({ mfa: mfa.port });
+    session.answer("reply_to_conversation", () =>
+      ok(replyAnswer("second_factor_required")),
+    );
+    const screen = await open(session);
+    await write(screen);
+    await send(screen);
+
+    await expect.element(screen.getByText(STEP_UP_UNAVAILABLE)).toBeVisible();
+    expect(screen.getByText(NO_FACTOR).elements()).toHaveLength(0);
+    await replyGroup(screen)
+      .getByRole("button", { name: "Tentar de novo" })
+      .click();
+    await expect
+      .element(replyGroup(screen).getByLabelText("Código de 6 dígitos"))
+      .toBeVisible();
+  });
+
+  it("gives the focus back to the button when the confirmation is cancelled", async () => {
+    const session = createInboxSession();
+    const screen = await open(session);
+    await write(screen);
+    await screen.getByRole("button", { name: "Enviar resposta" }).click();
+    await screen.getByRole("button", { name: "Cancelar" }).click();
+    await expect
+      .element(screen.getByRole("button", { name: "Enviar resposta" }))
+      .toHaveFocus();
+    expect(replies(session)).toHaveLength(0);
   });
 
   it("tells each refusal apart: the gates' reason, a busy conversation, no access (OS409 included) and a lost answer", async () => {

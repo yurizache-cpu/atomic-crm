@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
@@ -16,6 +16,7 @@ import {
   RELEASE_OUTCOME_TEXT,
 } from "./inboxCopy";
 import { ConfirmDialog, OutcomeNote } from "./inboxParts";
+import { useReturnFocus } from "./useReturnFocus";
 import type { ConversationActs } from "./useConversationActs";
 
 // The browser inbox's release (ADR 0026 §E, SI-87): a conversation a person
@@ -48,6 +49,9 @@ export const ReleasePanel = ({
 }) => {
   // The revision the confirmation was opened at, while it is open.
   const [confirming, setConfirming] = useState<number | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const group = useRef<HTMLDivElement>(null);
+  useReturnFocus(confirming !== null, trigger, group);
   const allowed = conversation.allowedActs.release;
   const changed = confirming !== null && confirming !== conversation.revision;
 
@@ -59,15 +63,18 @@ export const ReleasePanel = ({
 
   return (
     <div
+      ref={group}
+      tabIndex={-1}
       role="group"
       aria-label={RELEASE_GROUP_LABEL}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-3 outline-none"
     >
       <ReleaseOutcome result={acts.releaseResult} />
       {conversation.optOutOpen ? <Note>{OPT_OUT_OPEN_RELEASE}</Note> : null}
       {!allowed || !current ? null : confirming === null ? (
         <div>
           <Button
+            ref={trigger}
             variant="outline"
             disabled={acts.releasePending}
             onClick={() => setConfirming(conversation.revision)}

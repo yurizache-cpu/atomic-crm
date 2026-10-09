@@ -1043,7 +1043,8 @@ declare
   v_ref    uuid;
   v_got    jsonb;
 begin
-  if v_random ->> 'code' <> 'OS404' or v_random ->> 'message' <> 'company_os_api.get_conversation: not found' then
+  if v_random ->> 'code' is distinct from 'OS404'
+     or v_random ->> 'message' is distinct from 'company_os_api.get_conversation: not found' then
     raise exception 'B8: a random uuid answered %', v_random;
   end if;
   foreach v_ref in array array[
@@ -2104,8 +2105,11 @@ begin
         <> 'waiting for an earlier reply of the conversation' then
     raise exception 'G5: a later reply did not wait for the earlier: %', v;
   end if;
-  if pg_temp.carry(r1) ->> 'settle' <> 'sent' or pg_temp.carry(r2) ->> 'settle' <> 'sent' then
-    raise exception 'G5: the two replies did not leave in their order';
+  v := jsonb_build_object('first', pg_temp.carry(r1));
+  v := v || jsonb_build_object('second', pg_temp.carry(r2));
+  if v -> 'first' ->> 'settle' is distinct from 'sent' or v -> 'second' ->> 'settle' is distinct from 'sent'
+     or (select count(*) from ops.outbound_messages o where o.id in (r1, r2) and o.status = 'sent') <> 2 then
+    raise exception 'G5: the two replies did not leave in their order: %', v;
   end if;
 
   perform pg_temp.refused('G5b third', pg_temp.reply(v_task, 'Terceira.', 1), 'queued');
@@ -2269,6 +2273,39 @@ begin
   end;
   if v_got is distinct from 'blocked/outside_service_window/1' then
     raise exception 'G9: the sync did not block an expired reply as outside its window: %', v_got;
+  end if;
+end
+$$;
+
+-- G10 (review SEND-UNSCREENED-OPTOUT). A person's reply waits while a message
+--      of its conversation, the one it answers included, is still to be
+--      screened: an opt-out in that message, once screened, blocks the reply,
+--      which never left.
+do $$
+declare
+  v_task uuid := pg_temp.waiting('g10');
+  v_conv uuid := pg_temp.id('g10.conv');
+  v      jsonb;
+  v_new  uuid;
+  v_out  ops.outbound_messages;
+begin
+  v := pg_temp.receive(pg_temp.device_of('g10'), 'Não quero mais receber mensagens, parem.');
+  v_new := (v ->> 'task_id')::uuid;
+  perform pg_temp.refused('G10 reply', pg_temp.reply(v_task, 'Resposta G10.', 2), 'queued');
+  v_out := pg_temp.last_reply(v_conv);
+  v := pg_temp.carry(v_out.id);
+  if v -> 'begin' ->> 'action' is distinct from 'released'
+     or (select o.status from ops.outbound_messages o where o.id = v_out.id) is distinct from 'authorized'
+     or (select je.detail from ops.job_events je where je.job_id = v_out.job_id and je.event = 'deferred'
+          order by je.id desc limit 1) is distinct from 'waiting for the contact''s messages to be screened' then
+    raise exception 'G10: a reply to an unscreened message did not wait: %', v;
+  end if;
+  perform pg_temp.screen(v_new, pg_temp.screening('unknown', null, false, true));
+  v := pg_temp.carry(v_out.id);
+  if (select o.status || '/' || o.blocked_reason from ops.outbound_messages o where o.id = v_out.id)
+       is distinct from 'blocked/opt_out_open'
+     or v ? 'confirm' then
+    raise exception 'G10: a reply to an opt-out left or was not blocked by it: %', v;
   end if;
 end
 $$;
