@@ -48,6 +48,7 @@
       "company_os_api.convert_opportunity(bigint,text,text)",
       "company_os_api.decide_review(uuid,text)",
       "company_os_api.get_agent(uuid)",
+      "company_os_api.get_conversation(uuid)",
       "company_os_api.get_review(uuid)",
       "company_os_api.get_review_advice(uuid)",
       "company_os_api.get_run(uuid)",
@@ -62,6 +63,8 @@
       "company_os_api.move_opportunity(bigint,text,text)",
       "company_os_api.operator_context()",
       "company_os_api.overview()",
+      "company_os_api.release_conversation(uuid,integer)",
+      "company_os_api.reply_to_conversation(uuid,text,integer)",
       "company_os_api.set_opportunity_next_action(bigint,timestamp with time zone,text)",
       "company_os_api.spend_summary()",
       "company_os_api.trip_stop(text,uuid)"
@@ -71,6 +74,7 @@
       "ops.gate_convert_opportunity(bigint,text,text)",
       "ops.gate_decide_review(uuid,text)",
       "ops.gate_get_agent(uuid)",
+      "ops.gate_get_conversation(uuid)",
       "ops.gate_get_review(uuid)",
       "ops.gate_get_review_advice(uuid)",
       "ops.gate_get_run(uuid)",
@@ -85,6 +89,8 @@
       "ops.gate_move_opportunity(bigint,text,text)",
       "ops.gate_operator_context()",
       "ops.gate_overview()",
+      "ops.gate_release_conversation(uuid,integer)",
+      "ops.gate_reply_to_conversation(uuid,text,integer)",
       "ops.gate_set_opportunity_next_action(bigint,timestamp with time zone,text)",
       "ops.gate_spend_summary()",
       "ops.gate_trip_stop(text,uuid)"
@@ -93,7 +99,8 @@
       "20260922120000_company_os_read_surface.sql",
       "20260923120000_company_os_review_decision.sql",
       "20260924120000_company_os_execution_stop.sql",
-      "20260930130000_company_os_commercial_acts.sql"
+      "20260930130000_company_os_commercial_acts.sql",
+      "20261021130000_company_os_browser_inbox.sql"
     ],
     "transfers": {
       "20260922120000_company_os_read_surface.sql": [
@@ -124,6 +131,11 @@
         "company_os_api.set_opportunity_next_action(bigint,timestamp with time zone,text)",
         "company_os_api.convert_opportunity(bigint,text,text)",
         "company_os_api.lose_opportunity(bigint,text,text)"
+      ],
+      "20261021130000_company_os_browser_inbox.sql": [
+        "company_os_api.get_conversation(uuid)",
+        "company_os_api.reply_to_conversation(uuid,text,integer)",
+        "company_os_api.release_conversation(uuid,integer)"
       ]
     }
   },

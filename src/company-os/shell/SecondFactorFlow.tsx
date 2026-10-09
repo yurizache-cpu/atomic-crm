@@ -34,7 +34,21 @@ const stepOf = (status: MfaStatus | null): Step => {
     : { kind: "code", factorId: status.factorId };
 };
 
-const CodeForm = ({ mfa, factorId }: { mfa: MfaPort; factorId: string }) => {
+/**
+ * The provider's code form for one factor. `onVerified` runs once after the
+ * provider verified a code, never for a refused one: the browser inbox's reply
+ * asks for a factor verified within the hour (ADR 0026 §E), and the member
+ * then confirms the send again; nothing is sent from here.
+ */
+export const TotpCodeForm = ({
+  mfa,
+  factorId,
+  onVerified,
+}: {
+  mfa: MfaPort;
+  factorId: string;
+  onVerified?: () => void;
+}) => {
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState(false);
@@ -43,15 +57,18 @@ const CodeForm = ({ mfa, factorId }: { mfa: MfaPort; factorId: string }) => {
     event.preventDefault();
     setBusy(true);
     setRefused(false);
+    let verified = false;
     try {
       // A verified code makes the provider announce the stronger session,
       // which the surface follows by asking the server again.
-      if (!(await mfa.verifyTotp(factorId, code.trim()))) setRefused(true);
+      verified = await mfa.verifyTotp(factorId, code.trim());
     } catch {
-      setRefused(true);
+      verified = false;
     } finally {
       setBusy(false);
     }
+    if (verified) onVerified?.();
+    else setRefused(true);
   };
 
   return (
@@ -129,11 +146,11 @@ const SecondFactorStep = ({
           <p className="font-mono text-sm break-all">
             {current.enrollment.secret}
           </p>
-          <CodeForm mfa={mfa} factorId={current.enrollment.factorId} />
+          <TotpCodeForm mfa={mfa} factorId={current.enrollment.factorId} />
         </>
       ) : null}
       {current.kind === "code" ? (
-        <CodeForm mfa={mfa} factorId={current.factorId} />
+        <TotpCodeForm mfa={mfa} factorId={current.factorId} />
       ) : null}
       {failed ? (
         <p className="text-sm" role="alert">

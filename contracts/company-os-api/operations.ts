@@ -1,9 +1,11 @@
-// The operation catalogue (docs/PHASE_2C_BRIEF.md §8): the 15 read RPCs of the
-// function-only schema company_os_api, each with its exact argument names,
-// PostgreSQL types and DEFAULTs, the input a client may send, and the response
-// contract; and, apart from them, the six browser acts (S7.1: decide_review,
-// brief §9 row 16; S7.2: trip_stop, row 17; and the four commercial acts of
-// owner decision R, Phase 3B.2, commercial.ts).
+// The operation catalogue (docs/PHASE_2C_BRIEF.md §8): the 16 read RPCs of the
+// function-only schema company_os_api (the 15 of Phase 2C and ADR 0026 §E's
+// conversation read), each with its exact argument names, PostgreSQL types and
+// DEFAULTs, the input a client may send, and the response contract; and, apart
+// from them, the eight browser acts (S7.1: decide_review, brief §9 row 16;
+// S7.2: trip_stop, row 17; the four commercial acts of owner decision R, Phase
+// 3B.2, commercial.ts; and the inbox's reply and release of owner decision S,
+// ADR 0026 §E, conversation.ts).
 // engine/domain/companyOsContracts.dbtest.ts compares both with pg_proc.
 //
 // No operation takes a tenant, company, actor, reviewer, source or causation
@@ -29,6 +31,13 @@ import {
   SetOpportunityNextActionResultSchema,
 } from "./commercial.ts";
 import { OperatorContextSchema, OverviewSummarySchema } from "./context.ts";
+import {
+  ConversationSchema,
+  ReleaseConversationInputSchema,
+  ReleaseConversationResultSchema,
+  ReplyToConversationInputSchema,
+  ReplyToConversationResultSchema,
+} from "./conversation.ts";
 import {
   CompanyOsContractError,
   CompanyOsInputError,
@@ -247,16 +256,26 @@ export const COMPANY_OS_OPERATIONS = Object.freeze({
     NoInputSchema,
     CommunicationStatusSummarySchema,
   ),
+  // ADR 0026 §E: one waiting conversation, by a task of its inbound messages.
+  // Explicit open only, never from a list; the response is memory-only.
+  get_conversation: operation(
+    [required("p_task_id", "uuid")],
+    z.strictObject({ p_task_id: UuidSchema }),
+    ConversationSchema,
+  ),
 });
 
 /**
- * The six browser acts. decide_review (S7.1): the browser names a review and a
- * decision, and nothing else; the gate derives the tenant and the reviewer, and
- * recording a decision sends nothing (SI-45). trip_stop (S7.2): the browser
+ * The eight browser acts. decide_review (S7.1): the browser names a review and
+ * a decision, and nothing else; the gate derives the tenant and the reviewer,
+ * and recording a decision sends nothing (SI-45). trip_stop (S7.2): the browser
  * names a scope and a target, and nothing else; the gate derives the tenant,
  * the actor and a fixed reason, and a trip is never cleared from here. The
  * four commercial acts (Phase 3B.2, owner decision R; SI-68): the browser names
- * a deal, the revision it saw and the act's own input, and nothing else.
+ * a deal, the revision it saw and the act's own input, and nothing else. The
+ * inbox's two acts (ADR 0026 §E, owner decision S; SI-87): the browser names a
+ * task of the conversation, the revision it saw and, for a reply, the member's
+ * own text; a reply leaves only as that text, never as a draft.
  */
 export const COMPANY_OS_ACTS = Object.freeze({
   decide_review: operation(
@@ -307,6 +326,20 @@ export const COMPANY_OS_ACTS = Object.freeze({
     ],
     LoseOpportunityInputSchema,
     LoseOpportunityResultSchema,
+  ),
+  reply_to_conversation: operation(
+    [
+      required("p_task_id", "uuid"),
+      required("p_text", "text"),
+      required("p_expected_revision", "integer"),
+    ],
+    ReplyToConversationInputSchema,
+    ReplyToConversationResultSchema,
+  ),
+  release_conversation: operation(
+    [required("p_task_id", "uuid"), required("p_expected_revision", "integer")],
+    ReleaseConversationInputSchema,
+    ReleaseConversationResultSchema,
   ),
 });
 

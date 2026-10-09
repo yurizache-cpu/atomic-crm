@@ -26,12 +26,16 @@ import {
   type CompanyOsOperation,
 } from "../../../contracts/company-os-api/index.ts";
 import type { TxClient, WorkerDatabase } from "../../db/types.ts";
-import { withoutReplyDrafts } from "./companyOsContractFixture.ts";
+import {
+  withoutConversationText,
+  withoutReplyDrafts,
+} from "./companyOsContractFixture.ts";
 
 /**
- * The Phase 2C read catalogue (brief §8 rows 1-15), taken from the contracts,
- * which companyOsContracts.dbtest.ts pins to pg_proc, so this helper can never
- * call a function the catalogue does not name. It never calls an act.
+ * The 16 reads: the Phase 2C read catalogue (brief §8 rows 1-15) and ADR 0026
+ * §E's conversation read, taken from the contracts, which
+ * companyOsContracts.dbtest.ts pins to pg_proc, so this helper can never call
+ * a function the catalogue does not name. It never calls an act.
  */
 export const COMPANY_OS_READS = COMPANY_OS_OPERATION_NAMES;
 
@@ -347,9 +351,11 @@ export async function evidenceFaults(
 }
 
 /**
- * The forbidden values found in any output, as `<fn>: <label>`. A review
- * detail's own reply draft is the one exception (ADR 0023 §L): it is blanked
- * in its conversation, and every other byte of the answer is swept.
+ * The forbidden values found in any output, as `<fn>: <label>`. Two fields
+ * are shown by design and blanked first, so every other byte of the answer is
+ * swept: a review detail's own reply draft in its conversation (ADR 0023 §L),
+ * and the text of an open conversation's turns, the contact's own words and
+ * the replies that left (ADR 0026 §E).
  */
 export function leaks(
   outputs: readonly ApiOutput<unknown>[],
@@ -360,7 +366,9 @@ export function leaks(
     const text =
       output.fn === "get_review"
         ? JSON.stringify(withoutReplyDrafts(output.value))
-        : output.text;
+        : output.fn === "get_conversation"
+          ? JSON.stringify(withoutConversationText(output.value))
+          : output.text;
     for (const [label, value] of forbidden) {
       if (value !== "" && text.includes(value)) {
         found.push(`${output.fn}: ${label}`);

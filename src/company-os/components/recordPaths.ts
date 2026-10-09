@@ -14,6 +14,8 @@ export const RECORD_PATHS = {
   agent: `${COMPANY_OS_ROOT}/agents`,
   taskChain: `${COMPANY_OS_ROOT}/activity/task`,
   runChain: `${COMPANY_OS_ROOT}/activity/run`,
+  // ADR 0026 §E: a conversation, by any task of its own inbound messages.
+  conversation: `${COMPANY_OS_ROOT}/inbox`,
 } as const;
 
 export type RecordKind = keyof typeof RECORD_PATHS;
@@ -25,6 +27,7 @@ export const recordPath = (kind: RecordKind, id: string): string | null =>
 /** The screens a count links to, with their fixed filters. */
 export const LIST_PATHS = {
   overview: COMPANY_OS_ROOT,
+  inbox: `${COMPANY_OS_ROOT}/inbox`,
   agents: `${COMPANY_OS_ROOT}/agents`,
   runs: `${COMPANY_OS_ROOT}/runs`,
   tasks: `${COMPANY_OS_ROOT}/tasks`,

@@ -10,6 +10,7 @@ import {
   type OperationResult,
   type OverviewSummary,
 } from "../../../contracts/company-os-api/index.ts";
+import type { MfaPort } from "../ports";
 import {
   createFakeSession,
   ok,
@@ -20,6 +21,7 @@ import {
 import agendaFile from "./recorded/agenda.json";
 import funnelFile from "./recorded/funnel.json";
 import idsFile from "./recorded/ids.json";
+import inboxFile from "./recorded/inbox.json";
 import platformStopFile from "./recorded/platform-stop.json";
 import taskManyRunsFile from "./recorded/task-many-runs.json";
 import tenantKindStopFile from "./recorded/tenant-kind-stop.json";
@@ -58,15 +60,34 @@ interface RecordedFile {
   readonly calls: readonly RecordedCall[];
 }
 
+/**
+ * The browser inbox (ADR 0026 §E), recorded from the real ops.cos_waiting_list
+ * and ops.read_conversation at a fixed instant
+ * (engine/domain/companyOsInboxRecording.dbtest.ts): one conversation waiting
+ * for a person (reached by two of its tasks), one released to the agent and
+ * one withheld. Its conversations are read in the tenant's session, so its
+ * calls join the tenant scenario and its labels the recorded ids.
+ */
+const INBOX = inboxFile as unknown as RecordedFile & {
+  readonly asOf: string;
+  readonly ids: Readonly<Record<string, string>>;
+  readonly waitingList: unknown;
+};
+
 const FILES: Readonly<Record<RecordedScenario, RecordedFile>> = {
-  tenant: tenantFile as unknown as RecordedFile,
+  tenant: {
+    calls: [...(tenantFile as unknown as RecordedFile).calls, ...INBOX.calls],
+  },
   "tenant-kind-stop": tenantKindStopFile as unknown as RecordedFile,
   "platform-stop": platformStopFile as unknown as RecordedFile,
   "task-many-runs": taskManyRunsFile as unknown as RecordedFile,
 };
 
 /** Every recorded row, by the stable label the recorder gave it. */
-export const RECORDED_IDS: Readonly<Record<string, string>> = idsFile.ids;
+export const RECORDED_IDS: Readonly<Record<string, string>> = {
+  ...idsFile.ids,
+  ...INBOX.ids,
+};
 
 /**
  * The populated agenda (Phase 3A), recorded from the real ops.cos_agenda at a
@@ -128,6 +149,20 @@ export const overviewWithRecordedWaitingList = (
   ...recorded("overview"),
   asOf: RECORDED_WAITING_LIST_AS_OF,
   waitingList,
+});
+
+/** The inbox recording's instant: Monday 2030-03-04, 10:30 in São Paulo. */
+export const RECORDED_INBOX_AS_OF = INBOX.asOf;
+
+/** The inbox recording's waiting list: one conversation, waiting for a person. */
+export const recordedInboxWaitingList = (): WaitingList =>
+  WaitingListSchema.parse(INBOX.waitingList);
+
+/** The recorded tenant's overview, at the inbox's instant, carrying its waiting list. */
+export const overviewWithRecordedInbox = (): OverviewSummary => ({
+  ...recorded("overview"),
+  asOf: RECORDED_INBOX_AS_OF,
+  waitingList: recordedInboxWaitingList(),
 });
 
 /** The recorded id of a fixture row (`agent:lead-triage`, `run:held`). */
@@ -197,8 +232,9 @@ export interface RecordedSession extends FakeSession {
 export const createRecordedSession = (
   scenario: RecordedScenario = "tenant",
   user = USER_A,
+  options: { readonly mfa?: MfaPort } = {},
 ): RecordedSession => {
-  const session = createFakeSession(user);
+  const session = createFakeSession(user, options);
   const unmatched: PortCall[] = [];
   const answerFor =
     (operation: CompanyOsOperation) =>

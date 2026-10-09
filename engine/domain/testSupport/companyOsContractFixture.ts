@@ -45,6 +45,31 @@ export function withoutReplyDrafts(value: unknown): unknown {
     ),
   );
 }
+
+/**
+ * `value` with the text of every conversation turn blanked, at any depth: an
+ * open conversation of the browser inbox shows the contact's own words and
+ * the replies that left (ADR 0026 §E, SI-87), so a sweep reads every other
+ * byte of it.
+ */
+export function withoutConversationText(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutConversationText);
+  if (value === null || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value).map(([key, child]) =>
+      key === "turns" && Array.isArray(child)
+        ? [
+            key,
+            child.map((turn: unknown) =>
+              turn !== null && typeof turn === "object" && "text" in turn
+                ? { ...turn, text: null }
+                : withoutConversationText(turn),
+            ),
+          ]
+        : [key, withoutConversationText(child)],
+    ),
+  );
+}
 export const PHONE = "5511900000771";
 // Every label a person or a service writes, each distinct so a leak names its
 // column: stops, reviews, channels, sends and marks; price and limit rows;

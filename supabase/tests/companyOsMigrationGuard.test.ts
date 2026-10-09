@@ -37,7 +37,7 @@ describe("the Company OS surface and its OD-8a exception", () => {
     expect(findingsOf(lifecycle).map(formatFinding).join("\n\n")).toBe("");
   });
 
-  it("allowlists exactly the committed S2, S7.1, S7.2 and Phase 3B.2 migrations, each carrying its whole lifecycle itself", () => {
+  it("allowlists exactly the committed S2, S7.1, S7.2, Phase 3B.2 and ADR 0026 §E migrations, each carrying its whole lifecycle itself", () => {
     const { allowlistedMigrations, transfers, catalogue } =
       declaration.companyOsApi;
     expect(allowlistedMigrations).toEqual([
@@ -45,9 +45,10 @@ describe("the Company OS surface and its OD-8a exception", () => {
       "20260923120000_company_os_review_decision.sql",
       "20260924120000_company_os_execution_stop.sql",
       "20260930130000_company_os_commercial_acts.sql",
+      "20261021130000_company_os_browser_inbox.sql",
     ]);
     // The declaration's catalogue is pinned to the frozen trust root
-    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the four
+    // (FROZEN.companyOsApi) by migrationInvariants.test.ts; together the five
     // files transfer every catalogued function, once.
     expect(Object.values(transfers).flat().sort()).toEqual(
       [...catalogue].sort(),
@@ -72,12 +73,18 @@ describe("the Company OS surface and its OD-8a exception", () => {
       );
     }
     // The read surface holds no act; each act is its own file's.
-    const [s2, s71, s72, s3b2] = allowlistedMigrations.map(
+    const [s2, s71, s72, s3b2, s5] = allowlistedMigrations.map(
       (file) => corpus.find((m) => m.file === file)!.sql,
     );
     const act =
       /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop|move_opportunity|set_opportunity_next_action|convert_opportunity|lose_opportunity)\b/;
     expect(s2).not.toMatch(act);
+    // ADR 0026 §E: the inbox's two acts, in its own file only.
+    const inboxAct =
+      /function\s+(company_os_api|ops)\.(gate_)?(reply_to_conversation|release_conversation)\b/;
+    for (const earlier of [s2, s71, s72, s3b2]) {
+      expect(earlier).not.toMatch(inboxAct);
+    }
     expect(s71).toMatch(
       /^create function company_os_api\.decide_review\(p_review_id pg_catalog\.uuid, p_decision pg_catalog\.text\)/m,
     );
@@ -107,6 +114,21 @@ describe("the Company OS surface and its OD-8a exception", () => {
     );
     // No generic dispatch: no act takes an operation name or a payload.
     expect(s3b2).not.toMatch(/\bp_(operation|payload|table|column|sql)\b/);
+    // ADR 0026 §E (owner decision S): exactly the inbox's read and two acts,
+    // each with its own fixed arguments, and no earlier act.
+    for (const signature of [
+      "get_conversation\\(p_task_id pg_catalog\\.uuid\\)",
+      "reply_to_conversation\\(p_task_id pg_catalog\\.uuid, p_text pg_catalog\\.text,",
+      "release_conversation\\(p_task_id pg_catalog\\.uuid, p_expected_revision pg_catalog\\.int4\\)",
+    ]) {
+      expect(s5).toMatch(
+        new RegExp(`^create function company_os_api\\.${signature}$`, "m"),
+      );
+    }
+    expect(s5).not.toMatch(
+      /function\s+(company_os_api|ops)\.(gate_)?(decide_review|trip_stop|move_opportunity|set_opportunity_next_action|convert_opportunity|lose_opportunity)\b/,
+    );
+    expect(s5).not.toMatch(/\bp_(operation|payload|table|column|sql)\b/);
   });
 
   const ALLOWLISTED_REJECTED: Array<[string, string, RegExp]> = [

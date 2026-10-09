@@ -12,9 +12,11 @@ import { renderCompanyOs } from "../testing/renderCompanyOs";
 import {
   ADVICE_REVIEW,
   EVERY_ROUTE,
+  INBOX_CONVERSATION,
   openAdvice,
   visit,
 } from "../testing/routes";
+import * as INBOX_COPY from "./inbox/inboxCopy";
 import { WITHHELD_TEXT } from "./reviews/reviewLabels";
 
 // docs/PHASE_2C_BRIEF.md §12 (OD-11), §7.5 and §16 (B: no trip, clear, send,
@@ -29,9 +31,13 @@ import { WITHHELD_TEXT } from "./reviews/reviewLabels";
 // review's own page only, inside its "Registrar decisão" group, offering at
 // most the three decisions; and the trip surface (S7.2), on the stops page
 // only, inside its "Interromper execução" group, offering only "Interromper
-// execução" for one named target at a time. Neither ever offers a clear.
+// execução" for one named target at a time; and the inbox's surface (ADR 0026
+// §E, SI-87), on a conversation's own page only: the member's reply, inside
+// its "Responder ao contato" group (one text field, "Enviar resposta"), and
+// the release, inside its "Devolver à IA" group. None ever offers a clear.
 // Visiting never calls an act: each needs a click and a confirmation
-// (reviews/ReviewsScreen.test.tsx, stops/TripStopPanel.test.tsx).
+// (reviews/ReviewsScreen.test.tsx, stops/TripStopPanel.test.tsx,
+// inbox/InboxScreen.test.tsx).
 
 /** The only buttons the module may render: session handling and reads. */
 const READ_CONTROLS = [
@@ -49,6 +55,16 @@ const REVIEW_PAGE = /^#\/company-os\/reviews\/[0-9a-f-]{36}$/;
 const TRIP_CONTROL = /^Interromper execução: \S.*$/;
 const TRIP_GROUP = "[role='group'][aria-label='Interromper execução']";
 const STOPS_PAGE = /^#\/company-os\/stops(\?include=cleared)?$/;
+/**
+ * The inbox's two acts (ADR 0026 §E, SI-87), on a conversation's own page
+ * only, each inside its group: the member's own reply (its text field and,
+ * while the second factor is asked for, the code form) and the release.
+ */
+const INBOX_CONVERSATION_PAGE = /^#\/company-os\/inbox\/[0-9a-f-]{36}$/;
+const REPLY_GROUP = "[role='group'][aria-label='Responder ao contato']";
+const REPLY_CONTROLS = ["Enviar resposta", "Verificar"];
+const RELEASE_GROUP = "[role='group'][aria-label='Devolver à IA']";
+const RELEASE_CONTROLS = ["Devolver à IA"];
 
 /** Causation links move the focus to an entry on the page; they read nothing. */
 const FOCUS_LINK =
@@ -99,6 +115,11 @@ const textNodes = (): string[] => {
 const nameOf = (control: HTMLElement): string =>
   control.getAttribute("aria-label") ?? control.textContent?.trim() ?? "";
 
+const ACT_GROUPS = [DECISION_GROUP, TRIP_GROUP, REPLY_GROUP, RELEASE_GROUP];
+
+const insideOf = (group: string) => (control: Element) =>
+  control.closest(group) !== null;
+
 const controlsOnPage = () => {
   const body = document.body;
   const pressable = [
@@ -106,27 +127,31 @@ const controlsOnPage = () => {
       "button, [role='button'], input[type='button'], input[type='submit']",
     ),
   ];
+  const editable = [
+    ...body.querySelectorAll(
+      "input, textarea, [contenteditable='true'], [contenteditable='']",
+    ),
+  ];
+  const forms = [...body.querySelectorAll("form")];
   return {
     buttons: pressable
-      .filter(
-        (control) =>
-          control.closest(DECISION_GROUP) === null &&
-          control.closest(TRIP_GROUP) === null,
+      .filter((control) =>
+        ACT_GROUPS.every((group) => !insideOf(group)(control)),
       )
       .map(nameOf),
-    decisions: pressable
-      .filter((control) => control.closest(DECISION_GROUP) !== null)
-      .map(nameOf),
-    trips: pressable
-      .filter((control) => control.closest(TRIP_GROUP) !== null)
-      .map(nameOf),
+    decisions: pressable.filter(insideOf(DECISION_GROUP)).map(nameOf),
+    trips: pressable.filter(insideOf(TRIP_GROUP)).map(nameOf),
+    replies: pressable.filter(insideOf(REPLY_GROUP)).map(nameOf),
+    releases: pressable.filter(insideOf(RELEASE_GROUP)).map(nameOf),
     links: [...body.querySelectorAll("a")].map((link) =>
       link.getAttribute("href"),
     ),
-    editable: body.querySelectorAll(
-      "input, textarea, [contenteditable='true'], [contenteditable='']",
-    ).length,
-    forms: body.querySelectorAll("form").length,
+    editable: editable.filter((field) => !insideOf(REPLY_GROUP)(field)).length,
+    replyFields: editable
+      .filter(insideOf(REPLY_GROUP))
+      .map((field) => field.tagName.toLowerCase()),
+    forms: forms.filter((form) => !insideOf(REPLY_GROUP)(form)).length,
+    replyForms: forms.filter(insideOf(REPLY_GROUP)).length,
     selects: [...body.querySelectorAll("select")].map(
       (select) => select.labels?.[0]?.textContent ?? "",
     ),
@@ -160,10 +185,36 @@ const expectReadOnly = (where: string) => {
     ),
     `trip controls on ${where}`,
   ).toEqual([]);
+  // The inbox's surface (ADR 0026 §E): on a conversation's own page only, the
+  // member's reply inside its group and the release inside its own.
+  const onConversation = INBOX_CONVERSATION_PAGE.test(window.location.hash);
   expect(
-    [...controls.buttons, ...controls.decisions, ...controls.trips].filter(
-      (name) =>
-        /encerrar|retomar|remover|desfazer|liberar|clear|resume/i.test(name),
+    controls.replies.filter(
+      (name) => !REPLY_CONTROLS.includes(name) || !onConversation,
+    ),
+    `reply controls on ${where}`,
+  ).toEqual([]);
+  expect(
+    controls.releases.filter(
+      (name) => !RELEASE_CONTROLS.includes(name) || !onConversation,
+    ),
+    `release controls on ${where}`,
+  ).toEqual([]);
+  // At most the one text field of the member's reply. The code form appears
+  // only once an act asked for the second factor, which a visit never makes.
+  expect(controls.replyFields, `fields in the reply on ${where}`).toEqual(
+    controls.replyFields.length === 0 || !onConversation ? [] : ["textarea"],
+  );
+  expect(controls.replyForms, `forms in the reply on ${where}`).toBe(0);
+  expect(
+    [
+      ...controls.buttons,
+      ...controls.decisions,
+      ...controls.trips,
+      ...controls.replies,
+      ...controls.releases,
+    ].filter((name) =>
+      /encerrar|retomar|remover|desfazer|liberar|clear|resume/i.test(name),
     ),
     `a clear or resume control on ${where}`,
   ).toEqual([]);
@@ -192,6 +243,33 @@ const expectReadOnly = (where: string) => {
     `a bare "authorized" on ${where}`,
   ).toEqual([]);
 };
+
+/** Every string of a copy module, its maps' values included. */
+const stringsOf = (value: unknown): string[] =>
+  typeof value === "string"
+    ? [value]
+    : typeof value === "object" && value !== null
+      ? Object.values(value).flatMap(stringsOf)
+      : [];
+
+const AUTHORS = ["agent", "fixed", "person"] as const;
+
+/** The inbox's composed sentences, for every code they compose. */
+const INBOX_SAMPLE_TEXTS = [
+  ...Object.keys(INBOX_COPY.REASON_TEXT).map(INBOX_COPY.notSendableText),
+  ...AUTHORS.flatMap((author) =>
+    author === "fixed"
+      ? [
+          INBOX_COPY.authorLabel(author, "safety", true),
+          INBOX_COPY.authorLabel(author, "opt_out_ack", false),
+        ]
+      : [INBOX_COPY.authorLabel(author, null, false)],
+  ),
+  INBOX_COPY.refusedMarker("unsupported_content"),
+  INBOX_COPY.refusedMarker("other"),
+  INBOX_COPY.replyCounter(2000),
+  INBOX_COPY.windowText(null, "2030-03-04T13:30:00.000000Z"),
+];
 
 /** Every page, then the pending review with its advice open. */
 const sweep = async (
@@ -224,13 +302,13 @@ const reach = async (screen: RenderResult, hash: string, heading: string) => {
     .toBeVisible();
 };
 
-describe("the Company OS screens are read-only, except the review decision and the trip", () => {
+describe("the Company OS screens are read-only, except the review decision, the trip, and the inbox's reply and release", () => {
   afterEach(() => {
     history.replaceState(null, "", "#/");
   });
 
   it(
-    "no page, tab or opened advice renders a clear, send, draft or configuration control, only an open review offers its decisions and only the stops page its trips, and no link leaves the module except to the CRM",
+    "no page, tab or opened advice renders a clear, send, draft or configuration control, only an open review offers its decisions, only the stops page its trips and only an open conversation its reply and release, and no link leaves the module except to the CRM",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
@@ -271,6 +349,8 @@ describe("the Company OS screens are read-only, except the review decision and t
           "#/company-os/agents",
           "#/company-os/runs",
           "#/company-os/tasks",
+          "#/company-os/inbox",
+          `#/company-os/inbox/${INBOX_CONVERSATION}`,
         ]),
       );
     },
@@ -317,19 +397,25 @@ describe("the Company OS screens are read-only, except the review decision and t
   });
 
   it(
-    "calls only the 15 catalogued read operations, each of them somewhere, and never an act while visiting",
+    "calls only the 16 catalogued read operations, each of them somewhere, and never an act while visiting",
     async () => {
       const session = createRecordedSession();
       const screen = await renderCompanyOs(session, EVERY_ROUTE[0].hash);
 
       await sweep(screen, () => {});
 
-      expect(COMPANY_OS_OPERATION_NAMES).toHaveLength(15);
+      expect(COMPANY_OS_OPERATION_NAMES).toHaveLength(16);
       expect(operationsCalled(session)).toEqual(
         [...COMPANY_OS_OPERATION_NAMES].sort(),
       );
       expect(operationsCalled(session)).not.toContain("decide_review");
-      expect(operationsCalled(session)).not.toContain("trip_stop");
+      for (const act of [
+        "trip_stop",
+        "reply_to_conversation",
+        "release_conversation",
+      ]) {
+        expect(operationsCalled(session)).not.toContain(act);
+      }
     },
     SWEEP_TIMEOUT_MS,
   );
@@ -347,6 +433,8 @@ describe("the Company OS screens are read-only, except the review decision and t
       ...Object.values(COPY.SHADOW_REASON_LABELS),
       ...Object.values(COPY.DECISION_INTELLIGENCE_CARDS),
       ...Object.values(WITHHELD_TEXT),
+      ...stringsOf(INBOX_COPY),
+      ...INBOX_SAMPLE_TEXTS,
       DATA_BANNER_TEXT,
     ];
 

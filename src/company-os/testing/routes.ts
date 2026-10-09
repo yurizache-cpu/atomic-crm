@@ -22,6 +22,9 @@ export const ADVICE_REVIEW = rid("review:opened");
 /** The pending review a member can decide from the browser (S7.1). */
 export const OPEN_REVIEW = rid("review:open");
 
+/** The conversation waiting for a person, by its waiting-list task (ADR 0026 §E). */
+export const INBOX_CONVERSATION = rid("task:inbox-waiting");
+
 const adviceSummary = (): string => {
   const advice = recorded("get_review_advice", {
     p_review_id: ADVICE_REVIEW,
@@ -36,6 +39,20 @@ export const EVERY_ROUTE: readonly RouteVisit[] = [
     hash: "#/company-os",
     heading: "Visão geral",
     markers: ["Decisões pendentes"],
+  },
+  {
+    hash: "#/company-os/inbox",
+    heading: "Fila de atendimento",
+    // The recorded tenant has no conversation waiting (the inbox's own
+    // waiting list is testing/recorded/inbox.json).
+    markers: ["Ninguém aguarda uma pessoa agora."],
+  },
+  {
+    // ADR 0026 §E: the waiting conversation, on explicit open; its reply and
+    // release are offered, never made, by a visit.
+    hash: `#/company-os/inbox/${INBOX_CONVERSATION}`,
+    heading: "Conversa",
+    markers: ["Ana-Maria", "Temos sim, às 15h. Pode ser?"],
   },
   {
     hash: "#/company-os/agenda",

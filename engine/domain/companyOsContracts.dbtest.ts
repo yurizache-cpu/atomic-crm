@@ -8,20 +8,24 @@
 // but the derived TENANT_STOP_SCOPES equals what SQL bounds or emits. This
 // file:
 //
-//   * compares the operation catalogue with pg_proc: the 15 reads of
-//     company_os_api and its two acts, their argument names, types and
+//   * compares the operation catalogue with pg_proc: the 16 reads of
+//     company_os_api and its eight acts, their argument names, types and
 //     DEFAULTs;
 //   * builds a synthetic tenant whose rows reach every branch the projections
 //     have (testSupport/companyOsContractFixture.ts: each agent availability
 //     and activity, each run status and attention reason, each review status
 //     and withheld reason, each tenant stop scope, outbound rows, spend rows,
 //     refused inbound messages, events of every kind the fixture can produce,
-//     an unknown one included), then calls all 15 functions as a signed-in
+//     an unknown one included), then calls all 16 functions as a signed-in
 //     member exactly as PostgREST would (`set local role authenticated`, the
 //     verified claims, a live auth session and a membership granted through
 //     the owner service), pages through every list, parses every response
 //     with its contract, and maps the gates' refusals to the typed error. Any
-//     mismatch fails.
+//     mismatch fails. The conversation read (ADR 0026 §E) is called for the
+//     fixture's one WhatsApp conversation as built (not_waiting), then, in a
+//     savepoint rolled back after it, with that conversation waiting for a
+//     person (available, its turns parsed) and for a number nobody
+//     registered (withheld).
 //
 // Everything is built and read inside ONE owner transaction that is always
 // rolled back, in a tenant of its own: nothing it writes outlives the case
@@ -62,10 +66,12 @@ import {
   WHATSAPP_MESSAGE_ID_PREFIX,
   WORKER,
   actAs,
+  BODY,
   buildFixture,
   createAuthUser,
   DRAFT,
   must,
+  withoutConversationText,
   withoutReplyDrafts,
   type AuthUser,
   type Fixture,
@@ -145,7 +151,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe("the operation catalogue equals pg_proc", () => {
-  it("company_os_api holds exactly the 15 catalogued reads and the six acts, with their argument names, types and defaults", async () => {
+  it("company_os_api holds exactly the 16 catalogued reads and the eight acts, with their argument names, types and defaults", async () => {
     const { rows } = await admin.query<{
       name: string;
       args: string;
@@ -238,6 +244,67 @@ describe("the operation catalogue equals pg_proc", () => {
       "ops.set_opportunity_next_action_as_member(uuid,text,bigint,timestamp with time zone,text)",
     ]);
   });
+
+  it("the two inbox acts and the conversation read exist, the acts VOLATILE and their gates bounded, each with its one callee, and nothing takes over or resolves (ADR 0026 §E)", async () => {
+    const { rows } = await admin.query<{
+      fn: string;
+      volatility: string;
+      definer: boolean;
+      config: string[] | null;
+    }>(
+      `select p.oid::regprocedure::text as fn, p.provolatile as volatility,
+              p.prosecdef as definer, p.proconfig as config
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where (n.nspname = $1
+               and (p.proname ~ 'conversation'
+                    or p.proname ~ '(take_over|exception|resolve|dismiss|reconcile|resend|retry)'))
+           or (n.nspname = 'ops'
+               and p.proname ~ '(^gate_.*conversation$|_conversation_as_member$|^read_conversation$)')
+        order by 1`,
+      [COMPANY_OS_API_SCHEMA],
+    );
+    // `<function> <volatility> <definer|invoker> <config>`: a read is STABLE,
+    // an act VOLATILE; only the acts' gates wait at most 2 s for a lock.
+    expect(
+      rows.map(
+        (row) =>
+          `${row.fn} ${row.volatility} ${row.definer ? "definer" : "invoker"} ${(row.config ?? []).join(",")}`,
+      ),
+    ).toEqual([
+      'company_os_api.get_conversation(uuid) s definer search_path=""',
+      'company_os_api.release_conversation(uuid,integer) v definer search_path=""',
+      'company_os_api.reply_to_conversation(uuid,text,integer) v definer search_path=""',
+      'ops.gate_get_conversation(uuid) s definer search_path=""',
+      'ops.gate_release_conversation(uuid,integer) v definer search_path="",lock_timeout=2s',
+      'ops.gate_reply_to_conversation(uuid,text,integer) v definer search_path="",lock_timeout=2s',
+      'ops.read_conversation(uuid,uuid) s invoker search_path=""',
+      'ops.release_conversation_as_member(uuid,text,uuid,integer) v invoker search_path=""',
+      'ops.reply_to_conversation_as_member(uuid,text,uuid,text,integer) v invoker search_path=""',
+    ]);
+    // Each gate calls its one callee, with the tenant and actor it derived.
+    const { rows: gates } = await admin.query<{ name: string; body: string }>(
+      `select p.proname as name, p.prosrc as body
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'ops' and p.proname ~ '^gate_.*conversation$'
+        order by 1`,
+    );
+    expect(
+      gates.map((gate) => [
+        gate.name,
+        [...gate.body.matchAll(/ops\.([a-z_]+)\(/g)].map((m) => m[1]),
+      ]),
+    ).toEqual([
+      ["gate_get_conversation", ["operator_scope", "read_conversation"]],
+      [
+        "gate_release_conversation",
+        ["operator_scope", "release_conversation_as_member"],
+      ],
+      [
+        "gate_reply_to_conversation",
+        ["operator_scope", "reply_to_conversation_as_member"],
+      ],
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -272,6 +339,79 @@ interface Refusal {
   readonly message: string;
   /** What the contract's typed error made of it. */
   readonly typed: contracts.OsErrorCode;
+}
+
+/**
+ * The fixture's WhatsApp tasks: the admitted messages of its one conversation
+ * (the registered test sender's), each a test task (ADR 0026 §E, D1: any of
+ * them reaches the conversation).
+ */
+const CONVERSATION_TASKS = [
+  "task:working",
+  "task:accepted-1",
+  "task:accepted-2",
+  "task:accepted-3",
+] as const;
+
+/** A number nobody registered on the test line. Synthetic: area code 00 exists nowhere. */
+const UNREGISTERED_PHONE = "5500000000772";
+const UNREGISTERED_BODY = "Synthetic message from a number nobody registered";
+
+/**
+ * As the owner, on the caller's savepoint: the fixture's conversation waiting
+ * for a person (a person holds it, and a request for a person is open, as a
+ * screening and a takeover leave it), and one message admitted from a number
+ * nobody registered on the same test line, whose task is health class (D8).
+ * Resolves to that message's task.
+ */
+async function waitForAPerson(tx: TxClient, fixture: Fixture): Promise<string> {
+  const waitingTask = fixture.named["task:working"];
+  const { rows } = await tx.query<{ id: string; company_id: string }>(
+    `select c.id, c.company_id
+       from ops.inbound_messages m
+       join ops.conversations c on c.tenant_id = m.tenant_id and c.id = m.conversation_id
+      where m.tenant_id = $1 and m.task_id = $2`,
+    [fixture.tenantId, waitingTask],
+  );
+  must(rows.length === 1, "the WhatsApp task has one conversation");
+  const [conversation] = rows;
+  await tx.query("select ops.take_over_conversation($1, $2, $3)", [
+    fixture.tenantId,
+    conversation.id,
+    ACTOR,
+  ]);
+  await tx.query(
+    "select ops.open_exception($1, $2, $3, 'person_requested', $4, null, null, $5)",
+    [
+      fixture.tenantId,
+      conversation.company_id,
+      waitingTask,
+      conversation.id,
+      ACTOR,
+    ],
+  );
+  const { rows: received } = await tx.query<{
+    v: { state: string; task_id?: string };
+  }>("select ops.receive_whatsapp_message($1, $2, $3, $4, now()) as v", [
+    fixture.providerTarget,
+    `${WHATSAPP_MESSAGE_ID_PREFIX}-inbox-unregistered`,
+    UNREGISTERED_PHONE,
+    UNREGISTERED_BODY,
+  ]);
+  const admitted = received[0]?.v;
+  must(
+    admitted?.state === "admitted" && typeof admitted.task_id === "string",
+    `a message from an unregistered number is admitted (got ${admitted?.state})`,
+  );
+  const { rows: classes } = await tx.query<{ data_class: string }>(
+    "select data_class from ops.tasks where tenant_id = $1 and id = $2",
+    [fixture.tenantId, admitted.task_id],
+  );
+  must(
+    classes[0]?.data_class === "health",
+    "an unregistered sender's task is health class",
+  );
+  return admitted.task_id as string;
 }
 
 async function readSession(tx: TxClient): Promise<Session> {
@@ -388,6 +528,38 @@ async function readSession(tx: TxClient): Promise<Session> {
   await pages("list_stops", {}, 50);
   await pages("list_stops", { p_include_cleared: true }, 2);
 
+  // ADR 0026 §E: the conversation read, by every task of the fixture's one
+  // WhatsApp conversation (its registered test sender's), as built: no episode
+  // waits on it, so each answers not_waiting. Then, in a savepoint undone
+  // after it, the same conversation waiting for a person, and a message from
+  // a number nobody registered on the same test line.
+  for (const label of CONVERSATION_TASKS) {
+    await call(
+      "get_conversation",
+      { p_task_id: fixture.named[label] },
+      `get_conversation ${label}`,
+    );
+  }
+  await tx.query("reset role");
+  await tx.query("savepoint cos_inbox");
+  const unregisteredTask = await waitForAPerson(tx, fixture);
+  await actAs(tx, member);
+  for (const label of CONVERSATION_TASKS) {
+    await call(
+      "get_conversation",
+      { p_task_id: fixture.named[label] },
+      `get_conversation ${label} waiting`,
+    );
+  }
+  await call(
+    "get_conversation",
+    { p_task_id: unregisteredTask },
+    "get_conversation unregistered sender",
+  );
+  await tx.query("reset role");
+  await tx.query("rollback to savepoint cos_inbox");
+  await actAs(tx, member);
+
   // Refusals, each in a savepoint so the session goes on. The SQL is sent as a
   // client that skipped the contract's input check would send it.
   const refuse = async (
@@ -425,6 +597,18 @@ async function readSession(tx: TxClient): Promise<Session> {
   await refuse("get_agent", "select company_os_api.get_agent($1)", [
     "not-a-uuid",
   ]);
+  // A task no conversation answers (a synthetic admission) is unknown, like a
+  // random uuid (ADR 0026 §E, D1).
+  await refuse(
+    "get_conversation",
+    "select company_os_api.get_conversation($1)",
+    [fixture.named["task:succeeded"]],
+  );
+  await refuse(
+    "get_conversation",
+    "select company_os_api.get_conversation($1)",
+    [randomUUID()],
+  );
   // No verified claims (the legacy pool's empty setting): refused first.
   await tx.query("select set_config('request.jwt.claims', '', true)");
   await refuse("overview", "select company_os_api.overview()");
@@ -474,7 +658,7 @@ describe("every company_os_api response parses with its contract", () => {
   const itemsOf = <T>(operation: CompanyOsOperation): T[] =>
     valuesOf<{ items: T[] }>(operation).flatMap((value) => value.items);
 
-  it("calls all 15 functions, and every response parses", () => {
+  it("calls all 16 functions, and every response parses", () => {
     expect(sorted(new Set(session.calls.map((c) => c.operation)))).toEqual(
       sorted(COMPANY_OS_OPERATION_NAMES),
     );
@@ -721,11 +905,86 @@ describe("every company_os_api response parses with its contract", () => {
     ).toBe(true);
   });
 
+  it("answers the conversation read by its state: not_waiting as built, available while it waits for a person, withheld for an unregistered number (ADR 0026 §E)", () => {
+    const conversations = session.calls.filter(
+      (c) => c.operation === "get_conversation",
+    );
+    const byLabel = (suffix: string) =>
+      conversations
+        .filter((c) => c.label.endsWith(suffix))
+        .map((c) => c.value as contracts.Conversation);
+    const asBuilt = conversations
+      .filter((c) => /task:[a-z0-9-]+$/.test(c.label))
+      .map((c) => c.value as contracts.Conversation);
+    expect(asBuilt).toHaveLength(CONVERSATION_TASKS.length);
+    for (const answer of asBuilt) {
+      expect(answer).toEqual({
+        v: 1,
+        asOf: expect.any(String),
+        status: "not_waiting",
+      });
+    }
+    expect(byLabel("unregistered sender")).toEqual([
+      {
+        v: 1,
+        asOf: expect.any(String),
+        status: "withheld",
+        reason: "not_test",
+      },
+    ]);
+    const waiting = byLabel(" waiting");
+    expect(waiting).toHaveLength(CONVERSATION_TASKS.length);
+    // Any task of the conversation opens the same conversation.
+    const shown = waiting.map(({ asOf: _asOf, ...rest }) => rest);
+    for (const other of shown.slice(1)) expect(other).toEqual(shown[0]);
+    const [open] = waiting;
+    if (open.status !== "available") {
+      throw new Error(`the waiting conversation answered ${open.status}`);
+    }
+    expect(open).toMatchObject({
+      holder: "person",
+      optOutOpen: false,
+      firstName: null,
+      earlierTurns: false,
+      allowedActs: { release: true },
+    });
+    // The contact's own words, for its own test tasks; the refused blank
+    // message by its reason; the agent's reply that may have left, with its
+    // text and its uncertain delivery. The failed and blocked operator sends
+    // never left, so they are not turns.
+    const inbound = open.turns.filter((t) => t.kind === "inbound");
+    expect(inbound).toHaveLength(CONVERSATION_TASKS.length);
+    for (const turn of inbound) {
+      expect(turn).toMatchObject({ text: BODY, hidden: null });
+    }
+    expect(open.turns.filter((t) => t.kind === "refused")).toEqual([
+      { kind: "refused", at: expect.any(String), reason: "empty_body" },
+    ]);
+    expect(open.turns.filter((t) => t.kind === "reply")).toEqual([
+      {
+        kind: "reply",
+        at: expect.any(String),
+        author: "agent",
+        fixedKey: null,
+        automatic: false,
+        text: DRAFT,
+        hidden: null,
+        delivery: "uncertain",
+        // The operator marked it indeterminate (ADR 0025): its class.
+        reason: "interrupted",
+        withPrivacyNotice: false,
+      },
+    ]);
+  });
+
   it("carries no content, message or call identity, label or person identity the brief keeps out", () => {
-    // The review's own draft is shown in its conversation (the test above);
-    // every other byte is swept.
+    // The review's own draft is shown in its conversation (the test above),
+    // and an open conversation's turns show the contact's words and the
+    // replies that left (ADR 0026 §E); every other byte is swept.
     const text = JSON.stringify(
-      withoutReplyDrafts(session.calls.map((c) => c.value)),
+      withoutConversationText(
+        withoutReplyDrafts(session.calls.map((c) => c.value)),
+      ),
     );
     const { member } = session;
     const kept: [string, string][] = [
@@ -734,6 +993,8 @@ describe("every company_os_api response parses with its contract", () => {
       ["the task title", TASK_TITLE],
       ["the agent's role", AGENT_ROLE],
       ["the sender's number", PHONE],
+      ["the unregistered sender's number", UNREGISTERED_PHONE],
+      ["the unregistered sender's message", UNREGISTERED_BODY],
       ["a synthetic contact ref", SYNTHETIC_CONTACT_PREFIX],
       ["a synthetic message id", SYNTHETIC_MESSAGE_ID_PREFIX],
       ["a WhatsApp message id", WHATSAPP_MESSAGE_ID_PREFIX],
@@ -772,6 +1033,8 @@ describe("every company_os_api response parses with its contract", () => {
         ["list_tasks", "OS400", "OS400"],
         // A malformed uuid never reaches the gate; to a client it is OS500.
         ["get_agent", "22P02", "OS500"],
+        ["get_conversation", "OS404", "OS404"],
+        ["get_conversation", "OS404", "OS404"],
         ["overview", "OS401", "OS401"],
         ["operator_context", "OS403", "OS403"],
         // Signed out: refused before any gate, and "no access" to a client.

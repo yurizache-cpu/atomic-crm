@@ -234,7 +234,46 @@ const PINNED_CATALOGUE: Readonly<
   ],
   spend_summary: [],
   communication_status: [],
+  // ADR 0026 §E: any task of the conversation's inbound messages.
+  get_conversation: ["p_task_id uuid"],
 };
+
+/**
+ * The browser acts and their arguments (S7.1, S7.2, owner decisions R and S):
+ * each act names its row, the revision it saw where one applies, and its own
+ * input; never a tenant, an actor or a reason the server derives.
+ */
+const PINNED_ACTS: Readonly<Record<contracts.CompanyOsAct, readonly string[]>> =
+  {
+    decide_review: ["p_review_id uuid", "p_decision text"],
+    trip_stop: ["p_scope text", "p_target_id uuid = null"],
+    move_opportunity: [
+      "p_deal_ref bigint",
+      "p_target_stage text",
+      "p_expected_revision text",
+    ],
+    set_opportunity_next_action: [
+      "p_deal_ref bigint",
+      "p_next_action_at timestamp with time zone",
+      "p_expected_revision text",
+    ],
+    convert_opportunity: [
+      "p_deal_ref bigint",
+      "p_target_stage text",
+      "p_expected_revision text",
+    ],
+    lose_opportunity: [
+      "p_deal_ref bigint",
+      "p_loss_reason text",
+      "p_expected_revision text",
+    ],
+    reply_to_conversation: [
+      "p_task_id uuid",
+      "p_text text",
+      "p_expected_revision integer",
+    ],
+    release_conversation: ["p_task_id uuid", "p_expected_revision integer"],
+  };
 
 const pinnedForm = (arg: contracts.OperationArgument): string =>
   arg.optional
@@ -258,8 +297,8 @@ const inputKeys = (operation: CompanyOsOperation): string[] =>
   Object.keys(inputShape(operation));
 
 describe("the operation catalogue", () => {
-  it("is exactly the 15 read operations, with their pinned arguments", () => {
-    expect(COMPANY_OS_OPERATION_NAMES).toHaveLength(15);
+  it("is exactly the 16 read operations, with their pinned arguments", () => {
+    expect(COMPANY_OS_OPERATION_NAMES).toHaveLength(16);
     const catalogue = Object.fromEntries(
       COMPANY_OS_OPERATION_NAMES.map((name) => [
         name,
@@ -267,6 +306,29 @@ describe("the operation catalogue", () => {
       ]),
     );
     expect(catalogue).toEqual(PINNED_CATALOGUE);
+  });
+
+  it("holds exactly the eight browser acts, apart from the reads, with their pinned arguments", () => {
+    expect(contracts.COMPANY_OS_ACT_NAMES).toHaveLength(8);
+    const acts = Object.fromEntries(
+      contracts.COMPANY_OS_ACT_NAMES.map((name) => [
+        name,
+        contracts.COMPANY_OS_ACTS[name].args.map(pinnedForm),
+      ]),
+    );
+    expect(acts).toEqual(PINNED_ACTS);
+    expect(
+      contracts.COMPANY_OS_ACT_NAMES.filter((name) =>
+        (COMPANY_OS_OPERATION_NAMES as readonly string[]).includes(name),
+      ),
+    ).toEqual([]);
+    // No act takes over a conversation, resolves an exception, resends,
+    // retries or marks a send, or clears a stop (SI-58, SI-87).
+    expect(
+      contracts.COMPANY_OS_ACT_NAMES.filter((name) =>
+        /take_over|exception|resend|retry|mark|clear|resume|send/.test(name),
+      ),
+    ).toEqual([]);
   });
 
   it("gives a required argument no default, and puts every defaulted one last", () => {

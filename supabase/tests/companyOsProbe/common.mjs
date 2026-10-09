@@ -18,9 +18,10 @@ const WORKDIR =
   (PROJECT === "atomic-crm-e2e" ? ".supabase-e2e" : undefined);
 
 /**
- * The Phase 2C read catalogue (brief §8 rows 1-15): the names of
- * COMPANY_OS_OPERATION_NAMES in contracts/company-os-api/operations.ts, which a
- * Node script cannot import. surfaceChecks.mjs checks it against the live one.
+ * The read catalogue (Phase 2C brief §8 rows 1-15, and ADR 0026 §E's
+ * conversation read): the names of COMPANY_OS_OPERATION_NAMES in
+ * contracts/company-os-api/operations.ts, which a Node script cannot import.
+ * surfaceChecks.mjs checks it against the live one.
  */
 export const CATALOGUE = Object.freeze([
   "operator_context",
@@ -38,10 +39,12 @@ export const CATALOGUE = Object.freeze([
   "list_stops",
   "spend_summary",
   "communication_status",
+  "get_conversation",
 ]);
 
-/** The six browser acts (S7.1, S7.2 and the four commercial acts of owner
- * decision R, Phase 3B.2) and their arguments. */
+/** The eight browser acts (S7.1, S7.2, the four commercial acts of owner
+ * decision R, Phase 3B.2, and the inbox's reply and release of owner decision
+ * S, ADR 0026 §E) and their arguments. */
 export const ACTS = Object.freeze({
   decide_review: ["p_review_id", "p_decision"],
   trip_stop: ["p_scope", "p_target_id"],
@@ -53,6 +56,8 @@ export const ACTS = Object.freeze({
   ],
   convert_opportunity: ["p_deal_ref", "p_target_stage", "p_expected_revision"],
   lose_opportunity: ["p_deal_ref", "p_loss_reason", "p_expected_revision"],
+  reply_to_conversation: ["p_task_id", "p_text", "p_expected_revision"],
+  release_conversation: ["p_task_id", "p_expected_revision"],
 });
 
 /** Every exposed function: the reads and the acts. */

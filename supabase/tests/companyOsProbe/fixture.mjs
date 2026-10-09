@@ -95,6 +95,8 @@ export function runValues() {
     jobKeyA: `cos-probe-job-key-${hex(16)}`,
     // Legacy fixture A: the admitted lead and the run whose review is decided.
     admissionMessage: `cos-probe-message-${hex(16)}`,
+    // ADR 0026 §E: the WhatsApp-shaped message of the conversation read.
+    conversationMessage: `cos-probe-conversation-${hex(16)}`,
     admissionContact: `synthetic:cos-probe-contact-${hex(16)}`,
     runKeyDecided: `cos-probe-run-key-${hex(16)}`,
     runFingerprintDecided: hex(64),
@@ -232,7 +234,19 @@ const LEGACY_A = `
                                      task_id, status, requested_by, authorized_check)
   values (:'tenant_a', :'company_a', :'channel_a', :'conversation_a', :'review_decided',
           :'task_admitted', 'authorized', '${SENTINELS.requester}', '{}'::jsonb)
-  returning id as outbound_a \\gset`;
+  returning id as outbound_a \\gset
+  -- (E) ADR 0026 §E: a synthetic task one WhatsApp-shaped message of the test
+  --     channel names, the conversation get_conversation reads. No episode
+  --     waits on it, so the read answers not_waiting and shows nothing.
+  select ops.create_task(:'tenant_a', :'company_a', 'office_follow_up', '${SENTINELS.taskTitle}', '${SOURCE}',
+                         '${SENTINELS.taskBody}', :'department_a', p_data_class => 'synthetic')
+         as task_conversation \\gset
+  insert into ops.inbound_messages (tenant_id, company_id, source_kind, external_message_id, contact_ref,
+                                    do_not_contact, body_fingerprint, received_at, task_id, channel_id,
+                                    conversation_id, contact_resolution)
+  values (:'tenant_a', :'company_a', 'whatsapp', :'conversation_message', :'contact_ref', false,
+          encode(sha256(convert_to(:'conversation_message', 'UTF8')), 'hex'), now(),
+          :'task_conversation', :'channel_a', :'conversation_a', 'not_found');`;
 
 // Tenant B: an organisation, and a task, a pending run and a pending review of
 // its own, so every get_* selector can be fed a foreign id of its own kind.
@@ -273,6 +287,7 @@ const OFFICE_KEYS = Object.freeze([
   "stop_cleared",
   "channel_a",
   "outbound_a",
+  "task_conversation",
   "company_b",
   "department_b",
   "agent_b",
@@ -309,6 +324,7 @@ export function buildOffice(t) {
         provider_response_a: v.providerResponseA,
         job_key_a: v.jobKeyA,
         admission_message: v.admissionMessage,
+        conversation_message: v.conversationMessage,
         admission_contact: v.admissionContact,
         run_key_decided: v.runKeyDecided,
         run_fingerprint_decided: v.runFingerprintDecided,

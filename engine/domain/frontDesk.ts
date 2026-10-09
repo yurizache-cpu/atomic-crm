@@ -320,6 +320,12 @@ export const releaseConversation = conversationAct("release_conversation");
  * A person's reply to the newest message of a conversation the person holds,
  * naming the revision the listing showed: recorded as an accepted review, sent
  * by `messaging send`. A conversation that moved since is refused.
+ *
+ * The browser inbox (ADR 0026 §E, SI-87) records its reply through the same
+ * review logic (ops.open_person_reply_review, shared with
+ * ops.record_person_reply; only the source differs), but in the same act asks
+ * for its send, which the worker's reply job carries; this owner path still
+ * sends nothing until `messaging send`.
  */
 export async function recordPersonReply(
   tx: TxClient,

@@ -12,8 +12,11 @@ import { RuntimeContext, type CompanyOsRuntime } from "./session/runtime";
 import { useOwnedRouter } from "./surface/useOwnedRouter";
 
 // The Company OS operator surface (docs/PHASE_2C_BRIEF.md §6, §12), mounted by
-// src/App.tsx under #/company-os, read-only in this phase: no screen offers a
-// decision, a stop, a send, a draft or any configuration change.
+// src/App.tsx under #/company-os. Read-only apart from the browser acts the
+// catalogue names (a review decision, a trip, the four commercial acts, and
+// the inbox's reply and release, ADR 0026 §E), each behind a confirmation: no
+// screen offers a draft, a stop's clear or any configuration change, and the
+// one send is a member's own reply (SI-87).
 //
 // It owns, for the length of one mount, an in-memory query client (inside the
 // access controller), its own hash router and the session subscription; all

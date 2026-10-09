@@ -1,16 +1,23 @@
-// outbound.reply_send (ADR 0026 §B): ONE published fixed text the owner's
-// policy authorized, carried to the contact, holding the conversation through
-// the call. Queued only by the screening (ops.authorize_fixed_reply); never by
-// a task, never for a model's draft.
+// outbound.reply_send (ADR 0026 §B, §E): ONE send the database authorized
+// before the job existed, carried to the contact, holding the conversation
+// through the call: a published fixed text the owner's policy authorized
+// (ops.authorize_fixed_reply, in the screening), or a person's own reply
+// written and asked to be sent in one act from the browser inbox
+// (ops.authorize_person_reply, SI-87); never by a task, never for a model's
+// draft. The body is the stored text either way; this handler never knows
+// which kind it carries.
 //
 //   prepare  (TX2a, committed) begin the send the LEASE is bound to: the
-//            database re-checks the kill switch, freshness, every send gate,
-//            the opt-out rule, the policy as published now and the stale rule,
-//            and records `sending` BEFORE anything is called. `stopped` holds
-//            the job; `released` means the database gave the job back (this
-//            worker has no transport, or a newer message is still to be
-//            screened); anything else that is not a start settles the job
-//            without calling anyone (a block, listed for a person).
+//            database re-checks the kill switch, freshness (a fixed text's 30
+//            minutes, a person's reply's 24-hour window), every send gate, the
+//            opt-out rule, the policy as published now (a fixed text only)
+//            and the stale rule, and records `sending` BEFORE anything is
+//            called. `stopped` holds the job; `released` means the database
+//            gave the job back (this worker has no transport, a newer message
+//            is still to be screened, or an earlier person's reply of the
+//            conversation is still to leave); anything else that is not a
+//            start settles the job without calling anyone (a block, listed for
+//            a person).
 //   confirm  (TX2b, the call's own transaction) take the conversation, so the
 //            contact's next message waits until the call is settled (waiting
 //            a bounded time for it), and read again what can change

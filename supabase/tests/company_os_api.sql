@@ -829,6 +829,11 @@ begin
     v_calls := v_calls || format('company_os_api.get_review(%L)', v_id)
                        || format('company_os_api.get_review_advice(%L)', v_id);
   end loop;
+  -- ADR 0026 §E: the conversation of a.task_sent holds one admitted test
+  -- message and no waiting episode, so it answers not_waiting whatever the
+  -- plan; the withheld and available answers are browser_inbox.sql's, on
+  -- messages with distinct times.
+  v_calls := v_calls || format('company_os_api.get_conversation(%L)', pg_temp.id('a.task_sent'));
   for v_type, v_id in
     select 'task', x.id from ops.tasks x where x.tenant_id = ta
     union all select 'agent_run', x.id from ops.agent_runs x where x.tenant_id = ta
@@ -1153,6 +1158,9 @@ insert into cos_matrix values
   ('list_reviews', 'cursor', 'company_os_api.list_reviews(p_status => ''accepted'', p_cursor => %L)', 'review_items', 'rv'),
   ('get_review', 'id', 'company_os_api.get_review(p_review_id => %L)', 'review_items', null),
   ('get_review_advice', 'id', 'company_os_api.get_review_advice(p_review_id => %L)', 'review_items', null),
+  -- ADR 0026 §E: a task of a conversation; any other id, a foreign task or a
+  -- task of no conversation answers like a random uuid (OS404).
+  ('get_conversation', 'id', 'company_os_api.get_conversation(p_task_id => %L)', 'tasks', null),
   ('list_events', 'id', 'company_os_api.list_events(p_subject_type => ''task'', p_subject_id => %L)', 'tasks', null),
   ('list_events', 'id', 'company_os_api.list_events(p_subject_type => ''agent_run'', p_subject_id => %L)', 'agent_runs', null),
   ('list_events', 'id', 'company_os_api.list_events(p_subject_type => ''company'', p_subject_id => %L)', 'companies', null),
@@ -1205,6 +1213,11 @@ begin
        and (m.template not like '%list_stops(p_cursor%'
             or exists (select 1 from ops.execution_stops s where s.id = f.id and s.cleared_at is null))
      order by f.id limit 1;
+    -- A conversation is reached only through a task of its inbound messages:
+    -- a.task_sent's is one, answered not_waiting.
+    if m.fn = 'get_conversation' then
+      v_own := pg_temp.id('a.task_sent');
+    end if;
     v_got := pg_temp.api(v_claims, format(m.template, case when m.kind = 'cursor' then m.prefix || '1:' || v_own else v_own::text end));
     if not (v_got ->> 'ok')::boolean then
       raise exception 'T3: % refused the caller''s own % (%)', m.template, m.right_kind, v_got;
@@ -1528,6 +1541,8 @@ begin
       '.inbound.refusedTodayByReason', '.inbound.refusedTodayByReason.*', '.note', '.outbound',
       '.outbound.acceptedWithoutSend', '.outbound.blockedByReason', '.outbound.blockedByReason.*',
       '.outbound.byStatus', '.outbound.byStatus.*', '.outbound.indeterminateOpen', '.v']),
+    -- ADR 0026 §E: a.task_sent's conversation answers not_waiting (collect()).
+    ('get_conversation', array['.asOf', '.status', '.v']),
     ('get_agent', array[
       '.agent', '.agent.activity', '.agent.attentionCount', '.agent.availability', '.agent.company',
       '.agent.company.id', '.agent.company.name', '.agent.department', '.agent.department.id',
@@ -1765,6 +1780,8 @@ $$;
 --     0023 §L, amending SI-52 and SI-56) the reply draft the send would carry,
 --     in get_review's conversation.replyDraft alone, for the tenant's own
 --     browser-decidable review. The task's description never leaves.
+--     get_conversation answers not_waiting here (no text at all); its text
+--     branch, an admitted test message's own words, is browser_inbox.sql's.
 do $$
 declare
   v_check record;
@@ -2709,7 +2726,20 @@ begin
     ('convert_opportunity', 'company_os_api.convert_opportunity(9007199254740990, ''stage'', ''r1.00000000000000000000000000000000'')', 'OS404'),
     ('convert_opportunity', 'company_os_api.convert_opportunity(1, '''', ''r1.00000000000000000000000000000000'')', 'OS400'),
     ('lose_opportunity', 'company_os_api.lose_opportunity(9007199254740990, ''reason'', ''r1.00000000000000000000000000000000'')', 'OS404'),
-    ('lose_opportunity', 'company_os_api.lose_opportunity(1, null, ''r1.00000000000000000000000000000000'')', 'OS400');
+    ('lose_opportunity', 'company_os_api.lose_opportunity(1, null, ''r1.00000000000000000000000000000000'')', 'OS400'),
+    -- ADR 0026 §E: the inbox. A foreign task, a random one and a task of no
+    -- conversation are one OS404; empty text and a negative revision OS400.
+    ('get_conversation', format('company_os_api.get_conversation(%L)', pg_temp.id('a.task_sent')), 'ok'),
+    ('get_conversation', format('company_os_api.get_conversation(%L)', pg_temp.id('b.task_sent')), 'OS404'),
+    ('get_conversation', format('company_os_api.get_conversation(%L)', v_random), 'OS404'),
+    ('get_conversation', format('company_os_api.get_conversation(%L)', pg_temp.id('a.task_plain')), 'OS404'),
+    ('reply_to_conversation', format('company_os_api.reply_to_conversation(%L, %L, 0)', pg_temp.id('b.task_sent'), 'Olá'), 'OS404'),
+    ('reply_to_conversation', format('company_os_api.reply_to_conversation(%L, %L, 0)', v_random, 'Olá'), 'OS404'),
+    ('reply_to_conversation', format('company_os_api.reply_to_conversation(%L, %L, 0)', pg_temp.id('a.task_sent'), ''), 'OS400'),
+    ('reply_to_conversation', format('company_os_api.reply_to_conversation(%L, %L, -1)', pg_temp.id('a.task_sent'), 'Olá'), 'OS400'),
+    ('release_conversation', format('company_os_api.release_conversation(%L, 0)', pg_temp.id('b.task_sent')), 'OS404'),
+    ('release_conversation', format('company_os_api.release_conversation(%L, 0)', v_random), 'OS404'),
+    ('release_conversation', format('company_os_api.release_conversation(%L, -1)', pg_temp.id('a.task_sent')), 'OS400');
 
   -- Every exposed function has variants, and for the member each variant
   -- answers as intended: the bad ones are really bad.
@@ -3169,6 +3199,20 @@ select x.op, x.args, x.op || '_as_member', 'v.tenant_id, v.actor, ' || x.callee_
      'p_deal_ref, p_target_stage, p_expected_revision'),
     ('lose_opportunity', 'p_deal_ref bigint, p_loss_reason text, p_expected_revision text',
      'p_deal_ref, p_loss_reason, p_expected_revision')) as x (op, args, callee_args);
+-- ADR 0026 §E (owner decision S): the browser inbox. The conversation read is
+-- unbounded like every read; the reply and the release are bounded like the
+-- trip, each with its one callee.
+insert into cos_catalogue values
+  ('get_conversation', 'p_task_id uuid', 'read_conversation', 'v.tenant_id, p_task_id');
+insert into cos_catalogue (op, args, callee, callee_args, act, gate_config, extra_handler)
+select x.op, x.args, x.op || '_as_member', 'v.tenant_id, v.actor, ' || x.callee_args, true,
+       '{"search_path=\"\"",lock_timeout=2s}',
+       format('when sqlstate ''55P03'' then raise exception using errcode = ''OS429'', message = ''company_os_api.%s: could not be completed yet; retry''; ', x.op)
+  from (values
+    ('reply_to_conversation', 'p_task_id uuid, p_text text, p_expected_revision integer',
+     'p_task_id, p_text, p_expected_revision'),
+    ('release_conversation', 'p_task_id uuid, p_expected_revision integer',
+     'p_task_id, p_expected_revision')) as x (op, args, callee_args);
 
 -- The internal catalogue the read-surface migration adds to ops besides the
 -- gates, with each function's volatility and configuration: search_path = ''
@@ -3234,7 +3278,19 @@ insert into cos_internal values
   ('ops.move_opportunity_as_member(uuid, text, bigint, text, text)', 'v'),
   ('ops.set_opportunity_next_action_as_member(uuid, text, bigint, timestamp with time zone, text)', 'v'),
   ('ops.convert_opportunity_as_member(uuid, text, bigint, text, text)', 'v'),
-  ('ops.lose_opportunity_as_member(uuid, text, bigint, text, text)', 'v');
+  ('ops.lose_opportunity_as_member(uuid, text, bigint, text, text)', 'v'),
+  -- ADR 0026 §E: the browser inbox's read graph, read only; and its two acts,
+  -- the gates' callees (browser_inbox.sql pins their paths).
+  ('ops.cos_inbox_conversation(uuid, uuid)', 's'),
+  ('ops.cos_conversation_visible(uuid, uuid)', 's'),
+  ('ops.cos_conversation_waiting(uuid, uuid)', 's'),
+  ('ops.cos_conversation_first_name(uuid, uuid)', 's'),
+  ('ops.cos_message_do_not_contact(uuid, uuid)', 's'),
+  ('ops.cos_person_reply_refusal(uuid, uuid, integer)', 's'),
+  ('ops.cos_conversation_turns(uuid, uuid)', 's'),
+  ('ops.read_conversation(uuid, uuid)', 's'),
+  ('ops.reply_to_conversation_as_member(uuid, text, uuid, text, integer)', 'v'),
+  ('ops.release_conversation_as_member(uuid, text, uuid, integer)', 'v');
 update cos_internal set config = '{"search_path=\"\"",plan_cache_mode=force_custom_plan}'
  where signature in ('ops.read_tasks(uuid, text, text, uuid, integer)', 'ops.read_events(uuid, text, text, uuid, integer)',
                      'ops.read_agent_runs(uuid, text, text, uuid, boolean, integer)', 'ops.read_reviews(uuid, text, text, integer)');
@@ -3246,9 +3302,10 @@ language sql stable as $$
     from pg_proc f join pg_namespace n on n.oid = f.pronamespace where f.oid = p;
 $$;
 
--- P1. The catalogue: exactly the 21 exposed functions (15 reads and the six
---     acts: decide_review, trip_stop and the four commercial acts of owner
---     decision R) with their full signatures, one gate
+-- P1. The catalogue: exactly the 24 exposed functions (16 reads and the eight
+--     acts: decide_review, trip_stop, the four commercial acts of owner
+--     decision R and the inbox's reply and release of owner decision S) with
+--     their full signatures, one gate
 --     each with the same arguments, the internal set, no overload, no
 --     relation or type in the exposed schema, and no clear.
 create function pg_temp.pin_catalogue() returns void
@@ -3295,14 +3352,16 @@ begin
                                'operator_scope', 'agent_operational_state', 'decide_review_as_member',
                                'trip_stop_in_tenant', 'move_opportunity_as_member',
                                'set_opportunity_next_action_as_member', 'convert_opportunity_as_member',
-                               'lose_opportunity_as_member'))) f
+                               'lose_opportunity_as_member', 'reply_to_conversation_as_member',
+                               'release_conversation_as_member'))) f
     full join cos_internal i on i.signature = pg_temp.sig(f.oid)
    where f.oid is null or i.signature is null;
   if v_bad is not null then
     raise exception 'P1: the internal catalogue drifted: %', v_bad;
   end if;
-  -- The acts are the review decision (S7.1), the trip (S7.2) and the four
-  -- commercial acts (Phase 3B.2); nothing
+  -- The acts are the review decision (S7.1), the trip (S7.2), the four
+  -- commercial acts (Phase 3B.2) and the inbox's reply and release (ADR 0026
+  -- §E); nothing
   -- the browser reaches clears, resumes or untrips a stop, anywhere.
   select string_agg(pg_temp.sig(f.oid), ', ') into v_bad from pg_proc f
    where (f.pronamespace = 'company_os_api'::regnamespace and f.proname ~ '(clear|resume|untrip)')
@@ -3459,8 +3518,9 @@ $f$;
 --     resolver only, auth.sessions and auth.users). Each named service a
 --     browser must never reach is VOLATILE, so the volatility rule alone would
 --     catch it.
--- The READ graph: the acts' paths (decide_review, trip_stop and their gates)
--- write by design and are pinned on their own by P5b.
+-- The READ graph: the acts' paths (decide_review, trip_stop, the commercial
+-- and the inbox acts and their gates) write by design and are pinned on their
+-- own by P5b, commercial_opportunity_acts.sql and browser_inbox.sql.
 create function pg_temp.graph_bodies() returns table (fid oid)
 language sql stable as $$
   select f.oid from pg_proc f join pg_namespace n on n.oid = f.pronamespace
@@ -3468,7 +3528,9 @@ language sql stable as $$
                            'move_opportunity', 'gate_move_opportunity',
                            'set_opportunity_next_action', 'gate_set_opportunity_next_action',
                            'convert_opportunity', 'gate_convert_opportunity',
-                           'lose_opportunity', 'gate_lose_opportunity')
+                           'lose_opportunity', 'gate_lose_opportunity',
+                           'reply_to_conversation', 'gate_reply_to_conversation',
+                           'release_conversation', 'gate_release_conversation')
      and (n.nspname = 'company_os_api'
           or (n.nspname = 'ops' and (f.proname ~ '^(gate_|read_|cos_)'
               or f.proname in ('operator_scope', 'membership_tenant_eligible', 'agent_operational_state'))));
@@ -3559,8 +3621,12 @@ begin
                               -- It serves only the tenant that owns the local
                               -- CRM, reads only the five CRM tables the funnel
                               -- needs and writes nothing (commercial_funnel.sql
-                              -- F1 pins it). No other CRM service is callable.
-                              'crm_commercial_funnel'))
+                              -- F1 pins it). The only other CRM read follows.
+                              'crm_commercial_funnel',
+                              -- ADR 0026 §E: the inbox's first word of name, the
+                              -- one other read-only CRM read (SI-48): a stored
+                              -- first name, for the tenant that owns the CRM.
+                              'crm_contact_first_name'))
       or m.callee in ('crm_contact_by_phone', 'whatsapp_send_eligibility')
       or (m.callee !~ '^(gate_|read_|cos_)' and m.callee <> 'spend_window_start'
           and m.callee ~ '(^|_)(send|mark|clear|request|start|trip|grant|revoke|admit|receive|configure|record|enforce|settle|lease|claim|defer|reap|assign|transition)(_|$)')
@@ -4158,6 +4224,22 @@ begin
     'pg_temp.pin_act_graph', 'P5b: the trip''s callee reaches beyond');
   perform pg_temp.expect_pin_failure('X25 the trip gate''s S0-B lock_timeout dropped',
     'alter function ops.gate_trip_stop(text, uuid) reset lock_timeout', 'pg_temp.pin_gates', 'P3: a gate is not exactly');
+  -- ADR 0026 §E: the inbox's read is a graph body like any other. A copy of
+  -- its turns that also reads the CRM's own table is refused by name, and
+  -- the first-name adapter is reachable only through its allowlist entry.
+  -- (A mutation whose anchor is missing changes nothing, so the pin would
+  -- still pass and this check would fail, never pass vacuously.)
+  perform pg_temp.expect_pin_failure('X26 the inbox''s turns reading public.contacts',
+    replace(pg_get_functiondef('ops.cos_conversation_turns(uuid, uuid)'::regprocedure),
+            'where m.tenant_id = p_tenant and m.conversation_id = p_conversation',
+            'where m.tenant_id = p_tenant and m.conversation_id = p_conversation
+               and not exists (select 1 from public.contacts pc where pc.id < 0)'),
+    'pg_temp.pin_graph',
+    'P5: a graph body reads public or an email, writes, runs dynamic SQL or names a forbidden service: ops.cos_conversation_turns(uuid, uuid)');
+  perform pg_temp.expect_pin_failure('X27 the first-name adapter dropped from the read callees',
+    replace(pg_get_functiondef('pg_temp.pin_graph()'::regprocedure), '''crm_contact_first_name''', '''crm_commercial_funnel'''),
+    'pg_temp.pin_graph',
+    'P5: a graph body reaches beyond the pinned read callees: ops.cos_conversation_first_name(uuid, uuid) calls ops.crm_contact_first_name');
 end
 $x$;
 
