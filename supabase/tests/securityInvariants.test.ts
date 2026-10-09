@@ -342,7 +342,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-09",
     statement:
-      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins.",
+      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins. The merge writes the flag only when the loser opted out, so the consent ledger records the merged opt-out as a person's, and a winner's own opt-out keeps its recorded origin otherwise (SI-84).",
     provenBy: ["unit test"],
     enforcedBy: [
       {
@@ -352,6 +352,11 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/functions/merge_contacts/mergeLeadProfile.test.ts",
         marker: /describe\(/,
+      },
+      {
+        file: "supabase/functions/merge_contacts/mergeLeadProfile.test.ts",
+        marker:
+          /writes the flag only when the loser opted out, so the winner's own opt-out keeps its origin/,
       },
     ],
   },
@@ -4488,7 +4493,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-79",
     statement:
-      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
+      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; an erasure first records the conversation's pending opt-out in the CRM, while the number still finds the contact (SI-84); and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4788,7 +4793,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -5033,7 +5038,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-84",
     statement:
-      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. Each creation and each skipped creation is recorded in ops.crm_contact_acts, with no number or name, and a creation emits lead.created; no adapter sends, starts a run or changes a stop.",
+      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once the opt-out's acknowledgement settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed; a number's erasure first records its conversation's pending opt-out. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. Each creation, skipped creation and opt-out record is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created and a recorded opt-out lead.opted_out; no adapter sends, starts a run or changes a stop.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -5104,6 +5109,53 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/communication/whatsapp/metaWebhook.test.ts",
         marker: /still reads the message, with no name, given %s/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception 'the opt-out record capability is not a pinned DEFINER the worker alone executes';/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception 'the screening, the acknowledgement or the erasure does not reach the opt-out record';/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception '% holds a privilege on the consent ledger', v_role;/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C1: a person''s writes were recorded as %/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C1: a malformed mark was taken for the system/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C3: the adapter did more than set the flag, or did not record its act/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /records the opt-out as the system's once its automatic acknowledgement is sent, and reconciles the exception/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /waits for an acknowledgement still on its way, so the flag never refuses it/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /records nothing for an opt-out a person dismissed, and stops its unsent acknowledgement/,
+      },
+      {
+        file: "engine/handlers/crmOptOutRecordDue.ts",
+        marker: /export const CRM_OPT_OUT_RECORD_ANSWERS/,
       },
     ],
     caveat:

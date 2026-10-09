@@ -485,7 +485,7 @@ describe("the protective texts are drafted whoever holds the conversation (ADR 0
     expect(out.proposed).toMatchObject({
       response_draft: FIXED.messages.opt_out_ack,
       recommended_next_action:
-        "Send the acknowledgement, then record the opt-out in the CRM.",
+        "Send the acknowledgement; the opt-out is recorded after it unless you dismiss the exception.",
     });
     expect(await holder(first.conversation_id)).toMatchObject({
       holder: "person",

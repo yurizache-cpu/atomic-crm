@@ -555,3 +555,47 @@ CREATE OR REPLACE FUNCTION "public"."deal_stage_transitions_append_only"() RETUR
         using errcode = '42501';
     end;
     $$;
+
+CREATE OR REPLACE FUNCTION "public"."record_lead_consent_change"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    declare
+      v_mark   text := pg_catalog.current_setting('ops.consent_origin', true);
+      v_origin text := 'person';
+      v_reason text;
+    begin
+      -- A system write names its origin and the message it answers in a
+      -- transaction-local mark set by the backend adapter that writes the
+      -- flag; it is consumed here. Without it the write is a person's.
+      if v_mark ~ '^(system_opt_out|system_lift):task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        v_origin := pg_catalog.split_part(v_mark, ':', 1);
+        v_reason := pg_catalog.substr(v_mark, pg_catalog.length(v_origin) + 2);
+        perform pg_catalog.set_config('ops.consent_origin', '', true);
+      end if;
+      if tg_op = 'INSERT' then
+        if new.do_not_contact then
+          insert into public.lead_consent_changes (contact_id, from_value, to_value, origin, reason_ref, changed_at)
+          values (new.contact_id, null, true, v_origin, v_reason, pg_catalog.clock_timestamp());
+        end if;
+        return null;
+      end if;
+      -- A write that names the flag: every system write, a change, and a
+      -- person's true even when unchanged (a merge folding in an opt-out).
+      if v_origin <> 'person' or new.do_not_contact or old.do_not_contact is distinct from new.do_not_contact then
+        insert into public.lead_consent_changes (contact_id, from_value, to_value, origin, reason_ref, changed_at)
+        values (new.contact_id, old.do_not_contact, new.do_not_contact, v_origin, v_reason, pg_catalog.clock_timestamp());
+      end if;
+      return null;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."lead_consent_changes_append_only"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+    begin
+      raise exception 'public.lead_consent_changes is append-only: % refused', lower(tg_op)
+        using errcode = '42501';
+    end;
+    $$;

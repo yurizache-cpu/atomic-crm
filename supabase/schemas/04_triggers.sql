@@ -34,6 +34,20 @@ create or replace trigger deal_stage_transitions_append_only_trigger
     before update or delete on public.deal_stage_transitions
     for each row execute function public.deal_stage_transitions_append_only();
 
+-- ADR 0026 §C: every change of the opt-out flag, with its origin, in the
+-- profile write's own transaction; the ledger is append-only.
+create or replace trigger record_lead_consent_change_trigger
+    after insert or update of do_not_contact on public.lead_profiles
+    for each row execute function public.record_lead_consent_change();
+
+create or replace trigger lead_consent_changes_append_only_trigger
+    before update or delete on public.lead_consent_changes
+    for each row execute function public.lead_consent_changes_append_only();
+
+create or replace trigger lead_consent_changes_refuse_truncate_trigger
+    before truncate on public.lead_consent_changes
+    for each statement execute function public.lead_consent_changes_append_only();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();

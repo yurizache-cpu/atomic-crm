@@ -387,6 +387,7 @@ describe("the capability list", () => {
       "beginReplySend",
       "confirmReplySend",
       "settleReplySend",
+      "recordDueOptOut",
     ]);
   });
 });

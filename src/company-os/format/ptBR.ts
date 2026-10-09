@@ -246,6 +246,7 @@ export const eventSentence = labelFrom({
   "exception.raised": "Exceção aberta para uma pessoa",
   "exception.resolved": "Exceção resolvida",
   "lead.created": "Novo lead criado no CRM",
+  "lead.opted_out": "Opt-out registrado no CRM",
 });
 
 export const yesNoLabel = (value: boolean): string => (value ? "Sim" : "Não");

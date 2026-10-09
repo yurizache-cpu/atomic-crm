@@ -2984,12 +2984,13 @@ begin
   -- ADR 0023's front-desk party-kind adapter, which reads the CRM's converted
   -- deals only for that tenant (as crm_contact_by_phone does); and ADR 0026
   -- §C's lead adapter, which creates a contact only for that tenant and
-  -- answers unavailable to any other before it reads the CRM.
+  -- answers unavailable to any other before it reads the CRM, and its opt-out
+  -- adapter, which records an opt-out only for that tenant.
   select string_agg(p.proname, ', ' order by p.proname) into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname in ('ops', 'company_os_api') and p.prosrc ~ 'owns_local_crm';
-  if v_bad is distinct from 'cos_commercial_acts_available, crm_commercial_funnel, crm_contact_by_phone, crm_contact_is_client, crm_create_whatsapp_lead, crm_lock_deal, membership_tenant_eligible, model_data_controller_tenant, purge_inbound_email_ledger' then
-    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers, the funnel''s CRM adapter, the commercial acts'' lock and hint, the Q8 controller check, the front-desk party-kind adapter and the lead adapter)', v_bad;
+  if v_bad is distinct from 'cos_commercial_acts_available, crm_commercial_funnel, crm_contact_by_phone, crm_contact_is_client, crm_create_whatsapp_lead, crm_lock_deal, crm_record_opt_out, membership_tenant_eligible, model_data_controller_tenant, purge_inbound_email_ledger' then
+    raise exception 'M2: owns_local_crm is read by % (expected the predicate, the two pre-Phase-2C readers, the funnel''s CRM adapter, the commercial acts'' lock and hint, the Q8 controller check, the front-desk party-kind adapter, the lead adapter and the opt-out adapter)', v_bad;
   end if;
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad
     from pg_proc p join pg_namespace n on n.oid = p.pronamespace

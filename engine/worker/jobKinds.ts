@@ -46,6 +46,9 @@ export const INTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   "content.retention_due",
   // ADR 0021 W5: a sender's number erased at the end of its retention.
   "contact.identifier_retention_due",
+  // ADR 0026 §C: a contact's opt-out recorded in the CRM; protective, so no
+  // stop holds it.
+  "crm.opt_out_record",
 ]);
 
 /** Whether the kill switch re-checks this kind before its transactional handler runs. */

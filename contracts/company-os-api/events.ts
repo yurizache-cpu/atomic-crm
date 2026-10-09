@@ -83,6 +83,7 @@ export const KNOWN_EVENT_TYPES = [
   "exception.raised",
   "exception.resolved",
   "lead.created",
+  "lead.opted_out",
 ] as const;
 
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
@@ -226,6 +227,7 @@ export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "exception.raised": ExceptionRaisedFactsSchema,
   "exception.resolved": ExceptionResolvedFactsSchema,
   "lead.created": LeadCreatedFactsSchema,
+  "lead.opted_out": NoFactsSchema,
 };
 
 const EventFactsSchema = z.union([
