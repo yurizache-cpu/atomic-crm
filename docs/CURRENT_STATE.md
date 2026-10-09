@@ -2,7 +2,7 @@
 
 **What this is:** the operational state a fresh session reads after CLAUDE.md. It changes with every merged milestone (the maintenance rule in CLAUDE.md). The stable product and architecture are in [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md). The long-term program map is in [ROADMAP.md](ROADMAP.md).
 
-**Updated:** 2026-10-08, after PR #33's merge (`1bcefd50`) and staging's update to it, on `feature/autonomous-front-desk`.
+**Updated:** 2026-10-09, after PR #34's merge (`679a118a`) and staging's update to it, on `feature/automatic-fixed-texts`.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -15,10 +15,10 @@
 | Item | State |
 | --- | --- |
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
-| Integration branch | `feature/clinical-phase-1` at `1bcefd50`: PR #33's normal merge (2026-10-08; parents `02ae43e7`, PR #32's merge, and `4aecf2a8`, the tree equal to the reviewed head) |
+| Integration branch | `feature/clinical-phase-1` at `679a118a`: PR #34's normal merge (2026-10-09; parents `1bcefd50`, PR #33's merge, and `5804eb99`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record, ADR 0026 and its slice 1 (§3), PR #34; stacked on it, `feature/automatic-fixed-texts` (slice 2) and, on that, `feature/crm-leads-and-opt-out` (slice 3) |
-| Retained, integrated | `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
+| Working branch | `feature/automatic-fixed-texts` (ADR 0026 slice 2, §3; PR #35), from `5804eb99`, now part of `679a118a`; stacked on it, `feature/crm-leads-and-opt-out` (slice 3) |
+| Retained, integrated | `feature/autonomous-front-desk` at `5804eb99` (PR #34); `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
 
@@ -59,6 +59,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 
 **Just integrated:**
 
+- **PR #34** (merge `679a118a`, 2026-10-09; [ADR 0026](adr/0026-autonomous-front-desk-for-leads.md), Proposed, and its slice 1; SI-72, SI-80, SI-81 and SI-82 amended): who wrote a review (`agent`, `fixed` or `person`, immutable, backfilled exactly), a person's reply to the newest message, and a refused message counted for the person who holds the conversation (migration `20261017120000_review_authorship.sql`). The automated review completed with no finding. PR CI on `5804eb99` and the post-merge run 37952954128 on `679a118a` match the historical baseline (§7).
 - **PR #33** (merge `1bcefd50`, 2026-10-08; [ADR 0025](adr/0025-exception-queue-and-lead-journey-decisions.md) Part A, SI-82, SI-80 amended): the exception queue, `ops.exceptions` (migration `20261016120000_exception_queue.sql`).
   - The screening raises a request for a person and an opt-out (whoever holds the conversation), a missing fixed text, a message waiting with a person, and a contact no reply can reach (`contact_unresolved` with its reason, `do_not_contact`). A send's state raises a failed or uncertain send, recorded after its settlement, never inside it.
   - Danger is not an exception (owner decision, 2026-10-08): the front desk answers leads, danger gets the owner's fixed safety text, and the conversation stays with the agent. The safety and sensitive-subject fixed texts reach a later model call only as the neutral marker (W1, `4aecf2a8`).
@@ -75,7 +76,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 
 **Active:**
 
-1. **`feature/autonomous-front-desk`: ADR 0026, the autonomous front desk for leads** (design; the owner's product decisions of 2026-10-08). The WhatsApp receptionist answers leads, not patients; a patient talks to the owner directly. The owner decided:
+1. **ADR 0026, the autonomous front desk for leads** (integrated with its slice 1 by PR #34; the owner's product decisions of 2026-10-08). The WhatsApp receptionist answers leads, not patients; a patient talks to the owner directly. The owner decided:
    - the receptionist sends its fixed texts by itself now, and its model replies once the supervised test shows it can;
    - a new WhatsApp number becomes a CRM lead automatically (B1 revised from (b) to (c)), which needs the contact write adapter (B2) and an automatic opt-out record;
    - the site's qualification triage is kept for the owner to read; the receptionist may ask the same qualification questions, but a health answer never reaches a model (W1 holds);
@@ -118,9 +119,9 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
 - **Supabase** `erhrochojnugszkkoqrv` (sa-east-1, PostgreSQL 17):
-  - all 76 integrated migrations through `20261016120000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07 and PR #33's one on 2026-10-08 (pinned CLI, dry run first); the hosted verifier then reported 0 blocking and 0 advisory findings.
+  - all 77 integrated migrations through `20261017120000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07, PR #33's one on 2026-10-08 and PR #34's one on 2026-10-09 (pinned CLI, dry run first; the 26 existing reviews took their author, 22 `agent` and 4 `fixed`); the hosted verifier then reported 0 blocking and 0 advisory findings.
   - `front-desk exceptions sync` ran once on 2026-10-08 over the 10 existing sends: it opened one `send_failed`, the 2026-10-02 Meta probe send refused with 131005 (a user token's permission error, before the system-user token), and nothing else.
-- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-06 from the integrated code (PR #29; Netlify deploy `6ac4dff19a75e014e31006e8`; preflight 0 blocking, live check 0/0). The review page shows the screened message and the reply draft (checked in the browser). PR #31 changed no frontend code.
+- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-09 from `679a118a` right after its migration (PR #34 changed the conversation block of the browser contract; Netlify deploy `6ac90a93215a5397e3a84c69`; preflight 0 blocking and 1 advisory, the published source maps; live check 0/0). The review page shows the screened message, who answered (for example "Texto fixo: Passagem para uma pessoa") and the reply draft (checked in the browser).
 - **Runtime:** local only (`scripts/with-staging.mjs`: worker, gateway). No Fly, no always-on webhook.
 - **Tenant** `265b8fb8-839f-4351-a503-fe38f75822d1`; Receptionist agent `2ed31fc7-3509-46aa-99ff-507d06c90b7d`.
 - **Channels (both `test` mode, the owner's device registered):**
@@ -190,7 +191,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **ADR 0026 and slice 1** (§3, item 1): the PR from this branch, its CI against the baseline (§7), the owner's review and the merge on the owner's request; then, on staging, migration `20261017120000` (pinned CLI, dry run first, never the seed) and the hosted verifier. Then slice 2's PR, then slice 3's (§3, items 2 and 3), each merged on the owner's request and applied to staging the same way.
+1. **ADR 0026 slice 2** (§3, item 2): PR #35 from `feature/automatic-fixed-texts` into `feature/clinical-phase-1`, its CI against the baseline (§7), the owner's review and the merge on the owner's request; then, on staging, migration `20261018120000` (pinned CLI, dry run first, never the seed), the hosted verifier and the frontend (if its contract changed). Then slice 3's PR from `feature/crm-leads-and-opt-out` (§3, item 3), merged on the owner's request and applied to staging the same way, every worker stopped before `20261019130000`.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
