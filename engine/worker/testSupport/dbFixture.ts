@@ -252,6 +252,13 @@ export async function deleteCompanyOsRows(
         set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup'
       where tenant_id = any($1::uuid[]) and retired_at is null`,
     "delete from ops.crm_lead_policies where tenant_id = any($1::uuid[])",
+    // ADR 0026 §D: the owner's notification target in force is retired first,
+    // without its number, the way the owner retires one; its notifications
+    // left with their conversations, above.
+    `update ops.owner_notification_targets
+        set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup', digits = null
+      where tenant_id = any($1::uuid[]) and retired_at is null`,
+    "delete from ops.owner_notification_targets where tenant_id = any($1::uuid[])",
     "delete from ops.communication_channels where tenant_id = any($1::uuid[])",
     "delete from ops.agent_run_routes where tenant_id = any($1::uuid[])",
     "delete from ops.agent_runs where tenant_id = any($1::uuid[])",

@@ -1,9 +1,11 @@
 import {
   AgendaSchema,
   AvailableFunnelSchema,
+  WaitingListSchema,
   withoutDefaultArguments,
   type Agenda,
   type AvailableFunnel,
+  type WaitingList,
   type CompanyOsOperation,
   type OperationResult,
   type OverviewSummary,
@@ -22,6 +24,7 @@ import platformStopFile from "./recorded/platform-stop.json";
 import taskManyRunsFile from "./recorded/task-many-runs.json";
 import tenantKindStopFile from "./recorded/tenant-kind-stop.json";
 import tenantFile from "./recorded/tenant.json";
+import waitingListFile from "./recorded/waiting-list.json";
 import { USER_A } from "./samples";
 
 // The Company OS screens' tests are fed with answers RECORDED from the real
@@ -103,6 +106,28 @@ export const overviewWithRecordedFunnel = (
   ...recorded("overview"),
   asOf: RECORDED_FUNNEL_AS_OF,
   funnel,
+});
+
+/**
+ * The populated waiting list (ADR 0026 §D), recorded from the real
+ * ops.cos_waiting_list at a fixed instant
+ * (engine/domain/companyOsWaitingListRecording.dbtest.ts): five synthetic
+ * conversations waiting for a person on Monday 2030-03-04, 10:30 in São
+ * Paulo, with a notification in each state the screen shows. The shared
+ * recordings' waiting list is empty.
+ */
+export const RECORDED_WAITING_LIST_AS_OF = "2030-03-04T13:30:00.000000Z";
+
+export const recordedWaitingList = (): WaitingList =>
+  WaitingListSchema.parse(waitingListFile);
+
+/** The recorded tenant's overview, at the waiting list's instant, carrying it. */
+export const overviewWithRecordedWaitingList = (
+  waitingList: WaitingList = recordedWaitingList(),
+): OverviewSummary => ({
+  ...recorded("overview"),
+  asOf: RECORDED_WAITING_LIST_AS_OF,
+  waitingList,
 });
 
 /** The recorded id of a fixture row (`agent:lead-triage`, `run:held`). */

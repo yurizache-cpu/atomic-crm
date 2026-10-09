@@ -388,6 +388,8 @@ describe("the capability list", () => {
       "confirmReplySend",
       "settleReplySend",
       "recordDueOptOut",
+      "beginOwnerNotification",
+      "settleOwnerNotification",
     ]);
   });
 });

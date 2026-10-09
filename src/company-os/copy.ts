@@ -390,5 +390,23 @@ export const JOB_STEPS_NOTE =
 export const COMMUNICATIONS_SCOPE_NOTE =
   "Apenas contagens e nomes de canais: nenhuma mensagem, contato ou conversa é listada, e nada pode ser alterado ou enviado daqui.";
 
+/** ADR 0026 §D: the overview's waiting list. */
+export const WAITING_LIST_TITLE = "Fila de atendimento";
+
+export const WAITING_LIST_EMPTY = "Ninguém aguarda uma pessoa agora.";
+
+export const WAITING_WINDOW_CLOSED = "Janela de 24 h encerrada";
+
+export const waitingWindowOpen = (time: string): string =>
+  `Janela de 24 h até ${time}`;
+
+export const waitingMessages = (count: number): string =>
+  count === 1 ? "1 mensagem" : `${count} mensagens`;
+
+export const waitingListTruncatedNote = (
+  total: number,
+  shown: number,
+): string => `${total} conversas aguardam; mostrando as ${shown} mais antigas.`;
+
 export const MONEY_NOTE =
   "Todo valor é o calculado pelo servidor; esta tela não faz contas.";

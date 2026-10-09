@@ -6,13 +6,17 @@
 // section is aggregate agreement counts only (Phase 2D.3); its operational
 // health section is exact, tenant-scoped counts, times and micros from
 // authoritative rows, never telemetry (Phase 2E.2); its agenda section is the
-// tenant's scheduling state, read only (Phase 3A).
+// tenant's scheduling state, read only (Phase 3A); its waiting list is who
+// waits for a person now, by opaque task references, kinds, counts and
+// instants (ADR 0026 §D). The waiting list is optional so that the browser is
+// published before the database that adds it.
 
 import { z } from "zod";
 import { AgendaSchema } from "./agenda.ts";
 import { CommercialFunnelSchema } from "./funnel.ts";
 import { DecisionIntelligenceSchema } from "./decisions.ts";
 import { OperationalHealthSchema } from "./health.ts";
+import { WaitingListSchema } from "./waitingList.ts";
 import {
   CountSchema,
   ENVELOPE_SHAPE,
@@ -93,6 +97,9 @@ export const OverviewSummarySchema = z.strictObject({
   agenda: AgendaSchema,
   // Phase 3B.1: the commercial funnel, read from the local CRM (funnel.ts).
   funnel: CommercialFunnelSchema,
+  // ADR 0026 §D: who waits for a person now (waitingList.ts); absent until
+  // the database carries it.
+  waitingList: WaitingListSchema.optional(),
 });
 
 export type OperatorContext = z.infer<typeof OperatorContextSchema>;

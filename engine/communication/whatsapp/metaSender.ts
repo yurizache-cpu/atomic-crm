@@ -36,10 +36,22 @@
 // ignores it, statuses carry no correlation, and a send whose outcome is
 // unknown can then be resolved only by its provider message id, which exists
 // only when a response was read.
+//
+// TEMPLATES (ADR 0026 §D). `sendTemplate` makes the same one POST with
+// type "template": {name, language: {code}, components: [{type: "body",
+// parameters: [{type: "text", text}, ...]}]}, the owner's approved utility
+// template with positional parameters, and its outcome is read exactly as a
+// text's. Verified on Meta's pages (2026-10-09): that payload shape, the
+// endpoint and the response's messages[].id. Unverified until the live probe:
+// where biz_opaque_callback_data goes in a template send, the parameters'
+// limits and whitespace rules, and the template error codes (unlisted, they
+// read provider_rejected).
 
 import type {
   OutboundOutcome,
   OutboundRequest,
+  OutboundTemplateRequest,
+  OutboundTemplateTransport,
   OutboundTransport,
 } from "../types.ts";
 import {
@@ -77,6 +89,21 @@ export interface MetaTransportOptions {
 const DIGITS = /^[0-9]{1,32}$/;
 const WA_ID = /^[0-9]{6,20}$/;
 const PROVIDER_ID = /^[\x21-\x7e]{1,200}$/;
+const TEMPLATE_NAME = /^[a-z0-9_]{1,512}$/;
+const LANGUAGE_CODE = /^[a-z]{2,3}(_[A-Z]{2})?$/;
+/** A template's body parameters: 1 to 10, each 1 to 60 characters. */
+const TEMPLATE_PARAMETERS_MAX = 10;
+const TEMPLATE_PARAMETER_MAX_LENGTH = 60;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/** Meta refuses a parameter with a control character or four spaces in a row. */
+const validTemplateParameter = (parameter: unknown): boolean =>
+  typeof parameter === "string" &&
+  parameter.trim() !== "" &&
+  parameter.length <= TEMPLATE_PARAMETER_MAX_LENGTH &&
+  !CONTROL_CHARACTER.test(parameter) &&
+  !parameter.includes("    ");
 
 /**
  * Meta's generic error codes: an unknown or temporary service error, whose
@@ -172,7 +199,7 @@ const isTimeout = (error: unknown): boolean =>
 
 export function createMetaWhatsAppTransport(
   options: MetaTransportOptions,
-): OutboundTransport {
+): OutboundTransport & OutboundTemplateTransport {
   if (
     typeof options.accessToken !== "string" ||
     options.accessToken.trim() === ""
@@ -187,21 +214,12 @@ export function createMetaWhatsAppTransport(
   const fetchImpl: FetchLike =
     options.fetch ?? ((input, init) => fetch(input, init));
 
-  async function send(request: OutboundRequest): Promise<OutboundOutcome> {
-    // A request the provider could only refuse is refused here, uncalled.
-    if (
-      !DIGITS.test(request.providerTarget) ||
-      !WA_ID.test(request.to) ||
-      typeof request.body !== "string" ||
-      request.body.trim() === "" ||
-      request.body.length > WHATSAPP_TEXT_MAX_LENGTH ||
-      typeof request.correlation !== "string" ||
-      request.correlation.length > BIZ_OPAQUE_CALLBACK_DATA_MAX_LENGTH
-    ) {
-      return rejected(null, "invalid_request");
-    }
-
-    const url = `${META_GRAPH_ORIGIN}/${META_GRAPH_API_VERSION}/${request.providerTarget}/messages`;
+  /** The one POST, and what it produced. */
+  async function post(
+    providerTarget: string,
+    message: Readonly<Record<string, unknown>>,
+  ): Promise<OutboundOutcome> {
+    const url = `${META_GRAPH_ORIGIN}/${META_GRAPH_API_VERSION}/${providerTarget}/messages`;
     let response: Response;
     try {
       response = await fetchImpl(url, {
@@ -210,14 +228,7 @@ export function createMetaWhatsAppTransport(
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          recipient_type: "individual",
-          to: `+${request.to}`,
-          type: "text",
-          text: { preview_url: false, body: request.body },
-          biz_opaque_callback_data: request.correlation,
-        }),
+        body: JSON.stringify(message),
         redirect: "error",
         signal: AbortSignal.timeout(timeoutMs),
       });
@@ -260,5 +271,74 @@ export function createMetaWhatsAppTransport(
     );
   }
 
-  return Object.freeze({ provider: META_WHATSAPP_PROVIDER, send });
+  async function send(request: OutboundRequest): Promise<OutboundOutcome> {
+    // A request the provider could only refuse is refused here, uncalled.
+    if (
+      !DIGITS.test(request.providerTarget) ||
+      !WA_ID.test(request.to) ||
+      typeof request.body !== "string" ||
+      request.body.trim() === "" ||
+      request.body.length > WHATSAPP_TEXT_MAX_LENGTH ||
+      typeof request.correlation !== "string" ||
+      request.correlation.length > BIZ_OPAQUE_CALLBACK_DATA_MAX_LENGTH
+    ) {
+      return rejected(null, "invalid_request");
+    }
+    return post(request.providerTarget, {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: `+${request.to}`,
+      type: "text",
+      text: { preview_url: false, body: request.body },
+      biz_opaque_callback_data: request.correlation,
+    });
+  }
+
+  async function sendTemplate(
+    request: OutboundTemplateRequest,
+  ): Promise<OutboundOutcome> {
+    // A request the provider could only refuse is refused here, uncalled.
+    if (
+      !DIGITS.test(request.providerTarget) ||
+      !WA_ID.test(request.to) ||
+      typeof request.templateName !== "string" ||
+      !TEMPLATE_NAME.test(request.templateName) ||
+      typeof request.languageCode !== "string" ||
+      !LANGUAGE_CODE.test(request.languageCode) ||
+      !Array.isArray(request.bodyParameters) ||
+      request.bodyParameters.length < 1 ||
+      request.bodyParameters.length > TEMPLATE_PARAMETERS_MAX ||
+      !request.bodyParameters.every(validTemplateParameter) ||
+      typeof request.correlation !== "string" ||
+      request.correlation.length > BIZ_OPAQUE_CALLBACK_DATA_MAX_LENGTH
+    ) {
+      return rejected(null, "invalid_request");
+    }
+    return post(request.providerTarget, {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: `+${request.to}`,
+      type: "template",
+      template: {
+        name: request.templateName,
+        language: { code: request.languageCode },
+        components: [
+          {
+            type: "body",
+            parameters: request.bodyParameters.map((text) => ({
+              type: "text",
+              text,
+            })),
+          },
+        ],
+      },
+      biz_opaque_callback_data: request.correlation,
+    });
+  }
+
+  return Object.freeze({
+    provider: META_WHATSAPP_PROVIDER,
+    send,
+    sendTemplate,
+  });
 }

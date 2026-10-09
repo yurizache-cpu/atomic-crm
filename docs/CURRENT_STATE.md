@@ -33,7 +33,7 @@ By layer. Detail in each ADR and report.
   - Q8 fail-closed enforcement, data classes, and content and identifier retention (ADR 0020, ADR 0021 W1 to W6);
   - Production Security Gate A (AAL2 for the Company OS and CRM data, CSP, no third-party enrichment);
   - the Gate B host contract and verifiers;
-  - 80 security invariants (SI-01 to SI-81, SI-07 retired) with live guards ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md));
+  - 82 security invariants on the integration branch (SI-01 to SI-83, SI-07 retired; SI-84 and SI-86 arrive with slices 3 and 4, SI-85 is reserved for the site's triage) with live guards ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md));
   - 75 canonical migrations, the latest `20261015120000_front_desk_handoff_names.sql`.
 - **Models:**
   - OpenRouter as the gateway;
@@ -115,6 +115,16 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **Local evidence:** typecheck and ESLint clean; the `functions` project; 30 SQL suites (new `crm_leads.sql`, `crm_consent.sql`, `crm_copy_retention.sql`); the driver-backed suites (new `whatsappLeads`, `crmOptOut`, `optOutLift`, `crmCopyRetention`); the `app` project; the upgrade replay. Each review fix was mutation-checked (the earlier definition put back, its test red).
    - **Before it is enabled on staging (owner actions):** the privacy notice's line on CRM records; the lead policy recorded (placeholder and daily cap).
    - **Deployment order:** stop every worker (`staging:gateway-worker`, `staging:fake-worker`) before applying `20261019130000`, and restart workers only from the integrated code: a worker without the `crm.opt_out_record` handler fails that job permanently.
+
+4. **`feature/owner-notifications`, stacked on `feature/crm-leads-and-opt-out`: slice 4, the waiting list and the owner's WhatsApp notification** (ADR 0026 §D, "Built in slice 4"; SI-86 added, SI-48 and SI-82 amended). Its PR opens once slice 3's is merged.
+   - **The target** (`20261020120000_owner_notifications.sql`): the owner's own number, the test channel it is sent from, two approved utility templates, the kinds, quiet hours (22:00 to 08:00) and caps (10 an hour, 30 a day), recorded only by `npm run front-desk -- notify-target record` with the number read from a file and never printed; never a number a conversation or a CRM contact holds, but the owner's registered device.
+   - **The intent:** a request for a person, or a message waiting for one that is newer than the person's latest reply and not danger, records one notification and its `owner_notification.send` job in the transaction that raises the episode, isolated so it never fails it; once per conversation between person replies.
+   - **The send:** the worker's job waits a minute, outside quiet hours and within the caps, carries every due notification of the target as one template (a digest across conversations), sets aside what a release or a reply already answered, calls at most once and never again; a stop of the channel's unit holds it; without a transport it waits until it expires after a day.
+   - **The owner's number writing in** is refused before any conversation is written (`owner_number`), unless it is the registered device. Status callbacks settle a notification by the digest of its provider id or, when uncertain, by its correlation and the owner's number.
+   - **The waiting list** (`20261020130000_waiting_list_read_model.sql`): who waits for a person now, oldest first, with the notification's state, as a section "Fila de atendimento" of the overview (optional in the contract, so the frontend ships first).
+   - **Also:** `npm run ops -- identifiers erase --number-file`; `npm run front-desk -- notify-target show|retire` and `notifications`.
+   - **Local evidence:** typecheck and ESLint clean; the `functions` project; 31 SQL suites (new `owner_notifications.sql`); the driver-backed suites (new `ownerNotifications`, `companyOsWaitingListRecording`); the overview's browser tests; the recordings re-recorded (the empty waiting list) and a populated one recorded.
+   - **Before it is enabled on staging (owner actions):** the two utility templates (`aviso_fila_conversa`, `aviso_fila_resumo`) approved on the test WhatsApp account; the target recorded (the registered device can be it). **Deployment order:** worker, frontend, database.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 

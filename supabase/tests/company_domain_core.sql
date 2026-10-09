@@ -332,6 +332,11 @@ begin
     ('ops_worker',   'ops.settle_stale_reply_sends()'::regprocedure),
     -- ADR 0026 §C: the opt-out's record in the CRM, bound to the leased job.
     ('ops_worker',   'ops.record_due_opt_out()'::regprocedure),
+    -- ADR 0026 §D: the owner's notification, lease-bound, and the reaper's
+    -- sweep of the notifications a job left unsettled.
+    ('ops_worker',   'ops.begin_owner_notification(text)'::regprocedure),
+    ('ops_worker',   'ops.settle_owner_notification(text, text, text, text)'::regprocedure),
+    ('ops_worker',   'ops.settle_stale_owner_notifications()'::regprocedure),
     -- ADR 0026 §C: the sender's first name, a sixth parameter with a default.
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz, text)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
@@ -448,6 +453,9 @@ begin
                            'sync_send_exceptions_for_settled_job', 'settle_stale_reply_sends',
                            -- ADR 0026 §C: the opt-out's record, lease-bound.
                            'record_due_opt_out',
+                           -- ADR 0026 §D: the owner's notification, lease-bound, and its reaper.
+                           'begin_owner_notification', 'settle_owner_notification',
+                           'settle_stale_owner_notifications',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

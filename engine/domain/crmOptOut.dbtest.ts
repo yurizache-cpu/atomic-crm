@@ -88,11 +88,10 @@ const { runAgentJob } = agentRuntimeProbes(() => ({ admin, owner, db }));
 
 const fake = (): ReplyTransport & {
   readonly transport: ReturnType<typeof createFakeOutboundTransport>;
-} => ({
-  kind: "fake",
-  transport: createFakeOutboundTransport(),
-  timeoutMs: 1_000,
-});
+} => {
+  const transport = createFakeOutboundTransport();
+  return { kind: "fake", transport, templates: transport, timeoutMs: 1_000 };
+};
 
 /** The CRM contact the device's number resolves to, and its flag. */
 const contactFlag = async (): Promise<

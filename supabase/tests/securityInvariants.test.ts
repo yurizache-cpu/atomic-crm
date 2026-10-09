@@ -2448,7 +2448,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-48",
     statement:
-      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation.",
+      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation. The owner's notification makes one other read, ops.crm_contact_first_name: a contact's stored first name, for the tenant that owns the CRM, only into the worker's notification request, cut to one word and stored nowhere (SI-86).",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
       {
@@ -2471,6 +2471,11 @@ const INVARIANTS: Invariant[] = [
         file: "engine/domain/whatsappInbound.dbtest.ts",
         marker:
           /resolves found, not found and ambiguous for an unregistered sender without creating or changing a contact/,
+      },
+      {
+        file: "supabase/migrations/20261020120000_owner_notifications.sql",
+        marker:
+          /create function ops\.crm_contact_first_name\(p_tenant_id uuid, p_crm_contact_ref text\)/,
       },
     ],
     caveat:
@@ -4816,7 +4821,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution, and, in the overview's waiting list, an open request for a person's or waiting message's kinds, counts and instants and the state of the owner's notification about it, by an opaque task reference; SI-86's notification intents are recorded in the transaction that raises the exception; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -5276,6 +5281,104 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The sender chooses the profile name: the screen takes a first word that reads as a name, which a sender can still choose to mislead. A system-created contact has no sales owner, so only the owner sees it in the CRM. Two people sharing a number become one lead, and two different numbers sharing their last eight digits both wait for a person. A forged gateway call or a leaked app secret can now create a contact, bounded to a registered test sender, the daily cap and the tenant that owns the CRM, and a forged message that is not an opt-out lifts that sender's own recorded opt-out (never a person's flag), after which automatic fixed texts and accepted replies can reach the number again. Leads are created only for registered test senders until the production gate's ADR. Outside the clear guard: renumbering a contact, deleting and re-inserting its lead profile as service_role, an owner-set lift mark, and a person deleting the contact (a new lead the number's next conversation creates starts without the opt-out). A deal created at the instant an erasure deletes its lead can still name the deleted id (deals carry no foreign key).",
+  },
+  {
+    id: "SI-86",
+    statement:
+      "An owner notification goes only to the one target the owner recorded for the tenant by the owner's own act (never a number a conversation or a CRM contact holds, but a sender the owner registered on a test channel), and only from that target's channel while it is active and test (SI-47); its template parameters are only the first word of the waiting contact's CRM first name, letters only and at most 20, used only for a synthetic or test conversation (otherwise the owner's fallback word), an instant or a count, read when the send begins and stored nowhere. The database records its intent in the transaction that raises the exception, never calling out and never failing that transaction for a business reason or a lock wait, only for a request for a person or a message waiting for a person, and only for a message newer than the person's latest reply that the screen did not class as danger: once per conversation between person replies, at most once per episode and per reply it follows among the notifications that reached or may still reach the owner, never for a failure. Only the worker's owner_notification.send job carries it: held by every execution stop covering its job kind or the unit of the target's channel, fixed on the intent; after a 60-second debounce; outside the target's quiet hours (what waited goes at their end); within the target's hourly and daily caps, and while no worker with a transport takes it, waiting, never dropped, until it expires after 24 hours; blocked when the target it was recorded for is no longer in force; every due intent of the same target carried by one send (a digest when they span conversations); set aside when its episode closed or a person replied since; at most one provider call, never retried, an earlier attempt's send recorded indeterminate without calling, and one its job left unsettled closed out by the worker's reaper; a failed send fails what it carried; a notification's outcome raises no exception and no event. The provider's message id is kept only as its SHA-256 digest; a status is matched by that digest or, for an uncertain send only, by its correlation and a recipient that is the target's number. The target's number is recognised at admission before any conversation is written, as a content-free communication.inbound_refused fact (owner_number), unless it is a sender the owner registered on that test channel; it lives only in the target in force (and, for such a sender, in its registration, its conversations and admissions and their CRM contact), is nulled when the target is retired, and no event, job payload, job event, log line, browser projection, error message or command output carries it.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "driver-backed test",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261020120000_owner_notifications.sql",
+        marker:
+          /raise exception 'a notification capability is not a pinned DEFINER the worker alone executes: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261020120000_owner_notifications.sql",
+        marker:
+          /raise exception 'a notification target shipped in a migration: the owner records it';/,
+      },
+      {
+        file: "supabase/migrations/20261020120000_owner_notifications.sql",
+        marker: /raise exception 'the gateway''s entry points lost a step';/,
+      },
+      {
+        file: "supabase/migrations/20261020120000_owner_notifications.sql",
+        marker:
+          /raise warning 'owner notification intent not recorded \(%\)', sqlstate;/,
+      },
+      {
+        file: "supabase/migrations/20261020130000_waiting_list_read_model.sql",
+        marker:
+          /raise exception 'the waiting list must be a pinned STABLE INVOKER that only reads';/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker:
+          /N1: a refusal carried a value or was not an owner-facing refusal: %/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker:
+          /N3: the owner''s number left a conversation, an admission, a task, an exception or an act/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker: /N4: a failing intent failed the admission or left a trace: %/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker: /N5: a notification began on an inactive channel/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker:
+          /N6: a status for another recipient matched the notification: %/,
+      },
+      {
+        file: "supabase/tests/owner_notifications.sql",
+        marker: /N8: the owner''s number is kept outside the target: %/,
+      },
+      {
+        file: "engine/domain/ownerNotifications.dbtest.ts",
+        marker:
+          /sends the episode template to the owner's number with the contact's first word and the time, and keeps neither/,
+      },
+      {
+        file: "engine/domain/ownerNotifications.dbtest.ts",
+        marker:
+          /never repeats an uncertain send, and settles it by its correlation and the owner's number/,
+      },
+      {
+        file: "engine/domain/ownerNotifications.dbtest.ts",
+        marker:
+          /is held by a stop of the channel's unit and leaves once the stop is cleared/,
+      },
+      {
+        file: "engine/domain/ownerNotifications.dbtest.ts",
+        marker:
+          /never tells the owner about a crisis message, even one asking for a person/,
+      },
+      {
+        file: "engine/handlers/ownerNotificationSend.test.ts",
+        marker:
+          /refuses a job naming no notification, an answer about another one, and a shape it does not know/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaSenderTemplate.test.ts",
+        marker:
+          /is never made for a template, language, recipient or parameter the provider could only refuse/,
+      },
+      {
+        file: "engine/cli/frontDeskNotifyTarget.test.ts",
+        marker: /withholds a number typed by mistake from the usage message/,
+      },
+    ],
   },
 ];
 

@@ -53,8 +53,9 @@ const MIN_LEASE_SECONDS = 60;
 /**
  * The maintenance the deployable worker runs on its reaper tick, once: expired
  * leases recovered, runs and decisions a dead attempt left running settled,
- * automatic replies whose job ended without settling them closed out, and the
- * spend ceiling enforced. Each step is its own transaction and a
+ * automatic replies whose job ended without settling them closed out, the
+ * spend ceiling enforced, and the owner's notifications a job left unsettled
+ * closed out. Each step is its own transaction and a
  * failure is reported, never fatal, as in runWorker.
  */
 async function maintain(
@@ -68,6 +69,10 @@ async function maintain(
     [
       "enforce_spend_ceiling",
       "select ops.enforce_spend_ceiling() is not null as n",
+    ],
+    [
+      "settle_stale_owner_notifications",
+      "select ops.settle_stale_owner_notifications() as n",
     ],
   ] as const) {
     try {

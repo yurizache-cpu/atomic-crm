@@ -65,7 +65,7 @@ The existing `lead_triage.*` types are the AI reading one message (the `lead_tri
 
 | Canonical name | Type | Status | Semantics |
 | --- | --- | --- | --- |
-| `message_received` | `communication.received` (admitted), `communication.inbound_refused`, `communication.inbound_held` | EXISTS | An inbound message became work, was refused on the record, or was held; content-free (SI-53) |
+| `message_received` | `communication.received` (admitted), `communication.inbound_refused`, `communication.inbound_held` | EXISTS | An inbound message became work, was refused on the record, or was held; content-free (SI-53). Since ADR 0026 §D a refusal's `reason` may be `owner_number`: the owner's own number, recognised before any conversation is written, with no `conversation_id` (SI-86) |
 | `reply_generated` | `agent_run.succeeded` + `lead_triage.review_pending` | EXISTS | A run produced a reply candidate and a review opened; the draft lives on the review item, never in the event |
 | `reply_reviewed` | `lead_triage.reviewed` | EXISTS | A person (or the owner CLI) decided the review |
 | `message_sent` | `communication.outbound_authorized`, `communication.outbound_attempted`, `communication.outbound_sent`, `communication.outbound_failed`, `communication.outbound_indeterminate`, `communication.outbound_blocked`, `communication.delivery_updated` | EXISTS | The send lifecycle, at most once (SI-50), and Meta's delivery statuses |
@@ -141,7 +141,7 @@ All PLANNED.
 
 | Canonical name | Type | Status | Semantics |
 | --- | --- | --- | --- |
-| `exception_raised` | `exception.raised` | EXISTS (ADR 0025 Part A, migration `20261016120000`; Proposed for the owner's review). Health's "Precisa de atenção", stops and indeterminate work stay their own reads | Something needs a person. Producer: the database only (`ops.record_inbound_screening` for the conversation kinds, `ops.sync_send_exceptions` for a send, after its settlement), never a model. Source `exception-queue`, subject the message's or send's task. Payload: `exception_id`, `kind` (`opt_out`, `person_requested`, `configuration_missing`, `message_waiting`, `contact_unresolved`, `do_not_contact`, `send_failed`, `send_indeterminate`), `priority` (`high`, `normal`, derived from the kind; danger is no kind, owner decision 2026-10-08), `subject_kind` (`conversation`, `outbound_message`), and `detail` for `contact_unresolved`. Keyed on the episode; a repeat while it is open is counted on the `ops.exceptions` row, with no second event. Consumers: the owner tool `front-desk exceptions`, the activity feed (kind and priority), the Layer 3 inbox later |
+| `exception_raised` | `exception.raised` | EXISTS (ADR 0025 Part A, migration `20261016120000`; Proposed for the owner's review). Health's "Precisa de atenção", stops and indeterminate work stay their own reads | Something needs a person. Producer: the database only (`ops.record_inbound_screening` for the conversation kinds, `ops.sync_send_exceptions` for a send, after its settlement), never a model. Source `exception-queue`, subject the message's or send's task. Payload: `exception_id`, `kind` (`opt_out`, `person_requested`, `configuration_missing`, `message_waiting`, `contact_unresolved`, `do_not_contact`, `send_failed`, `send_indeterminate`, `send_blocked`), `priority` (`high`, `normal`, derived from the kind; danger is no kind, owner decision 2026-10-08), `subject_kind` (`conversation`, `outbound_message`), and `detail` for `contact_unresolved`. Keyed on the episode; a repeat while it is open is counted on the `ops.exceptions` row, with no second event. Consumers: the owner tool `front-desk exceptions`, the activity feed (kind and priority), the Layer 3 inbox later |
 | `exception_resolved` | `exception.resolved` | EXISTS (ADR 0025 Part A) | The episode closed. Producer: a release (`released`), provider evidence or a reachable contact (`reconciled`), or a person's act `front-desk exception resolve` (`resolved`, `dismissed`). Payload: the raised payload's id, kind, priority and subject kind, plus `resolution`; who resolved it stays on the `ops.exceptions` row. The browser reads the kind, the priority and the resolution |
 | `approval_requested` | `approval.requested` | PARTIAL: review items are the first approval kind | An act waits for the owner's approval |
 | `approval_decided` | `approval.decided` | PARTIAL: `lead_triage.reviewed` | The owner decided |
@@ -163,7 +163,8 @@ Other append-only records stay where they are and are **not** duplicated into ev
 - privacy notices;
 - the retention ledgers;
 - execution stops;
-- commercial acts.
+- commercial acts;
+- owner notifications (`ops.owner_notifications`, ADR 0026 §D: an intent and its send are records, never events, SI-86).
 
 An event is added for one of them only when a consumer needs it.
 

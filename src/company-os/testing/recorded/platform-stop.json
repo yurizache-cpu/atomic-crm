@@ -314,6 +314,7 @@
         },
         "platform": { "globalAdmissionBlocked": true },
         "admission": { "tenantAdmission": "conditional" },
+        "waitingList": { "items": [], "total": 0 },
         "operationalHealth": {
           "queue": {
             "ready": 5,

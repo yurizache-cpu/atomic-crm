@@ -1,9 +1,12 @@
 // The worker's reply transport from its environment (ADR 0026 §B), read once at
-// start, never by a handler (SI-33):
+// start, never by a handler (SI-33). The owner's notifications (ADR 0026 §D)
+// ride the same transport, as approved templates: their opt-in is the owner's
+// target, never this switch.
 //
 //   REPLY_TRANSPORT             unset: none (policy sends wait, then are
-//                               blocked for a person); "meta"; or "fake",
-//                               which only DEPLOYMENT_ENVIRONMENT=local allows.
+//                               blocked for a person; notifications wait until
+//                               they expire); "meta"; or "fake", which only
+//                               DEPLOYMENT_ENVIRONMENT=local allows.
 //   WHATSAPP_ACCESS_TOKEN       required by "meta". On staging, only a token
 //                               whose system user holds the test WhatsApp
 //                               Business Account alone.
@@ -50,9 +53,11 @@ export function replyTransportFromEnv(
         'REPLY_TRANSPORT is "fake", which only a local environment allows; refusing to start',
       );
     }
+    const fake = createFakeOutboundTransport();
     return Object.freeze({
       kind: "fake",
-      transport: createFakeOutboundTransport(),
+      transport: fake,
+      templates: fake,
       timeoutMs,
     });
   }
@@ -63,13 +68,15 @@ export function replyTransportFromEnv(
         'REPLY_TRANSPORT is "meta" but WHATSAPP_ACCESS_TOKEN is not set; refusing to start',
       );
     }
+    const meta = createMetaWhatsAppTransport({
+      accessToken,
+      timeoutMs,
+      fetch: options.fetch,
+    });
     return Object.freeze({
       kind: "meta",
-      transport: createMetaWhatsAppTransport({
-        accessToken,
-        timeoutMs,
-        fetch: options.fetch,
-      }),
+      transport: meta,
+      templates: meta,
       timeoutMs,
     });
   }

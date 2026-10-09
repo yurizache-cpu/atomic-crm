@@ -220,6 +220,29 @@ export async function runWorker(
     }
   };
 
+  // Contained like the stale-run settlement, for the same reason: an owner's
+  // notification whose job ended without settling it (ADR 0026 §D) is closed
+  // out on the record, never sent; a tick that fails leaves it for the next.
+  const settleStaleOwnerNotifications = async () => {
+    try {
+      const settled = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ settled: number | string }>(
+          "select ops.settle_stale_owner_notifications() as settled",
+        );
+        return Number(rows[0]?.settled ?? 0);
+      });
+      if (settled > 0) {
+        log("owner_notification.stale_settled", { workerId, count: settled });
+      }
+    } catch (error) {
+      log("worker.poll_failed", {
+        workerId,
+        detail: `stale owner notification settlement failed: ${describeError(error)}`,
+      });
+    }
+  };
+
   // Contained like the stale-run settlement, for the same reason. The ceiling
   // only ever subtracts capability (it trips a global stop, it never clears
   // one), and a start already refuses any run the ceiling cannot absorb, so a
@@ -296,6 +319,7 @@ export async function runWorker(
           await settleStaleReplySends();
           await enforceSpendCeiling();
           await readQueueDepth();
+          await settleStaleOwnerNotifications();
           lastReap = now();
         }
         if (now() - lastHeartbeat >= heartbeatIntervalMs) {

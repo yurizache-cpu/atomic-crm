@@ -112,11 +112,10 @@ const { runAgentJob } = agentRuntimeProbes(() => ({ admin, owner, db }));
 
 const fake = (): ReplyTransport & {
   readonly transport: ReturnType<typeof createFakeOutboundTransport>;
-} => ({
-  kind: "fake",
-  transport: createFakeOutboundTransport(),
-  timeoutMs: 1_000,
-});
+} => {
+  const transport = createFakeOutboundTransport();
+  return { kind: "fake", transport, templates: transport, timeoutMs: 1_000 };
+};
 
 interface SendRow {
   status: string;
@@ -599,7 +598,12 @@ describe("an automatic text is sent at most once (ADR 0026 §B, SI-50)", () => {
       errorClass: "provider_timeout",
     }));
     const { registry } = runtime(undefined, {
-      replyTransport: { kind: "meta", transport: uncertain, timeoutMs: 1_000 },
+      replyTransport: {
+        kind: "meta",
+        transport: uncertain,
+        templates: null,
+        timeoutMs: 1_000,
+      },
     });
     await send(DANGER);
     await drain(registry);
@@ -966,7 +970,12 @@ describe("the gates a policy send passes, and their order (ADR 0026 §B)", () =>
       errorClass: "recipient_unavailable",
     }));
     const { registry } = runtime(undefined, {
-      replyTransport: { kind: "meta", transport: refusing, timeoutMs: 1_000 },
+      replyTransport: {
+        kind: "meta",
+        transport: refusing,
+        templates: null,
+        timeoutMs: 1_000,
+      },
     });
     await send(DANGER);
     await drain(registry);

@@ -1,0 +1,59 @@
+{
+  "total": 5,
+  "items": [
+    {
+      "ref": "00000000-0000-4000-8000-000000000003",
+      "kinds": ["message_waiting"],
+      "counts": { "message_waiting": 2 },
+      "waitingSince": "2030-03-03T11:30:00.000000Z",
+      "lastMessageAt": "2030-03-03T12:30:00.000000Z",
+      "windowEndsAt": "2030-03-04T12:30:00.000000Z",
+      "notification": { "state": "failed", "at": "2030-03-03T11:32:01.000000Z" }
+    },
+    {
+      "ref": "00000000-0000-4000-8000-000000000001",
+      "kinds": ["person_requested"],
+      "counts": { "person_requested": 1 },
+      "waitingSince": "2030-03-04T12:40:00.000000Z",
+      "lastMessageAt": "2030-03-04T12:40:00.000000Z",
+      "windowEndsAt": "2030-03-05T12:40:00.000000Z",
+      "notification": {
+        "state": "delivered",
+        "at": "2030-03-04T12:42:30.000000Z"
+      }
+    },
+    {
+      "ref": "00000000-0000-4000-8000-000000000002",
+      "kinds": ["message_waiting", "person_requested"],
+      "counts": { "message_waiting": 3, "person_requested": 1 },
+      "waitingSince": "2030-03-04T12:50:00.000000Z",
+      "lastMessageAt": "2030-03-04T13:20:00.000000Z",
+      "windowEndsAt": "2030-03-05T13:20:00.000000Z",
+      "notification": {
+        "state": "delivered",
+        "at": "2030-03-04T12:42:30.000000Z"
+      }
+    },
+    {
+      "ref": "00000000-0000-4000-8000-000000000004",
+      "kinds": ["person_requested"],
+      "counts": { "person_requested": 1 },
+      "waitingSince": "2030-03-04T13:25:00.000000Z",
+      "lastMessageAt": "2030-03-04T13:25:00.000000Z",
+      "windowEndsAt": "2030-03-05T13:25:00.000000Z",
+      "notification": {
+        "state": "pending",
+        "at": "2030-03-04T13:26:00.000000Z"
+      }
+    },
+    {
+      "ref": "00000000-0000-4000-8000-000000000005",
+      "kinds": ["message_waiting"],
+      "counts": { "message_waiting": 1 },
+      "waitingSince": "2030-03-04T13:28:00.000000Z",
+      "lastMessageAt": "2030-03-04T13:28:00.000000Z",
+      "windowEndsAt": "2030-03-05T13:28:00.000000Z",
+      "notification": { "state": "none", "at": null }
+    }
+  ]
+}

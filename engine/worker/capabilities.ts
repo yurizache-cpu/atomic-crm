@@ -258,6 +258,17 @@ export interface Capabilities {
   confirmReplySend(): Promise<unknown>;
   /** ADR 0026 §B. Stores this attempt's call outcome. `not_sending` means it is not this attempt's to settle. */
   settleReplySend(settlement: ReplySendSettlement): Promise<string>;
+  /**
+   * ADR 0026 §D. Begins the owner's notification bound to the leased job, for
+   * a worker whose transport is `transport` (`meta`, `fake` or `none`):
+   * records `sending` BEFORE the call, with every due notification of the
+   * same target carried by it, and answers the template request; or settles
+   * it without a call, answers `stopped` recording nothing, or `released`
+   * with the job back in the queue (quiet hours, a cap, no transport here).
+   */
+  beginOwnerNotification(transport: string): Promise<unknown>;
+  /** ADR 0026 §D. Stores this attempt's call outcome. `not_sending` means it is not this attempt's to settle. */
+  settleOwnerNotification(settlement: ReplySendSettlement): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -286,6 +297,8 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "confirmReplySend",
   "settleReplySend",
   "recordDueOptOut",
+  "beginOwnerNotification",
+  "settleOwnerNotification",
 ]);
 
 /**
@@ -541,6 +554,27 @@ function allCapabilities(tx: TxClient): Capabilities {
         ],
       );
       return statusOf(rows, "ops.settle_reply_send");
+    },
+
+    async beginOwnerNotification(transport) {
+      const { rows } = await tx.query<{ answer: unknown }>(
+        "select ops.begin_owner_notification($1) as answer",
+        [transport],
+      );
+      return rows[0]?.answer;
+    },
+
+    async settleOwnerNotification(settlement) {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.settle_owner_notification($1, $2, $3, $4) as status",
+        [
+          settlement.outcome,
+          settlement.providerMessageId,
+          settlement.errorCode,
+          settlement.errorClass,
+        ],
+      );
+      return statusOf(rows, "ops.settle_owner_notification");
     },
   };
 }

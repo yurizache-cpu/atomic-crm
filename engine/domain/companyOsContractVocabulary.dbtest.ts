@@ -166,6 +166,31 @@ describe("the contract vocabularies equal the database's", () => {
     ).toBe(contracts.RESPONSE_DRAFT_MAX_LENGTH);
   });
 
+  it("the waiting list's kinds are exception kinds the database holds (ADR 0026 §D)", async () => {
+    const definition = await constraintDefinition(
+      "exceptions",
+      "exceptions_kind_check",
+    );
+    const kinds = new Set(literals(definition));
+    for (const kind of contracts.WAITING_KINDS) {
+      expect(kinds.has(kind)).toBe(true);
+    }
+    const states = new Set(
+      literals(
+        await constraintDefinition(
+          "owner_notifications",
+          "owner_notifications_status_check",
+        ),
+      ),
+    );
+    // Every state but the projection's own summaries (none, skipped) is a
+    // notification status.
+    for (const state of contracts.WAITING_NOTIFICATION_STATES) {
+      if (state === "none" || state === "skipped") continue;
+      expect(states.has(state)).toBe(true);
+    }
+  });
+
   it("the error categories are exactly those the status-pair constraint admits", async () => {
     const definition = await constraintDefinition(
       "agent_runs",

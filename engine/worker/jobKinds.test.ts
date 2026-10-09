@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { STRUCTURED_DECISION_EVALUATE_KIND } from "../handlers/structuredDecisionEvaluate.ts";
 import { OUTBOUND_REPLY_SEND_KIND } from "../handlers/outboundReplySend.ts";
+import { OWNER_NOTIFICATION_SEND_KIND } from "../handlers/ownerNotificationSend.ts";
 import { describe, expect, it, vi } from "vitest";
 import { AGENT_RUN_EXECUTE_KIND } from "../handlers/agentRunExecute.ts";
 import {
@@ -87,6 +88,7 @@ describe("the worker's registry classifies every job kind for the kill switch", 
       CALENDAR_CANCEL_KIND,
       STRUCTURED_DECISION_EVALUATE_KIND,
       OUTBOUND_REPLY_SEND_KIND,
+      OWNER_NOTIFICATION_SEND_KIND,
     ]);
     expect([...GOVERNED_JOB_KINDS]).toEqual([FOLLOW_UP_DUE_KIND]);
     expect([...INTERNAL_JOB_KINDS]).toEqual([

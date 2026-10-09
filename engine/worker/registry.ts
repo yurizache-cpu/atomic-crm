@@ -61,6 +61,10 @@ import {
   createOutboundReplySendHandler,
   OUTBOUND_REPLY_SEND_KIND,
 } from "../handlers/outboundReplySend.ts";
+import {
+  createOwnerNotificationSendHandler,
+  OWNER_NOTIFICATION_SEND_KIND,
+} from "../handlers/ownerNotificationSend.ts";
 import type { StructuredDecisionGateway } from "../decision/structured/types.ts";
 import { createRegistry, type HandlerRegistry } from "./handlerRegistry.ts";
 import { assertRegistryClassified } from "./jobKinds.ts";
@@ -87,7 +91,8 @@ export interface HandlerRegistryDependencies {
   /**
    * ADR 0026 §B: the transport policy sends are carried with. Absent: none, and
    * a reply job waits in the queue until its text is out of date, then the
-   * database blocks it for a person.
+   * database blocks it for a person. ADR 0026 §D: the owner's notifications
+   * ride it too; without one they wait until they expire.
    */
   readonly replyTransport?: ReplyTransport;
 }
@@ -121,6 +126,10 @@ export function createHandlerRegistry(
       replyTransport:
         dependencies.replyTransport ?? UNCONFIGURED_REPLY_TRANSPORT,
     }),
+    createOwnerNotificationSendHandler({
+      replyTransport:
+        dependencies.replyTransport ?? UNCONFIGURED_REPLY_TRANSPORT,
+    }),
   ]);
   // Every kind here is external, governed or internal, with the matching shape
   // (ADR 0017 §6, Phase 3A.1): the kill switch holds the external and the
@@ -148,4 +157,5 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   CALENDAR_CANCEL_KIND,
   STRUCTURED_DECISION_EVALUATE_KIND,
   OUTBOUND_REPLY_SEND_KIND,
+  OWNER_NOTIFICATION_SEND_KIND,
 ]);
