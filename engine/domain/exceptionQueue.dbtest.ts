@@ -76,7 +76,7 @@ afterAll(async () => {
   await closeAgentRuntimeDatabases({ admin, owner, db });
 });
 
-const { prepare, frontDesk, runtime, drain, send, latest, holder } =
+const { prepare, frontDesk, runtime, drain, send, latest, holder, revision } =
   createFrontDeskHarness(() => ({ admin, owner, db, gateway }), {
     target: TARGET,
     device: DEVICE,
@@ -321,6 +321,7 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
     await send(ADMINISTRATIVE);
     await drain(registry);
     const out = await latest();
+    const seen = await revision(out.conversation_id);
     expect(
       await refusal(
         act((tx) =>
@@ -329,6 +330,7 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
             conversationId: out.conversation_id,
             text: "Oi!",
             actor: PERSON,
+            expectedRevision: seen,
           }),
         ),
       ),
@@ -357,6 +359,7 @@ describe("a contact no reply can reach gets no model (ADR 0025 A3)", () => {
             conversationId: out.conversation_id,
             text: "Oi!",
             actor: PERSON,
+            expectedRevision: seen,
           }),
         ),
       ),
@@ -461,7 +464,7 @@ describe("what a message tells a person reaches the queue, whoever holds the con
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("counts a message held in a conversation a person took over, whatever it says", async () => {
+  it("counts a message held in a conversation a person took over, whatever it says, and a crisis there still gets its safety review", async () => {
     await frontDesk();
     await addCrmContact(admin, DEVICE);
     const { provider, registry } = runtime();
@@ -475,16 +478,37 @@ describe("what a message tells a person reaches the queue, whoever holds the con
         actor: PERSON,
       }),
     );
+    await send("E vocês atendem online?");
+    await drain(registry);
+    expect(await latest()).toMatchObject({
+      disposition: "held_for_person",
+      review_status: null,
+    });
+
+    // ADR 0026 §A: the safety text is drafted whoever holds the conversation.
     await send(DANGER);
     await drain(registry);
-    expect(await latest()).toMatchObject({ disposition: "held_for_person" });
+    const crisis = await latest();
+    expect(crisis).toMatchObject({
+      disposition: "fixed_reply",
+      fixed_message_key: "safety",
+      error_code: "front_desk_fixed_reply",
+      review_status: "pending",
+    });
+    expect(crisis.proposed).toMatchObject({
+      response_draft: FIXED.messages.safety,
+      recommended_next_action: "Send the safety text.",
+    });
     expect(await holder(first.conversation_id)).toMatchObject({
       holder: "person",
       holder_reason: "operator",
     });
-    // The person holding it sees the waiting message; danger is no item.
+    // The person holding it sees each waiting message; danger is no item.
     expect(await open()).toEqual([
       { kind: "message_waiting", priority: "normal" },
+    ]);
+    expect(await exceptions()).toMatchObject([
+      { kind: "message_waiting", occurrences: 2 },
     ]);
     expect(provider.calls).toHaveLength(1);
   });

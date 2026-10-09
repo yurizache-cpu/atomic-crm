@@ -19,7 +19,11 @@ import {
   removeFixtureModels,
   TENANT_A,
 } from "../worker/testSupport/dbFixture.ts";
-import { recordPersonReply, releaseConversation } from "./frontDesk.ts";
+import {
+  listConversationStates,
+  recordPersonReply,
+  releaseConversation,
+} from "./frontDesk.ts";
 import {
   closeAgentRuntimeDatabases,
   openAgentRuntimeDatabases,
@@ -272,17 +276,35 @@ describe("the front-desk agent screens before any model (ADR 0023)", () => {
     });
     expect(provider.calls).toHaveLength(0);
 
-    // The person replies; the reply is an accepted review the send act carries.
+    // The person replies, naming the revision the listing showed (two
+    // messages so far); the reply is an accepted review the send act carries.
+    const listed = await owner.withTransaction((tx) =>
+      listConversationStates(tx, { tenantId: TENANT_A }),
+    );
+    expect(
+      listed.find((row) => row.conversationId === held.conversation_id),
+    ).toMatchObject({ holder: "person", revision: 2 });
     const recorded = await owner.withTransaction((tx) =>
       recordPersonReply(tx, {
         tenantId: TENANT_A,
         conversationId: held.conversation_id,
         text: "Oi! A primeira sessão custa R$ 200.",
         actor: "dbtest-person",
+        expectedRevision: 2,
       }),
     );
-    expect(recorded).toMatchObject({ state: "recorded" });
-    expect((await latest()).review_status).toBe("accepted");
+    expect(recorded).toMatchObject({ state: "recorded", revision: 2 });
+    const { rows: written } = await admin.query<{
+      author: string;
+      status: string;
+      conversation_revision: number;
+    }>(
+      "select author, status, conversation_revision from ops.review_items where id = $1",
+      [recorded.review_item_id],
+    );
+    expect(written).toEqual([
+      { author: "person", status: "accepted", conversation_revision: 2 },
+    ]);
 
     // Released, the agent answers again.
     await owner.withTransaction((tx) =>

@@ -475,6 +475,7 @@ export const CONTRACT_SAMPLES: {
       },
       conversation: {
         status: "available",
+        author: "agent",
         screening: {
           messageClass: "mixed",
           disposition: "model",
@@ -484,6 +485,7 @@ export const CONTRACT_SAMPLES: {
         replyDraft:
           "We have Tuesday at 19:00. Shall I ask a person to confirm?",
         contentRedacted: false,
+        answeredByPerson: false,
         newerMessage: false,
       },
     },

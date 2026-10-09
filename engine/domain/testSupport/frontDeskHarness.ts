@@ -313,7 +313,11 @@ export function createFrontDeskHarness(
   };
 
   let sequence = 0;
-  const send = async (body: string): Promise<void> => {
+  /** One signed delivery from the device: a text, or an image the store refuses on the record. */
+  const send = async (
+    body: string,
+    kind: "text" | "image" = "text",
+  ): Promise<void> => {
     sequence += 1;
     const answer = await deliver(
       connections().gateway,
@@ -323,6 +327,7 @@ export function createFrontDeskHarness(
             id: `wamid.${options.messagePrefix}${sequence}`,
             from: options.device,
             body,
+            kind,
           },
         ],
       }),
@@ -330,7 +335,7 @@ export function createFrontDeskHarness(
     expect(answer.status).toBe(200);
   };
 
-  /** The latest message's run, screening and review. */
+  /** The latest message's run, screening and the review the agent or a fixed text drafted. */
   const latest = async (): Promise<Outcome> => {
     const { rows } = await connections().admin.query<Outcome>(
       `select i.task_id, r.status as run_status, r.error_code, s.message_class, s.disposition,
@@ -339,7 +344,7 @@ export function createFrontDeskHarness(
          from ops.inbound_messages i
          join ops.agent_runs r on r.id = i.agent_run_id
          join ops.inbound_screenings s on s.agent_run_id = r.id
-         left join ops.review_items ri on ri.agent_run_id = r.id
+         left join ops.review_items ri on ri.agent_run_id = r.id and ri.author <> 'person'
         where i.tenant_id = $1
         order by i.received_at desc, i.created_at desc
         limit 1`,
@@ -360,5 +365,14 @@ export function createFrontDeskHarness(
       )
     ).rows[0];
 
-  return { prepare, frontDesk, runtime, drain, send, latest, holder };
+  /** The conversation's revision, as `front-desk conversations` prints it. */
+  const revision = async (conversationId: string): Promise<number> =>
+    (
+      await connections().admin.query<{ revision: number }>(
+        "select ops.cos_conversation_revision(tenant_id, id) as revision from ops.conversations where id = $1",
+        [conversationId],
+      )
+    ).rows[0].revision;
+
+  return { prepare, frontDesk, runtime, drain, send, latest, holder, revision };
 }

@@ -4,6 +4,7 @@ import type {
 } from "../../../../contracts/company-os-api/index.ts";
 import { Field, Fields, None, Note, Section } from "../../components/display";
 import {
+  CONVERSATION_ANSWERED_BY_PERSON,
   CONVERSATION_NEWER_MESSAGE,
   CONVERSATION_NO_DRAFT,
   CONVERSATION_NO_SCREENING,
@@ -12,6 +13,7 @@ import {
   CONVERSATION_TITLE,
   CONVERSATION_UNAVAILABLE,
   FIXED_MESSAGE_LABELS,
+  PERSON_AUTHOR_LABEL,
   SCREENING_CLASS_LABELS,
   SCREENING_DISPOSITION_LABELS,
   SCREENING_NOTHING_READ,
@@ -48,14 +50,30 @@ const Reply = ({ conversation }: { conversation: Available }) => {
   );
 };
 
+/** Who wrote the reply: a person, or the screening's disposition and fixed text. */
+const author = (conversation: Available): string | null => {
+  if (conversation.author === "person") return PERSON_AUTHOR_LABEL;
+  const { screening } = conversation;
+  if (screening === null) return null;
+  return screening.fixedMessageKey === null
+    ? SCREENING_DISPOSITION_LABELS[screening.disposition]
+    : `${SCREENING_DISPOSITION_LABELS[screening.disposition]}: ${FIXED_MESSAGE_LABELS[screening.fixedMessageKey]}`;
+};
+
 const AvailableConversation = ({
   conversation,
 }: {
   conversation: Available;
 }) => {
   const { screening } = conversation;
+  const writtenBy = author(conversation);
   return (
     <>
+      {conversation.answeredByPerson ? (
+        <p role="alert" className="text-sm font-medium text-amber-700">
+          {CONVERSATION_ANSWERED_BY_PERSON}
+        </p>
+      ) : null}
       {conversation.newerMessage ? (
         <p role="alert" className="text-sm font-medium text-amber-700">
           {CONVERSATION_NEWER_MESSAGE}
@@ -66,16 +84,12 @@ const AvailableConversation = ({
           <Message conversation={conversation} />
         </Field>
         {screening === null ? null : (
-          <>
-            <Field term="Classificação">
-              {SCREENING_CLASS_LABELS[screening.messageClass]}
-            </Field>
-            <Field term="Quem respondeu">
-              {screening.fixedMessageKey === null
-                ? SCREENING_DISPOSITION_LABELS[screening.disposition]
-                : `${SCREENING_DISPOSITION_LABELS[screening.disposition]}: ${FIXED_MESSAGE_LABELS[screening.fixedMessageKey]}`}
-            </Field>
-          </>
+          <Field term="Classificação">
+            {SCREENING_CLASS_LABELS[screening.messageClass]}
+          </Field>
+        )}
+        {writtenBy === null ? null : (
+          <Field term="Quem respondeu">{writtenBy}</Field>
         )}
         <Field term="Resposta que o envio levaria">
           <Reply conversation={conversation} />

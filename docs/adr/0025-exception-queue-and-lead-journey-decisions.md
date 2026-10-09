@@ -106,7 +106,7 @@ The holder does **not** move. The agent keeps the conversation, so once a person
   1. its automatic holds gain "a contact no reply can reach", a hold the agent keeps (the holder does not move);
   2. a release is no longer unconditional: it is refused while an `opt_out` exception is open;
   3. **danger no longer moves the conversation to a person** (owner decision, 2026-10-08): it gets the owner's fixed safety text (the site's referral to CVV, 188), the conversation stays with the agent, and no exception is raised. Because a later message then reaches the model in that conversation, the earlier turns show the safety text, and a sensitive-subject text, only as the neutral marker: each would say what the contact wrote (W1, SI-80);
-  4. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact.
+  4. `front_desk_held_for_person` no longer implies that a person holds the conversation. `front-desk reply` still answers the latest held message: after a takeover with no newer message, that is the held message itself, and its accept is refused because its admission said no reply could reach the contact. *(Since ADR 0026 §A, the reply answers the newest admitted message, whatever happened to it; the same refusal holds for a message whose admission said no reply could reach the contact.)*
 - It also changes the owner's test procedure: a registered test device needs a CRM contact, with the opt-out recorded false, or every message from it is held.
 
 ### A4. Who reads and resolves

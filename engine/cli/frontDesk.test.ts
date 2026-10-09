@@ -232,6 +232,88 @@ describe("the front-desk tool", () => {
     });
   });
 
+  it("replies only naming the conversation's revision, and carries it to the database as a number", async () => {
+    const CONVERSATION = "00000000-0000-4000-8000-0000000000c1";
+    const full = [
+      "reply",
+      "--tenant",
+      TENANT,
+      "--conversation",
+      CONVERSATION,
+      "--text-file",
+      "reply.txt",
+      "--revision",
+      "3",
+      "--actor",
+      "owner",
+    ];
+    expect(parseFrontDeskArgs(full).kind).toBe("reply");
+    for (const flag of [
+      "--conversation",
+      "--text-file",
+      "--revision",
+      "--actor",
+    ]) {
+      const index = full.indexOf(flag);
+      const without = [...full.slice(0, index), ...full.slice(index + 2)];
+      expect(parseFrontDeskArgs(without).kind).toBe("usage_error");
+    }
+
+    const run = async (revision: string) => {
+      const asked: { sql: string; params: unknown[] }[] = [];
+      const lines: string[] = [];
+      const tx = {
+        async query(sql: string, params: unknown[] = []) {
+          asked.push({ sql, params });
+          return { rows: [{ answer: { state: "recorded" } }] };
+        },
+      };
+      const code = await runFrontDeskCli(
+        full.map((value, i) =>
+          i === full.indexOf("--revision") + 1 ? revision : value,
+        ),
+        {
+          env: { ADMIN_DATABASE_URL: "postgres://unit" },
+          stdout: () => undefined,
+          stderr: (line) => lines.push(line),
+          openDatabase: () =>
+            ({
+              withTransaction: async <T>(fn: (client: never) => Promise<T>) =>
+                fn(tx as never),
+              identity: async () => {
+                throw new Error("unused");
+              },
+              close: async () => {},
+            }) as never,
+          readTextFile: () => "Oi, aqui é a equipe.",
+        },
+      );
+      return { code, asked, lines };
+    };
+
+    const answered = await run("3");
+    expect(answered.code).toBe(0);
+    const call = answered.asked.find((q) =>
+      q.sql.includes("ops.record_person_reply"),
+    );
+    expect(call?.params).toEqual([
+      TENANT,
+      CONVERSATION,
+      "Oi, aqui é a equipe.",
+      "owner",
+      3,
+    ]);
+
+    // A revision that is not a non-negative integer never reaches the database.
+    for (const revision of ["-1", "2.5", "abc", "1234567890"]) {
+      const refused = await run(revision);
+      expect(refused.code).not.toBe(0);
+      expect(
+        refused.asked.some((q) => q.sql.includes("ops.record_person_reply")),
+      ).toBe(false);
+    }
+  });
+
   it("reads a text file without its byte-order mark or Windows line ends", () => {
     expect(
       textFromFile(String.fromCharCode(0xfeff) + "Oi\r\nTudo bem?\r\n"),

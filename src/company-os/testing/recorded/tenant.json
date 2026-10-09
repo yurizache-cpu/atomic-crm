@@ -799,11 +799,13 @@
         "capability": "lead_triage",
         "reviewedAt": null,
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
           "newerMessage": false,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": null,
         "doNotContact": true,
@@ -887,11 +889,13 @@
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
           "newerMessage": true,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": "Call back tomorrow",
         "doNotContact": false,
@@ -946,11 +950,13 @@
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
           "newerMessage": true,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": null,
         "doNotContact": false,
@@ -980,11 +986,13 @@
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
           "newerMessage": true,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": null,
         "doNotContact": false,
@@ -1037,11 +1045,13 @@
         "capability": "lead_triage",
         "reviewedAt": "2026-09-22T10:00:00.000000Z",
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": null,
           "newerMessage": false,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": "",
         "doNotContact": false,
@@ -1094,11 +1104,13 @@
         "capability": "lead_triage",
         "reviewedAt": null,
         "conversation": {
+          "author": "agent",
           "status": "available",
           "screening": null,
           "replyDraft": "A synthetic reply about opening hours.",
           "newerMessage": false,
-          "contentRedacted": false
+          "contentRedacted": false,
+          "answeredByPerson": false
         },
         "decisionNote": null,
         "doNotContact": false,

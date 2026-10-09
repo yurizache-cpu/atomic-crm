@@ -17,7 +17,7 @@
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
 | Integration branch | `feature/clinical-phase-1` at `1bcefd50`: PR #33's normal merge (2026-10-08; parents `02ae43e7`, PR #32's merge, and `4aecf2a8`, the tree equal to the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record and ADR 0026 (§3) |
+| Working branch | `feature/autonomous-front-desk`, from `1bcefd50`: this record, ADR 0026 and its slice 1 (§3) |
 | Retained, integrated | `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
@@ -87,6 +87,15 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - no team names for now.
 
    [ADR 0026](adr/0026-autonomous-front-desk-for-leads.md) (Proposed) records them, with eight slices, each its own PR: (1) who wrote a review, and a person's reply to the newest message; (2) automatic fixed texts; (3) automatic leads, the opt-out in the CRM and B7 (b)'s lift; (4) the waiting list and the owner's WhatsApp notification; (5) the browser inbox; (6) no booking after a crisis; (7) the site's triage kept for the owner; (8) a fixed text when a run ends with no reply; (9) the crisis conversation. No owner decision stays open.
+
+   **Slice 1, built on this branch** (migration `20261017120000_review_authorship.sql`; SI-72, SI-80, SI-81 and SI-82 amended):
+   - `ops.review_items.author` (agent, fixed, person), backfilled from each run's ending and bound at insert; no review opens on a redacted task;
+   - the model's earlier turns become an allowlist keyed on the author: the agent's own reply and the fixed clarification, handoff and opt-out acknowledgements verbatim, anything else, a person's reply included, as the marker (W1);
+   - a person replies to the conversation's newest message, whatever happened to it, naming the revision `front-desk conversations` prints (`front-desk reply --revision`); an image or audio inside that revision does not make the reply stale, a message after it does; up to five replies per message and revision; a run still waiting does not refuse the person;
+   - a draft the agent or a fixed text wrote is stale once a person answered its message, but for the safety text and the opt-out acknowledgement; the review page says who wrote a reply and when a person already answered it;
+   - the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a refused message in a conversation a person holds is counted for that person.
+   - **Reviews:** an adversarial review (four lenses, each finding verified) confirmed 10 findings, all answered on this branch: the protective texts survive a person's reply, the review page names a person, a stop no longer blocks a manual reply, the backfill keeps each old reply as stale as it was, the gateway reads the holder under a lock, the cap counts per revision, an erased message is refused with its reason, the opt-out wording no longer promises an automatic record, and the missing tests were added.
+   - **Local evidence:** typecheck and ESLint clean; `functions` 2,529 tests; 27 SQL suites (new F7b); 464 driver-backed cases (new `reviewAuthorship.dbtest.ts`); the `app` project; the browser recordings re-recorded (the conversation block's `author` and `answeredByPerson`).
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -163,7 +172,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **ADR 0026** (§3, item 1): the owner's review; implement the slices in order, starting with slice 1, each its own PR, merged only on the owner's request.
+1. **ADR 0026 and slice 1** (§3, item 1): the PR from this branch, its CI against the baseline (§7), the owner's review and the merge on the owner's request; then, on staging, migration `20261017120000` (pinned CLI, dry run first, never the seed) and the hosted verifier. Then slice 2.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);
