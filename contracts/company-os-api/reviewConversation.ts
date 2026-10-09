@@ -29,6 +29,7 @@ export const SCREENING_DISPOSITIONS = [
 /** The fixed texts a front desk carries (ops.fixed_message_keys()). */
 export const FIXED_MESSAGE_KEYS = [
   "safety",
+  "safety_followup",
   "human_handoff_ack",
   "sensitive_only_prospect",
   "sensitive_only_client",

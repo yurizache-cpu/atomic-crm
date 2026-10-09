@@ -54,6 +54,21 @@ describe("what each environment refuses", () => {
     expect(serviceEnvironmentFindings(testOnly, "local")).toEqual([]);
   });
 
+  it("every deployed environment refuses the reply transport that calls nobody", () => {
+    const env = { REPLY_TRANSPORT: "fake" };
+    expect(serviceEnvironmentFindings(env, "local")).toEqual([]);
+    for (const environment of ["staging", "production"] as const) {
+      expect(blocking(serviceEnvironmentFindings(env, environment))).toEqual([
+        "fake-reply-transport",
+      ]);
+    }
+    expect(
+      blocking(
+        serviceEnvironmentFindings({ REPLY_TRANSPORT: "meta" }, "staging"),
+      ),
+    ).toEqual([]);
+  });
+
   it("staging refuses a local database but keeps its synthetic tools", () => {
     expect(blocking(serviceEnvironmentFindings(testOnly, "staging"))).toEqual([
       "local-database",

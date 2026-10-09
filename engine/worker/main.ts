@@ -30,6 +30,7 @@ import { createModelRouterFromEnv } from "../models/routingConfig.ts";
 import { createLogger } from "./log.ts";
 import { createHandlerRegistry } from "./registry.ts";
 import { calendarPortFromEnv } from "../calendar/providerFromEnv.ts";
+import { replyTransportFromEnv } from "../communication/whatsapp/replyTransportFromEnv.ts";
 import { decisionShadowFromEnv } from "../decision/providerFromEnv.ts";
 import { structuredDecisionsFromEnv } from "../decision/structured/gatewayFromEnv.ts";
 import { DEFAULT_LEASE_SAFETY_MARGIN_MS } from "./runOneJob.ts";
@@ -153,7 +154,17 @@ export async function main(): Promise<void> {
   // Phase 3A.2: unset means no calendar; the database decides which bookings
   // a connected company mirrors, and only a fake connection can exist.
   const calendarPort = calendarPortFromEnv(process.env);
-  assertLeaseFitsModelRoutes(leaseSeconds, modelRouter.maxConfiguredTimeoutMs);
+  // ADR 0026 §B: unset means no reply transport; policy sends then wait, and
+  // the database blocks them for a person once their text is out of date. The
+  // token is read here, once, never by a handler (SI-33).
+  const replyTransport = replyTransportFromEnv(
+    process.env,
+    deployment.environment,
+  );
+  assertLeaseFitsModelRoutes(
+    leaseSeconds,
+    Math.max(modelRouter.maxConfiguredTimeoutMs, replyTransport.timeoutMs),
+  );
   const startDetail = workerStartDetail(modelRouter);
 
   const log = createLogger();
@@ -208,6 +219,7 @@ export async function main(): Promise<void> {
         requestsStructuredDecisions:
           structuredDecisions.requestsStructuredDecisions,
         calendarPort,
+        replyTransport,
       }),
       signal: controller.signal,
       pollIntervalMs: readInt("OPS_WORKER_POLL_INTERVAL_MS", 1_000),

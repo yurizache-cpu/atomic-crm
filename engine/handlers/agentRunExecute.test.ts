@@ -260,8 +260,8 @@ const runCycle = async (
   if (prepared.kind === "settled") {
     return { prepared, detail: prepared.detail, called: false };
   }
-  if (prepared.kind === "held") {
-    // A held prepare completes nothing, so there is no job detail.
+  if (prepared.kind === "held" || prepared.kind === "released") {
+    // A held or released prepare completes nothing, so there is no job detail.
     return { prepared, detail: "", called: false };
   }
   const context = (options.context ?? idleContext)();

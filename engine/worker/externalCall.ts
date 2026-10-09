@@ -145,7 +145,18 @@ type Prepared =
   | { readonly kind: "settled"; readonly detail: string }
   /** A stop covered the job: the deferral is committed and nothing is called. */
   | { readonly kind: "deferred"; readonly stopId: string }
+  /** The handler gave the job back to the queue (ADR 0026 §B); nothing is called. */
+  | { readonly kind: "released"; readonly detail: string }
   | PreparedCall;
+
+/**
+ * The idle-in-transaction bound of a held call's transaction: the time left
+ * to the call's deadline plus this grace, never below the worker's default.
+ * The transaction waits on the provider, so the worker's 10 s default would
+ * end it mid-call.
+ */
+export const HELD_CALL_IDLE_GRACE_MS = 5_000;
+const WORKER_IDLE_DEFAULT_MS = 10_000;
 
 /** Taken before prepare, so a covering stop can discard what prepare wrote. */
 const PREPARE_SAVEPOINT = "external_call_prepare";
@@ -242,9 +253,28 @@ export async function runExternalCall(
     );
     if (outcome.kind === "settled") return succeeded(scope, outcome.detail);
     if (outcome.kind === "deferred") return deferred(scope, outcome.stopId);
+    if (outcome.kind === "released") return released(scope, outcome.detail);
     prepared = outcome;
   } catch (error) {
     return failed(scope, error);
+  }
+
+  // --- HELD: confirm, the call and the settlement, in ONE transaction. -----
+  if (prepared.handler.confirm !== undefined) {
+    let held: string | ObservedSettlement | HeldRelease;
+    try {
+      held = await scope.trace.phase("company_os.settlement", () =>
+        settleHeldCall(scope, prepared, signal, onCallFinished),
+      );
+    } catch (error) {
+      return failed(scope, error);
+    }
+    if (typeof held !== "string" && "released" in held) {
+      return released(scope, held.released);
+    }
+    if (typeof held !== "string") scope.trace.settled(held.observation);
+    await runAfterSettlement(scope, prepared.handler.afterSettlement ?? []);
+    return succeeded(scope, settlementDetail(held));
   }
 
   // --- CALL: no transaction. It cannot throw; a failed call is an outcome. --
@@ -341,11 +371,17 @@ async function prepareExternalCall(
     if (outcome?.kind === "held") {
       return { kind: "deferred", stopId: await deferHeldJob(tx) };
     }
+    if (outcome?.kind === "released") {
+      // The handler's capability already gave the job back and ended this
+      // lease; nothing is completed and nothing is called.
+      await tx.query(`release savepoint ${PREPARE_SAVEPOINT}`);
+      return { kind: "released", detail: outcome.detail };
+    }
     if (outcome?.kind !== "call") {
       // Rolled back with everything prepare wrote, so nothing claims a call
       // was made. Retrying the same code returns the same malformed value.
       throw new PermanentError(
-        `handler "${handler.kind}" prepare returned neither "settled", "held" nor "call"`,
+        `handler "${handler.kind}" prepare returned neither "settled", "held", "released" nor "call"`,
       );
     }
 
@@ -393,6 +429,110 @@ export function deferred(
 }
 
 /**
+ * The attempt's result once TX2a committed the handler's own release of the
+ * job (ADR 0026 §B). Like a deferral: no attempt consumed, nothing called, and
+ * no TX3, because the lease is already released.
+ */
+export function released(
+  { workerId, job, log, startedAt }: AttemptScope,
+  detail: string,
+): RunOneJobResult {
+  const durationMs = Date.now() - startedAt;
+  log("job.deferred", {
+    workerId,
+    jobId: job.id,
+    tenantId: job.tenant_id,
+    kind: job.kind,
+    attempt: job.attempts,
+    durationMs,
+    detail,
+  });
+  return {
+    outcome: "deferred",
+    jobId: job.id,
+    tenantId: job.tenant_id,
+    kind: job.kind,
+    attempt: job.attempts,
+    durationMs,
+    detail,
+  };
+}
+
+/** A held call's confirm put the work back and released the job. */
+interface HeldRelease {
+  readonly released: string;
+}
+
+/**
+ * A held call's TX2b (ADR 0026 §B): resume, `confirm` (which takes what must
+ * not change during the call), the ONE call, `settle` and complete, all in
+ * one transaction. The durable start committed in TX2a, so if anything here
+ * throws, even after the call, the transaction rolls back to that start, TX3
+ * records the failure, and the next attempt's prepare finds the start and
+ * records it indeterminate: the call is never made twice.
+ */
+async function settleHeldCall(
+  scope: AttemptScope,
+  prepared: PreparedCall,
+  shutdown: AbortSignal | undefined,
+  onCallFinished: ((job: LeasedJob) => Promise<void>) | undefined,
+): Promise<string | ObservedSettlement | HeldRelease> {
+  return scope.db.withTransaction(async (tx) => {
+    await assumeWorkerRole(tx);
+    const trusted = await resumeTrustedLease<LeasedJob>(tx, scope, RESUME_SQL);
+    const idleMs = Math.max(
+      WORKER_IDLE_DEFAULT_MS,
+      Math.min(
+        MAX_TIMER_DELAY_MS,
+        prepared.deadline - Date.now() + HELD_CALL_IDLE_GRACE_MS,
+      ),
+    );
+    await tx.query(
+      `set local idle_in_transaction_session_timeout = ${Math.floor(idleMs)}`,
+    );
+
+    const { handler, state } = prepared;
+    const confirm = handler.confirm;
+    if (confirm === undefined) throw new SecurityError(SHAPE_CHANGED);
+    const confirmation = await withScopedCapabilities(
+      tx,
+      handler.settleCapabilities,
+      (capabilities) => confirm.call(handler, state, capabilities),
+    );
+    if (confirmation?.kind === "settled") {
+      await completeJob(tx, trusted.id, confirmation.detail);
+      return confirmation.detail;
+    }
+    if (confirmation?.kind === "released") {
+      // The capability already put the work back and released this lease:
+      // committed as it stands, nothing completed and nothing called.
+      return { released: confirmation.detail };
+    }
+    if (confirmation?.kind !== "call") {
+      throw new PermanentError(
+        `handler "${handler.kind}" confirm returned neither "settled", "released" nor "call"`,
+      );
+    }
+
+    const callOutcome = await scope.trace.providerCall(
+      prepared.providerKind,
+      () => performCall(scope, prepared, shutdown),
+    );
+    // The crash seam: a throw rolls this transaction back, as the process
+    // dying would; the start TX2a committed stays.
+    if (onCallFinished) await onCallFinished(scope.job);
+
+    const settled = await withScopedCapabilities(
+      tx,
+      handler.settleCapabilities,
+      (capabilities) => handler.settle(state, callOutcome, capabilities),
+    );
+    await completeJob(tx, trusted.id, settlementDetail(settled));
+    return settled;
+  });
+}
+
+/**
  * The call itself. Never throws: whatever the handler's call does becomes a
  * CallOutcome, because a thrown call routed to TX3 could be retried, and a
  * retried call is issued twice.
@@ -414,6 +554,7 @@ async function performCall(
         "TimeoutError",
       ),
       durationMs: 0,
+      notStarted: true,
     };
     log("job.external_call_finished", {
       workerId,

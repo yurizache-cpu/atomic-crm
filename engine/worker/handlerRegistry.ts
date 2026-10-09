@@ -93,6 +93,14 @@ export type PrepareOutcome<TState> =
    */
   | { readonly kind: "held" }
   /**
+   * The handler's own capability gave the job back to the queue with its
+   * attempt restored, not because of a stop (ADR 0026 §B: no transport on this
+   * worker, or the work waits for something the database must see first). The
+   * runtime commits the prepare transaction, completes nothing and calls
+   * nothing; `detail` is logged.
+   */
+  | { readonly kind: "released"; readonly detail: string }
+  /**
    * Commit the prepare transaction, then make the call with `state`.
    * `providerKind` names who is called, for telemetry only (Phase 2E.1): a
    * label from catalog.ts's closed set, never an address or a key.
@@ -128,6 +136,18 @@ export interface ObservedSettlement {
   readonly observation: SettlementObservation;
 }
 
+/**
+ * What a held call's `confirm` decided, in the transaction that will make the
+ * call: make it, settle without it (`detail` completes the job), or wait:
+ * its capability put the work back as if it had not begun and gave the job
+ * back to the queue, so the runtime commits, completes nothing and calls
+ * nothing (`detail` is logged).
+ */
+export type HeldCallConfirmation =
+  | { readonly kind: "call" }
+  | { readonly kind: "settled"; readonly detail: string }
+  | { readonly kind: "released"; readonly detail: string };
+
 /** The job detail of a settlement, with or without an observation. */
 export const settlementDetail = (
   settled: string | ObservedSettlement,
@@ -143,6 +163,11 @@ export type CallOutcome<TResult> =
       readonly ok: false;
       readonly error: unknown;
       readonly durationMs: number;
+      /**
+       * The call was never started: the deadline passed first, so nothing can
+       * have reached the provider. Absent when the call was started.
+       */
+      readonly notStarted?: true;
     };
 
 /**
@@ -170,6 +195,19 @@ export interface ExternalCallHandlerDefinition<
    * Absent means nothing follows it.
    */
   readonly afterSettlement?: readonly AfterSettlementStep[];
+  /**
+   * A HELD call (ADR 0026 §B): when present, the call is made INSIDE the
+   * settle transaction, after `confirm` (granted the settle capabilities) has
+   * taken what must not change during the call (a reply's conversation, so
+   * the contact's next message waits) and checked it again. The durable start
+   * still commits in prepare first, so a crash during the call leaves its
+   * trace and the call is never made twice. Absent: the call is made outside
+   * any transaction, as for every other external call.
+   */
+  confirm?(
+    state: TState,
+    capabilities: Pick<Capabilities, KS>,
+  ): Promise<HeldCallConfirmation>;
   prepare(
     job: LeasedJob,
     capabilities: Pick<Capabilities, KP>,
@@ -226,6 +264,14 @@ function assertRunnable(definition: AnyHandlerDefinition): void {
           `handler "${definition.kind}" is an external_call handler without a ${list} list`,
         );
       }
+    }
+    if (
+      external.confirm !== undefined &&
+      typeof external.confirm !== "function"
+    ) {
+      throw new Error(
+        `handler "${definition.kind}" declares confirm that is not a function`,
+      );
     }
     if (
       external.afterSettlement !== undefined &&

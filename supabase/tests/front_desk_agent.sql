@@ -874,4 +874,81 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- F9. ADR 0026 §B: the texts the owner lets leave on their own are a closed
+--     list of fixed-text keys; a person's decision never names the policy,
+--     and the policy decides only a published fixed text the screen selected.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_run    ops.agent_runs;
+  v_review uuid;
+begin
+  -- The policy's list: fixed-text keys the screen selects, each once.
+  if not ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": ["safety", "safety_followup", "opt_out_ack"]}'::jsonb)
+     or not ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": []}'::jsonb) then
+    raise exception 'F9: a valid list of automatic texts was refused';
+  end if;
+  if ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": ["model"]}'::jsonb)
+     or ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": ["out_of_scope"]}'::jsonb)
+     or ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": ["safety", "safety"]}'::jsonb)
+     or ops.agent_configuration_valid('operating_policy',
+       pg_temp.policy('supervised') || '{"automaticFixedTexts": "safety"}'::jsonb) then
+    raise exception 'F9: an automatic-text list naming something other than a fixed text the screen selects passed';
+  end if;
+  -- The second safety text is optional in a published set, and a text when present.
+  if not ops.agent_configuration_valid('fixed_messages', pg_temp.fixed() #- '{messages,safety_followup}') then
+    raise exception 'F9: a fixed set without the second safety text was refused';
+  end if;
+  if ops.agent_configuration_valid('fixed_messages', jsonb_set(pg_temp.fixed(), '{messages,safety_followup}', '""')) then
+    raise exception 'F9: an empty second safety text passed';
+  end if;
+
+  -- A person's decision never names the policy.
+  select r.* into v_run from ops.agent_runs r
+   where r.id = (select m.agent_run_id from ops.inbound_messages m where m.external_message_id = 'wamid.FD7A');
+  select ri.id into v_review from ops.review_items ri where ri.agent_run_id = v_run.id and ri.author = 'agent';
+  begin
+    perform ops.record_review_decision(pg_temp.id('tenant_a'), v_review, 'rejected', 'policy:fixed-text', 'front-desk-suite');
+    raise exception 'F9: a person recorded a decision as the policy';
+  exception when sqlstate 'OS400' then null;
+  end;
+  -- The policy decides only a published fixed text the screen selected.
+  begin
+    update ops.review_items
+       set status = 'accepted', reviewer = 'policy:fixed-text', decision_basis = 'published_fixed_text', reviewed_at = now()
+     where id = v_review;
+    raise exception 'F9: the policy accepted the agent''s own draft';
+  exception when sqlstate 'OS403' or sqlstate '23514' then null;
+  end;
+  begin
+    insert into ops.review_items (tenant_id, company_id, task_id, agent_run_id, capability, proposed, do_not_contact,
+                                  status, reviewer, reviewed_at, decision_basis)
+    values (pg_temp.id('tenant_a'), pg_temp.id('company_a'), v_run.task_id, gen_random_uuid(), 'lead_triage', '{}'::jsonb,
+            false, 'accepted', 'policy:fixed-text', now(), 'published_fixed_text');
+    raise exception 'F9: a review was written already accepted as policy';
+  exception when sqlstate 'OS403' then null;
+  end;
+  -- A send authorized as policy rests on a review the policy accepted.
+  begin
+    insert into ops.outbound_messages (tenant_id, company_id, channel_id, conversation_id, review_item_id, task_id,
+                                       status, requested_by, authorized_check, authorization_kind, job_id,
+                                       fixed_text_key, fixed_messages_version_id, fresh_until)
+    select m.tenant_id, m.company_id, m.channel_id, m.conversation_id, v_review, v_run.task_id,
+           'authorized', 'policy:fixed-text', '{}'::jsonb, 'fixed_text',
+           ops.enqueue_job(m.tenant_id, 'outbound.reply_send', '{}'::jsonb, 100, now(), 5, 'fd9-forged'),
+           'safety', gen_random_uuid(), now() + interval '30 minutes'
+      from ops.inbound_messages m where m.external_message_id = 'wamid.FD7A';
+    raise exception 'F9: a policy send was written for a review the policy never accepted';
+  exception when sqlstate 'OS403' then null;
+  end;
+end
+$$;
+
 rollback;

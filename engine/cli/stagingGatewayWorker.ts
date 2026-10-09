@@ -26,6 +26,7 @@ import {
 import type { WorkerDatabase } from "../db/types.ts";
 import { structuredDecisionsFromEnv } from "../decision/structured/gatewayFromEnv.ts";
 import { createModelRouterFromEnv } from "../models/routingConfig.ts";
+import { replyTransportFromEnv } from "../communication/whatsapp/replyTransportFromEnv.ts";
 import { assertDeploymentEnvironment } from "../runtime/deploymentEnvironment.ts";
 import {
   assertLeaseFitsModelRoutes,
@@ -52,7 +53,8 @@ const MIN_LEASE_SECONDS = 60;
 /**
  * The maintenance the deployable worker runs on its reaper tick, once: expired
  * leases recovered, runs and decisions a dead attempt left running settled,
- * and the spend ceiling enforced. Each step is its own transaction and a
+ * automatic replies whose job ended without settling them closed out, and the
+ * spend ceiling enforced. Each step is its own transaction and a
  * failure is reported, never fatal, as in runWorker.
  */
 async function maintain(
@@ -62,6 +64,7 @@ async function maintain(
   for (const [step, sql] of [
     ["reap_expired_leases", "select ops.reap_expired_leases() as n"],
     ["settle_stale_agent_runs", "select ops.settle_stale_agent_runs() as n"],
+    ["settle_stale_reply_sends", "select ops.settle_stale_reply_sends() as n"],
     [
       "enforce_spend_ceiling",
       "select ops.enforce_spend_ceiling() is not null as n",
@@ -139,25 +142,31 @@ export async function runStagingGatewayWorker({
   try {
     const structured = structuredDecisionsFromEnv(env);
     const modelRouter = createModelRouterFromEnv(env);
+    // ADR 0026 §B: REPLY_TRANSPORT=meta carries the published fixed texts the
+    // policy authorized, with a token whose system user holds the test
+    // WhatsApp Business Account alone; unset, they wait and are then blocked.
+    const replyTransport = replyTransportFromEnv(env, "staging");
+    const longestCallMs = Math.max(
+      modelRouter.maxConfiguredTimeoutMs,
+      replyTransport.timeoutMs,
+    );
     // Sized like the smoke run's lease: the longest configured route, the
     // prepare allowance and the safety margin always fit inside it.
     leaseSeconds = Math.max(
       MIN_LEASE_SECONDS,
       Math.ceil(
         (LEASE_PREPARE_ALLOWANCE_MS +
-          modelRouter.maxConfiguredTimeoutMs +
+          longestCallMs +
           DEFAULT_LEASE_SAFETY_MARGIN_MS) /
           1000,
       ),
     );
-    assertLeaseFitsModelRoutes(
-      leaseSeconds,
-      modelRouter.maxConfiguredTimeoutMs,
-    );
+    assertLeaseFitsModelRoutes(leaseSeconds, longestCallMs);
     registry = createHandlerRegistry({
       modelRouter,
       structuredDecisionGateway: structured.gateway,
       requestsStructuredDecisions: structured.requestsStructuredDecisions,
+      replyTransport,
     });
   } catch (error) {
     // Boot errors name variables, never values (routingConfig.ts).
