@@ -48,6 +48,13 @@ create or replace trigger lead_consent_changes_refuse_truncate_trigger
     before truncate on public.lead_consent_changes
     for each statement execute function public.lead_consent_changes_append_only();
 
+-- ADR 0026 §C: the CRM form clears a flag a person set, never the contact's
+-- own system-recorded opt-out; only the contact's later message lifts it.
+-- Matches 20261019140000_opt_out_lift.sql.
+create or replace trigger refuse_system_opt_out_clear_trigger
+    before update of do_not_contact on public.lead_profiles
+    for each row execute function public.refuse_system_opt_out_clear();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();

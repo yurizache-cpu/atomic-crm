@@ -599,3 +599,30 @@ CREATE OR REPLACE FUNCTION "public"."lead_consent_changes_append_only"() RETURNS
         using errcode = '42501';
     end;
     $$;
+
+CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    declare
+      v_origin text;
+    begin
+      -- Only a clear concerns it; the system's own lift names its message.
+      if not (old.do_not_contact and not new.do_not_contact) then
+        return new;
+      end if;
+      if pg_catalog.current_setting('ops.consent_origin', true)
+         ~ '^system_lift:task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        return new;
+      end if;
+      select c.origin into v_origin from public.lead_consent_changes c
+       where c.contact_id = old.contact_id
+       order by c.changed_at desc, c.id desc
+       limit 1;
+      if v_origin = 'system_opt_out' then
+        raise exception using errcode = 'OS403',
+          message = 'this contact asked to stop by message: only the contact''s own later message lifts it';
+      end if;
+      return new;
+    end;
+    $$;

@@ -89,6 +89,7 @@ revoke all on table public.lead_consent_changes from public, anon, authenticated
 revoke all on sequence public.lead_consent_changes_id_seq from public, anon, authenticated, service_role;
 revoke all on function public.record_lead_consent_change() from public, anon, authenticated, service_role;
 revoke all on function public.lead_consent_changes_append_only() from public, anon, authenticated, service_role;
+revoke all on function public.refuse_system_opt_out_clear() from public, anon, authenticated, service_role;
 
 -- New objects are private by default. Add explicit grants above when a browser
 -- capability is intentionally introduced.

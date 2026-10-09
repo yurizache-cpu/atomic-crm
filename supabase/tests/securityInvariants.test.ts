@@ -4554,7 +4554,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, an autonomous send mode for a model's reply is not representable, and the only automatic switch is the operating policy's closed list of fixed-text keys (SI-83).",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact (unless the message itself lifted the contact's own opt-out, SI-84), and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, an autonomous send mode for a model's reply is not representable, and the only automatic switch is the operating policy's closed list of fixed-text keys (SI-83).",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -5038,7 +5038,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-84",
     statement:
-      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once the opt-out's acknowledgement settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed; a number's erasure first records its conversation's pending opt-out. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. Each creation, skipped creation and opt-out record is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created and a recorded opt-out lead.opted_out; no adapter sends, starts a run or changes a stop.",
+      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once the opt-out's acknowledgement settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed; a number's erasure first records its conversation's pending opt-out. The screening of the contact's own later WhatsApp message that is not itself an opt-out clears that flag and nothing else, only when the consent ledger's newest entry is the system's record of an opt-out from an older message and no newer message of the number opted out, recorded as the system's lift naming the message; a flag a person set is never cleared by a message, and neither the CRM form, any application role nor the owner in SQL can clear the contact's own system-recorded opt-out. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. Each creation, skipped creation, opt-out record and lift is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created, a recorded opt-out lead.opted_out and a lift lead.opt_out_lifted; no adapter sends, starts a run or changes a stop.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -5156,6 +5156,49 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/handlers/crmOptOutRecordDue.ts",
         marker: /export const CRM_OPT_OUT_RECORD_ANSWERS/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'the opt-out lift adapter is reachable or not an INVOKER';/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'the CRM form can clear the contact''s own opt-out';/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'a review does not read the effective opt-out flag';/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C4: an owner at aal2 cleared the contact''s own opt-out through the CRM: %/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C5: an older message undid a newer opt-out/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C5: a message lifted a flag a person set/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /lifts the contact's own opt-out on a later message, gives the conversation back and lets the agent answer/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /never lifts it for a message from before the opt-out, screened after the record/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /still drafts the safety text when the lift cannot take the profile's lock, and a later message lifts it/,
       },
     ],
     caveat:
