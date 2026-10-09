@@ -19,6 +19,8 @@ interface ScriptedOptions {
   failTransactions?: number[];
   /** What ops.settle_stale_agent_runs() reports. */
   staleSettled?: number;
+  /** What ops.settle_stale_reply_sends() reports. */
+  staleReplies?: number;
   /** A statement fragment whose query throws inside an otherwise healthy transaction. */
   failStatement?: string;
   /** What ops.job_execution_stop() and ops.defer_job() answer. Default: no stop. */
@@ -119,6 +121,11 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
           if (statement.includes("ops.settle_stale_agent_runs")) {
             return {
               rows: [{ settled: options.staleSettled ?? 0 }],
+            } as never;
+          }
+          if (statement.includes("ops.settle_stale_reply_sends")) {
+            return {
+              rows: [{ settled: String(options.staleReplies ?? 0) }],
             } as never;
           }
           if (
@@ -582,6 +589,100 @@ describe("shutdown reaches an external call in flight", () => {
   });
 });
 
+describe("automatic replies a job left unsettled are closed out on the reaper's clock", () => {
+  it("settles them in their own transaction right after the stale-run sweep, and logs the count", async () => {
+    let clock = 0;
+    const { db, sql, transactionOf } = scriptedDb({
+      queue: [null, null],
+      staleReplies: 3,
+    });
+    const settledLines: (WorkerLogFields | undefined)[] = [];
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event, fields) => {
+        if (event === "reply_send.stale_settled") settledLines.push(fields);
+      },
+    });
+    const staleAt = sql.findIndex((s) =>
+      s.includes("ops.settle_stale_agent_runs"),
+    );
+    const replyAt = sql.findIndex((s) =>
+      s.includes("ops.settle_stale_reply_sends"),
+    );
+    expect(replyAt).toBeGreaterThan(staleAt);
+    expect(sql[replyAt]).toBe(
+      "select ops.settle_stale_reply_sends() as settled",
+    );
+    expect(transactionOf[replyAt]).toBe(transactionOf[staleAt] + 1);
+    expect(sql[replyAt - 1]).toBe("set local role ops_worker");
+    expect(transactionOf[replyAt - 1]).toBe(transactionOf[replyAt]);
+    expect(settledLines).toEqual([
+      { workerId: "w1", count: 3 },
+      { workerId: "w1", count: 3 },
+    ]);
+  });
+
+  it("logs nothing when no reply was left unsettled", async () => {
+    let clock = 0;
+    const { db, sql } = scriptedDb({ queue: [null] });
+    const events: WorkerLogEvent[] = [];
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 1,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event) => events.push(event),
+    });
+    expect(sql.some((s) => s.includes("ops.settle_stale_reply_sends"))).toBe(
+      true,
+    );
+    expect(events).not.toContain("reply_send.stale_settled");
+  });
+
+  it("keeps recovering leases, enforcing the ceiling and polling when it fails, and counts no poll failure", async () => {
+    let clock = 0;
+    const { db, sql } = scriptedDb({
+      queue: [null, null],
+      reaped: 1,
+      failStatement: "ops.settle_stale_reply_sends",
+    });
+    const failures: (WorkerLogFields | undefined)[] = [];
+    const stats = await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event, fields) => {
+        if (event === "worker.poll_failed") failures.push(fields);
+      },
+    });
+    expect(
+      sql.filter((s) => s.includes("ops.enforce_spend_ceiling")),
+    ).toHaveLength(2);
+    expect(stats).toMatchObject({
+      leaseRecoveries: 2,
+      idlePolls: 2,
+      pollFailures: 0,
+    });
+    expect(failures).toHaveLength(2);
+    for (const fields of failures) {
+      expect(fields?.detail).toMatch(/^stale reply send settlement failed: /);
+    }
+  });
+});
+
 describe("the global spend ceiling is enforced on the reaper's clock, apart from lease recovery", () => {
   it("runs the ceiling check after the stale-run sweep, in its own transaction, as ops_worker", async () => {
     let clock = 0;
@@ -595,17 +696,17 @@ describe("the global spend ceiling is enforced on the reaper's clock, apart from
       sleep: noSleep,
       now: () => (clock += 100),
     });
-    const staleAt = sql.findIndex((s) =>
-      s.includes("ops.settle_stale_agent_runs"),
+    const replyAt = sql.findIndex((s) =>
+      s.includes("ops.settle_stale_reply_sends"),
     );
     const ceilingAt = sql.findIndex((s) =>
       s.includes("ops.enforce_spend_ceiling"),
     );
-    expect(ceilingAt).toBeGreaterThan(staleAt);
+    expect(ceilingAt).toBeGreaterThan(replyAt);
     expect(sql[ceilingAt]).toBe(
       "select ops.enforce_spend_ceiling() as stop_id",
     );
-    expect(transactionOf[ceilingAt]).toBe(transactionOf[staleAt] + 1);
+    expect(transactionOf[ceilingAt]).toBe(transactionOf[replyAt] + 1);
     expect(sql[ceilingAt - 1]).toBe("set local role ops_worker");
     expect(transactionOf[ceilingAt - 1]).toBe(transactionOf[ceilingAt]);
     // Once per tick, and alone in its transaction with the role switch.

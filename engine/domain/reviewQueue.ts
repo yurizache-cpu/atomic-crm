@@ -103,6 +103,8 @@ const SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 const REVIEWER = /^[\x21-\x7e][\x20-\x7e]{0,199}$/;
 /** Reserved for a gate-resolved Company OS member; refused in any case. */
 const PRINCIPAL_LABEL = /^principal:/i;
+/** Reserved for the owner's policy and the system (ADR 0026 §B); never a person. */
+const POLICY_LABEL = /^(policy|system):/i;
 
 const UTC = (column: string): string =>
   `to_char(${column} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
@@ -303,6 +305,12 @@ export async function recordReviewDecision(
     throw new CompanyOsError(
       "invalid_argument",
       "the reviewer prefix principal: is reserved for a Company OS member the operator surface identified; a person at the owner CLI names themselves",
+    );
+  }
+  if (POLICY_LABEL.test(input.reviewer)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the reviewer prefixes policy: and system: name the owner's policy or the system, never a person",
     );
   }
   if (

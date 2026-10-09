@@ -26,9 +26,10 @@ export const CONFIGURATION_KINDS = [
 ] as const;
 export type ConfigurationKind = (typeof CONFIGURATION_KINDS)[number];
 
-/** The fixed texts every published set holds (ops.fixed_message_keys()). */
+/** Every fixed text a set may hold (ops.fixed_message_keys()). */
 export const FIXED_MESSAGE_KEYS = [
   "safety",
+  "safety_followup",
   "human_handoff_ack",
   "sensitive_only_prospect",
   "sensitive_only_client",
@@ -38,6 +39,31 @@ export const FIXED_MESSAGE_KEYS = [
   "opt_out_ack",
 ] as const;
 export type FixedMessageKey = (typeof FIXED_MESSAGE_KEYS)[number];
+
+/**
+ * The fixed texts every published set must hold
+ * (ops.required_fixed_message_keys()): all but the second safety text, which
+ * is optional (ADR 0026 §B).
+ */
+export const REQUIRED_FIXED_MESSAGE_KEYS = FIXED_MESSAGE_KEYS.filter(
+  (name): name is Exclude<FixedMessageKey, "safety_followup"> =>
+    name !== "safety_followup",
+);
+
+/**
+ * The fixed texts an operating policy may let leave without a person
+ * (ops.automatic_fixed_text_keys(), ADR 0026 §B): only those the screen selects
+ * by itself, never a model's output.
+ */
+export const AUTOMATIC_FIXED_TEXT_KEYS = [
+  "safety",
+  "safety_followup",
+  "human_handoff_ack",
+  "opt_out_ack",
+  "clarification",
+  "sensitive_only_prospect",
+  "sensitive_only_client",
+] as const satisfies readonly FixedMessageKey[];
 
 // Control characters other than a line break.
 // eslint-disable-next-line no-control-regex
@@ -85,6 +111,18 @@ export const operatingPolicySchema = z.strictObject({
    * the conversation to a person. The database holds the same shape.
    */
   handoffNames: z.array(z.string().regex(HANDOFF_NAME)).max(20).optional(),
+  /**
+   * ADR 0026 §B: the fixed texts the owner lets leave without a person, each
+   * once. Absent or empty, every reply waits for a person's review.
+   */
+  automaticFixedTexts: z
+    .array(z.enum(AUTOMATIC_FIXED_TEXT_KEYS))
+    .max(AUTOMATIC_FIXED_TEXT_KEYS.length)
+    .refine(
+      (keys) => new Set(keys).size === keys.length,
+      "each automatic text once",
+    )
+    .optional(),
   /** What the agent handles. */
   scope: z.array(text(300)).min(1).max(20),
   /** What it never does. */
@@ -133,11 +171,16 @@ export const knowledgeSchema = z.strictObject({
 });
 
 export const fixedMessagesSchema = z.strictObject({
-  messages: z.strictObject(
-    Object.fromEntries(
-      FIXED_MESSAGE_KEYS.map((name) => [name, text(1000)]),
-    ) as Record<FixedMessageKey, ReturnType<typeof text>>,
-  ),
+  messages: z.strictObject({
+    ...(Object.fromEntries(
+      REQUIRED_FIXED_MESSAGE_KEYS.map((name) => [name, text(1000)]),
+    ) as Record<
+      Exclude<FixedMessageKey, "safety_followup">,
+      ReturnType<typeof text>
+    >),
+    /** ADR 0026 §B: the text for a crisis after the conversation got one. */
+    safety_followup: text(1000).optional(),
+  }),
 });
 
 export const CONFIGURATION_SCHEMAS = {

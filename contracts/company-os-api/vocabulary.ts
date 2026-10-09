@@ -257,6 +257,8 @@ export const EXCEPTION_KINDS = [
   "do_not_contact",
   "send_failed",
   "send_indeterminate",
+  // ADR 0026 §B: an automatic text that did not leave.
+  "send_blocked",
 ] as const;
 
 /** ops.exceptions.priority, derived from the kind. */

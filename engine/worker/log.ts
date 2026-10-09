@@ -49,6 +49,10 @@ export type WorkerLogEvent =
   // Agent runs left "running" by a worker that died mid-call, settled by the
   // reaper tick. `count` only.
   | "agent_run.stale_settled"
+  // Automatic replies whose job ended without settling them, settled by the
+  // reaper tick (ADR 0026 §B): blocked, or indeterminate when they may have
+  // left. `count` only.
+  | "reply_send.stale_settled"
   // The global daily spend ceiling tripped a global execution stop on the
   // reaper tick. `detail` is the stop id.
   | "spend_ceiling.tripped"

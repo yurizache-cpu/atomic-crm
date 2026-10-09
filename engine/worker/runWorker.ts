@@ -197,6 +197,29 @@ export async function runWorker(
     }
   };
 
+  // Contained like the stale-run settlement, for the same reason: an automatic
+  // reply whose job ended without settling it (ADR 0026 §B) is closed out and
+  // listed for a person, never sent; a tick that fails leaves it for the next.
+  const settleStaleReplySends = async () => {
+    try {
+      const settled = await db.withTransaction(async (tx) => {
+        await tx.query("set local role ops_worker");
+        const { rows } = await tx.query<{ settled: number | string }>(
+          "select ops.settle_stale_reply_sends() as settled",
+        );
+        return Number(rows[0]?.settled ?? 0);
+      });
+      if (settled > 0) {
+        log("reply_send.stale_settled", { workerId, count: settled });
+      }
+    } catch (error) {
+      log("worker.poll_failed", {
+        workerId,
+        detail: `stale reply send settlement failed: ${describeError(error)}`,
+      });
+    }
+  };
+
   // Contained like the stale-run settlement, for the same reason. The ceiling
   // only ever subtracts capability (it trips a global stop, it never clears
   // one), and a start already refuses any run the ceiling cannot absorb, so a
@@ -270,6 +293,7 @@ export async function runWorker(
         if (now() - lastReap >= reapIntervalMs) {
           await reap();
           await settleStaleAgentRuns();
+          await settleStaleReplySends();
           await enforceSpendCeiling();
           await readQueueDepth();
           lastReap = now();

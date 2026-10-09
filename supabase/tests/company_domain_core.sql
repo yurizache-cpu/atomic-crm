@@ -323,6 +323,13 @@ begin
     -- (supabase/tests/front_desk_agent.sql, engine/domain/frontDeskPipeline.dbtest.ts).
     ('ops_worker',   'ops.front_desk_policy_for_run()'::regprocedure),
     ('ops_worker',   'ops.record_inbound_screening(jsonb)'::regprocedure),
+    -- ADR 0026 §B: the reply job's capabilities, its post-settlement step and
+    -- the reaper's sweep of the sends a job left unsettled.
+    ('ops_worker',   'ops.begin_reply_send(text)'::regprocedure),
+    ('ops_worker',   'ops.confirm_reply_send()'::regprocedure),
+    ('ops_worker',   'ops.settle_reply_send(text, text, text, text)'::regprocedure),
+    ('ops_worker',   'ops.sync_send_exceptions_for_settled_job(text, uuid)'::regprocedure),
+    ('ops_worker',   'ops.settle_stale_reply_sends()'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_message(text, text, text, text, timestamptz)'::regprocedure),
     ('ops_gateway',  'ops.receive_whatsapp_status(text, text, text, timestamptz, text, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_operator_context()'::regprocedure),
@@ -432,6 +439,10 @@ begin
                            'settle_structured_decision',
                            -- ADR 0023: the worker's two front-desk capabilities, lease-bound.
                            'front_desk_policy_for_run', 'record_inbound_screening',
+                           -- ADR 0026 §B: the reply job's capabilities, lease-bound, and its
+                           -- post-settlement step, bound to the worker that completed the job.
+                           'begin_reply_send', 'confirm_reply_send', 'settle_reply_send',
+                           'sync_send_exceptions_for_settled_job', 'settle_stale_reply_sends',
                            'receive_whatsapp_message', 'receive_whatsapp_status',
                            'gate_operator_context', 'gate_overview', 'gate_list_agents', 'gate_get_agent',
                            'gate_list_tasks', 'gate_get_task', 'gate_list_runs', 'gate_get_run',

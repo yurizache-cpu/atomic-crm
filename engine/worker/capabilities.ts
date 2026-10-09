@@ -105,6 +105,15 @@ export interface CalendarSyncSettlement {
   readonly errorCode: string | null;
 }
 
+/** What the one reply-send call produced (ADR 0026 §B). */
+export interface ReplySendSettlement {
+  readonly outcome: "sent" | "failed" | "indeterminate";
+  /** The provider's message id, on success only. */
+  readonly providerMessageId: string | null;
+  readonly errorCode: string | null;
+  readonly errorClass: string | null;
+}
+
 /** What a gateway reported about the call it served (ADR 0022 §H). Audit only. */
 export interface AgentRunGatewayReport {
   readonly providerRoute: string | null;
@@ -223,6 +232,23 @@ export interface Capabilities {
    * or a hold for a person, both of which settle the run with no call.
    */
   recordInboundScreening(screening: unknown): Promise<unknown>;
+  /**
+   * ADR 0026 §B. Begins the policy send bound to the leased job, for a worker
+   * whose reply transport is `transport` (`meta`, `fake` or `none`): records
+   * `sending` BEFORE the call and answers the request, or settles it without a
+   * call (blocked, or an earlier attempt's send recorded indeterminate),
+   * answers `stopped` recording nothing, or `released` with the job back in
+   * the queue (no transport here, or a newer message still to be screened).
+   */
+  beginReplySend(transport: string): Promise<unknown>;
+  /**
+   * ADR 0026 §B. The last gate, in the transaction that makes the call: holds
+   * the send's conversation and reads the stale rule again. Answers `send`,
+   * or the status a send it will not call is in.
+   */
+  confirmReplySend(): Promise<unknown>;
+  /** ADR 0026 §B. Stores this attempt's call outcome. `not_sending` means it is not this attempt's to settle. */
+  settleReplySend(settlement: ReplySendSettlement): Promise<string>;
 }
 
 export type CapabilityName = keyof Capabilities;
@@ -247,6 +273,9 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "settleStructuredDecision",
   "frontDeskPolicy",
   "recordInboundScreening",
+  "beginReplySend",
+  "confirmReplySend",
+  "settleReplySend",
 ]);
 
 /**
@@ -467,6 +496,34 @@ function allCapabilities(tx: TxClient): Capabilities {
         [JSON.stringify(screening)],
       );
       return rows[0]?.answer;
+    },
+
+    async beginReplySend(transport) {
+      const { rows } = await tx.query<{ answer: unknown }>(
+        "select ops.begin_reply_send($1) as answer",
+        [transport],
+      );
+      return rows[0]?.answer;
+    },
+
+    async confirmReplySend() {
+      const { rows } = await tx.query<{ answer: unknown }>(
+        "select ops.confirm_reply_send() as answer",
+      );
+      return rows[0]?.answer;
+    },
+
+    async settleReplySend(settlement) {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.settle_reply_send($1, $2, $3, $4) as status",
+        [
+          settlement.outcome,
+          settlement.providerMessageId,
+          settlement.errorCode,
+          settlement.errorClass,
+        ],
+      );
+      return statusOf(rows, "ops.settle_reply_send");
     },
   };
 }

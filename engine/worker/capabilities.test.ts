@@ -361,6 +361,9 @@ describe("the capability list", () => {
     // audit report, and the structured decision's start and settlement. ADR
     // 0023 adds two, on the same terms: the run's front-desk policy and the
     // recording of its local screening, which answers the bounded context.
+    // ADR 0026 §B adds three, on the same terms: the reply send's begin, its
+    // last gate (holding the conversation through the call) and its settlement,
+    // each reaching only the send bound to the leased job.
     expect([...CAPABILITY_NAMES]).toEqual([
       "purgeInboundEmailLedger",
       "claimAgentRun",
@@ -381,6 +384,9 @@ describe("the capability list", () => {
       "settleStructuredDecision",
       "frontDeskPolicy",
       "recordInboundScreening",
+      "beginReplySend",
+      "confirmReplySend",
+      "settleReplySend",
     ]);
   });
 });

@@ -109,6 +109,8 @@ const SOURCE = /^[a-z][a-z0-9_.:-]{0,127}$/;
 const OPERATOR = /^[\x21-\x7e][\x20-\x7e]{0,199}$/;
 /** Reserved for a gate-resolved Company OS member; refused in any case. */
 const PRINCIPAL_LABEL = /^principal:/i;
+/** Reserved for the owner's policy and the system (ADR 0026 §B); never a person. */
+const POLICY_LABEL = /^(policy|system):/i;
 
 /** The operator label, or a refusal that never repeats what was typed. */
 const requireOperator = (value: unknown): string => {
@@ -122,6 +124,12 @@ const requireOperator = (value: unknown): string => {
     throw new CompanyOsError(
       "invalid_argument",
       "the operator prefix principal: is reserved for a Company OS member the operator surface identified; a person at the owner CLI names themselves",
+    );
+  }
+  if (POLICY_LABEL.test(value)) {
+    throw new CompanyOsError(
+      "invalid_argument",
+      "the operator prefixes policy: and system: name the owner's policy or the system, never a person",
     );
   }
   return value;

@@ -31,7 +31,8 @@ import type { WorkerLogger } from "./log.ts";
 export type AfterSettlementStep =
   | "openRunReview"
   | "requestShadowDecision"
-  | "requestStructuredDecisions";
+  | "requestStructuredDecisions"
+  | "syncSendExceptions";
 
 /**
  * One statement per step, bound to ($1 worker id, $2 job id) and nothing else.
@@ -54,6 +55,13 @@ const STEP_SQL: ReadonlyMap<string, string> = new Map([
   [
     "requestStructuredDecisions",
     "select ops.request_structured_decisions_for_settled_job($1, $2)",
+  ],
+  // ADR 0026 §B: a reply send that failed or whose outcome is unknown is listed
+  // for a person (send_failed, send_indeterminate). Its recovery is the owner's
+  // `npm run front-desk -- exceptions sync`.
+  [
+    "syncSendExceptions",
+    "select ops.sync_send_exceptions_for_settled_job($1, $2)",
   ],
 ]);
 

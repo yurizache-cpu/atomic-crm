@@ -154,6 +154,16 @@ function productionOnlyFindings(env: Env): EnvironmentFinding[] {
 /** What every deployed environment refuses: a database on a developer machine. */
 function deployedFindings(env: Env): EnvironmentFinding[] {
   const findings: EnvironmentFinding[] = [];
+  // ADR 0026 §B: a reply transport that calls nobody would mark a reply sent
+  // that never left; only a developer's machine may use it.
+  if (env.REPLY_TRANSPORT === "fake") {
+    findings.push(
+      blocking(
+        "fake-reply-transport",
+        'REPLY_TRANSPORT is "fake": a deployed worker never marks a reply sent that never left',
+      ),
+    );
+  }
   for (const name of DATABASE_URLS) {
     const value = env[name];
     if (value === undefined || value === "") continue;

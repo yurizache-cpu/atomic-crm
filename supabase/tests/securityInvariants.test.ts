@@ -2217,7 +2217,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. Accepting is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. Accepting performs no action: it creates no send and calls no provider, a reply leaves only by a separate, explicit operator send that reads consent again (SI-49), and no CRM write path exists.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and no CRM write path exists.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2474,7 +2474,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-49",
     statement:
-      "A reply leaves only by an explicit operator send of one ACCEPTED review (npm run messaging -- send), a separate act after the decision; nothing sends on acceptance, on a model's answer or on a timer. Its preconditions are checked afresh from the CRM when the send is requested and again immediately before the provider call, under the kill-switch lock: a test channel (never production, whatever the consent), active; no execution stop covering it; exactly one CRM contact for the number, whose opt-out flag is false; and a message from that contact within Meta's 24-hour customer-service window. These are preconditions, not a lawful basis or affirmative consent: the CRM records no consent, do_not_contact = false is only its default, and production replies stay impossible until the owner decides the lawful basis and how consent is represented. Anything else refuses the request or blocks the send.",
+      "A reply leaves only by an explicit operator send of one ACCEPTED review (npm run messaging -- send), a separate act after the decision, or by the worker's reply job carrying a published fixed text the owner's policy authorized (SI-83); nothing sends on a person's acceptance, on a model's answer or on a timer, and a model's answer leaves only by the operator's send. Its preconditions are checked afresh from the CRM when the send is requested and again immediately before the provider call, under the kill-switch lock: a test channel (never production, whatever the consent), active; no execution stop covering it; exactly one CRM contact for the number, whose opt-out flag is false; and a message from that contact within Meta's 24-hour customer-service window. These are preconditions, not a lawful basis or affirmative consent: the CRM records no consent, do_not_contact = false is only its default, and production replies stay impossible until the owner decides the lawful basis and how consent is represented. Anything else refuses the request or blocks the send. For the safety texts alone the contact condition is relaxed (owner decision, 2026-10-08): a number the CRM does not know, knows with no recorded consent or knows as opted out may receive them, never an ambiguous or erased number; and an open opt-out stops every policy send but its own acknowledgement, a safety text only an opt-out on a newer message.",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
       {
@@ -2528,7 +2528,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-50",
     statement:
-      "A send calls the provider at most once. The database moves it to sending, and commits that, before the one call; a send in flight, sent, failed or indeterminate can never be made sendable again, and a repeated or concurrent send answers with the same send. Only a provider answer that settles the outcome records failed; a 5xx, a timeout, a lost connection, an unreadable or oversize answer, one of Meta's generic error codes and a transport exception record indeterminate, and a send a crash or a failed settlement left sending stays sending until an operator marks it indeterminate. No command, service or timer resends a message.",
+      "A send calls the provider at most once. The database moves it to sending, and commits that, before the one call; a send in flight, sent, failed or indeterminate can never be made sendable again, but for the one edge back a reply job's last gate takes before any call (a send it began and must wait on returns to authorized, never called), and a repeated or concurrent send answers with the same send. Only a provider answer that settles the outcome records failed; a 5xx, a timeout, a lost connection, an unreadable or oversize answer, one of Meta's generic error codes and a transport exception record indeterminate, and a send a crash or a failed settlement left sending stays sending until an operator marks it indeterminate or, for a send the worker's reply job carries, until that job's next attempt, or the worker's reaper once the job has ended, records it indeterminate without calling. No command, service or timer resends a message.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2563,6 +2563,11 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/whatsappOutbound.dbtest.ts",
         marker: /never calls again after a crash once the send was in flight/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /records indeterminate a send whose last attempt died after the call, never calling again/,
       },
       {
         file: "engine/communication/whatsapp/metaSender.test.ts",
@@ -4544,7 +4549,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, and an autonomous send mode is not representable.",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, an autonomous send mode for a model's reply is not representable, and the only automatic switch is the operating policy's closed list of fixed-text keys (SI-83).",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4658,7 +4663,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-81",
     statement:
-      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate. A person's reply answers the conversation as the person saw it: it names the conversation's revision (how many messages the contact sent, admitted or refused), is refused if the conversation moved since, and is stale only once the contact wrote again after that revision, so a refused message inside it does not make it stale; a reply the agent or a fixed text drafted is stale once a person replied to its message, but for the safety text and the opt-out acknowledgement, which only the contact's next message makes stale.",
+      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate. A person's reply answers the conversation as the person saw it: it names the conversation's revision (how many messages the contact sent, admitted or refused), is refused if the conversation moved since, and is stale only once the contact wrote again after that revision, so a refused message inside it does not make it stale; a reply the agent or a fixed text drafted is stale once a person replied to its message, but for the safety texts and the opt-out acknowledgement, which only the contact's next message makes stale. An automatic safety text or acknowledgement of a request for a person or of an opt-out answers the request, not its words: only a newer automatic text of its family (the two safety texts are one) makes it stale, and a safety text also an opt-out on a newer message; its job waits while a newer message is still to be screened, and the reply job's last gate holds the conversation through the call like the operator's send; it waits for the conversation at most five seconds, never more than half the statement's own bound, and when it cannot take it, or an acknowledgement's newer message is still to be screened, it puts the send back unsent and the job back in the queue; a number erased since the send began is never written to.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4724,6 +4729,25 @@ const INVARIANTS: Invariant[] = [
           /still sends when the conversation's other message is an image sent before the reviewed one/,
       },
       {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker: /exception when lock_not_available then/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /puts the send back, never calling, when a newer message is admitted as its last gate runs/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /waits a bounded time for a conversation another call holds, puts the send back, and sends it later/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /settles failed, never calling, a send whose number was erased after it began/,
+      },
+      {
         file: "supabase/migrations/20261017120000_review_authorship.sql",
         marker:
           /message = format\('ops\.record_person_reply: the conversation is at revision %s, not %s; list it again'/,
@@ -4764,7 +4788,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -4865,6 +4889,156 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The queue lists; it pages no one, and no inbox screen reads it yet (Layer 3). Two endings raise nothing: a message refused before its screening (an execution stop, the Q8 gate, a spend limit at the request), and a run that ends after its screening sent it to the model (the agent's daily ceiling or another refusal at the run's start, or a failed, invalid or indeterminate run). A send left sending is listed only once a status callback, the owner's indeterminate mark or the owner's sync reads it, five minutes on. Nothing is backfilled: the owner's sync lists past sends, and a held conversation's next message lists it. The refusal of a direct delete is a tripwire: the database owner can disable triggers.",
+  },
+  {
+    id: "SI-83",
+    statement:
+      "A reply leaves without a person's send act only when it is a fixed text the owner published and the deterministic screen selected, authorized by the database as the owner's policy, never by a model, a handler or a payload: the review is a fixed text's, of test or synthetic data; its run was cancelled as a fixed reply; the run's one screening recorded that disposition, the key and the fixed-messages version; the draft is byte-equal to that version's text for that key; the key is one the screen selects by itself and is listed in the automatic texts of the policy the screening recorded and of the one published when the send begins; and the contact was reachable at admission unless the key is a safety text. The policy's acceptance is recorded with its own basis and reviewer (published_fixed_text, policy:fixed-text), never as a person's decision, and the review and send guards check the predicate on every such row; no configuration field can name a model's output. Only the worker's outbound.reply_send job carries it, under the gates of SI-49 and then the kill switch (a stop holds a send, and never hides a contact the send would refuse; the stop is read again at the last gate, immediately before the call, under a lock given back before it), through a transport the deployment allows (a fake one only where DEPLOYMENT_ENVIRONMENT is local), recorded on the send, at most once (SI-50) and holding the conversation through the call (SI-81); it is blocked once 30 minutes have passed since the earlier of its message's provider timestamp and admission; past three automatic texts in a conversation in an hour (the safety texts exempt, and a text that was blocked or that a newer message replaced never counted) a person holds the conversation; a text a newer message replaced is settled stale before anything else and raises nothing; a blocked or out-of-date automatic text raises send_blocked; a send whose job ended without settling it is closed out by the worker's reaper, blocked and listed when it never began, indeterminate when it may have left; and the operator's send never carries a send a job carries.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "driver-backed test",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261018130000_reply_send_stop_recheck.sql",
+        marker:
+          /raise exception .the reply..s last gate does not read the stop under a lock it gives back before the call.;/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /holds a send whose stop was tripped after it began, never calling, and sends it once the stop is cleared/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /message = 'ops\.review_items: only a published fixed text the screen selected is accepted as policy'/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /message = 'ops\.outbound_messages: a policy send rests on a published fixed text the policy accepted'/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /message = 'ops\.request_outbound_send: refused: carried_by_job'/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /raise exception 'the reply''s last gate does not hold the conversation, or takes the kill-switch lock';/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /raise exception 'a stored policy already names automatic texts: the owner lists them after this migration';/,
+      },
+      {
+        file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
+        marker:
+          /v_fresh := least\(v_inbound\.received_at, v_inbound\.created_at\) \+ interval '30 minutes';/,
+      },
+      {
+        file: "engine/communication/whatsapp/replyTransportFromEnv.ts",
+        marker:
+          /REPLY_TRANSPORT is "fake", which only a local environment allows; refusing to start/,
+      },
+      {
+        file: "engine/runtime/deploymentEnvironment.ts",
+        marker: /"fake-reply-transport"/,
+      },
+      {
+        file: "engine/worker/externalCall.ts",
+        marker: /async function settleHeldCall\(/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker: /F9: the policy accepted the agent''s own draft/,
+      },
+      {
+        file: "supabase/tests/front_desk_agent.sql",
+        marker:
+          /F9: an automatic-text list naming something other than a fixed text the screen selects passed/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /sends the safety text accepted as policy, never as a person's decision, to a number the CRM does not know/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /never sends a model's reply on its own, whatever the policy lists/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker: /refuses the operator's send of a reply the policy authorized/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /waits without a transport, then blocks the text for a person once it is out of date/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /holds the conversation for a person past three automatic texts in an hour/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /records a send an earlier attempt left in flight as indeterminate, without calling again/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker: /refuses every altered copy of a review it accepts/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker: /judges the contact before a stop/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /sends only the newest of a burst of clarifications, and never counts the replaced ones toward the cap/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker: /never counts the safety texts toward the hourly cap/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /blocks a replaced text as stale before it judges its freshness, so only the newest is listed/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /blocks and lists a text whose job ran out of attempts before it began/,
+      },
+      {
+        file: "engine/worker/runWorker.ts",
+        marker: /"select ops\.settle_stale_reply_sends\(\) as settled"/,
+      },
+      {
+        file: "engine/handlers/outboundReplySend.test.ts",
+        marker: /refuses a lease bound to another send as forged/,
+      },
+      {
+        file: "engine/communication/whatsapp/replyTransportFromEnv.test.ts",
+        marker: /is the fake only on a developer's machine/,
+      },
+      {
+        file: "engine/runtime/deploymentEnvironment.test.ts",
+        marker:
+          /every deployed environment refuses the reply transport that calls nobody/,
+      },
+    ],
+    caveat:
+      "The safety texts can go, one per crisis message, to a registered test sender even when the CRM does not know the number or knows it as opted out (owner decision, 2026-10-08). A forged gateway call or a leaked app secret can cause a fixed text (never a model's or a person's reply), bounded to an active test channel and test data. The transport's own timeout bounds how long the conversation is held. The staging worker exits when idle, so a job it gave back waits for the next run. Real-data authorization stays closed and the production WhatsApp gate is unchanged.",
   },
 ];
 

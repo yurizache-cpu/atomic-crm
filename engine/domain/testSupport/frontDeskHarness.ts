@@ -13,6 +13,7 @@
 
 import { expect } from "vitest";
 import type { Pool } from "pg";
+import type { ReplyTransport } from "../../communication/replyTransport.ts";
 import type { WorkerDatabase } from "../../db/types.ts";
 import type {
   StructuredDecisionGateway,
@@ -207,6 +208,7 @@ export function createFrontDeskHarness(
       "knowledge",
       "fixed_messages",
     ],
+    fixed: unknown = FIXED,
   ): Promise<Clinic> => {
     const { admin, owner } = connections();
     const clinic = await buildClinic(owner, TENANT_A, options.target, "test", [
@@ -222,7 +224,7 @@ export function createFrontDeskHarness(
       operating_policy: policy,
       playbook: PLAYBOOK,
       knowledge,
-      fixed_messages: FIXED,
+      fixed_messages: fixed,
     };
     for (const kind of kinds) {
       await owner.withTransaction(async (tx) => {
@@ -280,6 +282,7 @@ export function createFrontDeskHarness(
 
   const runtime = (
     answer: LeadTriage = reply("Temos horário na terça. Posso reservar?"),
+    extras: { readonly replyTransport?: ReplyTransport } = {},
   ) => {
     const provider = createFakeModelProvider(
       {
@@ -300,6 +303,7 @@ export function createFrontDeskHarness(
       modelRouter,
       structuredDecisionGateway: decisions.gateway,
       requestsStructuredDecisions: true,
+      replyTransport: extras.replyTransport,
     });
     return { provider, decisions, registry };
   };

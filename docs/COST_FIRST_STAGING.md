@@ -247,6 +247,8 @@ The earlier 131005 was the user token, not the code: the same request went throu
 
 ## 12. WhatsApp through the model layer (2026-10-03): resumed
 
+> **ADR 0026 §B (slice 2):** once the owner lists fixed texts in `automaticFixedTexts`, the worker sends them itself when it runs with `REPLY_TRANSPORT=meta` and `--pass WHATSAPP_ACCESS_TOKEN`. Before that on staging: a token whose system user holds the test WhatsApp Business Account alone (today's `atomic-crm` token also holds the clinic number's account, so it is never given to the worker), channel `85ae4f8b…` deactivated (`npm run messaging -- channels set … --inactive`), and fixed messages with both safety texts and the privacy notice's escalation line published. Without a transport, a listed text waits up to 30 minutes and is then blocked for a person.
+
 PR #24 (ADR 0022) is integrated, and WhatsApp needs no gateway change to use it:
 - **Classification:** a registered test device's message is `test` data.
 - **Routing:** the triage agent's profile maps `lead_triage` to `reception_low_cost`; the database lists the authorized candidates; the worker in gateway mode calls the first one on OpenRouter.

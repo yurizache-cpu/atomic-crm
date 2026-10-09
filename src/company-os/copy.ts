@@ -67,6 +67,7 @@ export const SCREENING_DISPOSITION_LABELS = {
 
 export const FIXED_MESSAGE_LABELS = {
   safety: "Segurança",
+  safety_followup: "Segurança (nova mensagem de crise)",
   human_handoff_ack: "Passagem para uma pessoa",
   sensitive_only_prospect: "Assunto sensível (lead)",
   sensitive_only_client: "Assunto sensível (cliente)",
