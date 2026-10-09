@@ -4921,7 +4921,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-83",
     statement:
-      "A reply leaves without a person's send act only when it is a fixed text the owner published and the deterministic screen selected, authorized by the database as the owner's policy, never by a model, a handler or a payload: the review is a fixed text's, of test or synthetic data; its run was cancelled as a fixed reply; the run's one screening recorded that disposition, the key and the fixed-messages version; the draft is byte-equal to that version's text for that key; the key is one the screen selects by itself and is listed in the automatic texts of the policy the screening recorded and of the one published when the send begins; and the contact was reachable at admission unless the key is a safety text. The policy's acceptance is recorded with its own basis and reviewer (published_fixed_text, policy:fixed-text), never as a person's decision, and the review and send guards check the predicate on every such row; no configuration field can name a model's output. Only the worker's outbound.reply_send job carries it, under the gates of SI-49 and then the kill switch (a stop holds a send, and never hides a contact the send would refuse), through a transport the deployment allows (a fake one only where DEPLOYMENT_ENVIRONMENT is local), recorded on the send, at most once (SI-50) and holding the conversation through the call (SI-81); it is blocked once 30 minutes have passed since the earlier of its message's provider timestamp and admission; past three automatic texts in a conversation in an hour (the safety texts exempt, and a text that was blocked or that a newer message replaced never counted) a person holds the conversation; a text a newer message replaced is settled stale before anything else and raises nothing; a blocked or out-of-date automatic text raises send_blocked; a send whose job ended without settling it is closed out by the worker's reaper, blocked and listed when it never began, indeterminate when it may have left; and the operator's send never carries a send a job carries.",
+      "A reply leaves without a person's send act only when it is a fixed text the owner published and the deterministic screen selected, authorized by the database as the owner's policy, never by a model, a handler or a payload: the review is a fixed text's, of test or synthetic data; its run was cancelled as a fixed reply; the run's one screening recorded that disposition, the key and the fixed-messages version; the draft is byte-equal to that version's text for that key; the key is one the screen selects by itself and is listed in the automatic texts of the policy the screening recorded and of the one published when the send begins; and the contact was reachable at admission unless the key is a safety text. The policy's acceptance is recorded with its own basis and reviewer (published_fixed_text, policy:fixed-text), never as a person's decision, and the review and send guards check the predicate on every such row; no configuration field can name a model's output. Only the worker's outbound.reply_send job carries it, under the gates of SI-49 and then the kill switch (a stop holds a send, and never hides a contact the send would refuse; the stop is read again at the last gate, immediately before the call, under a lock given back before it), through a transport the deployment allows (a fake one only where DEPLOYMENT_ENVIRONMENT is local), recorded on the send, at most once (SI-50) and holding the conversation through the call (SI-81); it is blocked once 30 minutes have passed since the earlier of its message's provider timestamp and admission; past three automatic texts in a conversation in an hour (the safety texts exempt, and a text that was blocked or that a newer message replaced never counted) a person holds the conversation; a text a newer message replaced is settled stale before anything else and raises nothing; a blocked or out-of-date automatic text raises send_blocked; a send whose job ended without settling it is closed out by the worker's reaper, blocked and listed when it never began, indeterminate when it may have left; and the operator's send never carries a send a job carries.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -4929,6 +4929,16 @@ const INVARIANTS: Invariant[] = [
       "unit test",
     ],
     enforcedBy: [
+      {
+        file: "supabase/migrations/20261018130000_reply_send_stop_recheck.sql",
+        marker:
+          /raise exception .the reply..s last gate does not read the stop under a lock it gives back before the call.;/,
+      },
+      {
+        file: "engine/domain/automaticFixedTexts.dbtest.ts",
+        marker:
+          /holds a send whose stop was tripped after it began, never calling, and sends it once the stop is cleared/,
+      },
       {
         file: "supabase/migrations/20261018120000_automatic_fixed_texts.sql",
         marker:

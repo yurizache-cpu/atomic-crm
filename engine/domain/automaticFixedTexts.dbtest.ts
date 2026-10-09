@@ -31,6 +31,7 @@ import {
   removeFixtureModels,
   TENANT_A,
 } from "../worker/testSupport/dbFixture.ts";
+import { waitUntil } from "../worker/testSupport/spendProbes.ts";
 import { sendApprovedReview } from "./outboundSend.ts";
 import {
   agentRuntimeProbes,
@@ -736,6 +737,59 @@ describe("an automatic text is sent at most once (ADR 0026 §B, SI-50)", () => {
       { status: "authorized", transport: null },
     ]);
 
+    await releaseWaits();
+    await drain(registry);
+    expect(reply.transport.calls).toHaveLength(1);
+    expect(await sends()).toMatchObject([{ status: "sent" }]);
+  }, 30_000);
+
+  it("holds a send whose stop was tripped after it began, never calling, and sends it once the stop is cleared", async () => {
+    await frontDesk(KNOWLEDGE, AUTO_POLICY);
+    await addCrmContact(admin, DEVICE);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(DANGER);
+    await runAgentJob(registry);
+    const { conversation_id: conversationId } = await latest();
+    const other = await admin.connect();
+    let job: ReturnType<typeof runAgentJob> | undefined;
+    let stopId = "";
+    try {
+      await other.query("begin");
+      await other.query(
+        "select 1 from ops.conversations where id = $1 for update",
+        [conversationId],
+      );
+      // The send begins; its last gate then waits for the conversation.
+      job = runAgentJob(registry);
+      await waitUntil(
+        async () => (await sends()).some((row) => row.status === "sending"),
+        "the send did not begin",
+        3_000,
+      );
+      // A stop tripped now, after the send began and before its call.
+      const { rows } = await admin.query<{ id: string }>(
+        "select ops.trip_execution_stop('tenant', 'dbtest stop', 'dbtest', $1) as id",
+        [TENANT_A],
+      );
+      stopId = rows[0].id;
+    } finally {
+      await other.query("rollback");
+      other.release();
+    }
+    await expect(job).resolves.toMatchObject({
+      outcome: "deferred",
+      kind: OUTBOUND_REPLY_SEND_KIND,
+    });
+    expect(reply.transport.calls).toHaveLength(0);
+    expect(await sends()).toMatchObject([
+      { status: "authorized", transport: null },
+    ]);
+
+    await admin.query(
+      "select ops.clear_execution_stop($1, 'dbtest clear', 'dbtest')",
+      [stopId],
+    );
     await releaseWaits();
     await drain(registry);
     expect(reply.transport.calls).toHaveLength(1);
