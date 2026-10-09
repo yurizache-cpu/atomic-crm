@@ -82,9 +82,11 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - a request for a person puts the conversation on a waiting list and notifies the owner on WhatsApp; the owner reads, replies and sends from the browser;
    - patient reminders (confirmation, five hours before, the video-call link five minutes before) belong to the scheduling milestone;
    - after a danger message, no booking: a booking request then goes to the waiting list (delegated to the design);
-   - no team names for now; B7 (b).
+   - a crisis gets two warmer fixed texts the owner approves, then a narrow crisis conversation in which a model reads the message to lead the person to the CVV: the owner's one exception to W1, test data only, supervised, after the live test;
+   - a contact who asked to stop and writes again is answered normally: that message lifts the contact's own opt-out (replacing B7 (b));
+   - no team names for now.
 
-   [ADR 0026](adr/0026-autonomous-front-desk-for-leads.md) (Proposed) records them, with eight slices, each its own PR: (1) who wrote a review, and a person's reply to the newest message; (2) automatic fixed texts; (3) automatic leads, the opt-out in the CRM and B7 (b)'s lift; (4) the waiting list and the owner's WhatsApp notification; (5) the browser inbox; (6) no booking after a crisis; (7) the site's triage kept for the owner; (8) a fixed text when a run ends with no reply. One owner decision stays open: whether a contact who opted out and then writes in crisis still gets the CVV (188) text.
+   [ADR 0026](adr/0026-autonomous-front-desk-for-leads.md) (Proposed) records them, with eight slices, each its own PR: (1) who wrote a review, and a person's reply to the newest message; (2) automatic fixed texts; (3) automatic leads, the opt-out in the CRM and B7 (b)'s lift; (4) the waiting list and the owner's WhatsApp notification; (5) the browser inbox; (6) no booking after a crisis; (7) the site's triage kept for the owner; (8) a fixed text when a run ends with no reply; (9) the crisis conversation. No owner decision stays open.
 
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
@@ -117,7 +119,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
 | --- | --- | --- |
 | 1 | The persona name ("Lia" is provisional), how and when the video-call link is sent (missing from the knowledge), and whether to test Gemini with less reasoning | The live receptionist test's quality |
 | 2 | ADR 0021 W6, lead creation for a new WhatsApp number: **decided 2026-10-08, then revised the same day** to automatic creation (ADR 0025 B1 (c), carried by ADR 0026). It needs B2 (the contact write adapter) | Real lead entry (workstream A) |
-| 2a | ADR 0026 (Proposed): accept or amend it, and answer its one open decision (the safety text to an opted-out contact in crisis). ADR 0025 Part A is integrated (PR #33); its Part B items are carried by ADR 0026 | The autonomous front desk's slices |
+| 2a | ADR 0026 (Proposed): accept or amend it (no decision open). ADR 0025 Part A is integrated (PR #33); its Part B items are carried by ADR 0026 | The autonomous front desk's slices |
 | 2b | Register the owner's own WhatsApp number for notifications, by the owner's own act (never written in the repository), and approve a Meta utility template for the notification | The owner's WhatsApp notification (ADR 0026) |
 | 3 | ADR 0021 W7 (a production webhook host; Netlify recommended) and W8 (Meta actions: templates, app live); the system-user token expires 2026-12-01 | Production WhatsApp; messages outside the 24-hour window |
 | 4 | A payment provider | Workstream C |

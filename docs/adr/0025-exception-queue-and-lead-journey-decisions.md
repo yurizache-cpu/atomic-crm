@@ -1,6 +1,6 @@
 # ADR 0025 — The exception queue, and the decisions the lead journey core needs
 
-**Status:** Part A **Proposed for the owner's review**. It is integrated by PR #33 (merge `1bcefd50`, 2026-10-08; migration `20261016120000_exception_queue.sql`, SI-82) and applied to staging. On acceptance it amends Accepted ADR 0023 §G in four ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each); B1 revised the same day to (c), automatic lead creation**, carried with B2 and B5 by [ADR 0026](0026-autonomous-front-desk-for-leads.md); B3, B4 and B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
+**Status:** Part A **Proposed for the owner's review**. It is integrated by PR #33 (merge `1bcefd50`, 2026-10-08; migration `20261016120000_exception_queue.sql`, SI-82) and applied to staging. On acceptance it amends Accepted ADR 0023 §G in four ways (A3). Part B: **B1 and B7 decided by the owner (2026-10-08, option (b) each); B1 revised the same day to (c), automatic lead creation, and B7 replaced: a contact's own later message lifts the contact's own opt-out**, carried with B2 and B5 by [ADR 0026](0026-autonomous-front-desk-for-leads.md); B3, B4 and B6 Proposed; nothing of Part B built. **Date:** 2026-10-07.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
