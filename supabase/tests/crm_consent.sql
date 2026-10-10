@@ -553,4 +553,68 @@ begin
 end
 $$;
 
+-- ---------------------------------------------------------------------------
+-- C7 (PR #36 review, P1). A person naming the flag on again after the
+--     contact's own opt-out (the CRM saving the profile unchanged) neither
+--     hides that opt-out from the contact's later message nor traps the flag:
+--     the lift is recorded, the flag stays for the person (SI-84), and the
+--     person may then clear it.
+-- ---------------------------------------------------------------------------
+
+do $$
+declare
+  v_contact bigint := pg_temp.id('contact')::bigint;
+  ta        uuid;
+  ca        uuid;
+  v_chan    uuid;
+  v_conv    uuid;
+  v_m       jsonb;
+  v_task    uuid;
+  v_lift    text;
+begin
+  select t.id into ta from ops.tenants t where t.slug = 'cc-test-alpha';
+  select c.id into ca from ops.companies c where c.tenant_id = ta and c.slug = 'consent-a';
+  select ch.id into v_chan from ops.communication_channels ch where ch.tenant_id = ta;
+  select c.id into v_conv from ops.conversations c where c.tenant_id = ta;
+  if pg_temp.clear_as(null, v_contact) <> 'ok' then
+    raise exception 'C7 setup: the flag could not be cleared';
+  end if;
+
+  -- The contact asks to stop by message and the system records it; then a
+  -- person saves the profile with the flag unchanged.
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC10', '5511900000091', 'Synthetic opt-out',
+                                      now() - interval '40 seconds');
+  if ops.crm_record_opt_out(ta, ca, v_conv, v_chan, '5511900000091', (v_m ->> 'task_id')::uuid) <> 'recorded' then
+    raise exception 'C7 setup: the contact''s own opt-out was not recorded';
+  end if;
+  update public.lead_profiles set do_not_contact = true where contact_id = v_contact;
+  if (select format('%s>%s:%s', from_value::text, to_value::text, origin) from public.lead_consent_changes
+       where contact_id = v_contact order by changed_at desc, id desc limit 1) is distinct from 'true>true:person' then
+    raise exception 'C7 setup: the unchanged save was not recorded as a person naming the flag on again';
+  end if;
+  if pg_temp.clear_as(null, v_contact) not like 'OS403%' then
+    raise exception 'C7: naming the flag on again let a person clear the contact''s own opt-out';
+  end if;
+
+  -- The contact's later message: the lift is recorded and the flag stays.
+  v_m := ops.receive_whatsapp_message('300000000000091', 'wamid.CC11', '5511900000091', 'Synthetic message after',
+                                      now());
+  v_task := (v_m ->> 'task_id')::uuid;
+  -- The act first, then what it left (an OR's operands run in no set order).
+  v_lift := ops.crm_lift_opt_out(ta, ca, v_conv, v_chan, '5511900000091', v_task);
+  if v_lift is distinct from 'kept'
+     or not (select do_not_contact from public.lead_profiles where contact_id = v_contact)
+     or (select format('%s>%s:%s:%s', from_value::text, to_value::text, origin, reason_ref)
+           from public.lead_consent_changes
+          where contact_id = v_contact order by changed_at desc, id desc limit 1)
+        is distinct from format('true>true:system_lift:task:%s', v_task) then
+    raise exception 'C7: an unchanged save hid the contact''s own opt-out from its lift';
+  end if;
+  -- And the person may now clear it.
+  if pg_temp.clear_as(null, v_contact) <> 'ok' then
+    raise exception 'C7: the flag stayed trapped after the contact''s lift';
+  end if;
+end
+$$;
+
 rollback;
