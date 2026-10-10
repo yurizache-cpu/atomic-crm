@@ -183,6 +183,13 @@ export async function deleteCrmContacts(admin: Pool): Promise<void> {
   await admin.query(
     "delete from public.contacts where first_name = 'dbtest-wa'",
   );
+  // ADR 0026 §C: the contacts the gateway created, named from a profile or a
+  // placeholder; run before the fixture reset, while their acts remain.
+  await admin.query(
+    `delete from public.contacts
+      where id in (select substring(a.crm_contact_ref from 'crm:contact:([0-9]+)')::bigint
+                     from ops.crm_contact_acts a where a.act = 'created')`,
+  );
 }
 
 export interface InboundItem {

@@ -18,6 +18,12 @@ const P = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** The winner's profile after the merge's update: its own fields, overwritten. */
+const merged = (
+  winner: ReturnType<typeof P>,
+  loser: ReturnType<typeof P>,
+): ReturnType<typeof P> => ({ ...winner, ...mergeLeadProfile(winner, loser) });
+
 describe("mergeLeadProfile — consent", () => {
   // The LGPD-relevant rule. Each case is a way the old "winner wins" would
   // have silently re-enabled contact for someone who opted out.
@@ -28,7 +34,7 @@ describe("mergeLeadProfile — consent", () => {
     ["both opted out", true, true, true],
   ])("%s -> %s", (_label, winnerFlag, loserFlag, expected) => {
     expect(
-      mergeLeadProfile(
+      merged(
         P({ do_not_contact: winnerFlag }),
         P({ do_not_contact: loserFlag }),
       ).do_not_contact,
@@ -38,14 +44,12 @@ describe("mergeLeadProfile — consent", () => {
   it("treats a null/undefined flag as not-opted-out, never as opted-in", () => {
     // A missing value must not be able to CLEAR a real opt-out on the other side.
     expect(
-      mergeLeadProfile(P({ do_not_contact: null }), P({ do_not_contact: true }))
+      merged(P({ do_not_contact: null }), P({ do_not_contact: true }))
         .do_not_contact,
     ).toBe(true);
     expect(
-      mergeLeadProfile(
-        P({ do_not_contact: undefined }),
-        P({ do_not_contact: true }),
-      ).do_not_contact,
+      merged(P({ do_not_contact: undefined }), P({ do_not_contact: true }))
+        .do_not_contact,
     ).toBe(true);
   });
 
@@ -54,9 +58,30 @@ describe("mergeLeadProfile — consent", () => {
     // to click, which is exactly the bug.
     const a = P({ do_not_contact: true });
     const b = P({ do_not_contact: false });
-    expect(mergeLeadProfile(a, b).do_not_contact).toBe(
-      mergeLeadProfile(b, a).do_not_contact,
-    );
+    expect(merged(a, b).do_not_contact).toBe(merged(b, a).do_not_contact);
+  });
+
+  it("writes the flag only when the loser opted out, so the winner's own opt-out keeps its origin (ADR 0026 §C)", () => {
+    // The CRM's consent ledger records a write that names the flag with true
+    // as a person's opt-out; the winner's own (perhaps the contact's own
+    // message) must not be relabelled by a merge with a contact that never
+    // opted out.
+    expect(
+      mergeLeadProfile(
+        P({ do_not_contact: true }),
+        P({ do_not_contact: false }),
+      ),
+    ).not.toHaveProperty("do_not_contact");
+    expect(
+      mergeLeadProfile(
+        P({ do_not_contact: false }),
+        P({ do_not_contact: false }),
+      ),
+    ).not.toHaveProperty("do_not_contact");
+    expect(
+      mergeLeadProfile(P({ do_not_contact: true }), P({ do_not_contact: true }))
+        .do_not_contact,
+    ).toBe(true);
   });
 });
 

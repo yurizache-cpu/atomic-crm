@@ -12,14 +12,19 @@
 //   npm run front-desk -- exceptions --tenant <uuid> [--all]
 //   npm run front-desk -- exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label>
 //   npm run front-desk -- exceptions sync --tenant <uuid>
+//   npm run front-desk -- lead-policy show --tenant <uuid>
+//   npm run front-desk -- lead-policy record --tenant <uuid> --cap <1-1000> --time-zone <IANA> --placeholder <name> --actor <label>
+//   npm run front-desk -- lead-policy retire --tenant <uuid> --reason <text> --actor <label>
 //
 // READ-ONLY BY DEFAULT. config list, config show, conversations, screenings
 // and exceptions run inside a read-only transaction. The acts are drafting and
 // publishing a configuration version, taking a conversation over, releasing
 // it, recording a person's reply (an accepted review that `npm run
 // messaging -- send` then sends), resolving or dismissing an exception (ADR
-// 0025), and syncing a tenant's send exceptions after a send could not record
-// its own. No act sends a message, calls a model or writes the CRM. The kinds: operating_policy, playbook, knowledge,
+// 0025), syncing a tenant's send exceptions after a send could not record
+// its own, and recording or retiring the lead policy (ADR 0026 §C: the daily
+// cap, its time zone and the name placeholder; with none in force the gateway
+// creates no lead). No act sends a message, calls a model or writes the CRM. The kinds: operating_policy, playbook, knowledge,
 // fixed_messages; a send mode is staging or supervised, never autonomous.
 //
 // OWNER ONLY. The one variable read is ADMIN_DATABASE_URL. OUTPUT: one JSON
@@ -48,6 +53,11 @@ import {
   syncTenantSendExceptions,
 } from "../domain/exceptionQueue.ts";
 import {
+  recordLeadPolicy,
+  retireLeadPolicy,
+  showLeadPolicy,
+} from "../domain/leadPolicy.ts";
+import {
   EXIT_USAGE,
   isEntryPoint,
   missingAdminUrlLine,
@@ -59,7 +69,7 @@ import {
 } from "./cliOutput.ts";
 
 export const FRONT_DESK_SYNOPSIS =
-  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --revision <n> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid>";
+  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --revision <n> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid> | lead-policy show --tenant <uuid> | lead-policy record --tenant <uuid> --cap <n> --time-zone <IANA> --placeholder <name> --actor <label> | lead-policy retire --tenant <uuid> --reason <text> --actor <label>";
 
 type CommandName =
   | "config list"
@@ -73,7 +83,10 @@ type CommandName =
   | "screenings"
   | "exceptions"
   | "exception resolve"
-  | "exceptions sync";
+  | "exceptions sync"
+  | "lead-policy show"
+  | "lead-policy record"
+  | "lead-policy retire";
 
 interface Grammar {
   readonly flags: ReadonlyMap<string, FlagArity>;
@@ -123,6 +136,12 @@ const COMMANDS: ReadonlyMap<CommandName, Grammar> = new Map([
     grammar(false, ["tenant", "id", "resolution", "occurrences", "actor"]),
   ],
   ["exceptions sync", grammar(false, ["tenant"])],
+  ["lead-policy show", grammar(true, ["tenant"])],
+  [
+    "lead-policy record",
+    grammar(false, ["tenant", "cap", "time-zone", "placeholder", "actor"]),
+  ],
+  ["lead-policy retire", grammar(false, ["tenant", "reason", "actor"])],
 ]);
 
 /** The only commands that change state, in order. */
@@ -294,6 +313,29 @@ async function run(
       ];
     case "exceptions sync":
       return [await syncTenantSendExceptions(tx, { tenantId })];
+    case "lead-policy show":
+      return [await showLeadPolicy(tx, { tenantId })];
+    case "lead-policy record":
+      return [
+        await recordLeadPolicy(tx, {
+          tenantId,
+          // The domain refuses anything but an integer from 1 to 1000.
+          dailyCap: /^[0-9]{1,4}$/.test(get("cap"))
+            ? Number(get("cap"))
+            : Number.NaN,
+          timeZone: get("time-zone"),
+          namePlaceholder: get("placeholder"),
+          actor: get("actor"),
+        }),
+      ];
+    case "lead-policy retire":
+      return [
+        await retireLeadPolicy(tx, {
+          tenantId,
+          reason: get("reason"),
+          actor: get("actor"),
+        }),
+      ];
   }
 }
 

@@ -245,6 +245,13 @@ export async function deleteCompanyOsRows(
         set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup'
       where tenant_id = any($1::uuid[]) and retired_at is null`,
     "delete from ops.communication_test_senders where tenant_id = any($1::uuid[])",
+    // ADR 0026 §C: a lead policy in force is never deleted, so it is retired
+    // first, the way an owner retires one. The contact acts leave with their
+    // conversations, above.
+    `update ops.crm_lead_policies
+        set retired_by = 'dbtest-cleanup', retire_reason = 'dbtest cleanup'
+      where tenant_id = any($1::uuid[]) and retired_at is null`,
+    "delete from ops.crm_lead_policies where tenant_id = any($1::uuid[])",
     "delete from ops.communication_channels where tenant_id = any($1::uuid[])",
     "delete from ops.agent_run_routes where tenant_id = any($1::uuid[])",
     "delete from ops.agent_runs where tenant_id = any($1::uuid[])",

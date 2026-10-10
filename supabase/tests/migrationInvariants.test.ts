@@ -923,6 +923,11 @@ const ACCEPTED: Array<[string, string]> = [
     "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz) to ops_gateway;",
   ],
   [
+    // ADR 0026 §C: the receive function's sixth parameter (the sender's first name).
+    "EXECUTE on the six-argument receive function granted to the webhook gateway",
+    "grant execute on function ops.receive_whatsapp_message(text, text, text, text, timestamptz, text) to ops_gateway;",
+  ],
+  [
     // Only the pinned constraint is a finding; an ordinary one is not.
     "an unpinned ops constraint dropped",
     "alter table ops.conversations drop constraint if exists conversations_contact_ref_format;",

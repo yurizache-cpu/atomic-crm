@@ -555,3 +555,111 @@ CREATE OR REPLACE FUNCTION "public"."deal_stage_transitions_append_only"() RETUR
         using errcode = '42501';
     end;
     $$;
+
+CREATE OR REPLACE FUNCTION "public"."record_lead_consent_change"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+    declare
+      v_mark   text := pg_catalog.current_setting('ops.consent_origin', true);
+      v_origin text := 'person';
+      v_reason text;
+    begin
+      -- A system write names its origin and the message it answers in a
+      -- transaction-local mark set by the backend adapter that writes the
+      -- flag; it is consumed here. Without it the write is a person's.
+      if v_mark ~ '^(system_opt_out|system_lift):task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        v_origin := pg_catalog.split_part(v_mark, ':', 1);
+        v_reason := pg_catalog.substr(v_mark, pg_catalog.length(v_origin) + 2);
+        perform pg_catalog.set_config('ops.consent_origin', '', true);
+      end if;
+      if tg_op = 'INSERT' then
+        if new.do_not_contact then
+          insert into public.lead_consent_changes (contact_id, from_value, to_value, origin, reason_ref, changed_at)
+          values (new.contact_id, null, true, v_origin, v_reason, pg_catalog.clock_timestamp());
+        end if;
+        return null;
+      end if;
+      -- A write that names the flag: every system write, a change, and a
+      -- person's true even when unchanged (a merge folding in an opt-out).
+      if v_origin <> 'person' or new.do_not_contact or old.do_not_contact is distinct from new.do_not_contact then
+        insert into public.lead_consent_changes (contact_id, from_value, to_value, origin, reason_ref, changed_at)
+        values (new.contact_id, old.do_not_contact, new.do_not_contact, v_origin, v_reason, pg_catalog.clock_timestamp());
+      end if;
+      return null;
+    end;
+    $_$;
+
+CREATE OR REPLACE FUNCTION "public"."lead_consent_changes_append_only"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+    begin
+      raise exception 'public.lead_consent_changes is append-only: % refused', lower(tg_op)
+        using errcode = '42501';
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."refuse_system_opt_out_clear"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $_$
+    declare
+      v_origin text;
+    begin
+      -- Only a clear concerns it; the system's own lift names its message.
+      if not (old.do_not_contact and not new.do_not_contact) then
+        return new;
+      end if;
+      if pg_catalog.current_setting('ops.consent_origin', true)
+         ~ '^system_lift:task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+        return new;
+      end if;
+      -- A person naming the flag on again (a merge, a direct write) does not
+      -- take the contact's own opt-out over.
+      select c.origin into v_origin from public.lead_consent_changes c
+       where c.contact_id = old.contact_id
+         and not (c.origin = 'person' and coalesce(c.from_value, false) and c.to_value)
+       order by c.changed_at desc, c.id desc
+       limit 1;
+      if v_origin = 'system_opt_out' then
+        raise exception using errcode = 'OS403',
+          message = 'this contact asked to stop by message: only the contact''s own later message lifts it';
+      end if;
+      return new;
+    end;
+    $_$;
+
+CREATE OR REPLACE FUNCTION "public"."mark_crm_contact_edit"() RETURNS trigger
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO ''
+    AS $$
+    declare
+      v_contact bigint;
+    begin
+      -- A backend adapter's own write (the lead's creation, the contact's own
+      -- opt-out or its lift) is not a person's work on the contact.
+      if pg_catalog.current_setting('ops.crm_write', true) = 'system' then
+        return null;
+      end if;
+      if tg_table_name = 'contacts' then
+        v_contact := new.id;
+      else
+        v_contact := new.contact_id;
+      end if;
+      insert into public.crm_contact_edits (contact_id, first_edited_at)
+      values (v_contact, pg_catalog.clock_timestamp())
+      on conflict (contact_id) do nothing;
+      return null;
+    end;
+    $$;
+
+CREATE OR REPLACE FUNCTION "public"."crm_contact_edits_append_only"() RETURNS trigger
+    LANGUAGE "plpgsql"
+    SET "search_path" TO ''
+    AS $$
+    begin
+      raise exception 'public.crm_contact_edits is append-only: % refused', lower(tg_op)
+        using errcode = '42501';
+    end;
+    $$;

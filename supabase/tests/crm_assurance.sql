@@ -179,14 +179,16 @@ begin
     raise exception 'A1: a public function names a third-party lookup: %', v_bad;
   end if;
 
-  -- A2 every trigger on contacts and companies is one of the four reviewed,
+  -- A2 every trigger on contacts and companies is one of the five reviewed
+  --    (ADR 0026 §C added the edit mark, which writes only its own table),
   --    and none of their functions reaches a network or a lookup.
   select string_agg(c.relname || '.' || t.tgname, ', ' order by c.relname, t.tgname) into v_bad
     from pg_trigger t join pg_class c on c.oid = t.tgrelid
    where not t.tgisinternal and c.oid in ('public.contacts'::regclass, 'public.companies'::regclass);
   if v_bad is distinct from
      'companies.set_company_sales_id_trigger, contacts.10_lowercase_contact_emails, '
-     || 'contacts.create_lead_profile_after_contact_insert, contacts.set_contact_sales_id_trigger' then
+     || 'contacts.create_lead_profile_after_contact_insert, contacts.mark_crm_contact_edit_trigger, '
+     || 'contacts.set_contact_sales_id_trigger' then
     raise exception 'A2: the triggers on contacts and companies changed: %', v_bad;
   end if;
   select string_agg(p.oid::regprocedure::text, ', ') into v_bad

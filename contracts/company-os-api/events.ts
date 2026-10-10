@@ -82,6 +82,9 @@ export const KNOWN_EVENT_TYPES = [
   "calendar.sync_skipped",
   "exception.raised",
   "exception.resolved",
+  "lead.created",
+  "lead.opted_out",
+  "lead.opt_out_lifted",
 ] as const;
 
 export type KnownEventType = (typeof KNOWN_EVENT_TYPES)[number];
@@ -169,6 +172,11 @@ export const ExceptionResolvedFactsSchema = z.strictObject({
   resolution: ExceptionResolutionSchema.nullable(),
 });
 
+/** ADR 0026 §C: the channel a new lead wrote on; never its conversation or contact. */
+export const LeadCreatedFactsSchema = z.strictObject({
+  channel_id: UuidSchema.nullable(),
+});
+
 /** The one facts shape each known type may carry (ops.cos_event_facts). */
 export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "company.created": NoFactsSchema,
@@ -219,6 +227,9 @@ export const EVENT_FACTS: { readonly [T in KnownEventType]: z.ZodType } = {
   "calendar.sync_skipped": CalendarSyncFactsSchema,
   "exception.raised": ExceptionRaisedFactsSchema,
   "exception.resolved": ExceptionResolvedFactsSchema,
+  "lead.created": LeadCreatedFactsSchema,
+  "lead.opted_out": NoFactsSchema,
+  "lead.opt_out_lifted": NoFactsSchema,
 };
 
 const EventFactsSchema = z.union([
@@ -236,6 +247,7 @@ const EventFactsSchema = z.union([
   CalendarSyncFactsSchema,
   ExceptionRaisedFactsSchema,
   ExceptionResolvedFactsSchema,
+  LeadCreatedFactsSchema,
 ]);
 
 export const EventSummarySchema = z

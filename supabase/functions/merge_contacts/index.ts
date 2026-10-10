@@ -101,17 +101,27 @@ async function mergeContacts(
         // a single pooled session, and a rollback must not race a query still
         // queued behind a failed one.
 
-        // 1. Fetch both contacts
-        const winner = await trx
+        // 1. Fetch and hold both contacts, the lower id first. Holding them
+        // makes a number's erasure of a system-created lead wait for the merge
+        // (ADR 0026 §C), and the order keeps two merges from waiting on each
+        // other in a cycle.
+        const winnerIsLow = Number(winnerId) <= Number(loserId);
+        const lowId = winnerIsLow ? winnerId : loserId;
+        const highId = winnerIsLow ? loserId : winnerId;
+        const low = await trx
           .selectFrom("contacts")
           .selectAll()
-          .where("id", "=", winnerId)
+          .where("id", "=", lowId)
+          .forUpdate()
           .executeTakeFirstOrThrow();
-        const loser = await trx
+        const high = await trx
           .selectFrom("contacts")
           .selectAll()
-          .where("id", "=", loserId)
+          .where("id", "=", highId)
+          .forUpdate()
           .executeTakeFirstOrThrow();
+        const winner = winnerIsLow ? low : high;
+        const loser = winnerIsLow ? high : low;
 
         // 2. Reassign tasks from loser to winner
         await trx
@@ -170,16 +180,24 @@ async function mergeContacts(
         // OR, never "winner wins" — if EITHER side asked not to be contacted,
         // the merged contact is opted out. Silently re-enabling contact because
         // the surviving row happened to be the winner's is the incident.
-        const winnerProfile = await trx
+        //
+        // Both profiles are held before they are read, the lower contact id
+        // first: an opt-out the worker records, or lifts, at that moment is
+        // then seen and folded in, never cascaded away with the loser.
+        const lowProfile = await trx
           .selectFrom("lead_profiles")
           .selectAll()
-          .where("contact_id", "=", winnerId)
+          .where("contact_id", "=", lowId)
+          .forUpdate()
           .executeTakeFirst();
-        const loserProfile = await trx
+        const highProfile = await trx
           .selectFrom("lead_profiles")
           .selectAll()
-          .where("contact_id", "=", loserId)
+          .where("contact_id", "=", highId)
+          .forUpdate()
           .executeTakeFirst();
+        const winnerProfile = winnerIsLow ? lowProfile : highProfile;
+        const loserProfile = winnerIsLow ? highProfile : lowProfile;
 
         if (winnerProfile && loserProfile) {
           await trx

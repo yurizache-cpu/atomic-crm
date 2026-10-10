@@ -268,6 +268,39 @@ create table public.deal_stage_transitions (
     constraint deal_stage_transitions_changes_stage check (from_stage is distinct from to_stage)
 );
 
+-- The CRM's consent ledger (ADR 0026 §C): every change of a lead profile's
+-- do_not_contact, with its origin (a person, or the system recording or
+-- lifting the contact's own opt-out, naming the message). Written only by the
+-- record_lead_consent_change trigger; append-only; backend-only (no policy,
+-- no grant); no foreign key, so the history outlives a merge or a delete.
+-- Matches 20261019130000_crm_consent_and_opt_out.sql.
+create table public.lead_consent_changes (
+    id bigint generated always as identity primary key,
+    -- No foreign key: the history outlives a merge or a contact's deletion.
+    contact_id bigint not null,
+    from_value boolean,
+    to_value boolean not null,
+    origin text not null,
+    reason_ref text,
+    changed_at timestamp with time zone not null,
+    constraint lead_consent_changes_origin_check check (origin in ('person', 'system_opt_out', 'system_lift')),
+    constraint lead_consent_changes_reason_format check (
+      reason_ref is null or reason_ref ~ '^task:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'),
+    constraint lead_consent_changes_reason_matches_origin check ((origin = 'person') = (reason_ref is null))
+);
+
+-- The CRM's edit marks (ADR 0026 §C): a contact a person worked on, by any
+-- write to it, its lead profile or its attributions that no backend adapter
+-- marked as its own. Written only by the mark_crm_contact_edit trigger;
+-- append-only; backend-only (no policy, no grant); content-free. A system-
+-- created lead with no mark may be deleted with its number's retention.
+-- Matches 20261019150000_crm_copy_retention.sql.
+create table public.crm_contact_edits (
+    -- No foreign key: a mark outlives a merge or a contact's deletion.
+    contact_id bigint primary key,
+    first_edited_at timestamp with time zone not null
+);
+
 --
 -- Foreign keys
 --
@@ -346,6 +379,7 @@ create index acquisition_attributions_contact_id_idx on public.acquisition_attri
 -- deals_pipeline_stage_idx above).
 create index deal_stage_transitions_changed_at_idx on public.deal_stage_transitions using btree (changed_at, id);
 create index deal_stage_transitions_deal_id_idx on public.deal_stage_transitions using btree (deal_id, changed_at, id);
+create index lead_consent_changes_contact_idx on public.lead_consent_changes using btree (contact_id, changed_at, id);
 create index deals_open_next_action_at_idx on public.deals using btree (next_action_at) where lost_at is null and archived_at is null;
 create index deals_converted_at_idx on public.deals using btree (converted_at) where converted_at is not null;
 create index deals_lost_at_idx on public.deals using btree (lost_at) where lost_at is not null;

@@ -146,8 +146,92 @@ describe("parsing an authenticated notification", () => {
         from: "5511900000001",
         body: "Oi, gostaria de saber como funciona a primeira consulta.",
         receivedAt: new Date(1789732800 * 1000),
+        profileName: "Synthetic Lead",
       },
     ]);
+  });
+
+  describe("the sender's profile name (ADR 0026 §C) never changes what is read or counted", () => {
+    const withContacts = (
+      contacts: unknown,
+      overrides: Record<string, unknown> = {},
+    ) => {
+      const payload = textPayload(overrides);
+      (payload.entry[0].changes[0].value as Record<string, unknown>).contacts =
+        contacts;
+      return payload;
+    };
+    const one = (payload: unknown) => {
+      const parsed = parseWebhook(payload, NOW);
+      expect(parsed.ignored).toBe(0);
+      expect(parsed.messages).toHaveLength(1);
+      expect(parsed.messages[0].from).toBe("5511900000001");
+      expect(parsed.messages[0].body).toBe(
+        "Oi, gostaria de saber como funciona a primeira consulta.",
+      );
+      return parsed.messages[0].profileName;
+    };
+
+    it.each([
+      ["a contacts value that is not a list", { wa_id: "5511900000001" }],
+      [
+        "an entry known only by username",
+        [{ user_id: "BR.123", profile: { username: "lead" } }],
+      ],
+      ["an entry with no profile", [{ wa_id: "5511900000001" }]],
+      [
+        "a name that is not text",
+        [{ wa_id: "5511900000001", profile: { name: 42 } }],
+      ],
+      [
+        "an entry for another sender",
+        [{ wa_id: "5511900000002", profile: { name: "Outra" } }],
+      ],
+      ["an empty name", [{ wa_id: "5511900000001", profile: { name: "" } }]],
+      [
+        "a name past its bound",
+        [{ wa_id: "5511900000001", profile: { name: "a".repeat(257) } }],
+      ],
+      [
+        "one sender named twice differently",
+        [
+          { wa_id: "5511900000001", profile: { name: "Ana" } },
+          { wa_id: "5511900000001", profile: { name: "Bia" } },
+        ],
+      ],
+    ])("still reads the message, with no name, given %s", (_case, contacts) => {
+      expect(one(withContacts(contacts))).toBeNull();
+    });
+
+    it("reads no name when the contacts list is absent", () => {
+      const payload = textPayload();
+      delete (payload.entry[0].changes[0].value as Record<string, unknown>)
+        .contacts;
+      expect(one(payload)).toBeNull();
+    });
+
+    it("never names a message whose sender has no number", () => {
+      const parsed = parseWebhook(
+        withContacts([{ wa_id: "5511900000001", profile: { name: "Ana" } }], {
+          from: undefined,
+        }),
+        NOW,
+      );
+      expect(parsed.ignored).toBe(0);
+      expect(parsed.messages[0].from).toBeNull();
+      expect(parsed.messages[0].profileName).toBeNull();
+    });
+
+    it("keeps one sender's name when the entry repeats it", () => {
+      expect(
+        one(
+          withContacts([
+            { wa_id: "5511900000001", profile: { name: "Ana" } },
+            { wa_id: "5511900000001", profile: { name: "Ana" } },
+          ]),
+        ),
+      ).toBe("Ana");
+    });
   });
 
   it("never dates a message later than now", () => {

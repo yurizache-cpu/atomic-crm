@@ -996,11 +996,23 @@ describe("the gates a policy send passes, and their order (ADR 0026 §B)", () =>
     await addCrmContact(admin, DEVICE);
     const { registry } = runtime(undefined, { replyTransport: fake() });
     await send(OPT_OUT);
-    await drain(registry);
+    // The screening, then the acknowledgement; the opt-out's record in the CRM
+    // (ADR 0026 §C), moved to now by the acknowledgement, is held back here.
+    expect(await runAgentJob(registry)).toMatchObject({
+      kind: "agent_run.execute",
+    });
+    expect(await runAgentJob(registry)).toMatchObject({
+      kind: OUTBOUND_REPLY_SEND_KIND,
+    });
     const out = await latest();
     expect(keyed(await sends())).toEqual([
       { fixed_text_key: "opt_out_ack", status: "sent", blocked_reason: null },
     ]);
+    await admin.query(
+      `update ops.jobs set available_at = now() + interval '1 hour'
+        where tenant_id = $1 and kind = 'crm.opt_out_record' and status = 'queued'`,
+      [TENANT_A],
+    );
     const reasonUnderStop = async (key: string): Promise<string> => {
       const { rows } = await admin.query<{ reason: string }>(
         `select ops.reply_send_eligibility($1, jsonb_populate_record(null::ops.outbound_messages,
@@ -1017,6 +1029,19 @@ describe("the gates a policy send passes, and their order (ADR 0026 §B)", () =>
     try {
       expect(await reasonUnderStop("clarification")).toBe("opt_out_open");
       expect(await reasonUnderStop("opt_out_ack")).toBe("execution_stopped");
+      // Once the opt-out is recorded in the CRM, the contact gate comes first
+      // for every text but a safety text, under the stop as without it.
+      await admin.query(
+        `update ops.jobs set available_at = now()
+          where tenant_id = $1 and kind = 'crm.opt_out_record' and status = 'queued'`,
+        [TENANT_A],
+      );
+      expect(await runAgentJob(registry)).toMatchObject({
+        kind: "crm.opt_out_record",
+        detail: "crm_opt_out_record=recorded",
+      });
+      expect(await reasonUnderStop("clarification")).toBe("do_not_contact");
+      expect(await reasonUnderStop("opt_out_ack")).toBe("do_not_contact");
     } finally {
       await admin.query(
         "select ops.clear_execution_stop($1, 'dbtest clear', 'dbtest')",

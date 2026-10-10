@@ -192,6 +192,15 @@ export interface Capabilities {
    */
   eraseDueContactIdentifier(): Promise<string>;
   /**
+   * ADR 0026 §C. Records the opt-out bound to the leased crm.opt_out_record
+   * job in the CRM (do_not_contact true, nothing else): `recorded`,
+   * `already_recorded`, `unresolved`, `dismissed` (a person dismissed it:
+   * nothing is written), `erased`, `deferred` (not due, or its
+   * acknowledgement still on its way: its next job is bound), or on a replay
+   * `superseded` or `already_settled`. It calls nothing and returns no number.
+   */
+  recordDueOptOut(): Promise<string>;
+  /**
    * Phase 3A.2. Starts the calendar sync bound to the leased job for a worker
    * whose calendar provider is `providerKind`: records `running` BEFORE the
    * provider is called and answers the minimised request, or settles it
@@ -276,6 +285,7 @@ export const CAPABILITY_NAMES: readonly CapabilityName[] = Object.freeze([
   "beginReplySend",
   "confirmReplySend",
   "settleReplySend",
+  "recordDueOptOut",
 ]);
 
 /**
@@ -420,6 +430,13 @@ function allCapabilities(tx: TxClient): Capabilities {
         "select ops.erase_due_contact_identifier() as status",
       );
       return statusOf(rows, "ops.erase_due_contact_identifier");
+    },
+
+    async recordDueOptOut() {
+      const { rows } = await tx.query<{ status: unknown }>(
+        "select ops.record_due_opt_out() as status",
+      );
+      return statusOf(rows, "ops.record_due_opt_out");
     },
 
     async startCalendarSync(providerKind) {

@@ -34,6 +34,49 @@ create or replace trigger deal_stage_transitions_append_only_trigger
     before update or delete on public.deal_stage_transitions
     for each row execute function public.deal_stage_transitions_append_only();
 
+-- ADR 0026 §C: every change of the opt-out flag, with its origin, in the
+-- profile write's own transaction; the ledger is append-only.
+create or replace trigger record_lead_consent_change_trigger
+    after insert or update of do_not_contact on public.lead_profiles
+    for each row execute function public.record_lead_consent_change();
+
+create or replace trigger lead_consent_changes_append_only_trigger
+    before update or delete on public.lead_consent_changes
+    for each row execute function public.lead_consent_changes_append_only();
+
+create or replace trigger lead_consent_changes_refuse_truncate_trigger
+    before truncate on public.lead_consent_changes
+    for each statement execute function public.lead_consent_changes_append_only();
+
+-- ADR 0026 §C: the CRM form clears a flag a person set, never the contact's
+-- own system-recorded opt-out; only the contact's later message lifts it.
+-- Matches 20261019140000_opt_out_lift.sql.
+create or replace trigger refuse_system_opt_out_clear_trigger
+    before update of do_not_contact on public.lead_profiles
+    for each row execute function public.refuse_system_opt_out_clear();
+
+-- ADR 0026 §C: a person's work on a contact marks it, so the number's
+-- retention keeps it. Matches 20261019150000_crm_copy_retention.sql.
+create or replace trigger mark_crm_contact_edit_trigger
+    after update on public.contacts
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger mark_crm_contact_edit_trigger
+    after insert or update on public.lead_profiles
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger mark_crm_contact_edit_trigger
+    after insert or update on public.acquisition_attributions
+    for each row execute function public.mark_crm_contact_edit();
+
+create or replace trigger crm_contact_edits_append_only_trigger
+    before update or delete on public.crm_contact_edits
+    for each row execute function public.crm_contact_edits_append_only();
+
+create or replace trigger crm_contact_edits_refuse_truncate_trigger
+    before truncate on public.crm_contact_edits
+    for each statement execute function public.crm_contact_edits_append_only();
+
 create or replace trigger set_deal_notes_sales_id_trigger
     before insert on public.deal_notes
     for each row execute function public.set_sales_id_default();

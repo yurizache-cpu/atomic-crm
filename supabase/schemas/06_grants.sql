@@ -83,6 +83,20 @@ revoke all on sequence public.deal_stage_transitions_id_seq from anon, authentic
 revoke all on function public.record_deal_stage_transition() from public, anon, authenticated, service_role;
 revoke all on function public.deal_stage_transitions_append_only() from public, anon, authenticated, service_role;
 
+-- The CRM's consent ledger (ADR 0026 §C): written only by its trigger, read
+-- by no application role. Matches 20261019130000_crm_consent_and_opt_out.sql.
+revoke all on table public.lead_consent_changes from public, anon, authenticated, service_role;
+revoke all on sequence public.lead_consent_changes_id_seq from public, anon, authenticated, service_role;
+revoke all on function public.record_lead_consent_change() from public, anon, authenticated, service_role;
+revoke all on function public.lead_consent_changes_append_only() from public, anon, authenticated, service_role;
+revoke all on function public.refuse_system_opt_out_clear() from public, anon, authenticated, service_role;
+
+-- The CRM's edit marks (ADR 0026 §C): written only by their trigger, read
+-- by no application role. Matches 20261019150000_crm_copy_retention.sql.
+revoke all on table public.crm_contact_edits from public, anon, authenticated, service_role;
+revoke all on function public.mark_crm_contact_edit() from public, anon, authenticated, service_role;
+revoke all on function public.crm_contact_edits_append_only() from public, anon, authenticated, service_role;
+
 -- New objects are private by default. Add explicit grants above when a browser
 -- capability is intentionally introduced.
 alter default privileges for role postgres in schema public revoke all on tables from anon, authenticated;

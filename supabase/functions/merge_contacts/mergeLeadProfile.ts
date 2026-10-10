@@ -32,11 +32,14 @@ export const latest = (
 export function mergeLeadProfile(
   winner: LeadProfileFields,
   loser: LeadProfileFields,
-): Required<Pick<LeadProfileFields, "do_not_contact">> & LeadProfileFields {
+): LeadProfileFields {
   return {
     // Consent: opted out if EITHER side was. This is the load-bearing line.
-    do_not_contact:
-      Boolean(winner.do_not_contact) || Boolean(loser.do_not_contact),
+    // The flag is written only when the loser carries an opt-out: then the
+    // merged contact is opted out, and the CRM's consent ledger records it as
+    // a person's (ADR 0026 §C). Otherwise the winner's own flag, and its
+    // recorded origin, stand untouched: true stays true, false stays false.
+    ...(loser.do_not_contact ? { do_not_contact: true } : {}),
     // Acquisition is the first time this person was seen at all.
     acquired_at: earliest(winner.acquired_at, loser.acquired_at),
     // The most recent signal is the true one.

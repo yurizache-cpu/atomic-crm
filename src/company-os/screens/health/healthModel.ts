@@ -199,4 +199,5 @@ export const jobKindLabel = (kind: string): string =>
     "calendar.update": "Calendário: mover evento",
     "calendar.cancel": "Calendário: cancelar evento",
     "postmark.ledger_retention": "Manutenção do registro de e-mails",
+    "crm.opt_out_record": "Registro de opt-out no CRM",
   })[kind] ?? "Outro trabalho";

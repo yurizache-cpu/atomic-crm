@@ -32,6 +32,10 @@ import {
   contactIdentifierRetentionDue,
 } from "../handlers/contactIdentifierRetentionDue.ts";
 import {
+  CRM_OPT_OUT_RECORD_KIND,
+  crmOptOutRecordDue,
+} from "../handlers/crmOptOutRecordDue.ts";
+import {
   UNCONFIGURED_CALENDAR_PORT,
   type CalendarPort,
 } from "../calendar/calendarPort.ts";
@@ -105,6 +109,7 @@ export function createHandlerRegistry(
     followUpDue,
     contentRetentionDue,
     contactIdentifierRetentionDue,
+    crmOptOutRecordDue,
     ...createCalendarSyncHandlers({
       calendarPort: dependencies.calendarPort ?? UNCONFIGURED_CALENDAR_PORT,
     }),
@@ -137,6 +142,7 @@ export const REGISTERED_HANDLER_KINDS: readonly string[] = Object.freeze([
   FOLLOW_UP_DUE_KIND,
   CONTENT_RETENTION_DUE_KIND,
   CONTACT_IDENTIFIER_RETENTION_DUE_KIND,
+  CRM_OPT_OUT_RECORD_KIND,
   CALENDAR_CREATE_KIND,
   CALENDAR_UPDATE_KIND,
   CALENDAR_CANCEL_KIND,

@@ -518,6 +518,7 @@ describe("nothing is acknowledged in silence", () => {
       from: LEAD,
       body: BODY,
       receivedAt: new Date(Date.now() + 3_600_000),
+      profileName: null,
     });
     expect(answer).toBe("admitted");
     expect(
@@ -529,8 +530,8 @@ describe("nothing is acknowledged in silence", () => {
   });
 });
 
-describe("the CRM is read, never written", () => {
-  it("resolves found, not found and ambiguous without creating or changing a contact", async () => {
+describe("the CRM is read, never written, for a sender the owner did not register (ADR 0026 §C)", () => {
+  it("resolves found, not found and ambiguous for an unregistered sender without creating or changing a contact", async () => {
     await buildClinic(owner, TENANT_A, TARGET_A);
     await addCrmContact(admin, "5511900000111");
     await addCrmContact(admin, "5511900000222");

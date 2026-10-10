@@ -342,7 +342,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-09",
     statement:
-      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins.",
+      "Merging contacts is conservative about consent: if either side opted out, the merged contact is opted out. Never winner-wins. The merge writes the flag only when the loser opted out, so the consent ledger records the merged opt-out as a person's, and a winner's own opt-out keeps its recorded origin otherwise (SI-84); it holds both contacts and both lead profiles before it reads them, so an opt-out recorded meanwhile is folded in, never cascaded away.",
     provenBy: ["unit test"],
     enforcedBy: [
       {
@@ -352,6 +352,11 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/functions/merge_contacts/mergeLeadProfile.test.ts",
         marker: /describe\(/,
+      },
+      {
+        file: "supabase/functions/merge_contacts/mergeLeadProfile.test.ts",
+        marker:
+          /writes the flag only when the loser opted out, so the winner's own opt-out keeps its origin/,
       },
     ],
   },
@@ -1921,7 +1926,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-39",
     statement:
-      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; and, from BASELINE Q8 D6/D7 (owner decisions D6 and D7, 2026-09-28), erasing one task's AI working content now and sweeping, bounded, the flows whose retention has ended (retention erase and sweep), both redacting content in place and deleting nothing; and, from ADR 0021 W5 (decided 2026-10-04 by owner delegation), erasing a person's WhatsApp number now on their request, with the AI working content it admitted, and sweeping, bounded, the numbers whose retention has ended (identifiers erase and sweep), both leaving the conversation's tombstone, deleting nothing and printing no number; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
+      "The operator view is read-only by default and backend-only: its read commands run inside read-only transactions over the owner connection, it reads no environment variable but ADMIN_DATABASE_URL and never a provider key or a routing variable, it never prints a result, prompt, task or agent text, idempotency key or connection string, except that triage show prints the stored proposal, reply draft included, of the one review item it names, and it withholds any key-shaped value a worker published. It changes state only through an explicit allowlist of acts: recording a price version, setting or retiring a spend limit, recording a review decision (triage accept, reject or needs-edit), opening the missing reviews of succeeded runs from their stored results (triage recover), from Phase 2C, granting or revoking a Company OS membership and, from Phase 2D.2 (owner-approved 2026-09-24), repairing missing or incomplete shadow-evaluation workflow state (decision recover) only where doing so replays no provider call that has already started: it never repeats a started provider invocation, never overwrites a completed, invalid or indeterminate evaluation, changes no human review state, bypasses no execution stop and no BASELINE Q8 scope, sends no WhatsApp message, mutates no CRM row, trips or clears no stop, and has no browser counterpart; and, from BASELINE Q8 enforcement (ADR 0020, owner decision D10, 2026-09-27), recording and retiring a model-data authorization (data-auth record and retire), every field an explicit flag and nothing read from the environment; and, from BASELINE Q8 D6/D7 (owner decisions D6 and D7, 2026-09-28), erasing one task's AI working content now and sweeping, bounded, the flows whose retention has ended (retention erase and sweep), both redacting content in place and deleting nothing; and, from ADR 0021 W5 (decided 2026-10-04 by owner delegation), erasing a person's WhatsApp number now on their request, with the AI working content it admitted, and sweeping, bounded, the numbers whose retention has ended (identifiers erase and sweep), both leaving the conversation's tombstone, deleting nothing but a CRM contact the system created for the number that no person worked on (SI-79), and printing no number; every other command is a read, and no further act exists without a reviewed extension of this invariant. The membership commands (grant, revoke and list) have no option that takes an email, grant identifies the person only by auth user id, and they never print an email, an email hash, an auth token or privileged connection information.",
     provenBy: ["live database", "unit test"],
     enforcedBy: [
       {
@@ -2217,7 +2222,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and no CRM write path exists.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and the Company OS writes the CRM only as SI-84 allows.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
       {
@@ -2443,7 +2448,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-48",
     statement:
-      "The transport reads the CRM and never writes it. ops.crm_contact_by_phone answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; an unknown number creates no contact, and no country code is guessed. It returns an opaque reference and the opt-out flag, never a name.",
+      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation.",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
       {
@@ -2465,7 +2470,7 @@ const INVARIANTS: Invariant[] = [
       {
         file: "engine/domain/whatsappInbound.dbtest.ts",
         marker:
-          /resolves found, not found and ambiguous without creating or changing a contact/,
+          /resolves found, not found and ambiguous for an unregistered sender without creating or changing a contact/,
       },
     ],
     caveat:
@@ -4488,9 +4493,32 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-79",
     statement:
-      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
-    provenBy: ["live database", "migration assertion", "unit test"],
+      "A WhatsApp sender's phone number never outlives its retention: every conversation has one clock, 12 months after the sender's last message, moved forward when they write again, with one internal job the kill switch never holds that replaces the number with the conversation's tombstone on the conversation and on every admission of it; only a recorded erasure, at the ledger's instant, may change a number or its marker; the owner can erase a person's number at once, with the AI working content it admitted, and no command prints a number; an erasure first records the conversation's pending opt-out in the CRM, while the number still finds the contact (SI-84), and then deletes a CRM contact the system created for the number, with its lead profile and attributions, once no conversation whose number is not erased still names it and no person worked on it (an edit of the contact, its lead profile or an attribution, a note, a task, a deal, a consent change of a person, or an opt-out in force), holding the contact and those rows before it checks, and an erasure by number holds every conversation of the number before any CRM row; and the first reply of a conversation carries the tenant's current privacy notice, versioned owner data that is never rewritten and never deleted while current or once a send carried it, until a reply with that version is known to have reached the person (delivered or read, never merely accepted by the provider), the send recording which version it carried; and a provider's redelivery of a message already answered never touches a conversation, so it never restores an erased number.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "driver-backed test",
+      "unit test",
+    ],
     enforcedBy: [
+      {
+        file: "supabase/migrations/20261019150000_crm_copy_retention.sql",
+        marker:
+          /raise exception 'the erasure does not reach the CRM copy, or an adapter does not mark its own writes';/,
+      },
+      {
+        file: "supabase/tests/crm_copy_retention.sql",
+        marker: /R3: the lead outlived both its numbers \(finder first\): %/,
+      },
+      {
+        file: "supabase/tests/crm_copy_retention.sql",
+        marker: /R4: a lead a person worked on was deleted: %/,
+      },
+      {
+        file: "engine/domain/crmCopyRetention.dbtest.ts",
+        marker:
+          /keeps the lead a person is writing a note on while the number is erased, and the note survives/,
+      },
       {
         file: "supabase/migrations/20261010120000_whatsapp_privacy_and_identifier_retention.sql",
         marker:
@@ -4549,7 +4577,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-80",
     statement:
-      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact, and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, an autonomous send mode for a model's reply is not representable, and the only automatic switch is the operating policy's closed list of fixed-text keys (SI-83).",
+      "An inbound message a front-desk agent answers reaches a model provider or the structured-decision layer only as its recorded screening's text: the worker screens it locally, before any route is chosen, with the reviewed pack the agent's published operating policy names (from pack v4 also the people that policy lets a contact ask for by name, which can only move a conversation to a person), keeps only the clauses the pack recognises as administrative or benign, replaces every other clause with one neutral marker that gives no reason, and records the class, the counts, the versions and the disposition, never the omitted text; danger, a request for a person, an opt-out, a message left with nothing to send, a WhatsApp message whose admission says no reply can reach its contact (unless the message itself lifted the contact's own opt-out, SI-84), and a conversation a person holds never reach a model and settle the run with no call; a front-desk run cannot start without a screening that sent it to the model; its prompt is built only from the context the database answers (the screened text; earlier turns as screened text, as the agent's own reply from a run whose screening went to the model, as a fixed clarification, handoff or opt-out acknowledgement, and otherwise as one neutral marker, a person's reply included, which the review's recorded author, bound when the review is written, decides; the published configuration; the booking foundation's availability; the message's own instant), never from the task's description, and the business-route decision reads the same screened text; a reply that states a fact its run was not given is marked for a person; the screened text is redacted with its task's content; and the agent's configuration is versioned owner data of which only the published version is read, a version is never edited, an autonomous send mode for a model's reply is not representable, and the only automatic switch is the operating policy's closed list of fixed-text keys (SI-83).",
     provenBy: ["live database", "migration assertion", "unit test"],
     enforcedBy: [
       {
@@ -4788,7 +4816,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution; no application role reaches the store or its functions.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
       {
@@ -5039,6 +5067,225 @@ const INVARIANTS: Invariant[] = [
     ],
     caveat:
       "The safety texts can go, one per crisis message, to a registered test sender even when the CRM does not know the number or knows it as opted out (owner decision, 2026-10-08). A forged gateway call or a leaked app secret can cause a fixed text (never a model's or a person's reply), bounded to an active test channel and test data. The transport's own timeout bounds how long the conversation is held. The staging worker exits when idle, so a job it gave back waits for the next run. Real-data authorization stays closed and the production WhatsApp gate is unchanged.",
+  },
+  {
+    id: "SI-84",
+    statement:
+      "The Company OS writes a CRM contact only through backend crm_ adapters no application or capability role executes. The gateway's admission creates one contact (the sender's digits after a plus sign; a first name only when the gateway's screen found the sender's profile name to read as a name, otherwise the owner's placeholder), its lead profile and one whatsapp attribution, only for a number the CRM does not know and no contact shares the last eight digits of, for the tenant that owns the local CRM, never on a redelivery, once per conversation, within the daily cap of the owner's lead policy in force (with none in force nothing is created) and, while BASELINE Q8 is open, only for a sender the owner registered on the test channel; a lock wait, a serialization failure or a deadlock answers the gateway 500, and any other failure leaves the number unknown. The worker's crm.opt_out_record job sets the exact contact's lead_profiles.do_not_contact to true and nothing else, once an acknowledgement of it a person accepted settled or the 24-hour window ended, never while an acknowledgement of it is still on its way (at most until that is out of date) and never for an opt-out a person dismissed, a dismissal committed while it runs included; a contact a merge or a deletion removes while the record or the lift reads it is resolved again; a number's erasure first records its conversation's pending opt-out. The screening of the contact's own later WhatsApp message that is not itself an opt-out clears that flag and nothing else, only when the consent ledger's newest entry, a person naming the flag on again aside, is the system's record of an opt-out from an older message and no newer message of the number opted out, recorded as the system's lift naming the message; a flag a person set is never cleared by a message: when a person's flag is part of the opt-out (a person turned it on or named it on again, or it was on before the ledger existed), the contact's own opt-out is recorded as lifted and the flag stays, for the person to clear; and no update of the flag but the lift's clears the contact's own system-recorded opt-out, whoever writes it and whether or not it was first named on again. Every change of the opt-out flag is recorded in the CRM's append-only consent ledger, read by no application role, with its origin: the system's only when a backend adapter marked the write and named the message, otherwise a person's, and a write that names the flag with true is a person's even when the value does not change. A person's work on a contact (any write to it, its lead profile or its attributions that no backend adapter marked as its own) is marked in a content-free, append-only table read by no application role, and the adapters mark their own writes. Each creation, skipped creation, opt-out record, lift, and deletion or keeping at an erasure is recorded in ops.crm_contact_acts, with no number or name; a creation emits lead.created, a recorded opt-out lead.opted_out and a lift lead.opt_out_lifted; no adapter sends, starts a run or changes a stop.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "driver-backed test",
+      "unit test",
+    ],
+    enforcedBy: [
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /raise exception 'the receive function is not the gateway''s pinned DEFINER with the lead step';/,
+      },
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /raise exception 'a lead function is reachable or not an INVOKER: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261019120000_whatsapp_leads.sql",
+        marker:
+          /when lock_not_available or serialization_failure or deadlock_detected then/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L3: with no policy a lead was created, or the skip was not recorded/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: the daily cap did not stop the third lead/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: a sender the owner did not register became a lead/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L3: a redelivery or a later message created or recorded again/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L4: a near-duplicate created a lead, or was not raised for a person/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker:
+          /L4: the adapter served a tenant that does not own the local CRM/,
+      },
+      {
+        file: "supabase/tests/crm_leads.sql",
+        marker: /L1: a lead function is a DEFINER or reachable by a role/,
+      },
+      {
+        file: "engine/domain/whatsappLeads.dbtest.ts",
+        marker:
+          /creates the lead before the admission reads the CRM, so its first message is answered/,
+      },
+      {
+        file: "engine/domain/whatsappLeads.dbtest.ts",
+        marker:
+          /creates one lead, and records one act, for two deliveries of one message at once/,
+      },
+      {
+        file: "engine/frontDesk/profileName.test.ts",
+        marker: /gives no first name for %s/,
+      },
+      {
+        file: "engine/communication/whatsapp/metaWebhook.test.ts",
+        marker: /still reads the message, with no name, given %s/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception 'the opt-out record capability is not a pinned DEFINER the worker alone executes';/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception 'the screening, the acknowledgement or the erasure does not reach the opt-out record';/,
+      },
+      {
+        file: "supabase/migrations/20261019130000_crm_consent_and_opt_out.sql",
+        marker:
+          /raise exception '% holds a privilege on the consent ledger', v_role;/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C1: a person''s writes were recorded as %/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C1: a malformed mark was taken for the system/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C3: the adapter did more than set the flag, or did not record its act/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /keeps an automatically acknowledged opt-out until its window ends, then records it as the system's and reconciles the exception/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /sees a person's dismissal that commits while the record runs, and records nothing/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /tries again when a merge removes the contact while the opt-out is recorded/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /never lifts a flag a person set, even once the contact also asked to stop by message and the system recorded it/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C6: a message lifted a flag a person set, once the contact had opted out by message too/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C1: naming the flag on again let a person clear the contact''s own opt-out/,
+      },
+      {
+        file: "supabase/migrations/20261019160000_slice3_review_fixes.sql",
+        marker:
+          /raise exception 'a review correction is missing from: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261019170000_opt_out_lift_person_resave.sql",
+        marker:
+          /raise exception 'the lift does not skip a person naming the flag on again, or lost its earlier correction';/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /raise exception 'C7: an unchanged save hid the contact''s own opt-out from its lift';/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /waits for an acknowledgement still on its way, so the flag never refuses it/,
+      },
+      {
+        file: "engine/domain/crmOptOut.dbtest.ts",
+        marker:
+          /records nothing for an opt-out a person dismissed, and stops its unsent acknowledgement/,
+      },
+      {
+        file: "engine/handlers/crmOptOutRecordDue.ts",
+        marker: /export const CRM_OPT_OUT_RECORD_ANSWERS/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'the opt-out lift adapter is reachable or not an INVOKER';/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'the CRM form can clear the contact''s own opt-out';/,
+      },
+      {
+        file: "supabase/migrations/20261019140000_opt_out_lift.sql",
+        marker:
+          /raise exception 'a review does not read the effective opt-out flag';/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker:
+          /C4: an owner at aal2 cleared the contact''s own opt-out through the CRM: %/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C5: an older message undid a newer opt-out/,
+      },
+      {
+        file: "supabase/tests/crm_consent.sql",
+        marker: /C5: a message lifted a flag a person set/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /lifts the contact's own opt-out on a later message, gives the conversation back and lets the agent answer/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /never lifts it for a message from before the opt-out, screened after the record/,
+      },
+      {
+        file: "engine/domain/optOutLift.dbtest.ts",
+        marker:
+          /still drafts the safety text when the lift cannot take the profile's lock, and a later message lifts it/,
+      },
+      {
+        file: "supabase/migrations/20261019150000_crm_copy_retention.sql",
+        marker:
+          /raise exception '% holds a privilege on the CRM edit marks', v_role;/,
+      },
+      {
+        file: "supabase/tests/crm_copy_retention.sql",
+        marker:
+          /R2: the system''s creation of a lead was marked as a person''s work/,
+      },
+    ],
+    caveat:
+      "The sender chooses the profile name: the screen takes a first word that reads as a name, which a sender can still choose to mislead. A system-created contact has no sales owner, so only the owner sees it in the CRM. Two people sharing a number become one lead, and two different numbers sharing their last eight digits both wait for a person. A forged gateway call or a leaked app secret can now create a contact, bounded to a registered test sender, the daily cap and the tenant that owns the CRM, and a forged message that is not an opt-out lifts that sender's own recorded opt-out (never a person's flag), after which automatic fixed texts and accepted replies can reach the number again. Leads are created only for registered test senders until the production gate's ADR. Outside the clear guard: renumbering a contact, deleting and re-inserting its lead profile as service_role, an owner-set lift mark, and a person deleting the contact (a new lead the number's next conversation creates starts without the opt-out). A deal created at the instant an erasure deletes its lead can still name the deleted id (deals carry no foreign key).",
   },
 ];
 

@@ -24,6 +24,10 @@ alter table public.owner_provisioning_log enable row level security;
 -- Deliberately no policy: the trigger writes it and only the ops commercial
 -- adapter reads it (06_grants.sql).
 alter table public.deal_stage_transitions enable row level security;
+-- Deliberately no policy: the trigger writes it and no application role reads
+-- it (06_grants.sql).
+alter table public.lead_consent_changes enable row level security;
+alter table public.crm_contact_edits enable row level security;
 
 -- Companies
 create policy "company_select_scoped" on public.companies for select to authenticated using (

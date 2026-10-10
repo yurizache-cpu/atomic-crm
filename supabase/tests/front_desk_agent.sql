@@ -779,9 +779,16 @@ begin
     raise exception 'F8: an exception was deleted while its subject exists';
   exception when sqlstate 'OS403' then null;
   end;
+  -- A plain truncate is refused by the opt-out requests' foreign key (ADR
+  -- 0026 §C) before the guard; a cascading one reaches the guards.
   begin
     truncate ops.exceptions;
     raise exception 'F8: the exception store was truncated';
+  exception when sqlstate 'OS403' or sqlstate '0A000' then null;
+  end;
+  begin
+    truncate ops.exceptions cascade;
+    raise exception 'F8: the exception store was truncated with its dependants';
   exception when sqlstate 'OS403' then null;
   end;
 
