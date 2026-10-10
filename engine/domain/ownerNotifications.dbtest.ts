@@ -472,6 +472,25 @@ describe("a notification leaves only while it still tells the owner something", 
     });
     expect(reply.templates.templateCalls).toHaveLength(0);
   });
+
+  it("blocks a notification whose target's number a CRM contact came to carry before it left (SI-86)", async () => {
+    const clinic = await frontDesk();
+    await addCrmContact(admin, DEVICE);
+    await recordTarget(clinic.channelId);
+    const reply = fake();
+    const { registry } = runtime(undefined, { replyTransport: reply });
+    await send(PERSON_REQUEST);
+    await drain(registry);
+    // A lead saved with the owner's number after the target was recorded.
+    await addCrmContact(admin, OWNER);
+    await dueNow();
+    await drain(registry);
+    expect((await notifications())[0]).toMatchObject({
+      status: "blocked",
+      block_reason: "target_held",
+    });
+    expect(reply.templates.templateCalls).toHaveLength(0);
+  });
 });
 
 describe("a notification waits, and is never dropped, while it cannot leave", () => {

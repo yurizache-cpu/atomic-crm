@@ -5462,6 +5462,15 @@ const INVARIANTS: Invariant[] = [
     ],
     enforcedBy: [
       {
+        file: "supabase/migrations/20261020140000_owner_target_recheck.sql",
+        marker: /return ops\.block_owner_notification\(v_own, 'target_held'\);/,
+      },
+      {
+        file: "engine/domain/ownerNotifications.dbtest.ts",
+        marker:
+          /blocks a notification whose target's number a CRM contact came to carry before it left \(SI-86\)/,
+      },
+      {
         file: "supabase/migrations/20261020120000_owner_notifications.sql",
         marker:
           /raise exception 'a notification capability is not a pinned DEFINER the worker alone executes: %', v_bad;/,
