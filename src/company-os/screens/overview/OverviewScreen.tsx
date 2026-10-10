@@ -39,6 +39,7 @@ import { itemsOf, useCompanyOsPages } from "../../query/useCompanyOsPages";
 import { useCompanyOsQuery } from "../../query/useCompanyOsQuery";
 import { useIsStateCurrent } from "../../query/useIsStateCurrent";
 import { AgentCard } from "../agents/AgentCard";
+import { WaitingListSection } from "./WaitingListSection";
 
 // Screen 1, Visão geral (docs/PHASE_2C_BRIEF.md §12): what is happening in the
 // company now. Headline cards first, then what needs the owner's attention, the
@@ -508,6 +509,11 @@ const OverviewBody = ({
         </p>
       )}
       <HeadlineCards data={data} current={current} />
+      <WaitingListSection
+        list={data.waitingList}
+        asOf={data.asOf}
+        current={current}
+      />
       <div className="grid gap-6 lg:grid-cols-[2fr_3fr]">
         <NeedsAttention data={data} current={current} />
         <RecentActivity />

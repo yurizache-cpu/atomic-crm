@@ -10472,6 +10472,7 @@
         },
         "platform": { "globalAdmissionBlocked": false },
         "admission": { "tenantAdmission": "conditional" },
+        "waitingList": { "items": [], "total": 0 },
         "operationalHealth": {
           "queue": {
             "ready": 5,

@@ -3025,7 +3025,7 @@ immutable
 set search_path to ''
 as $function$
   select array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update',
-               'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send', 'rg1d.probe_external']::text[];
+               'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send', 'owner_notification.send', 'rg1d.probe_external']::text[];
 $function$;
 
 do $$
@@ -3243,7 +3243,7 @@ language sql
 immutable
 set search_path to ''
 as $function$
-  select array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send']::text[];
+  select array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send', 'owner_notification.send']::text[];
 $function$;
 
 -- ===========================================================================
@@ -4085,7 +4085,7 @@ begin
   if exists (select 1 from ops.execution_stops x where x.cleared_at is null) then
     raise exception 'Z4: a section left an execution stop active';
   end if;
-  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send']::text[] then
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send', 'owner_notification.send']::text[] then
     raise exception 'Z4: the external job kinds were not restored inside the transaction';
   end if;
 end
@@ -4113,7 +4113,7 @@ begin
   if exists (select 1 from ops.jobs where kind in ('rg1d.probe_external', 'rg1d.unclassified', 'rg1d.lease_probe', 'rg1d.lock_probe')) then
     raise exception 'runtime_governance.sql left a job behind';
   end if;
-  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send']::text[] then
+  if ops.external_job_kinds() is distinct from array['agent_run.execute', 'decision.shadow_evaluate', 'calendar.create', 'calendar.update', 'calendar.cancel', 'decision.structured_evaluate', 'outbound.reply_send', 'owner_notification.send']::text[] then
     raise exception 'runtime_governance.sql left the external job kinds widened';
   end if;
 end

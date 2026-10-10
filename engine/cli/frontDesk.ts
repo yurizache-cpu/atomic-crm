@@ -15,6 +15,13 @@
 //   npm run front-desk -- lead-policy show --tenant <uuid>
 //   npm run front-desk -- lead-policy record --tenant <uuid> --cap <1-1000> --time-zone <IANA> --placeholder <name> --actor <label>
 //   npm run front-desk -- lead-policy retire --tenant <uuid> --reason <text> --actor <label>
+//   npm run front-desk -- notify-target show --tenant <uuid>
+//   npm run front-desk -- notify-target record --tenant <uuid> --channel <uuid> --number-file <path>
+//        --episode-template <name> --digest-template <name> --actor <label> [--language pt_BR]
+//        [--kinds person_requested,message_waiting] [--quiet 22:00-08:00] [--time-zone <IANA>]
+//        [--hourly-cap 10] [--daily-cap 30] [--fallback-name Contato]
+//   npm run front-desk -- notify-target retire --tenant <uuid> --reason <text> --actor <label>
+//   npm run front-desk -- notifications --tenant <uuid> [--all]
 //
 // READ-ONLY BY DEFAULT. config list, config show, conversations, screenings
 // and exceptions run inside a read-only transaction. The acts are drafting and
@@ -24,16 +31,20 @@
 // 0025), syncing a tenant's send exceptions after a send could not record
 // its own, and recording or retiring the lead policy (ADR 0026 §C: the daily
 // cap, its time zone and the name placeholder; with none in force the gateway
-// creates no lead). No act sends a message, calls a model or writes the CRM. The kinds: operating_policy, playbook, knowledge,
+// creates no lead), and recording or retiring the owner's notification target
+// (ADR 0026 §D: the owner's own number, read only from a file and never
+// printed, the test channel, two approved templates, the kinds, quiet hours
+// and caps; with none in force nothing tells the owner). No act sends a
+// message, calls a model or writes the CRM. The kinds: operating_policy, playbook, knowledge,
 // fixed_messages; a send mode is staging or supervised, never autonomous.
 //
 // OWNER ONLY. The one variable read is ADMIN_DATABASE_URL. OUTPUT: one JSON
 // object per line: ids, versions, states and counts. `config show` prints the
 // version's content, which is the owner's own configuration; no command prints
-// a contact's number or a message. Exit 0, 2 on a usage error, 1 when the
-// database or the domain refused.
+// a contact's number or a message, and a usage message withholds any run of
+// six digits or more. Exit 0, 2 on a usage error, 1 when the database or the
+// domain refused.
 
-import { readFileSync } from "node:fs";
 import type { WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
 import {
@@ -58,6 +69,13 @@ import {
   showLeadPolicy,
 } from "../domain/leadPolicy.ts";
 import {
+  listOwnerNotifications,
+  recordOwnerNotificationTarget,
+  retireOwnerNotificationTarget,
+  showOwnerNotificationTarget,
+} from "../domain/ownerNotificationTarget.ts";
+import { readOwnerTextFile, withholdDigits } from "./ownerInput.ts";
+import {
   EXIT_USAGE,
   isEntryPoint,
   missingAdminUrlLine,
@@ -69,7 +87,7 @@ import {
 } from "./cliOutput.ts";
 
 export const FRONT_DESK_SYNOPSIS =
-  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --revision <n> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid> | lead-policy show --tenant <uuid> | lead-policy record --tenant <uuid> --cap <n> --time-zone <IANA> --placeholder <name> --actor <label> | lead-policy retire --tenant <uuid> --reason <text> --actor <label>";
+  "npm run front-desk -- config list --tenant <uuid> [--agent <uuid>] | config show --tenant <uuid> --id <uuid> | config draft --tenant <uuid> --agent <uuid> --kind <kind> --file <path> --actor <label> | config publish --tenant <uuid> --id <uuid> --actor <label> | conversations --tenant <uuid> | takeover|release --tenant <uuid> --conversation <uuid> --actor <label> | reply --tenant <uuid> --conversation <uuid> --text-file <path> --revision <n> --actor <label> | screenings --tenant <uuid> | exceptions --tenant <uuid> [--all] | exception resolve --tenant <uuid> --id <uuid> --resolution resolved|dismissed --occurrences <n> --actor <label> | exceptions sync --tenant <uuid> | lead-policy show --tenant <uuid> | lead-policy record --tenant <uuid> --cap <n> --time-zone <IANA> --placeholder <name> --actor <label> | lead-policy retire --tenant <uuid> --reason <text> --actor <label> | notify-target show --tenant <uuid> | notify-target record --tenant <uuid> --channel <uuid> --number-file <path> --episode-template <name> --digest-template <name> --actor <label> [--language <code>] [--kinds <list>] [--quiet HH:MM-HH:MM] [--time-zone <IANA>] [--hourly-cap <n>] [--daily-cap <n>] [--fallback-name <word>] | notify-target retire --tenant <uuid> --reason <text> --actor <label> | notifications --tenant <uuid> [--all]";
 
 type CommandName =
   | "config list"
@@ -86,7 +104,11 @@ type CommandName =
   | "exceptions sync"
   | "lead-policy show"
   | "lead-policy record"
-  | "lead-policy retire";
+  | "lead-policy retire"
+  | "notify-target show"
+  | "notify-target record"
+  | "notify-target retire"
+  | "notifications";
 
 interface Grammar {
   readonly flags: ReadonlyMap<string, FlagArity>;
@@ -142,6 +164,38 @@ const COMMANDS: ReadonlyMap<CommandName, Grammar> = new Map([
     grammar(false, ["tenant", "cap", "time-zone", "placeholder", "actor"]),
   ],
   ["lead-policy retire", grammar(false, ["tenant", "reason", "actor"])],
+  ["notify-target show", grammar(true, ["tenant"])],
+  [
+    "notify-target record",
+    grammar(
+      false,
+      [
+        "tenant",
+        "channel",
+        "number-file",
+        "episode-template",
+        "digest-template",
+        "actor",
+        "language",
+        "kinds",
+        "quiet",
+        "time-zone",
+        "hourly-cap",
+        "daily-cap",
+        "fallback-name",
+      ],
+      [
+        "tenant",
+        "channel",
+        "number-file",
+        "episode-template",
+        "digest-template",
+        "actor",
+      ],
+    ),
+  ],
+  ["notify-target retire", grammar(false, ["tenant", "reason", "actor"])],
+  ["notifications", grammar(true, ["tenant"], ["tenant"], ["all"])],
 ]);
 
 /** The only commands that change state, in order. */
@@ -200,6 +254,14 @@ export interface FrontDeskCliDependencies {
 }
 
 const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
+
+/** An optional small integer flag; anything else is NaN for the domain to refuse. */
+const optionalInteger = (value: string | undefined): number | undefined =>
+  value === undefined
+    ? undefined
+    : /^[0-9]{1,3}$/.test(value)
+      ? Number(value)
+      : Number.NaN;
 
 /** A file's text with a byte-order mark and Windows line ends removed. */
 export const textFromFile = (raw: string): string =>
@@ -336,6 +398,53 @@ async function run(
           actor: get("actor"),
         }),
       ];
+    case "notify-target show":
+      return [await showOwnerNotificationTarget(tx, { tenantId })];
+    case "notify-target record": {
+      const quiet = optional("quiet");
+      const window = quiet?.match(/^([0-9]{2}:[0-9]{2})-([0-9]{2}:[0-9]{2})$/u);
+      return [
+        await recordOwnerNotificationTarget(tx, {
+          tenantId,
+          channelId: get("channel"),
+          // Only ever from a file, so it never sits in a shell's history.
+          digits: textFromFile(readTextFile(get("number-file"))).trim(),
+          episodeTemplate: get("episode-template"),
+          digestTemplate: get("digest-template"),
+          actor: get("actor"),
+          language: optional("language"),
+          kinds: optional("kinds")?.split(","),
+          quietStart:
+            quiet === undefined ? undefined : (window?.[1] ?? "invalid"),
+          quietEnd:
+            quiet === undefined ? undefined : (window?.[2] ?? "invalid"),
+          timeZone: optional("time-zone"),
+          hourlyCap: optionalInteger(optional("hourly-cap")),
+          dailyCap: optionalInteger(optional("daily-cap")),
+          fallbackName: optional("fallback-name"),
+        }),
+      ];
+    }
+    case "notify-target retire":
+      return [
+        await retireOwnerNotificationTarget(tx, {
+          tenantId,
+          reason: get("reason"),
+          actor: get("actor"),
+        }),
+      ];
+    case "notifications": {
+      const listing = await listOwnerNotifications(tx, {
+        tenantId,
+        all: command.switches.has("all"),
+      });
+      return listing.truncated
+        ? [
+            ...listing.notifications,
+            { truncated: true, shown: listing.notifications.length },
+          ]
+        : listing.notifications;
+    }
   }
 }
 
@@ -347,7 +456,7 @@ export async function runFrontDeskCli(
   const { stdout, stderr } = dependencies;
   const command = parseFrontDeskArgs(argv);
   if (command.kind === "usage_error") {
-    stderr(usageLine(command.message, FRONT_DESK_SYNOPSIS));
+    stderr(usageLine(withholdDigits(command.message), FRONT_DESK_SYNOPSIS));
     return EXIT_USAGE;
   }
   const connectionString = readAdminDatabaseUrl(dependencies.env);
@@ -376,6 +485,6 @@ if (await isEntryPoint(import.meta.url)) {
     // One connection: a command is one transaction.
     openDatabase: (connectionString) =>
       createWorkerDatabase({ connectionString, max: 1 }),
-    readTextFile: (path) => readFileSync(path, "utf8"),
+    readTextFile: readOwnerTextFile,
   });
 }

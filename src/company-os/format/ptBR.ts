@@ -291,6 +291,28 @@ export const relativeTime = (iso: string, now: number = Date.now()): string => {
   return `${DATE.format(at)} às ${TIME.format(at)}`;
 };
 
+/** A contract timestamp's clock time in the browser's zone: "14:35". */
+export const clockTime = (iso: string): string => TIME.format(new Date(iso));
+
+/** ADR 0026 §D: why a conversation waits for a person. */
+export const waitingKindLabel = labelFrom({
+  person_requested: "Pediu uma pessoa",
+  message_waiting: "Mensagem aguardando",
+});
+
+/** ADR 0026 §D: the state of the owner's notification about a waiting conversation. */
+export const waitingNotificationLabel = labelFrom({
+  none: "Sem aviso",
+  pending: "Aviso na fila",
+  sent: "Aviso enviado",
+  delivered: "Aviso entregue",
+  read: "Aviso lido",
+  failed: "Aviso falhou",
+  indeterminate: "Aviso incerto",
+  skipped: "Aviso dispensado",
+  blocked: "Aviso não enviado",
+});
+
 export const exactTime = (iso: string): string =>
   `${EXACT.format(new Date(iso))} UTC`;
 

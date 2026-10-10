@@ -21,6 +21,8 @@ interface ScriptedOptions {
   staleSettled?: number;
   /** What ops.settle_stale_reply_sends() reports. */
   staleReplies?: number;
+  /** What ops.settle_stale_owner_notifications() reports. */
+  staleNotifications?: number;
   /** A statement fragment whose query throws inside an otherwise healthy transaction. */
   failStatement?: string;
   /** What ops.job_execution_stop() and ops.defer_job() answer. Default: no stop. */
@@ -126,6 +128,11 @@ const scriptedDb = (options: ScriptedOptions = {}) => {
           if (statement.includes("ops.settle_stale_reply_sends")) {
             return {
               rows: [{ settled: String(options.staleReplies ?? 0) }],
+            } as never;
+          }
+          if (statement.includes("ops.settle_stale_owner_notifications")) {
+            return {
+              rows: [{ settled: String(options.staleNotifications ?? 0) }],
             } as never;
           }
           if (
@@ -586,6 +593,72 @@ describe("shutdown reaches an external call in flight", () => {
     );
     expect(stats).toMatchObject({ leased: 1, succeeded: 1 });
     expect(sql.filter((s) => s.includes("ops.lease_job"))).toHaveLength(1);
+  });
+});
+
+describe("owner notifications a job left unsettled are closed out on the reaper's clock", () => {
+  it("settles them in their own transaction, last on the tick, logs the count, and keeps the loop up when the sweep fails", async () => {
+    let clock = 0;
+    const { db, sql, transactionOf } = scriptedDb({
+      queue: [null, null],
+      staleNotifications: 2,
+    });
+    const settledLines: (WorkerLogFields | undefined)[] = [];
+    await runWorker({
+      workerId: "w1",
+      db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event, fields) => {
+        if (event === "owner_notification.stale_settled")
+          settledLines.push(fields);
+      },
+    });
+    const ceilingAt = sql.findIndex((s) =>
+      s.includes("ops.enforce_spend_ceiling"),
+    );
+    const sweepAt = sql.findIndex((s) =>
+      s.includes("ops.settle_stale_owner_notifications"),
+    );
+    expect(sweepAt).toBeGreaterThan(ceilingAt);
+    expect(sql[sweepAt]).toBe(
+      "select ops.settle_stale_owner_notifications() as settled",
+    );
+    expect(sql[sweepAt - 1]).toBe("set local role ops_worker");
+    expect(transactionOf[sweepAt - 1]).toBe(transactionOf[sweepAt]);
+    expect(
+      transactionOf.filter((tx) => tx === transactionOf[sweepAt]),
+    ).toHaveLength(2);
+    expect(settledLines).toEqual([
+      { workerId: "w1", count: 2 },
+      { workerId: "w1", count: 2 },
+    ]);
+
+    const failing = scriptedDb({
+      queue: [null, null],
+      failStatement: "ops.settle_stale_owner_notifications",
+    });
+    const failures: (WorkerLogFields | undefined)[] = [];
+    const stats = await runWorker({
+      workerId: "w1",
+      db: failing.db,
+      registry,
+      maxIterations: 2,
+      reapIntervalMs: 10,
+      sleep: noSleep,
+      now: () => (clock += 100),
+      log: (event, fields) => {
+        if (event === "worker.poll_failed") failures.push(fields);
+      },
+    });
+    expect(stats).toMatchObject({ idlePolls: 2, pollFailures: 0 });
+    expect(failures.map((f) => f?.detail)).toEqual([
+      expect.stringMatching(/^stale owner notification settlement failed: /),
+      expect.stringMatching(/^stale owner notification settlement failed: /),
+    ]);
   });
 });
 

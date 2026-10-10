@@ -51,11 +51,10 @@ const budget = (remainingMs = 60_000): PrepareBudget => ({
   remainingMs: () => remainingMs,
 });
 
-const fakeTransport = (): ReplyTransport => ({
-  kind: "fake",
-  transport: createFakeOutboundTransport(),
-  timeoutMs: 1_000,
-});
+const fakeTransport = (): ReplyTransport => {
+  const transport = createFakeOutboundTransport();
+  return { kind: "fake", transport, templates: transport, timeoutMs: 1_000 };
+};
 
 const prepareWith = (
   answer: unknown,

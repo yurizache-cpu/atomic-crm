@@ -35,6 +35,9 @@ export const EXTERNAL_JOB_KINDS: readonly string[] = Object.freeze([
   // ADR 0026 §B: a published fixed text the owner's policy authorized, sent
   // once, holding the conversation through the call.
   "outbound.reply_send",
+  // ADR 0026 §D: the owner's notification of a person's queue, one approved
+  // template at most once, held by the stops of the channel's unit.
+  "owner_notification.send",
 ]);
 
 export const GOVERNED_JOB_KINDS: readonly string[] = Object.freeze([

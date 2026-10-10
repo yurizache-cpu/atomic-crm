@@ -24,6 +24,8 @@ describe("the reply transport a worker starts with", () => {
   it("is the fake only on a developer's machine", () => {
     const local = replyTransportFromEnv({ REPLY_TRANSPORT: "fake" }, "local");
     expect(local.kind).toBe("fake");
+    // ADR 0026 §D: the owner's notifications ride the same transport.
+    expect(local.templates).toBe(local.transport);
     expect(local.timeoutMs).toBe(DEFAULT_SEND_TIMEOUT_MS);
     for (const environment of ["staging", "production"] as const) {
       expect(() =>
@@ -65,6 +67,8 @@ describe("the reply transport a worker starts with", () => {
     );
     expect(meta.kind).toBe("meta");
     expect(meta.timeoutMs).toBe(2500);
+    expect(meta.templates).toBe(meta.transport);
+    expect(UNCONFIGURED_REPLY_TRANSPORT.templates).toBeNull();
     expect(
       await meta.transport?.send({
         providerTarget: "200000000000001",

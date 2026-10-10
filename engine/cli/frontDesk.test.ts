@@ -12,7 +12,7 @@ import {
 const TENANT = "00000000-0000-4000-8000-0000000000a1";
 
 describe("the front-desk tool", () => {
-  it("changes state only through its nine acts", () => {
+  it("changes state only through its eleven acts", () => {
     expect(FRONT_DESK_ACTS).toEqual([
       "config draft",
       "config publish",
@@ -23,6 +23,8 @@ describe("the front-desk tool", () => {
       "exceptions sync",
       "lead-policy record",
       "lead-policy retire",
+      "notify-target record",
+      "notify-target retire",
     ]);
   });
 

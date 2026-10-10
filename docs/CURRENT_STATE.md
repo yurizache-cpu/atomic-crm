@@ -2,7 +2,7 @@
 
 **What this is:** the operational state a fresh session reads after CLAUDE.md. It changes with every merged milestone (the maintenance rule in CLAUDE.md). The stable product and architecture are in [COMPANY_OS_MASTER_BLUEPRINT.md](COMPANY_OS_MASTER_BLUEPRINT.md). The long-term program map is in [ROADMAP.md](ROADMAP.md).
 
-**Updated:** 2026-10-09, after PR #35's merge (`56207f6e`) and staging's update to it, on `feature/crm-leads-and-opt-out`.
+**Updated:** 2026-10-10, after PR #36's merge (`7e367e0f`) and staging's update to it, on `feature/owner-notifications`.
 
 **PRODUCTION REAL-DATA AUTHORIZATION: CLOSED. REAL PATIENT MODEL TRAFFIC: DISABLED.**
 
@@ -15,10 +15,10 @@
 | Item | State |
 | --- | --- |
 | Repository | `yurizache-cpu/atomic-crm` (public: never commit a real phone number, a secret or patient data) |
-| Integration branch | `feature/clinical-phase-1` at `56207f6e`: PR #35's normal merge (2026-10-09, on the owner's request; parents `679a118a`, PR #34's merge, and `35e3ea57`, the reviewed head) |
+| Integration branch | `feature/clinical-phase-1` at `7e367e0f`: PR #36's normal merge (2026-10-10, on the owner's request; parents `56207f6e`, PR #35's merge, and `4ca1d002`, the reviewed head) |
 | `main` | `a863e2a0`. Never touched by this program; no production deploy |
-| Working branch | `feature/crm-leads-and-opt-out` (ADR 0026 slice 3, §3), stacked on `feature/automatic-fixed-texts`, which is now part of `56207f6e` |
-| Retained, integrated | `feature/automatic-fixed-texts` at `35e3ea57` (PR #35); `feature/autonomous-front-desk` at `5804eb99` (PR #34); `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
+| Working branch | `feature/owner-notifications` (ADR 0026 slice 4, §3), stacked on `feature/crm-leads-and-opt-out`, which is now part of `7e367e0f`; stacked on it, `feature/browser-inbox` (slice 5) |
+| Retained, integrated | `feature/crm-leads-and-opt-out` at `4ca1d002` (PR #36); `feature/automatic-fixed-texts` at `35e3ea57` (PR #35); `feature/autonomous-front-desk` at `5804eb99` (PR #34); `feature/lead-journey-core` at `4aecf2a8` (PR #33); `feature/front-desk-pack-v4` at `ddd4b162` (PR #32); `feature/front-desk-prompt-v4` at `af6d12b3` (PR #31); `feature/company-os-master-blueprint` at `c6b930dd` (PR #30); `feature/front-desk-review-context` at `d35325da` (PR #29) |
 
 ## 2. Integrated capabilities (on `feature/clinical-phase-1`)
 
@@ -33,7 +33,7 @@ By layer. Detail in each ADR and report.
   - Q8 fail-closed enforcement, data classes, and content and identifier retention (ADR 0020, ADR 0021 W1 to W6);
   - Production Security Gate A (AAL2 for the Company OS and CRM data, CSP, no third-party enrichment);
   - the Gate B host contract and verifiers;
-  - 80 security invariants (SI-01 to SI-81, SI-07 retired) with live guards ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md));
+  - 82 security invariants on the integration branch (SI-01 to SI-83, SI-07 retired; SI-84 and SI-86 arrive with slices 3 and 4, SI-85 is reserved for the site's triage) with live guards ([SECURITY_INVARIANTS.md](SECURITY_INVARIANTS.md));
   - 75 canonical migrations, the latest `20261015120000_front_desk_handoff_names.sql`.
 - **Models:**
   - OpenRouter as the gateway;
@@ -106,7 +106,7 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **Review:** an adversarial review confirmed nine findings, all answered on this branch (ADR 0026 §B): the gates judge the contact before a stop, a replaced text is settled stale first, the last gate waits a bounded time and puts the send back when it must wait, the cap counts only texts that left or can leave, the worker's reaper closes out a send its job left unsettled, and the missing tests were added (each fix mutation-checked).
    - **Before any key is listed on staging (owner actions):** the fixed texts published with both safety texts and the privacy notice's escalation line; a token whose system user holds the test WhatsApp Business Account alone; channel `85ae4f8b…` (the clinic number) deactivated.
 
-3. **`feature/crm-leads-and-opt-out`, stacked on `feature/automatic-fixed-texts`: slice 3, leads, the opt-out in the CRM, the lift and the CRM copy's retention** (ADR 0026 §C, "Built in slice 3"; SI-84 added, SI-09, SI-39, SI-45, SI-48, SI-79, SI-80 and SI-82 amended). Four migrations, one commit each; its PR opens once slice 2's is merged.
+3. **`feature/crm-leads-and-opt-out`, stacked on `feature/automatic-fixed-texts`: slice 3, leads, the opt-out in the CRM, the lift and the CRM copy's retention** (ADR 0026 §C, "Built in slice 3"; SI-84 added, SI-09, SI-39, SI-45, SI-48, SI-79, SI-80 and SI-82 amended). **Integrated:** PR #36, normal merge `7e367e0f` (2026-10-10, on the owner's request); the automated review's P1 (a person naming the flag on again hid the contact's own opt-out from its lift and trapped the flag) was fixed in `4ca1d002` before the merge (`20261019170000_opt_out_lift_person_resave.sql`), its P2 is the slice's recorded residual; pre-merge CI at the baseline (§7). On staging the next day (§4).
    - **3a** (`20261019120000_whatsapp_leads.sql`): a registered test sender the CRM does not know becomes a contact, its lead profile and a `whatsapp` attribution before the admission reads the CRM, within the owner's daily cap (`npm run front-desk -- lead-policy record`; none in force, nothing created); a near-duplicate (the last eight digits) waits for a person; the first name only from a profile name that reads as a name, otherwise the owner's placeholder; `lead.created`.
    - **3b** (`20261019130000_crm_consent_and_opt_out.sql`): the opt-out reaches the CRM after its acknowledgement (or the window's end), through the worker's internal `crm.opt_out_record` job; a person's dismissal records nothing; an erasure records a pending opt-out first; the CRM's append-only consent ledger records every change of the flag with its origin; `lead.opted_out`.
    - **3c** (`20261019140000_opt_out_lift.sql`): the contact's own later message that is not an opt-out lifts the contact's own opt-out (owner decision 9), as the CRM holds it then, and gives the conversation back to the agent; a crisis message is never held by the lift; the CRM form cannot clear the contact's own opt-out; `lead.opt_out_lifted`.
@@ -116,12 +116,23 @@ The status of every workstream is in the [ROADMAP.md](ROADMAP.md) program map.
    - **Before it is enabled on staging (owner actions):** the privacy notice's line on CRM records; the lead policy recorded (placeholder and daily cap).
    - **Deployment order:** stop every worker (`staging:gateway-worker`, `staging:fake-worker`) before applying `20261019130000`, and restart workers only from the integrated code: a worker without the `crm.opt_out_record` handler fails that job permanently.
 
+4. **`feature/owner-notifications`, stacked on `feature/crm-leads-and-opt-out`: slice 4, the waiting list and the owner's WhatsApp notification** (ADR 0026 §D, "Built in slice 4"; SI-86 added, SI-48 and SI-82 amended). Its PR opens once slice 3's is merged.
+   - **The target** (`20261020120000_owner_notifications.sql`): the owner's own number, the test channel it is sent from, two approved utility templates, the kinds, quiet hours (22:00 to 08:00) and caps (10 an hour, 30 a day), recorded only by `npm run front-desk -- notify-target record` with the number read from a file and never printed; never a number a conversation or a CRM contact holds, but the owner's registered device.
+   - **The intent:** a request for a person, or a message waiting for one that is newer than the person's latest reply and not danger, records one notification and its `owner_notification.send` job in the transaction that raises the episode, isolated so it never fails it; once per conversation between person replies.
+   - **The send:** the worker's job waits a minute, outside quiet hours and within the caps, carries every due notification of the target as one template (a digest across conversations), sets aside what a release or a reply already answered, calls at most once and never again; a stop of the channel's unit holds it; without a transport it waits until it expires after a day.
+   - **The owner's number writing in** is refused before any conversation is written (`owner_number`), unless it is the registered device. Status callbacks settle a notification by the digest of its provider id or, when uncertain, by its correlation and the owner's number.
+   - **The waiting list** (`20261020130000_waiting_list_read_model.sql`): who waits for a person now, oldest first, with the notification's state, as a section "Fila de atendimento" of the overview (optional in the contract, so the frontend ships first).
+   - **Also:** `npm run ops -- identifiers erase --number-file`; `npm run front-desk -- notify-target show|retire` and `notifications`.
+   - **Review:** an adversarial review of the branch (five lenses, 22 findings, all P2, all answered): the owner's act exempts a registered sender channel by channel and refuses a CRM contact saved under another format; a send never carries a notification a stop holds, and takes episodes without waiting; delivery news after a failure never makes it live again; a status for a send still settling is refused for Meta to deliver again; the number files are read whole, as UTF-8 or UTF-16, and the `ops` tool withholds digits too; the missing tests were added (each fix mutation-checked).
+   - **Local evidence:** typecheck and ESLint clean; the `functions` project; 31 SQL suites (new `owner_notifications.sql`); the driver-backed suites (new `ownerNotifications`, `companyOsWaitingListRecording`); the overview's browser tests; the recordings re-recorded (the empty waiting list) and a populated one recorded.
+   - **Before it is enabled on staging (owner actions):** the two utility templates (`aviso_fila_conversa`, `aviso_fila_resumo`) approved on the test WhatsApp account; the target recorded (the registered device can be it). **Deployment order:** worker, frontend, database.
+
 ## 4. Staging (cost-first, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md))
 
 - **Supabase** `erhrochojnugszkkoqrv` (sa-east-1, PostgreSQL 17):
-  - all 79 integrated migrations through `20261018130000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07, PR #33's one on 2026-10-08, PR #34's one and PR #35's two on 2026-10-09 (pinned CLI from a clean checkout of the merge, dry run first; the 26 existing reviews took their author, 22 `agent` and 4 `fixed`); the hosted verifier then reported 0 blocking and 0 advisory findings, with no exemption row. No key is listed in `automaticFixedTexts` yet, so nothing leaves on its own (0 policy sends).
+  - all 85 integrated migrations through `20261019170000`, never the seed: PR #29's two and PR #31's one were applied on 2026-10-06, PR #32's one on 2026-10-07, PR #33's one on 2026-10-08, PR #34's one and PR #35's two on 2026-10-09, PR #36's six on 2026-10-10 with no worker running and no job leased (pinned CLI from a clean checkout of each merge, dry run first; the 26 existing reviews took their author, 22 `agent` and 4 `fixed`); the hosted verifier then reported 0 blocking and 0 advisory findings, with no exemption row. No key is listed in `automaticFixedTexts` and no lead policy is recorded, so nothing leaves on its own and no lead is created (0 policy sends, 0 consent entries, 0 contact acts).
   - `front-desk exceptions sync` ran once on 2026-10-08 over the 10 existing sends: it opened one `send_failed`, the 2026-10-02 Meta probe send refused with 131005 (a user token's permission error, before the system-user token), and nothing else.
-- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-09 from `56207f6e` right after its migrations (PR #35 added a review disposition and an event type to the browser contract; Netlify deploy `6ac9761b7b01115c5120f91f`; preflight 0 blocking and 1 advisory, the published source maps; live check 0/0; a browser that kept the old bundle needs Ctrl+Shift+R). The review page shows the screened message, who answered (for example "Texto fixo: Passagem para uma pessoa") and the reply draft (checked in the browser).
+- **Frontend:** the Netlify site `atomic-crm-staging`, republished on 2026-10-10 from `7e367e0f` right after its migrations (PR #36 added event types to the browser contract; Netlify deploy `6aca17181511aa8e2c89bbc4`; preflight 0 blocking and 1 advisory, the published source maps; live check 0/0; a browser that kept the old bundle needs Ctrl+Shift+R). The review page shows the screened message, who answered (for example "Texto fixo: Passagem para uma pessoa") and the reply draft (checked in the browser).
 - **Runtime:** local only (`scripts/with-staging.mjs`: worker, gateway). No Fly, no always-on webhook.
 - **Tenant** `265b8fb8-839f-4351-a503-fe38f75822d1`; Receptionist agent `2ed31fc7-3509-46aa-99ff-507d06c90b7d`.
 - **Channels (both `test` mode, the owner's device registered):**
@@ -191,7 +202,7 @@ From the ROADMAP program map:
 
 ## 9. Exactly next action
 
-1. **ADR 0026 slice 3:** slice 2 is integrated and on staging (§3, item 2). Slice 3's PR from `feature/crm-leads-and-opt-out` (§3, item 3), merged on the owner's request and applied to staging the same way, every worker stopped before `20261019130000`.
+1. **ADR 0026 slice 4:** slices 2 and 3 are integrated and on staging (§3, items 2 and 3). Slice 4's PR from `feature/owner-notifications` (§3, item 4), merged on the owner's request; on staging the worker first, then the frontend, then its two migrations.
 2. **Team names (`handoffNames`):** the owner chose none for now (2026-10-08). Operating policy v4 stays published; a request for a person by role or in general still hands over.
 3. **Run the live supervised receptionist test** on the Meta test number (the owner's device must be a CRM contact with the opt-out recorded false, [COST_FIRST_STAGING.md](COST_FIRST_STAGING.md) §12):
    - a fresh quick tunnel to the local gateway and a fresh verify token, which the owner pastes into the Meta app's webhook settings (the WhatsApp Business Account product);

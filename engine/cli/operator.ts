@@ -36,7 +36,7 @@
 //   npm run ops -- retention erase --tenant <uuid> --task <uuid> --actor <label>
 //   npm run ops -- retention sweep --actor <label> [--limit <n>]
 //   npm run ops -- identifiers list [--tenant <uuid>]
-//   npm run ops -- identifiers erase --tenant <uuid> --number <digits> --actor <label>
+//   npm run ops -- identifiers erase --tenant <uuid> --number <digits>|--number-file <path> --actor <label>
 //   npm run ops -- identifiers sweep --actor <label> [--limit <n>]
 //
 // IDENTIFIERS (ADR 0021 W5, identifiersCommand.ts) shows the WhatsApp sender
@@ -107,6 +107,7 @@
 
 import type { TxClient, WorkerDatabase } from "../db/types.ts";
 import { createWorkerDatabase } from "../db/workerDatabase.ts";
+import { readOwnerTextFile, withholdDigits } from "./ownerInput.ts";
 import {
   AGENT_RUN_STATUSES,
   isAgentRunStatus,
@@ -191,6 +192,7 @@ import {
 import {
   buildIdentifiersCommand,
   IDENTIFIERS_ERASE_FLAGS,
+  IDENTIFIERS_ERASE_REQUIRED,
   IDENTIFIERS_SYNOPSIS,
   runIdentifiersAct,
   runIdentifiersRead,
@@ -458,7 +460,7 @@ const COMMANDS: ReadonlyMap<CommandName, CommandGrammar> = new Map<
   ["identifiers list", grammar(true, ["tenant"])],
   [
     "identifiers erase",
-    grammar(false, IDENTIFIERS_ERASE_FLAGS, [], IDENTIFIERS_ERASE_FLAGS),
+    grammar(false, IDENTIFIERS_ERASE_FLAGS, [], IDENTIFIERS_ERASE_REQUIRED),
   ],
   ["identifiers sweep", grammar(false, ["actor", "limit"], [], ["actor"])],
 ]);
@@ -954,7 +956,13 @@ export interface OperatorCliDependencies {
   readonly stderr: (line: string) => void;
   /** Opens the owner connection. Production passes createWorkerDatabase. */
   readonly openDatabase: (connectionString: string) => WorkerDatabase;
+  /** Reads a file the owner names (`identifiers erase --number-file`). */
+  readonly readTextFile?: (path: string) => string;
 }
+
+/** A number file's whole content, trimmed: one number, never echoed. */
+const numberFromFile = (raw: string): string =>
+  (raw.startsWith(String.fromCharCode(0xfeff)) ? raw.slice(1) : raw).trim();
 
 /** Runs one command and resolves to the process exit code. Never rejects on a database failure. */
 export async function runOperatorCli(
@@ -962,10 +970,32 @@ export async function runOperatorCli(
   dependencies: OperatorCliDependencies,
 ): Promise<number> {
   const { stdout, stderr } = dependencies;
-  const command = parseOperatorArgs(argv);
-  if (command.kind === "usage_error") {
-    stderr(usageLine(command.message, OPERATOR_SYNOPSIS));
+  const parsed = parseOperatorArgs(argv);
+  if (parsed.kind === "usage_error") {
+    stderr(usageLine(withholdDigits(parsed.message), OPERATOR_SYNOPSIS));
     return EXIT_USAGE;
+  }
+  let command = parsed;
+  if (
+    command.kind === "identifiers erase" &&
+    command.numberFile !== undefined
+  ) {
+    const read = dependencies.readTextFile;
+    let raw: string;
+    try {
+      if (read === undefined) throw new Error("no file reader");
+      raw = read(command.numberFile);
+    } catch {
+      stderr(
+        usageLine("--number-file is not a readable file", OPERATOR_SYNOPSIS),
+      );
+      return EXIT_USAGE;
+    }
+    command = {
+      ...command,
+      number: numberFromFile(raw),
+      numberFile: undefined,
+    };
   }
 
   const connectionString = readAdminDatabaseUrl(dependencies.env);
@@ -994,5 +1024,6 @@ if (await isEntryPoint(import.meta.url)) {
     // One connection: a command is one transaction.
     openDatabase: (connectionString) =>
       createWorkerDatabase({ connectionString, max: 1 }),
+    readTextFile: readOwnerTextFile,
   });
 }

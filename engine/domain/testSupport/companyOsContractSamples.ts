@@ -339,6 +339,23 @@ export const CONTRACT_SAMPLES: {
       // Phase 3B.1: a tenant that does not own the local CRM reads no funnel
       // (the populated one is src/company-os/testing/recorded/funnel.json).
       funnel: { status: "not_configured" },
+      // ADR 0026 §D: one conversation waiting for a person, every field set
+      // (the populated recording is src/company-os/testing/recorded/
+      // waiting-list.json).
+      waitingList: {
+        total: 1,
+        items: [
+          {
+            ref: TASK_SUMMARY.id,
+            kinds: ["message_waiting", "person_requested"],
+            counts: { message_waiting: 2, person_requested: 1 },
+            waitingSince: "2026-09-22T12:00:00.000000Z",
+            lastMessageAt: "2026-09-22T12:05:00.000000Z",
+            windowEndsAt: "2026-09-23T12:05:00.000000Z",
+            notification: { state: "sent", at: "2026-09-22T12:01:01.000000Z" },
+          },
+        ],
+      },
     },
   ],
   list_agents: [{ ...ENVELOPE, items: [AGENT_SUMMARY] }],

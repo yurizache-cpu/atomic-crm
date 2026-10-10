@@ -140,6 +140,35 @@ export interface OutboundTransport {
   send(request: OutboundRequest): Promise<OutboundOutcome>;
 }
 
+/**
+ * One approved template the Company OS ALREADY decided to send to the owner
+ * (ADR 0026 §D). Built only by ops.begin_owner_notification, in the
+ * transaction that committed the notification as in flight.
+ */
+export interface OutboundTemplateRequest {
+  /** The channel's provider target (for Meta, the sending phone number id). */
+  readonly providerTarget: string;
+  /** The recipient as the transport names them (for WhatsApp, a WhatsApp id). */
+  readonly to: string;
+  /** The approved template's name and language, as the owner recorded them. */
+  readonly templateName: string;
+  readonly languageCode: string;
+  /** The body's positional parameters, in order. */
+  readonly bodyParameters: readonly string[];
+  /** This system's id for the send, carried to the provider. */
+  readonly correlation: string;
+}
+
+/**
+ * A transport for approved templates. Like OutboundTransport, it executes and
+ * never retries: `sendTemplate` makes AT MOST ONE provider call and never
+ * throws.
+ */
+export interface OutboundTemplateTransport {
+  readonly provider: "meta_whatsapp";
+  sendTemplate(request: OutboundTemplateRequest): Promise<OutboundOutcome>;
+}
+
 export type CommunicationErrorCode =
   | "ingress_disabled"
   | "malformed_delivery"
