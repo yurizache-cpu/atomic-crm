@@ -159,6 +159,7 @@ The branch's adversarial review (four lenses, each finding verified) confirmed n
 - **The transport:** approved templates ride the worker's one reply transport (`ReplyTransport.templates`, an `OutboundTemplateTransport`; `OutboundTransport` is unchanged). Meta's template payload and response were verified on its pages; where `biz_opaque_callback_data` goes in a template send, the parameters' whitespace rules and the template error codes are settled by the live probe.
 - **The browser** reads the waiting list as an optional key of the existing overview, so the frontend ships before the migration that adds it; the section is hidden while the database does not carry it.
 - **Deployment order:** worker, frontend, database. Staging: the owner's registered device can be the target (a registered sender takes precedence at admission, so its own messages stay a test lead); the two utility templates must be approved on the test account first.
+- **PR #37 review (Codex):** P1, the owner's notification checked that the target's number is nobody's lead only when the owner recorded it, so a CRM contact saved or imported later with that number (exactly or by its last eight digits), or a conversation it opened, would have been told: the send now applies the recording's own test before it waits or calls and blocks the notification `target_held` (`20261020140000_owner_target_recheck.sql`, `ownerNotifications.dbtest.ts`, red on the earlier definition).
 
 ### E. The browser inbox: see, reply, release (decision 6)
 
