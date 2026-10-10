@@ -10,8 +10,9 @@ import { renderCompanyOs } from "../../testing/renderCompanyOs";
 
 // ADR 0026 §D: the overview's waiting list, fed with the list the real
 // projection returned at a fixed instant (five synthetic conversations, a
-// notification in each state). Oldest first; each row opens the task of the
-// conversation's oldest open episode; no text, number or name is shown.
+// notification in each state). Oldest first; each row opens the conversation
+// in the Fila de atendimento, by the task of its oldest open episode; no
+// text, number or name is shown.
 
 const sessionWith = (
   waitingList: OverviewSummary["waitingList"] = recordedWaitingList(),
@@ -37,7 +38,7 @@ describe("the overview's waiting list", () => {
     history.replaceState(null, "", "#/");
   });
 
-  it("lists who waits for a person, oldest first, each opening its task, with the notification's state", async () => {
+  it("lists who waits for a person, oldest first, each opening its conversation, with the notification's state", async () => {
     const screen = await renderCompanyOs(sessionWith(), "#/company-os");
 
     await expect
@@ -51,7 +52,7 @@ describe("the overview's waiting list", () => {
       )
       .toHaveAttribute(
         "href",
-        "#/company-os/tasks/00000000-0000-4000-8000-000000000003",
+        "#/company-os/inbox/00000000-0000-4000-8000-000000000003",
       );
     const list = screen.getByRole("region", { name: "Fila de atendimento" });
     expect(

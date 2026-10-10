@@ -1,6 +1,7 @@
-// Valid, synthetic responses for every company_os_api operation, shaped as the
-// SQL projections build them (supabase/migrations/20260922120000_company_os_read_surface.sql),
-// for the contract unit tests. Every optional object is present at least once,
+// Valid, synthetic responses for every company_os_api read, shaped as the SQL
+// projections build them (supabase/migrations/20260922120000_company_os_read_surface.sql,
+// and 20261021120000_browser_inbox_acts.sql for the conversation read), for
+// the contract unit tests. Every optional object is present at least once,
 // so a test that walks a sample reaches every nested object a schema declares.
 //
 // The driver-backed suite (companyOsContracts.dbtest.ts) is what proves the
@@ -151,6 +152,108 @@ const SPEND_ROW = {
   refusedRuns: 2,
   settledExhausted: false,
   newRunAdmission: "blocked",
+};
+
+/** An instant of the sample conversation, `minute` minutes after noon. */
+const conversationAt = (minute: number): string =>
+  `2026-09-22T12:${String(minute).padStart(2, "0")}:00.000000Z`;
+
+/** A reply turn as ops.cos_conversation_turns builds it; every field set. */
+const replyTurn = (
+  minute: number,
+  patch: Readonly<Record<string, unknown>>,
+): Record<string, unknown> => ({
+  kind: "reply",
+  at: conversationAt(minute),
+  author: "person",
+  fixedKey: null,
+  automatic: false,
+  text: "Synthetic reply from the team about the first appointment.",
+  hidden: null,
+  delivery: "sent",
+  reason: null,
+  withPrivacyNotice: false,
+  ...patch,
+});
+
+/**
+ * ADR 0026 §E: a conversation a person holds, oldest turn first, reaching
+ * every turn kind, each hidden reason (an inbound message and a reply), a
+ * refused message, an agent reply read with the privacy notice, an automatic
+ * safety text delivered, an uncertain send, and a person's reply in every
+ * other delivery state: queued, held by a stop, blocked with its reason,
+ * failed and sent. Only a person's reply shows before it left (D9).
+ */
+export const CONVERSATION_AVAILABLE = {
+  ...ENVELOPE,
+  status: "available",
+  // The contact's admitted and refused messages.
+  revision: 5,
+  holder: "person",
+  optOutOpen: false,
+  firstName: "Ana-Maria",
+  lastMessageAt: conversationAt(20),
+  windowEndsAt: "2026-09-23T12:20:00.000000Z",
+  allowedActs: { reply: true, release: true },
+  replyUnavailable: null,
+  earlierTurns: false,
+  turns: [
+    {
+      kind: "inbound",
+      at: conversationAt(0),
+      text: "Good morning, what are your opening hours on Saturday?",
+      hidden: null,
+    },
+    replyTurn(1, {
+      author: "agent",
+      text: "We open at 08:00 on Saturdays. Shall I book a first appointment?",
+      delivery: "read",
+      withPrivacyNotice: true,
+    }),
+    { kind: "refused", at: conversationAt(2), reason: "unsupported_content" },
+    { kind: "inbound", at: conversationAt(3), text: null, hidden: "withheld" },
+    replyTurn(4, {
+      author: "fixed",
+      fixedKey: "safety",
+      automatic: true,
+      text: "Synthetic safety notice with the support line.",
+      delivery: "delivered",
+    }),
+    { kind: "inbound", at: conversationAt(5), text: null, hidden: "erased" },
+    replyTurn(6, {
+      author: "agent",
+      text: null,
+      hidden: "erased",
+      delivery: "sent",
+    }),
+    replyTurn(7, {
+      author: "agent",
+      text: null,
+      hidden: "withheld",
+      delivery: "uncertain",
+      reason: "timeout",
+    }),
+    {
+      kind: "inbound",
+      at: conversationAt(8),
+      text: "I would like to talk to a person, please.",
+      hidden: null,
+    },
+    replyTurn(9, { delivery: "blocked", reason: "newer_message" }),
+    replyTurn(10, { delivery: "failed", reason: "provider_error" }),
+    replyTurn(11, { delivery: "sent" }),
+    {
+      kind: "inbound",
+      at: conversationAt(20),
+      text: "Thank you.\nIs Tuesday possible?",
+      hidden: null,
+    },
+    replyTurn(21, { delivery: "held" }),
+    replyTurn(22, {
+      delivery: "queued",
+      text: "Tuesday at 19:00 is free; shall I confirm it?",
+    }),
+  ],
 };
 
 /** One or more valid responses per operation. */
@@ -611,5 +714,32 @@ export const CONTRACT_SAMPLES: {
       },
       note: "Unrouted deliveries are never stored.",
     },
+  ],
+  // ADR 0026 §E: a conversation a person holds; one the agent holds (a crisis
+  // that also asked for a person), with no first name and no reply allowed;
+  // one whose opt-out is open, neither act allowed; and the two states.
+  get_conversation: [
+    CONVERSATION_AVAILABLE,
+    {
+      ...CONVERSATION_AVAILABLE,
+      revision: 1,
+      holder: "agent",
+      firstName: null,
+      lastMessageAt: null,
+      windowEndsAt: null,
+      allowedActs: { reply: false, release: false },
+      replyUnavailable: "not_held",
+      turns: [CONVERSATION_AVAILABLE.turns[0]],
+    },
+    {
+      ...CONVERSATION_AVAILABLE,
+      optOutOpen: true,
+      allowedActs: { reply: false, release: false },
+      replyUnavailable: "opt_out_open",
+      turns: [],
+    },
+    { ...ENVELOPE, status: "withheld", reason: "not_test" },
+    { ...ENVELOPE, status: "withheld", reason: "erased" },
+    { ...ENVELOPE, status: "not_waiting" },
   ],
 };

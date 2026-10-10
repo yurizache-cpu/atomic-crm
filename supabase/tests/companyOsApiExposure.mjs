@@ -188,6 +188,7 @@ import {
   COMMERCIAL_ACT_ARGUMENTS,
   commercialActsRefuse,
 } from "./companyOsProbe/commercialActChecks.mjs";
+import { secondFactorStepUp } from "./companyOsProbe/stepUpChecks.mjs";
 
 const CLIENT_OPTIONS = Object.freeze({
   auth: {
@@ -212,7 +213,7 @@ async function main() {
     process.exit(1);
   }
   process.stdout.write(
-    `  ${EXPOSED.length} company_os_api functions (${CATALOGUE.length} reads, ${EXPOSED.length - CATALOGUE.length} acts), 5 keys and 7 real sessions: ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
+    `  ${EXPOSED.length} company_os_api functions (${CATALOGUE.length} reads, ${EXPOSED.length - CATALOGUE.length} acts), 5 keys and 9 real sessions (2 of them second-factor step-ups): ${requestCount()} requests; only a live member session resolved, ops answered 406 to all\n`,
   );
 }
 
@@ -304,6 +305,18 @@ async function probe(origin, keys) {
         },
         trip_stop: { p_scope: "department", p_target_id: t.ids.department_a },
         ...COMMERCIAL_ACT_ARGUMENTS,
+        // ADR 0026 §E: a task of tenant A's one conversation (it answers
+        // not_waiting); the acts name it too, so every refusal is identity.
+        get_conversation: { p_task_id: t.ids.task_conversation },
+        reply_to_conversation: {
+          p_task_id: t.ids.task_conversation,
+          p_text: "Olá",
+          p_expected_revision: 0,
+        },
+        release_conversation: {
+          p_task_id: t.ids.task_conversation,
+          p_expected_revision: 0,
+        },
       })[fn] ?? {};
     /** A member read that must succeed, kept for the final sweep. */
     t.read = async (fn, args, credential = t.member.credential) => {
@@ -330,6 +343,8 @@ async function probe(origin, keys) {
     await memberDecidesOnce(t, rpc);
     await memberTripsOnce(t, rpc);
     await commercialActsRefuse(t, rpc);
+    // ADR 0026 §E: the provider's record of a recent second factor (SI-87).
+    await secondFactorStepUp(t, origin, signIn, emailOf);
     await signOutTakesEffect(t, origin, keys, rpc);
     sweepMemberOutputs(t);
   } finally {

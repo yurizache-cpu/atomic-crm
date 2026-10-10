@@ -732,13 +732,15 @@ begin
   exception when insufficient_privilege then null;
   end;
   execute 'reset role';
-  -- And the browser has exactly its six acts (the review decision, the trip
-  -- and the four commercial acts): no decision function is exposed.
+  -- And the browser has exactly its eight acts (the review decision, the
+  -- trip, the four commercial acts and the inbox's reply and release): no
+  -- decision function is exposed.
   if exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
               where n.nspname = 'company_os_api' and p.provolatile <> 's'
                 and p.proname not in ('decide_review', 'trip_stop', 'move_opportunity',
-                                      'set_opportunity_next_action', 'convert_opportunity', 'lose_opportunity'))
-     or (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'company_os_api') <> 21 then
+                                      'set_opportunity_next_action', 'convert_opportunity', 'lose_opportunity',
+                                      'reply_to_conversation', 'release_conversation'))
+     or (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'company_os_api') <> 24 then
     raise exception 'D11: the browser gained a mutation';
   end if;
 end

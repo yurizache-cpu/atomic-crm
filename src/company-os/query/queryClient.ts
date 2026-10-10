@@ -49,7 +49,8 @@ export const createCompanyOsQueryClient = (events: QueryEvents): QueryClient =>
         refetchIntervalInBackground: false,
         refetchOnReconnect: true,
       },
-      // No act exists in this phase; a mutation would be a review event.
+      // An act is called once per explicit human confirmation and never
+      // retried (each act's hook says so again); a new act is a review event.
       mutations: { retry: false },
     },
   });

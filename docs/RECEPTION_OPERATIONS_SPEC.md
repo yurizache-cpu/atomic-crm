@@ -75,7 +75,8 @@ Mapped from the repository; the authoritative detail is in each ADR and report.
 | Jev shadow decisions on the review (business route, lead intelligence, model route) | ✅ Exists, shadow only | ADR 0022 §E, §F |
 | Exception queue: danger, a request for a person, an opt-out, a missing fixed text, a message waiting with a person, a contact no reply can reach, a failed or uncertain send; a message no reply can reach gets no model | 🟡 Built on `feature/lead-journey-core`, Proposed for the owner's review | ADR 0025 Part A, SI-82; `npm run front-desk -- exceptions` |
 | Creating a CRM lead for a new WhatsApp number; the opt-out recorded in the CRM, lifted by the contact's own later message; the CRM copy following the number's retention | 🟡 Built on `feature/crm-leads-and-opt-out` (ADR 0026 slice 3), Proposed: only for a sender the owner registered on a test channel, within the owner's daily cap | ADR 0026 §C, SI-84; `npm run front-desk -- lead-policy record` |
-| Structured triage questionnaire, booking page, holds, payments, packages, session ledger, reminders, renewal, waitlist, exception inbox screen | ⬜ Planned | §7 to §19; ADR 0025 Part B |
+| The browser inbox: a conversation waiting for a person opened from the waiting list, a person's own reply sent by the worker's reply job, and the release to the AI | 🟡 Built on `feature/browser-inbox` (ADR 0026 slice 5), Proposed: test data only, a second factor within the hour for the reply | ADR 0026 §E, SI-87; `src/company-os/` "Fila de atendimento" |
+| Structured triage questionnaire, booking page, holds, payments, packages, session ledger, reminders, renewal, waitlist, exception acts in the browser | ⬜ Planned | §7 to §19; ADR 0025 Part B |
 | Autonomous sending | ⬜ Planned; not representable today (ADR 0023 §F) | A later owner decision and ADR |
 
 ## 4. The journey
@@ -331,6 +332,11 @@ Each exception has a type, a subject, a priority and a resolution. The inbox and
 - Deduplicated while open; resolved by a release, by evidence, or by a person's act; recorded as `exception.raised` and `exception.resolved`.
 - An ambiguous identity is `contact_unresolved` with reason `ambiguous`.
 - **Not yet:** the unknown question, payment inconsistencies, booking conflicts, a low-confidence Jev route, and a provider outage.
+
+**The browser inbox (ADR 0026 §E, slice 5; built on `feature/browser-inbox`, Proposed for the owner's review; SI-87).** The Company OS screen "Fila de atendimento" lists the conversations waiting for a person (an open request for a person or waiting message), oldest first, with no text, number or name. A member opens one explicitly: the last 50 turns, read into memory only (the contact's own words for test data, a refused message as its reason, the replies that left with their delivery, and the member's own replies in any state), the first word of the contact's CRM first name, who holds the conversation and when the 24-hour window ends; it is read again every 15 seconds while open.
+- **Reply:** while a person holds the conversation, the member writes a reply (1 to 2000 characters) and confirms it; with an authenticator-app code verified within the hour, the database records the member's own accepted review and a `person_reply` send, and the worker's reply job sends it under every send gate (the exact contact, the opt-out rule, the window, the stale rule, the kill switch), in the order written. A newer message from the contact makes the reply stale; nothing is ever resent.
+- **Release ("Devolver à IA"):** the owner's release, at the revision the member saw, never while an opt-out is open; the AI answers the contact's next messages, and a reply already queued still leaves.
+- **Not in the browser:** a takeover, resolving or dismissing an exception, an AI draft, a resend or a mark; these stay the owner's tools.
 
 ## 20. Send modes and channel rules
 

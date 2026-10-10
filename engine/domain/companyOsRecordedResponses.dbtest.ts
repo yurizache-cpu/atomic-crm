@@ -653,10 +653,15 @@ describe("the recorded company_os_api responses of the browser tests", () => {
     );
   });
 
-  it("records every one of the 15 reads, and every recorded answer parses with its contract", () => {
+  it("records every read but get_conversation, and every recorded answer parses with its contract", () => {
+    // The conversation read (ADR 0026 §E) is recorded by the inbox's own
+    // recorder (companyOsInboxRecording.dbtest.ts, inbox.json): it opens one
+    // conversation on explicit open, never a screen's list.
     const tenant = (files.tenant as { calls: RecordedCall[] }).calls;
     expect([...new Set(tenant.map((call) => call.operation))].sort()).toEqual(
-      [...COMPANY_OS_OPERATION_NAMES].sort(),
+      COMPANY_OS_OPERATION_NAMES.filter(
+        (name) => name !== "get_conversation",
+      ).sort(),
     );
     const broken = Object.entries(files).flatMap(([name, file]) =>
       name === "ids"

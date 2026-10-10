@@ -697,7 +697,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-21",
     statement:
-      "Company OS data is backend-only except for the gated browser outputs below, and direct Company OS authority stays with the database owner: no application role (anon, authenticated, service_role, ops_worker, ops_gateway, and so no browser, PostgREST or runtime login acting as one of them) and no capability role (ops_operator_api) holds any privilege on a Company OS table, any grant on all tables, sequences or functions in ops or default-privilege grant there, or EXECUTE on a Company OS service, and every Company OS service is SECURITY INVOKER. Company OS tables and services are otherwise reached only through pinned SECURITY DEFINER capabilities, never a generic one: no ops function is executable by PUBLIC, the only SECURITY DEFINER functions in ops that ops_worker, ops_gateway or ops_operator_api can execute are, respectively, the worker's lease-bound capabilities and runtime functions, the gateway's two functions bound to a configured provider target, and exactly one identity-and-membership gate per catalogued company_os_api operation, and service_role's only one is ops.enqueue_job. ops_operator_api is a NOLOGIN capability role, not a human or application principal: it owns only the catalogued company_os_api functions, and at rest it has no members and is in no login role's membership closure. authenticated holds nothing in ops, executes in company_os_api only those catalogued functions, each of which runs with ops_operator_api's privileges and calls only its own gate, and never becomes ops_operator_api: it is not a member of it and cannot switch to it. Company OS data reaches the browser only through those gates and only as their pinned minimised outputs, and through them an authenticated Company OS member can at most read its own tenant's pinned projections, record a decision on one of its own tenant's reviews through ops.record_review_decision, trip a stop at tenant, company, department or agent scope within its own tenant through the authoritative ops.trip_execution_stop, and, only while its tenant owns the local CRM, make the four commercial acts of SI-68 on that CRM's deals; clearing a stop remains a recorded owner act through the owner CLI (SI-31), and no global, system or job_kind stop can be tripped from the browser.",
+      "Company OS data is backend-only except for the gated browser outputs below, and direct Company OS authority stays with the database owner: no application role (anon, authenticated, service_role, ops_worker, ops_gateway, and so no browser, PostgREST or runtime login acting as one of them) and no capability role (ops_operator_api) holds any privilege on a Company OS table, any grant on all tables, sequences or functions in ops or default-privilege grant there, or EXECUTE on a Company OS service, and every Company OS service is SECURITY INVOKER. Company OS tables and services are otherwise reached only through pinned SECURITY DEFINER capabilities, never a generic one: no ops function is executable by PUBLIC, the only SECURITY DEFINER functions in ops that ops_worker, ops_gateway or ops_operator_api can execute are, respectively, the worker's lease-bound capabilities and runtime functions, the gateway's two functions bound to a configured provider target, and exactly one identity-and-membership gate per catalogued company_os_api operation, and service_role's only one is ops.enqueue_job. ops_operator_api is a NOLOGIN capability role, not a human or application principal: it owns only the catalogued company_os_api functions, and at rest it has no members and is in no login role's membership closure. authenticated holds nothing in ops, executes in company_os_api only those catalogued functions, each of which runs with ops_operator_api's privileges and calls only its own gate, and never becomes ops_operator_api: it is not a member of it and cannot switch to it. Company OS data reaches the browser only through those gates and only as their pinned minimised outputs, and through them an authenticated Company OS member can at most read its own tenant's pinned projections, record a decision on one of its own tenant's reviews through ops.record_review_decision, trip a stop at tenant, company, department or agent scope within its own tenant through the authoritative ops.trip_execution_stop, make, only while its tenant owns the local CRM, the four commercial acts of SI-68 on that CRM's deals, and, on a conversation of its own tenant that waits for a person and that a person holds, ask for the send of its own reply and release the conversation to the agent (SI-87); clearing a stop remains a recorded owner act through the owner CLI (SI-31), and no global, system or job_kind stop can be tripped from the browser.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -705,6 +705,13 @@ const INVARIANTS: Invariant[] = [
       "unit test",
     ],
     enforcedBy: [
+      // ADR 0026 §E: the capability role's EXECUTE surface gains the inbox's
+      // three gates (A4).
+      {
+        file: "supabase/tests/company_domain_core.sql",
+        marker:
+          /\('ops_operator_api', 'ops\.gate_reply_to_conversation\(uuid, text, integer\)'::regprocedure\)/,
+      },
       // Phase 2B (2026-09-18): the gateway role and its two DEFINER functions.
       {
         file: "supabase/tests/whatsapp_transport.sql",
@@ -2222,9 +2229,16 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-45",
     statement:
-      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and the Company OS writes the CRM only as SI-84 allows.",
+      "A model's answer never acts. A lead triage result opens a human review item, derived by the database from a run that SUCCEEDED and never written by the worker, and opened only AFTER the run's settlement has committed, in a transaction of its own, so no failure to open it (an error, a lock wait, a statement timeout or a cancellation) can undo the settlement: the paid answer is kept, nothing can call the provider again, and the review is recovered from the stored result. A person's decision is recorded once and is final. A person's acceptance is refused unless a TRUSTED consent source said the lead may be contacted: consent never comes from the delivery, is inherited by every run on the admitted task, and is do-not-contact wherever no admission established it. A person's acceptance performs no action: it creates no send and calls no provider, and a reply a person accepted leaves only by a separate, explicit operator send that reads consent again (SI-49) or, for a person's own reply written in the browser inbox, by the one reply job that the same recorded act requests (SI-87), whose gates read consent again from the CRM (SI-49). The owner's operating policy accepts nothing but a published fixed text the deterministic screen selected (SI-83), never a model's answer, and the Company OS writes the CRM only as SI-84 allows.",
     provenBy: ["live database", "driver-backed test", "unit test"],
     enforcedBy: [
+      // ADR 0026 §E: a person's own reply leaves only by the reply job its own
+      // act requests.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /message = 'ops\.outbound_messages: a person''s reply is sent only by the act that accepted it'/,
+      },
       {
         file: "supabase/migrations/20260917190000_lead_triage_pilot.sql",
         marker:
@@ -2448,9 +2462,20 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-48",
     statement:
-      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation. The owner's notification makes one other read, ops.crm_contact_first_name: a contact's stored first name, for the tenant that owns the CRM, only into the worker's notification request, cut to one word and stored nowhere (SI-86).",
+      "The transport reads the CRM through ops.crm_contact_by_phone, which answers found, not_found, ambiguous or unavailable from an exact match of the number's digits, only for the tenant that owns this deployment's CRM, and contains no write; no country code is guessed, and it returns an opaque reference and the opt-out flag, never a name. The one contact the admission creates is SI-84's; a number another contact carries under another format (the same last eight digits) is never resolved to that contact, it only refuses a creation. The owner's notification and the browser inbox make the one other read, ops.crm_contact_first_name: a contact's stored first name, for the tenant that owns the CRM, only into the worker's notification request (cut to one word, SI-86) or into the inbox's conversation on its explicit open, for a synthetic or test conversation (cut to its first word, letters, hyphens and apostrophes, at most 40, SI-87), and stored nowhere.",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
+      // ADR 0026 §E: the inbox reads the first word of name through the same
+      // adapter, the read graph's one other CRM callee.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /then ops\.crm_contact_first_name\(p_tenant, m\.crm_contact_ref\) end as name/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /'crm_contact_first_name'\)\)/,
+      },
       {
         file: "supabase/tests/whatsapp_transport.sql",
         marker: /D6: the adapter changed the CRM/,
@@ -2484,9 +2509,20 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-49",
     statement:
-      "A reply leaves only by an explicit operator send of one ACCEPTED review (npm run messaging -- send), a separate act after the decision, or by the worker's reply job carrying a published fixed text the owner's policy authorized (SI-83); nothing sends on a person's acceptance, on a model's answer or on a timer, and a model's answer leaves only by the operator's send. Its preconditions are checked afresh from the CRM when the send is requested and again immediately before the provider call, under the kill-switch lock: a test channel (never production, whatever the consent), active; no execution stop covering it; exactly one CRM contact for the number, whose opt-out flag is false; and a message from that contact within Meta's 24-hour customer-service window. These are preconditions, not a lawful basis or affirmative consent: the CRM records no consent, do_not_contact = false is only its default, and production replies stay impossible until the owner decides the lawful basis and how consent is represented. Anything else refuses the request or blocks the send. For the safety texts alone the contact condition is relaxed (owner decision, 2026-10-08): a number the CRM does not know, knows with no recorded consent or knows as opted out may receive them, never an ambiguous or erased number; and an open opt-out stops every policy send but its own acknowledgement, a safety text only an opt-out on a newer message.",
+      "A reply leaves only by an explicit operator send of one ACCEPTED review (npm run messaging -- send), a separate act after the decision, or by the worker's reply job carrying a published fixed text the owner's policy authorized (SI-83) or a person's own reply written and asked to be sent in one recorded act from the browser inbox (SI-87); nothing sends on an acceptance alone, on a model's answer or on a timer, and a model's answer leaves only by the operator's send, as the send table's guard enforces. Its preconditions are checked afresh from the CRM when the send is requested and again immediately before the provider call, under the kill-switch lock: a test channel (never production, whatever the consent), active; no execution stop covering it; exactly one CRM contact for the number, whose opt-out flag is false; and a message from that contact within Meta's 24-hour customer-service window. These are preconditions, not a lawful basis or affirmative consent: the CRM records no consent, do_not_contact = false is only its default, and production replies stay impossible until the owner decides the lawful basis and how consent is represented. Anything else refuses the request or blocks the send. For the safety texts alone the contact condition is relaxed (owner decision, 2026-10-08): a number the CRM does not know, knows with no recorded consent or knows as opted out may receive them, never an ambiguous or erased number; and an open opt-out stops every policy send but its own acknowledgement, a safety text only an opt-out on a newer message. A person's reply the inbox asked for passes the gates of a fixed text other than the safety texts (exactly one CRM contact whose flag is false, the opt-out rule, the window, the stale rule and the kill switch), without the published-policy check, and is blocked once the contact's 24-hour window ends.",
     provenBy: ["live database", "driver-backed test"],
     enforcedBy: [
+      // ADR 0026 §E: a person's reply rides the reply job with its window as
+      // its bound, never the published-policy check.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /when v_out\.authorization_kind = 'person_reply' then 'outside_service_window'/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /else 'not_a_person_reply' end\);/,
+      },
       {
         file: "supabase/migrations/20260918150000_whatsapp_transport.sql",
         marker: /only an accepted review can be sent/,
@@ -2653,9 +2689,16 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-52",
     statement:
-      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason. Phase 2C adds one read: on an explicit open of a single review of its own tenant, a Company OS member may read that review's capability-pinned structured advice (for lead_triage, its classification enums, summary and recommended next action), only for a synthetic or test origin, into browser memory under no-store and nowhere else; the projection never includes the stored inbound body or any task description, the sender's stored number, the reply draft, a secret, an access token or a raw provider error, and because its summary and recommended next action are written by the model from the inbound message and may echo its words, the read is limited to synthetic or test origins. ADR 0023 §L (owner decision, 2026-10-05) adds one more read, on the same open of a single review of its own tenant and only for a browser-decidable review of synthetic or test data: the front desk's screening of the message (its class, its disposition, the fixed text's key, and the screened text a model and Jev read, never the task's description or the raw message) and the reply draft the send would carry, so a reviewer sees what they accept; a draft whose content was redacted is not shown.",
+      "Message content lives where the work needs it and nowhere else. An inbound body is stored only as its task's description, which is what an agent run reads; a reply draft only in the model's stored result and the review derived from it, read at the moment of sending and copied nowhere. No event, outbound row, gateway log line or messaging tool output carries a body, a draft, a sender's number or a secret, and a refused message leaves only its channel, its conversation and a reason. Phase 2C adds one read: on an explicit open of a single review of its own tenant, a Company OS member may read that review's capability-pinned structured advice (for lead_triage, its classification enums, summary and recommended next action), only for a synthetic or test origin, into browser memory under no-store and nowhere else; the projection never includes the stored inbound body or any task description, the sender's stored number, the reply draft, a secret, an access token or a raw provider error, and because its summary and recommended next action are written by the model from the inbound message and may echo its words, the read is limited to synthetic or test origins. ADR 0023 §L (owner decision, 2026-10-05) adds one more read, on the same open of a single review of its own tenant and only for a browser-decidable review of synthetic or test data: the front desk's screening of the message (its class, its disposition, the fixed text's key, and the screened text a model and Jev read, never the task's description or the raw message) and the reply draft the send would carry, so a reviewer sees what they accept; a draft whose content was redacted is not shown. ADR 0026 §E adds one more read (SI-87): on an explicit open of one waiting conversation of its own tenant, the text of the contact's admitted messages whose own task is synthetic or test and not redacted, as the contact wrote it, and the text of the replies that left or may have left (and of a person's reply asked for from the inbox), into browser memory under no-store; never for another class, a redacted message, an erased number, or an agent's or fixed text's reply that did not leave.",
     provenBy: ["driver-backed test", "unit test", "live database"],
     enforcedBy: [
+      // ADR 0026 §E: the inbox shows a message's text only for its own
+      // synthetic or test task, not redacted.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /when t\.id is null or t\.data_class not in \('synthetic', 'test'\) or t\.description is null/,
+      },
       {
         file: "engine/domain/whatsappInbound.dbtest.ts",
         marker: /records no body or sender in any event, and logs neither/,
@@ -2794,6 +2837,18 @@ const INVARIANTS: Invariant[] = [
       "company_os_api holds exactly the catalogued functions and no relation, sequence or type. Each L3 function is SECURITY DEFINER with search_path = '', owned by ops_operator_api, executable only by authenticated (and, implicitly, by its owner), and its body is exactly one call to its G function. ops_operator_api is NOLOGIN, NOSUPERUSER, NOCREATEDB, NOCREATEROLE, NOBYPASSRLS and NOINHERIT, has no member at rest but the automatic creator membership PostgreSQL 16 and later give the migration identity (ADMIN OPTION without INHERIT or SET, granted by the bootstrap superuser, which no non-superuser can revoke and which confers no use of the role), and is in no login role's membership closure through any other membership, holds USAGE on ops and EXECUTE on exactly the G set (and, outside ops, pg_catalog and information_schema, in a schema where it holds USAGE, only a pinned measured list), and holds no table, column or sequence privilege outside the catalogue reads PUBLIC gives every role and no CREATE on any schema or on the database. ops stays off the Data API.",
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
+      // ADR 0026 §E: the fifth OD-8a file asserts the same end state over 24
+      // functions.
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /company_os_api function with a wrong owner, mode, config or ACL/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /raise exception 'company_os_api does not hold exactly the catalogue';/,
+      },
       {
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker:
@@ -2952,9 +3007,21 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-56",
     statement:
-      "No browser-facing output carries another tenant's data, a stored message or task body, a stored phone number, a reply draft, a raw job error, a provider secret or internal id, a global sequence value, a platform-wide identifier, an Auth or CRM email, an email hash, or a raw free-form actor or reviewer label (a stored reviewer, requested_by, tripped_by, cleared_by, marked_by, configured_by, set_by, ended_by or recorded_by value, or a principal's display name); an event's source is returned only when it is in a pinned provenance allowlist, and as the fixed value other otherwise. Free-text content a projection returns (a decision note, a stop reason and clear reason, the advice summary and recommended next action, and the tenant's own owner-typed configuration labels: tenant, company, department and agent names and a channel label) is content, not identity, and is not claimed free of email-like text. Platform state is limited to the pinned platform-derived set. The lead_triage classification enums, summary and recommended next action appear only through the capability-pinned advice projection, on explicit open, for synthetic or test origins; the summary is model-written and may echo the message it describes (SI-52). The reply draft the send would carry and the front desk's screened text appear only in a review detail's conversation, for a browser-decidable review of synthetic or test data (SI-52, ADR 0023 §L).",
+      "No browser-facing output carries another tenant's data, a stored message or task body, a stored phone number, a reply draft, a raw job error, a provider secret or internal id, a global sequence value, a platform-wide identifier, an Auth or CRM email, an email hash, or a raw free-form actor or reviewer label (a stored reviewer, requested_by, tripped_by, cleared_by, marked_by, configured_by, set_by, ended_by or recorded_by value, or a principal's display name); an event's source is returned only when it is in a pinned provenance allowlist, and as the fixed value other otherwise. Free-text content a projection returns (a decision note, a stop reason and clear reason, the advice summary and recommended next action, and the tenant's own owner-typed configuration labels: tenant, company, department and agent names and a channel label) is content, not identity, and is not claimed free of email-like text. Platform state is limited to the pinned platform-derived set. The lead_triage classification enums, summary and recommended next action appear only through the capability-pinned advice projection, on explicit open, for synthetic or test origins; the summary is model-written and may echo the message it describes (SI-52). The reply draft the send would carry and the front desk's screened text appear only in a review detail's conversation, for a browser-decidable review of synthetic or test data (SI-52, ADR 0023 §L). The text of a stored message and of a reply, and the first word of the contact's CRM first name, appear only in the browser inbox's conversation, on explicit open, for synthetic or test data (SI-52, SI-87): an admitted message's text as the contact wrote it, digits included; no field there carries the contact's stored number, an identifier of a conversation, message or contact, or an actor label.",
     provenBy: ["migration assertion", "live database"],
     enforcedBy: [
+      // ADR 0026 §E: a task of a conversation answers like a random uuid for
+      // anything else, and the contract keeps identifiers out.
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /\('get_conversation', 'id', 'company_os_api\.get_conversation\(p_task_id => %L\)', 'tasks', null\)/,
+      },
+      {
+        file: "contracts/company-os-api/conversation.ts",
+        marker:
+          /export const ConversationSchema = z\.discriminatedUnion\("status", \[/,
+      },
       {
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker: /then p_source else 'other' end/,
@@ -3021,6 +3088,11 @@ const INVARIANTS: Invariant[] = [
         marker:
           /declares the reply draft and the screened message in the review detail alone/,
       },
+      {
+        file: "engine/domain/companyOsContractMinimisation.test.ts",
+        marker:
+          /declares a conversation's turn text and first name in get_conversation alone \(ADR 0026 §E\)/,
+      },
     ],
     caveat:
       "Free text a projection returns is content, not identity: a decision note, a stop or clear reason, the advice summary and the owner-typed configuration labels are not claimed free of email-like text, and a legacy reviewer or actor label is never returned. The advice summary is model-written from the inbound message and may echo it; it is readable only for synthetic or test origins while BASELINE Q8 is open.",
@@ -3062,14 +3134,41 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-58",
     statement:
-      "The browser can cause exactly six mutations, and only once their functions exist after the user-management prerequisite: a review decision through ops.record_review_decision (which decides the structured review only, approves no reply draft, authorises no send, and writes no outbound row and no job); a trip at tenant, company, department or agent scope through ops.trip_execution_stop under its lock, with a bounded wait whose contention answer is generic, retryable and creates nothing; and, by owner decision R, the four narrow commercial acts of SI-68 (move a deal to another configured stage, set or clear its next action, convert it, lose it). It cannot clear a stop, trip a global, system or job_kind stop, send, resend, retry or mark a send, configure or activate a channel, create, delete, reopen or otherwise edit a CRM record, or change money, organisational-unit or governance state.",
+      "The browser can cause exactly eight mutations, and only once their functions exist after the user-management prerequisite: a review decision through ops.record_review_decision (which decides the structured review only, approves no reply draft, authorises no send, and writes no outbound row and no job); a trip at tenant, company, department or agent scope through ops.trip_execution_stop under its lock, with a bounded wait whose contention answer is generic, retryable and creates nothing; by owner decision R, the four narrow commercial acts of SI-68 (move a deal to another configured stage, set or clear its next action, convert it, lose it); and, by owner decision S (ADR 0026 §E), a person's own reply to a waiting conversation (one accepted person review, one person_reply send request and one reply job, SI-87) and that conversation's release to the agent through ops.release_conversation, which closes exactly the episodes the owner's release closes (person_requested, configuration_missing and message_waiting, SI-82). It cannot clear a stop, trip a global, system or job_kind stop, send anything but a person's own reply through SI-87's act, resend, retry or mark a send, take over a conversation, make an exception act (resolve, dismiss or reconcile), configure or activate a channel, create, delete, reopen or otherwise edit a CRM record, or change money, organisational-unit or governance state.",
     provenBy: ["migration assertion", "static guard", "live database"],
     enforcedBy: [
+      // Owner decision S (ADR 0026 §E): the fifth OD-8a file holds the eight
+      // acts; each earlier file keeps its own marker.
       {
-        // S7.1, S7.2 and Phase 3B.2: the browser can cause exactly six
-        // mutations, the review decision, the trip and the four commercial
-        // acts; the read migration creates only the reads, each act migration
-        // exactly its own acts, and the static guard refuses anything else.
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /company_os_api function whose volatility contradicts the eight acts/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker: /ops_operator_api does not execute exactly the 24 gates/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /a browser-facing role can execute a clear, outbound or send function/,
+      },
+      {
+        file: "supabase/tests/companyOsMigrationGuard.test.ts",
+        marker:
+          /"reply_to_conversation\\\\\(p_task_id pg_catalog\\\\\.uuid, p_text pg_catalog\\\\\.text,",/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /raise exception 'P1: the company_os_api catalogue drifted from the pinned signatures: %', v_bad;/,
+      },
+      {
+        // S7.1, S7.2, Phase 3B.2 and decision S: the browser can cause exactly
+        // eight mutations, the review decision, the trip, the four commercial
+        // acts and the inbox's reply and release; the read migration creates
+        // only the reads, each act migration exactly its own acts, and the
+        // static guard refuses anything else.
         file: "supabase/migrations/20260922120000_company_os_read_surface.sql",
         marker: /company_os_api does not hold exactly the catalogue/,
       },
@@ -3211,7 +3310,7 @@ const INVARIANTS: Invariant[] = [
       },
     ],
     caveat:
-      "S7.1: the review decision exists, in a second allowlisted migration (20260923120000), after the S7 user-management prerequisite (supabase/functions/users/userManagement.ts) was fixed and tested; it sends nothing. S7.2: the trip exists in a third allowlisted migration (20260924120000); the browser names only a scope and a target, the actor is the principal and the reason is fixed by the server, and there is no browser clear. A frontend flag is never the boundary.",
+      "S7.1: the review decision exists, in a second allowlisted migration (20260923120000), after the S7 user-management prerequisite (supabase/functions/users/userManagement.ts) was fixed and tested; it sends nothing. S7.2: the trip exists in a third allowlisted migration (20260924120000); the browser names only a scope and a target, the actor is the principal and the reason is fixed by the server, and there is no browser clear. A frontend flag is never the boundary. Owner decision S (ADR 0026 §E): the inbox's read, reply and release exist in a fifth allowlisted migration (20261021130000); the reply is the first browser act that causes a send, only of the member's own text on test data (SI-87), and the release is the owner's release.",
   },
   {
     id: "SI-59",
@@ -3270,6 +3369,10 @@ const INVARIANTS: Invariant[] = [
       {
         file: "supabase/tests/companyOsFrontendLint.test.ts",
         marker: /the Company OS module reaches nothing but its ports/,
+      },
+      {
+        file: "src/company-os/CompanyOsApp.storage.test.tsx",
+        marker: /const COMPOSER_SENTINEL = /,
       },
     ],
     caveat:
@@ -3656,8 +3759,10 @@ const INVARIANTS: Invariant[] = [
         marker: /M: a malformed stage configuration must read invalid/,
       },
       {
+        // P5's callee allowlist names the funnel's adapter (since ADR 0026 §E
+        // it is followed by the inbox's first-name read, SI-48).
         file: "supabase/tests/company_os_api.sql",
-        marker: /'crm_commercial_funnel'\)\)/,
+        marker: /^\s+'crm_commercial_funnel',\s*$/m,
       },
       {
         file: "supabase/migrations/20260929130000_commercial_funnel_read_model.sql",
@@ -4147,7 +4252,7 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-74",
     statement:
-      "A browser session acts on real data only with multi-factor assurance: ops.operator_scope(), the one resolver every company_os_api gate calls, and public.current_sales_id() and public.is_admin(), the two roots every CRM row-security policy decides through (so every browser-readable CRM table and view, the views being security_invoker), refuse or answer nothing to any session unless both the auth provider's own auth.sessions row and the verified token's aal claim, for the user the request acts as, are at level aal2 or above; the level is an additional prerequisite and never widens what a row rule allows; the two backend paths that act as a caller (merge_contacts through the owner-session pool, and the users function's caller lookup) carry the caller's verified session and are refused the same way; no request value, browser state, legacy per-claim setting or argument can raise the level; the only waiver is a single owner-recorded non-production row (ops.operator_assurance_exemption) that no application role can read or write, that no migration ships, and that only the local development seed records, which never reaches a hosted project (SI-25).",
+      "A browser session acts on real data only with multi-factor assurance: ops.operator_scope(), the one resolver every company_os_api gate calls, and public.current_sales_id() and public.is_admin(), the two roots every CRM row-security policy decides through (so every browser-readable CRM table and view, the views being security_invoker), refuse or answer nothing to any session unless both the auth provider's own auth.sessions row and the verified token's aal claim, for the user the request acts as, are at level aal2 or above; the level is an additional prerequisite and never widens what a row rule allows; the two backend paths that act as a caller (merge_contacts through the owner-session pool, and the users function's caller lookup) carry the caller's verified session and are refused the same way; no request value, browser state, legacy per-claim setting or argument can raise the level; the only waiver is a single owner-recorded non-production row (ops.operator_assurance_exemption) that no application role can read or write, that no migration ships, and that only the local development seed records, which never reaches a hosted project (SI-25). A person's reply from the browser inbox (SI-87) also needs the session's authenticator-app factor verified within the hour, read from the auth provider's own records (auth.sessions, auth.mfa_factors and auth.mfa_amr_claims): only a verified factor the user had before that session began counts, so a factor enrolled during the session never does; the same non-production row alone waives it, and without it the act answers second_factor_required before it reads the conversation and records nothing.",
     provenBy: [
       "live database",
       "migration assertion",
@@ -4155,6 +4260,20 @@ const INVARIANTS: Invariant[] = [
       "static guard",
     ],
     enforcedBy: [
+      // ADR 0026 §E: the inbox's reply also needs a factor the user had before
+      // the session, verified within the hour.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /join auth\.mfa_factors f on f\.id = s\.factor_id/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /and f\.created_at < s\.created_at/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /and a\.updated_at > now\(\) - interval '1 hour'\);/,
+      },
       {
         file: "supabase/tests/production_security.sql",
         marker: /B1 aal1 session, aal1 claims/,
@@ -4236,6 +4355,14 @@ const INVARIANTS: Invariant[] = [
         file: "src/components/atomic-crm/providers/supabase/authProvider.secondFactor.test.ts",
         marker:
           /keeps a level-1 session whose account the database does not show/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker: /'C5b a factor newer than the session'/,
+      },
+      {
+        file: "supabase/tests/companyOsProbe/stepUpChecks.mjs",
+        marker: /export async function secondFactorStepUp\(/,
       },
     ],
     caveat:
@@ -4696,9 +4823,19 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-81",
     statement:
-      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate. A person's reply answers the conversation as the person saw it: it names the conversation's revision (how many messages the contact sent, admitted or refused), is refused if the conversation moved since, and is stale only once the contact wrote again after that revision, so a refused message inside it does not make it stale; a reply the agent or a fixed text drafted is stale once a person replied to its message, but for the safety texts and the opt-out acknowledgement, which only the contact's next message makes stale. An automatic safety text or acknowledgement of a request for a person or of an opt-out answers the request, not its words: only a newer automatic text of its family (the two safety texts are one) makes it stale, and a safety text also an opt-out on a newer message; its job waits while a newer message is still to be screened, and the reply job's last gate holds the conversation through the call like the operator's send; it waits for the conversation at most five seconds, never more than half the statement's own bound, and when it cannot take it, or an acknowledgement's newer message is still to be screened, it puts the send back unsent and the job back in the queue; a number erased since the send began is never written to.",
+      "A reply answers the message it was drafted for, and only while that message is its conversation's latest: once the contact wrote again (a message admitted or refused on the record, such as an image or an empty or oversized text, newer by the provider's clock or recorded after it), the send request refuses the review (newer_message) and nothing is recorded; the last gate holds the conversation through the provider call and reads it again, so a message that arrives before the call stops it (settled failed, newer_message, never called) and one that arrives during the call waits at its admission until the call is settled; the review page shows the same predicate. A person's reply answers the conversation as the person saw it: it names the conversation's revision (how many messages the contact sent, admitted or refused), is refused if the conversation moved since, and is stale only once the contact wrote again after that revision, so a refused message inside it does not make it stale; a reply the agent or a fixed text drafted is stale once a person replied to its message, but for the safety texts and the opt-out acknowledgement, which only the contact's next message makes stale. An automatic safety text or acknowledgement of a request for a person or of an opt-out answers the request, not its words: only a newer automatic text of its family (the two safety texts are one) makes it stale, and a safety text also an opt-out on a newer message; its job waits while a newer message is still to be screened, and the reply job's last gate holds the conversation through the call like the operator's send; it waits for the conversation at most five seconds, never more than half the statement's own bound, and when it cannot take it, or an acknowledgement's newer message is still to be screened, it puts the send back unsent and the job back in the queue; a number erased since the send began is never written to. A person's reply from the browser inbox (SI-87) is the same act: it names the revision the open conversation showed, is answered stale with nothing recorded if the conversation moved, and its job's last gate holds the conversation through the call; person replies of one conversation leave in the order they were written, and an earlier one a newer message made stale never holds a later one.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
+      // ADR 0026 §E: the inbox's reply names the revision, and person replies
+      // leave in the order written.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /when revision <> p_expected_revision then 'stale'/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /and not ops\.cos_review_superseded\(p\.tenant_id, pr\)\);/,
+      },
       {
         file: "supabase/migrations/20261012120000_front_desk_review_context.sql",
         marker:
@@ -4814,6 +4951,16 @@ const INVARIANTS: Invariant[] = [
         marker:
           /still sends the safety text after a person replied to the crisis message; only the contact's next message makes it stale/,
       },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker:
+          /never sends a reply after the contact's newer message, in any order of the two/,
+      },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker:
+          /sends two members' replies in the order written, whichever worker takes which job \(20 runs\)/,
+      },
     ],
     caveat:
       "Recording order is the insertion order of each message's facts, which the conversation's row serialises at admission; two messages the provider delivers out of order therefore hold both replies for a person (fail closed). While a call is in flight, the contact's next message waits at its admission, bounded by the gateway's statement timeout, and Meta redelivers one the gateway could not take in time. A message that never reaches this system (a number whose webhooks go elsewhere) cannot make a reply stale.",
@@ -4821,9 +4968,15 @@ const INVARIANTS: Invariant[] = [
   {
     id: "SI-82",
     statement:
-      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution, and, in the overview's waiting list, an open request for a person's or waiting message's kinds, counts and instants and the state of the owner's notification about it, by an opaque task reference; SI-86's notification intents are recorded in the transaction that raises the exception; no application role reaches the store or its functions.",
+      "What a person must act on reaches one exception store, raised by the database where the fact is decided and never by a model: the screening raises a request for a person and an opt-out whoever holds the conversation, a fixed text the agent needed and has not published, each message that arrives while a person holds the conversation (the gateway counts one the store refused, such as an image, once per message), and a contact no reply can reach, judged by the conversation's newest admission; danger is not one: it gets the owner's fixed safety text and the conversation stays with the agent, and the safety text and the opt-out acknowledgement are drafted whoever holds the conversation; a send raises a failure (never one the stale-reply gate stopped before any call) or an uncertain outcome, recorded after the settlement of its provider call commits and never inside it, and provider evidence reconciles it; an automatic text that did not leave (blocked, out of date, past the hourly cap) raises send_blocked on its send or its conversation, never for one the contact's newer message made stale; at most one exception is open per subject and kind, with the kind's priority, and a repeat while it is open is counted on it; a person resolves one only by naming the count the person saw, and the act is refused if it recurred since; an opt-out is reconciled once the CRM records it (SI-84); a release resolves only what it ends and is refused while an opt-out is open; an exception is raised open, its identity never changes but for that count, it is resolved once and leaves only with its subject; its events, exception.raised and exception.resolved, carry its kind, priority, subject kind and resolution and never a text, a number or a CRM id, and the browser reads only the kind, the priority and the resolution, and, in the overview's waiting list, an open request for a person's or waiting message's kinds, counts and instants and the state of the owner's notification about it, by an opaque task reference; SI-86's notification intents are recorded in the transaction that raises the exception; no application role reaches the store or its functions. A member's release from the browser inbox (SI-87) resolves, through its gate, exactly what the owner's release resolves (released, recorded as the principal), configuration_missing included.",
     provenBy: ["live database", "migration assertion", "driver-backed test"],
     enforcedBy: [
+      // ADR 0026 §E: the inbox's release is the owner's release, unchanged.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /v_result := ops\.release_conversation\(p_tenant_id, \(v_pre\.conversation\)\.id, p_actor\);/,
+      },
       {
         file: "supabase/migrations/20261016120000_exception_queue.sql",
         marker:
@@ -4918,6 +5071,11 @@ const INVARIANTS: Invariant[] = [
         file: "engine/domain/reviewAuthorship.dbtest.ts",
         marker:
           /drafts the opt-out acknowledgement in a conversation a person holds; the message still waits, and the release waits for a person/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker:
+          /raise exception 'E1: the release did not give the conversation back, closing its episodes as released by the principal';/,
       },
     ],
     caveat:
@@ -5398,6 +5556,184 @@ const INVARIANTS: Invariant[] = [
         marker: /withholds a number typed by mistake from the usage message/,
       },
     ],
+  },
+  {
+    id: "SI-87",
+    statement:
+      "The browser inbox lists only its own tenant's conversations waiting for a person (an open request for a person or waiting message), by an opaque task reference, with no text, number or name (the overview's waiting list, SI-82), and opens, replies to or releases only such a conversation, reached by any task of its own inbound messages within the caller's tenant (another tenant's task, an unknown one or a task of no conversation answers as a random one). On an explicit open, under no-store and into browser memory only, a member reads a conversation whose channel is test, whose number is not erased and whose newest message's task is synthetic or test, and otherwise only a state (withheld, or no longer waiting): the first word of the contact's CRM first name (letters, hyphens and apostrophes, at most 40, never stored), the last 50 turns (an admitted message's text as the contact wrote it, digits included, and a reply's text, each only where its own task is synthetic or test and nothing of it was redacted; a message the transport refused only as its reason; a reply only once it left or may have left, or a person's reply asked for from the inbox in any state, with its author, whether it left on its own and its delivery state, held while a stop holds its job), who holds the conversation, whether an opt-out is open, when the contact last wrote, the end of the 24-hour window, the conversation's revision and the acts the server allows now; no field carries the contact's number, a conversation, message or contact identifier, an actor label or an event order, and no turn shows the agent's or a fixed text's reply that did not leave. Only while a person holds the conversation and it still waits, its revision is the one the member saw, its newest message can be answered (not redacted, fewer than five person replies at that revision, the contact not do-not-contact as admitted), the send's own gates would let a reply leave now (an execution stop holds it instead), and the member's own session verified, within the hour by the auth provider's own records, an authenticator-app factor the user had before that session began (waived only by SI-74's non-production row; otherwise the act answers second_factor_required before it reads the reference), may the member ask for its own reply of 1 to 2000 characters to be sent; the member's same text at the same revision is recorded once unless its send failed or was blocked. The act records, in one transaction, one person review the member accepts (source company-os-ui), one send request of kind person_reply, which the send table's guard admits only in that transaction for that review and that principal, and one outbound.reply_send job. Only that job carries it, on the terms of SI-49, SI-50 and SI-81, with no published-policy check and no hourly cap, after any earlier person's reply of the conversation that is not stale, and blocked once the contact's window ends; the person's text never reaches a model (SI-80). A member may release such a conversation while a person holds it, at the revision it saw and never while an opt-out is open, through ops.release_conversation, which closes exactly what the owner's release closes (person_requested, configuration_missing and message_waiting, SI-82); a reply already queued still leaves. Each act is bounded (2 s, then a retryable refusal), never retried by the browser, records nothing when it refuses, and answers a refusal as a state, never as an access change. Nothing in the inbox takes over a conversation, makes an exception act (resolve, dismiss or reconcile), resends, retries or marks a send, or offers an AI draft.",
+    provenBy: [
+      "live database",
+      "migration assertion",
+      "static guard",
+      "driver-backed test",
+      "unit test",
+    ],
+    enforcedBy: [
+      // ADR 0026 §E (slice 5): the read graph, the acts and the send guard.
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /message = 'ops\.outbound_messages: a person''s reply is sent only by the act that accepted it'/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /ch\.mode = 'test' and c\.contact_erased_at is null/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /from \(select x\.\* from turns x order by x\.at desc, x\.rank desc, x\.tie desc limit 50\) l\)/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /and f\.created_at < s\.created_at/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /'outcome', 'second_factor_required',/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /v_refusal := 'already_recorded';/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker: /v_refusal := 'opt_out_open';/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /raise exception 'an inbox read reaches beyond reading: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /raise exception 'an inbox function is reachable, not a pinned INVOKER, or of the wrong volatility: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261021120000_browser_inbox_acts.sql",
+        marker:
+          /raise exception 'the event order is cached: person replies could leave out of order';/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker: /'company_os_api\.reply_to_conversation\(uuid,text,integer\)',/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker: /<> 24 then/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /raise exception 'a bounded gate does not carry exactly the 2 s lock_timeout: %', v_bad;/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker: /raise exception 'the conversation read is not STABLE';/,
+      },
+      {
+        file: "supabase/migrations/20261021130000_company_os_browser_inbox.sql",
+        marker:
+          /raise exception 'an inbox callee is a DEFINER or reachable by a browser-facing role: %', v_bad;/,
+      },
+      {
+        file: "contracts/company-os-api/conversation.ts",
+        marker: /export const CONVERSATION_TURNS_SHOWN = 50;/,
+      },
+      {
+        file: "contracts/company-os-api/conversation.ts",
+        marker: /export const FIRST_NAME_MAX_LENGTH = 40;/,
+      },
+      {
+        file: "contracts/company-os-api/conversation.ts",
+        marker:
+          /export const ConversationSchema = z\.discriminatedUnion\("status", \[/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /\('get_conversation', 'id', 'company_os_api\.get_conversation\(p_task_id => %L\)', 'tasks', null\)/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker: /\('get_conversation', array\['\.asOf', '\.status', '\.v'\]\)/,
+      },
+      {
+        file: "supabase/tests/company_os_api.sql",
+        marker:
+          /\('release_conversation', format\('company_os_api\.release_conversation\(%L, 0\)', pg_temp\.id\('b\.task_sent'\)\), 'OS404'\)/,
+      },
+      {
+        file: "supabase/invariants/declaration.json",
+        marker: /"20261021130000_company_os_browser_inbox\.sql": \[/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker:
+          /raise exception '% \(B5\): an answer carries what SI-87 keeps out: %', p_label, v_bad;/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker:
+          /raise exception 'B2b: a reply with no draft is %', v -> 'turns' -> 1;/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker: /'C5b a factor newer than the session'/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker:
+          /\('D1 no mark', pg_temp\.try_send\(r_a, p_a, null\), c_guard\)/,
+      },
+      {
+        file: "supabase/tests/browser_inbox.sql",
+        marker: /raise exception 'F1: % calls %, not exactly %'/,
+      },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker:
+          /queues the reply, sends it once through the worker and shows it sent/,
+      },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker:
+          /answers a retryable refusal after the 2 s bound while another transaction holds the conversation, recording nothing/,
+      },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker:
+          /waits without a transport, its job given back every 30 s, until the window ends, then lists it for a person/,
+      },
+      {
+        file: "engine/domain/browserInbox.dbtest.ts",
+        marker: /never shows the person's text to the model \(SI-80\)/,
+      },
+      {
+        file: "engine/domain/companyOsConversationContract.test.ts",
+        marker: /describe\("a person's reply text \(ReplyTextSchema\)"/,
+      },
+      {
+        file: "supabase/tests/companyOsProbe/stepUpChecks.mjs",
+        marker: /export async function secondFactorStepUp\(/,
+      },
+      {
+        file: "src/company-os/screens/inbox/ReplyPanel.test.tsx",
+        marker: /makes one act for two clicks on the confirmation/,
+      },
+      {
+        file: "src/company-os/screens/inbox/ReplyPanel.test.tsx",
+        marker:
+          /asks for the authenticator code when the factor is not recent, then needs a second confirmation to send/,
+      },
+      {
+        file: "src/company-os/screens/readOnly.test.tsx",
+        marker: /const INBOX_CONVERSATION_PAGE = /,
+      },
+    ],
+    caveat:
+      "Recency narrows token theft and does not remove it: a stolen session that verified within the hour can ask for a reply, only to a test number while SI-47 holds, and a factor enrolled during that session never counts in it; but a factor that session enrols counts in a later session, which a thief can open by setting a new password through the stolen one, so binding the step-up to a factor the owner acknowledged is a follow-up. The send guard binds application paths, not the database owner, who can write ops directly. A conversation a person holds with no open waiting episode (a takeover with no new message, the hourly cap's hold, an opt-out's hold) is not in the inbox and stays with the owner's tools until the contact writes again; an open opt-out blocks both acts, and dismissing or resolving it stays an owner act. An act during a send to the same conversation answers busy after 2 s, since that send holds the conversation through its call.",
   },
 ];
 

@@ -11,6 +11,7 @@ import {
   ADVICE_REVIEW,
   ADVICE_SUMMARY,
   EVERY_ROUTE,
+  INBOX_CONVERSATION,
   openAdvice,
   visit,
 } from "./testing/routes";
@@ -70,7 +71,15 @@ const SCREEN_DATA = [
   rid("review:opened"),
   rid("stop:agent"),
   USER_A.userId,
+  // ADR 0026 §E (SI-87): an open conversation's text and its contact's first
+  // name, held in memory only while the conversation is open.
+  "Oi, queria saber como funciona a primeira sessão.",
+  "Temos sim, às 15h. Pode ser?",
+  "Ana-Maria",
 ];
+
+/** What the member types into the inbox's reply and never sends. */
+const COMPOSER_SENTINEL = "Composer sentinel: synthetic reply never sent";
 
 // A persister writes on a throttle (1000 ms by default). Wait past it, as the
 // CRM's own sentinel test does, so one cannot pass by not having written yet.
@@ -103,6 +112,7 @@ const browserStorage = async () => ({
 /** Every sentinel any test in this file makes the module read. */
 const EVERY_SENTINEL = [
   ...SCREEN_DATA,
+  COMPOSER_SENTINEL,
   TENANT_NAME,
   STOP_REASON,
   SECOND_TENANT_NAME,
@@ -217,6 +227,16 @@ describe("the Company OS keeps what it reads out of browser storage", () => {
         await visit(screen, route);
         expectNothingKeptInThePage(route.hash, title);
       }
+      // The inbox's reply, typed and never sent: component state only.
+      await visit(
+        screen,
+        EVERY_ROUTE.find((route) => route.hash.endsWith(INBOX_CONVERSATION))!,
+      );
+      await screen.getByLabelText("Sua resposta").fill(COMPOSER_SENTINEL);
+      await expect
+        .element(screen.getByLabelText("Sua resposta"))
+        .toHaveValue(COMPOSER_SENTINEL);
+      expectNothingKeptInThePage("the inbox's typed reply", title);
       await visit(
         screen,
         EVERY_ROUTE.find((route) => route.hash.endsWith(ADVICE_REVIEW))!,

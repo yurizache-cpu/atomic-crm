@@ -176,6 +176,11 @@ const FOREIGN_CASES = (ids) => [
   ["get_task", "p_task_id", ids.company_b],
   ["get_run", "p_run_id", ids.agent_b],
   ["get_review", "p_review_id", ids.run_b],
+  // ADR 0026 §E: a foreign task, a wrong kind, and the caller's own task of
+  // no conversation all answer like a random task.
+  ["get_conversation", "p_task_id", ids.task_b],
+  ["get_conversation", "p_task_id", ids.review_b],
+  ["get_conversation", "p_task_id", ids.task_a],
 ];
 // Each list case: the arguments naming a row, the tenant B row, the tenant A
 // row of the same kind (a positive control: the same arguments naming the
@@ -319,6 +324,7 @@ function forbiddenValues(t) {
     ["a job's idempotency key", values.jobKeyA],
     ["an admitted lead's body", SENTINELS.admittedBody],
     ["an admission's external message id", values.admissionMessage],
+    ["a conversation message's external id", values.conversationMessage],
     ["an admission's contact reference", values.admissionContact],
     ["the decided run's idempotency key", values.runKeyDecided],
     ["the decided run's request fingerprint", values.runFingerprintDecided],

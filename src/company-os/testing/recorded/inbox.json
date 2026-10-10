@@ -1,0 +1,179 @@
+{
+  "generatedBy": "engine/domain/companyOsInboxRecording.dbtest.ts; re-record with COMPANY_OS_RECORD=1, never edit by hand",
+  "asOf": "2030-03-04T13:30:00.000000Z",
+  "ids": {
+    "task:inbox-waiting": "00000000-0000-4000-8000-004000000001",
+    "task:inbox-waiting-first": "00000000-0000-4000-8000-004000000002",
+    "task:inbox-released": "00000000-0000-4000-8000-004000000003",
+    "task:inbox-withheld": "00000000-0000-4000-8000-004000000004"
+  },
+  "waitingList": {
+    "items": [
+      {
+        "ref": "00000000-0000-4000-8000-004000000001",
+        "kinds": ["message_waiting"],
+        "counts": { "message_waiting": 1 },
+        "notification": { "at": null, "state": "none" },
+        "waitingSince": "2030-03-04T13:30:00.000000Z",
+        "windowEndsAt": "2030-03-05T13:20:00.000000Z",
+        "lastMessageAt": "2030-03-04T13:20:00.000000Z"
+      }
+    ],
+    "total": 1
+  },
+  "calls": [
+    {
+      "operation": "get_conversation",
+      "args": { "p_task_id": "00000000-0000-4000-8000-004000000001" },
+      "response": {
+        "v": 1,
+        "asOf": "2030-03-04T13:30:00.000000Z",
+        "turns": [
+          {
+            "at": "2030-03-04T12:40:00.000000Z",
+            "kind": "inbound",
+            "text": null,
+            "hidden": "withheld"
+          },
+          {
+            "at": "2030-03-04T12:50:00.000000Z",
+            "kind": "inbound",
+            "text": "Oi, queria saber como funciona a primeira sessão.",
+            "hidden": null
+          },
+          {
+            "at": "2030-03-04T12:55:00.000000Z",
+            "kind": "reply",
+            "text": "Oi! A primeira sessão dura 50 minutos e é online.",
+            "author": "person",
+            "hidden": null,
+            "reason": null,
+            "delivery": "sent",
+            "fixedKey": null,
+            "automatic": false,
+            "withPrivacyNotice": false
+          },
+          {
+            "at": "2030-03-04T13:10:00.000000Z",
+            "kind": "inbound",
+            "text": "Tem horário na quinta?\nPode ser à tarde.",
+            "hidden": null
+          },
+          {
+            "at": "2030-03-04T13:30:00.000000Z",
+            "kind": "refused",
+            "reason": "unsupported_content"
+          },
+          {
+            "at": "2030-03-04T13:30:00.000000Z",
+            "kind": "reply",
+            "text": "Temos sim, às 15h. Pode ser?",
+            "author": "person",
+            "hidden": null,
+            "reason": null,
+            "delivery": "queued",
+            "fixedKey": null,
+            "automatic": false,
+            "withPrivacyNotice": false
+          }
+        ],
+        "holder": "person",
+        "status": "available",
+        "revision": 4,
+        "firstName": "Ana-Maria",
+        "optOutOpen": false,
+        "allowedActs": { "reply": true, "release": true },
+        "earlierTurns": false,
+        "windowEndsAt": "2030-03-05T13:20:00.000000Z",
+        "lastMessageAt": "2030-03-04T13:20:00.000000Z",
+        "replyUnavailable": null
+      }
+    },
+    {
+      "operation": "get_conversation",
+      "args": { "p_task_id": "00000000-0000-4000-8000-004000000002" },
+      "response": {
+        "v": 1,
+        "asOf": "2030-03-04T13:30:00.000000Z",
+        "turns": [
+          {
+            "at": "2030-03-04T12:40:00.000000Z",
+            "kind": "inbound",
+            "text": null,
+            "hidden": "withheld"
+          },
+          {
+            "at": "2030-03-04T12:50:00.000000Z",
+            "kind": "inbound",
+            "text": "Oi, queria saber como funciona a primeira sessão.",
+            "hidden": null
+          },
+          {
+            "at": "2030-03-04T12:55:00.000000Z",
+            "kind": "reply",
+            "text": "Oi! A primeira sessão dura 50 minutos e é online.",
+            "author": "person",
+            "hidden": null,
+            "reason": null,
+            "delivery": "sent",
+            "fixedKey": null,
+            "automatic": false,
+            "withPrivacyNotice": false
+          },
+          {
+            "at": "2030-03-04T13:10:00.000000Z",
+            "kind": "inbound",
+            "text": "Tem horário na quinta?\nPode ser à tarde.",
+            "hidden": null
+          },
+          {
+            "at": "2030-03-04T13:30:00.000000Z",
+            "kind": "refused",
+            "reason": "unsupported_content"
+          },
+          {
+            "at": "2030-03-04T13:30:00.000000Z",
+            "kind": "reply",
+            "text": "Temos sim, às 15h. Pode ser?",
+            "author": "person",
+            "hidden": null,
+            "reason": null,
+            "delivery": "queued",
+            "fixedKey": null,
+            "automatic": false,
+            "withPrivacyNotice": false
+          }
+        ],
+        "holder": "person",
+        "status": "available",
+        "revision": 4,
+        "firstName": "Ana-Maria",
+        "optOutOpen": false,
+        "allowedActs": { "reply": true, "release": true },
+        "earlierTurns": false,
+        "windowEndsAt": "2030-03-05T13:20:00.000000Z",
+        "lastMessageAt": "2030-03-04T13:20:00.000000Z",
+        "replyUnavailable": null
+      }
+    },
+    {
+      "operation": "get_conversation",
+      "args": { "p_task_id": "00000000-0000-4000-8000-004000000003" },
+      "response": {
+        "v": 1,
+        "asOf": "2030-03-04T13:30:00.000000Z",
+        "status": "not_waiting"
+      }
+    },
+    {
+      "operation": "get_conversation",
+      "args": { "p_task_id": "00000000-0000-4000-8000-004000000004" },
+      "response": {
+        "v": 1,
+        "asOf": "2030-03-04T13:30:00.000000Z",
+        "reason": "not_test",
+        "status": "withheld"
+      }
+    }
+  ]
+}

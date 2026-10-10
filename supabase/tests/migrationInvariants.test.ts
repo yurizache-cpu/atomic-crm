@@ -79,9 +79,20 @@ const COMPANY_OS_ACT_CATALOGUE = [
   "lose_opportunity(bigint,text,text)",
 ];
 
+/** ADR 0026 §E (owner decision S): the browser inbox's read and its two acts,
+ *  a member's own reply to a conversation a person holds and its release. The
+ *  inbox makes no exception act and sends nothing an AI drafted (SI-87). These
+ *  make 16 reads and eight acts. */
+const COMPANY_OS_INBOX_CATALOGUE = [
+  "get_conversation(uuid)",
+  "reply_to_conversation(uuid,text,integer)",
+  "release_conversation(uuid,integer)",
+];
+
 const COMPANY_OS_CATALOGUE = [
   ...COMPANY_OS_READ_CATALOGUE,
   ...COMPANY_OS_ACT_CATALOGUE,
+  ...COMPANY_OS_INBOX_CATALOGUE,
 ].sort();
 
 /**
@@ -143,6 +154,7 @@ const FROZEN = {
       "20260923120000_company_os_review_decision.sql",
       "20260924120000_company_os_execution_stop.sql",
       "20260930130000_company_os_commercial_acts.sql",
+      "20261021130000_company_os_browser_inbox.sql",
     ],
     transfers: {
       "20260922120000_company_os_read_surface.sql":
@@ -159,6 +171,8 @@ const FROZEN = {
         "company_os_api.convert_opportunity(bigint,text,text)",
         "company_os_api.lose_opportunity(bigint,text,text)",
       ],
+      "20261021130000_company_os_browser_inbox.sql":
+        COMPANY_OS_INBOX_CATALOGUE.map((f) => `company_os_api.${f}`),
     },
   },
 };

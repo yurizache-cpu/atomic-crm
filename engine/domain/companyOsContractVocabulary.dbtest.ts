@@ -123,6 +123,15 @@ const CHECKED: Readonly<Record<string, readonly [readonly string[], string]>> =
       contracts.SCREENING_DISPOSITIONS,
       "inbound_screenings.inbound_screenings_disposition_check",
     ],
+    // ADR 0026 §E: who wrote a reply turn, and who holds a conversation.
+    REVIEW_AUTHORS: [
+      contracts.REVIEW_AUTHORS,
+      "review_items.review_items_author_check",
+    ],
+    CONVERSATION_HOLDERS: [
+      contracts.CONVERSATION_HOLDERS,
+      "conversation_states.conversation_states_holder_check",
+    ],
   };
 
 describe("the contract vocabularies equal the database's", () => {
@@ -189,6 +198,110 @@ describe("the contract vocabularies equal the database's", () => {
       if (state === "none" || state === "skipped") continue;
       expect(states.has(state)).toBe(true);
     }
+  });
+
+  it("the conversation read emits exactly the inbox contract's vocabularies and bounds (ADR 0026 §E)", async () => {
+    const turns = await functionSource("cos_conversation_turns");
+    // A reply's delivery: the cases the projection maps, then every other
+    // send status as itself.
+    const delivery = section(
+      turns,
+      /'delivery', case(.*?)end,/s,
+      "the delivery mapping",
+    );
+    expect(delivery.trimEnd()).toMatch(/else o\.status$/);
+    const handled = new Set([
+      ...[...delivery.matchAll(/o\.status = '([a-z_]+)'/g)].map((m) => m[1]),
+      ...[...delivery.matchAll(/o\.status in \(([^)]*)\)/g)].flatMap((m) =>
+        literals(m[1]),
+      ),
+    ]);
+    const mapped = [...delivery.matchAll(/then '([a-z_]+)'/g)].map((m) => m[1]);
+    const statuses = literals(
+      await constraintDefinition(
+        "outbound_messages",
+        "outbound_messages_status_check",
+      ),
+    );
+    expect(handled.size).toBeGreaterThan(0);
+    for (const status of handled) expect(statuses).toContain(status);
+    expect(
+      sorted(new Set([...mapped, ...statuses.filter((s) => !handled.has(s))])),
+    ).toEqual(sorted(contracts.REPLY_DELIVERY_STATES));
+    // Why a turn shows no text, in both its inbound and its reply branch.
+    const hidden = [...turns.matchAll(/'hidden', case(.*?)end/gs)];
+    expect(hidden).toHaveLength(2);
+    expect(
+      sorted(
+        new Set(
+          hidden.flatMap((m) =>
+            [...m[1].matchAll(/then '([a-z_]+)'/g)].map((x) => x[1]),
+          ),
+        ),
+      ),
+    ).toEqual(sorted(contracts.TURN_HIDDEN_REASONS));
+    // The page: the newest 50 turns, and whether earlier ones exist.
+    expect(
+      Number(section(turns, /from turns\) > (\d+)/, "the earlier-turns bound")),
+    ).toBe(contracts.CONVERSATION_TURNS_SHOWN);
+    expect(Number(section(turns, /limit (\d+)\) l/, "the page's limit"))).toBe(
+      contracts.CONVERSATION_TURNS_SHOWN,
+    );
+    expect(
+      Number(
+        section(
+          turns,
+          /char_length\(t\.description\) between 1 and (\d+)/,
+          "the inbound text bound",
+        ),
+      ),
+    ).toBe(contracts.INBOUND_TEXT_MAX_LENGTH);
+
+    const read = await functionSource("read_conversation");
+    const withheld = section(
+      read,
+      /'status', 'withheld',\s*'reason', case(.*?)end/s,
+      "the withheld reasons",
+    );
+    expect(
+      sorted(
+        [...withheld.matchAll(/(?:then|else) '([a-z_]+)'/g)].map((m) => m[1]),
+      ),
+    ).toEqual(sorted(contracts.CONVERSATION_WITHHELD_REASONS));
+    // Why a reply cannot be asked for: the read's own cases, then the act's
+    // refusal helper, which it calls last.
+    const unavailable = section(
+      read,
+      /v_why := case(.*?)end;/s,
+      "the unavailable reasons",
+    );
+    expect(unavailable).toMatch(/else ops\.cos_person_reply_refusal\(/);
+    const refusal = await functionSource("cos_person_reply_refusal");
+    expect(
+      sorted([
+        ...[...unavailable.matchAll(/then '([a-z_]+)'/g)].map((m) => m[1]),
+        ...[...refusal.matchAll(/then '([a-z_]+)'/g)].map((m) => m[1]),
+      ]),
+    ).toEqual(sorted(contracts.REPLY_UNAVAILABLE_REASONS));
+    expect(
+      Number(
+        section(
+          await functionSource("cos_conversation_first_name"),
+          /, (\d+)\), ''\)/,
+          "the first-name bound",
+        ),
+      ),
+    ).toBe(contracts.FIRST_NAME_MAX_LENGTH);
+    // The reply act bounds the text as ReplyTextSchema does.
+    expect(
+      Number(
+        section(
+          await functionSource("reply_to_conversation_as_member"),
+          /char_length\(p_text\) not between 1 and (\d+)/,
+          "the reply's bound",
+        ),
+      ),
+    ).toBe(contracts.REPLY_TEXT_MAX_LENGTH);
   });
 
   it("the error categories are exactly those the status-pair constraint admits", async () => {
@@ -488,8 +601,9 @@ describe("the contract vocabularies equal the database's", () => {
         ),
       ];
       // One fixed, data-free message per code (brief §7.3). Only the trip
-      // (owner S0-B) and the four commercial acts, bounded the same way
-      // (Phase 3B.2), answer lock contention, with the one retryable code.
+      // (owner S0-B), the four commercial acts (Phase 3B.2) and the inbox's
+      // two acts (ADR 0026 §E), bounded the same way, answer lock contention,
+      // with the one retryable code.
       expect(
         raised.map((m) => m[1]),
         name,
@@ -500,6 +614,8 @@ describe("the contract vocabularies equal the database's", () => {
           "set_opportunity_next_action",
           "convert_opportunity",
           "lose_opportunity",
+          "reply_to_conversation",
+          "release_conversation",
         ].includes(operation)
           ? ["OS400", "OS401", "OS403", "OS404", "OS409", "OS429", "OS500"]
           : ["OS400", "OS401", "OS403", "OS404", "OS409", "OS500"],

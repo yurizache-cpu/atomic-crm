@@ -24,8 +24,9 @@ import {
 // ADR 0026 §D: who waits for a person now, oldest first, as the overview
 // reports it: the kinds and their counts, since when, the 24-hour window the
 // contact's last message opened, and the state of the owner's notification.
-// Read only: each row opens the task of the conversation's oldest open
-// episode, where a person answers. No text, number or name is shown.
+// Read only: each row opens the conversation in the Fila de atendimento
+// (ADR 0026 §E), by the task of its oldest open episode; the conversation is
+// read only once it is opened. No text, number or name is shown here.
 
 const windowText = (item: WaitingListItem, asOf: string): string =>
   item.windowEndsAt === null || item.windowEndsAt <= asOf
@@ -47,7 +48,7 @@ const WaitingRow = ({
   item: WaitingListItem;
   asOf: string;
 }) => {
-  const to = recordPath("task", item.ref);
+  const to = recordPath("conversation", item.ref);
   const label = countsText(item);
   return (
     <li className="flex flex-col gap-1 rounded-lg border px-3 py-2 text-sm">
@@ -80,6 +81,33 @@ const WaitingRow = ({
   );
 };
 
+/**
+ * The waiting conversations, oldest first, each opening its conversation; the
+ * empty and truncated notes. Shared by the overview and the Fila de
+ * atendimento.
+ */
+export const WaitingListItems = ({
+  list,
+  asOf,
+}: {
+  list: WaitingList;
+  asOf: string;
+}) =>
+  list.items.length === 0 ? (
+    <Note>{WAITING_LIST_EMPTY}</Note>
+  ) : (
+    <>
+      <ul className="flex flex-col gap-2">
+        {list.items.map((item) => (
+          <WaitingRow key={item.ref} item={item} asOf={asOf} />
+        ))}
+      </ul>
+      {list.total > list.items.length ? (
+        <Note>{waitingListTruncatedNote(list.total, list.items.length)}</Note>
+      ) : null}
+    </>
+  );
+
 /** The overview's waiting list; nothing when the database does not carry it yet. */
 export const WaitingListSection = ({
   list,
@@ -93,23 +121,10 @@ export const WaitingListSection = ({
   if (list === undefined) return null;
   return (
     <Section title={WAITING_LIST_TITLE}>
-      {!current ? (
-        <Note>Desconhecido: aguardando uma resposta nova.</Note>
-      ) : list.items.length === 0 ? (
-        <Note>{WAITING_LIST_EMPTY}</Note>
+      {current ? (
+        <WaitingListItems list={list} asOf={asOf} />
       ) : (
-        <>
-          <ul className="flex flex-col gap-2">
-            {list.items.map((item) => (
-              <WaitingRow key={item.ref} item={item} asOf={asOf} />
-            ))}
-          </ul>
-          {list.total > list.items.length ? (
-            <Note>
-              {waitingListTruncatedNote(list.total, list.items.length)}
-            </Note>
-          ) : null}
-        </>
+        <Note>Desconhecido: aguardando uma resposta nova.</Note>
       )}
     </Section>
   );

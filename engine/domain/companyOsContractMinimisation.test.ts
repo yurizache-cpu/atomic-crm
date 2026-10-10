@@ -508,6 +508,36 @@ describe("no schema declares a forbidden key", () => {
     );
     expect(declaring).toEqual(["get_review"]);
   });
+
+  it("declares a conversation's turn text and first name in get_conversation alone (ADR 0026 §E)", () => {
+    const declaring = (key: string) =>
+      COMPANY_OS_OPERATION_NAMES.filter((name) =>
+        declaredKeys(responseOf(name) as unknown as ZodNode).includes(key),
+      );
+    // The turns are the one place a message's own words reach the browser;
+    // the first name the one place a contact's name does.
+    expect(declaring("turns")).toEqual(["get_conversation"]);
+    expect(declaring("text")).toEqual(["get_conversation"]);
+    expect(declaring("firstName")).toEqual(["get_conversation"]);
+    // An act answers with an outcome, never the text back, nor a draft.
+    const actKeys = new Set(
+      contracts.COMPANY_OS_ACT_NAMES.flatMap((name) =>
+        declaredKeys(
+          contracts.COMPANY_OS_ACTS[name].response as unknown as ZodNode,
+        ),
+      ),
+    );
+    for (const key of [
+      "text",
+      "firstName",
+      "turns",
+      "replyDraft",
+      "screenedMessage",
+      ...FORBIDDEN_KEYS,
+    ]) {
+      expect(actKeys.has(key), key).toBe(false);
+    }
+  });
 });
 
 describe("the refinements restate the projections' own semantics", () => {

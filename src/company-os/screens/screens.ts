@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   ListChecks,
   MessageSquare,
+  MessagesSquare,
   PauseCircle,
   PlayCircle,
   Wallet,
@@ -22,6 +23,7 @@ import { AgentsScreen } from "./agents/AgentsScreen";
 import { CommunicationsScreen } from "./communications/CommunicationsScreen";
 import { CostsScreen } from "./costs/CostsScreen";
 import { HealthScreen } from "./health/HealthScreen";
+import { InboxScreen } from "./inbox/InboxScreen";
 import { OverviewScreen } from "./overview/OverviewScreen";
 import { AgentRunsScreen } from "./runs/RunsScreen";
 import { ReviewsScreen } from "./reviews/ReviewsScreen";
@@ -31,12 +33,15 @@ import { TasksScreen } from "./tasks/TasksScreen";
 // The screens of docs/PHASE_2C_BRIEF.md §12, in navigation order: the eight
 // core screens, the optional, narrow Communications status view, Phase
 // 2E.2's Saúde operacional, Phase 3A's Agenda and Phase 3B.1's Funil comercial
-// (all read from the overview). Every one is read-only
-// apart from the two acts of Decisões and Pausas: no screen renders a send, a
-// draft or any configuration change, and each one's h1 is its label.
+// (all read from the overview), and ADR 0026 §E's Fila de atendimento. Every
+// one is read-only apart from the acts of Decisões, Pausas, Funil comercial
+// and Fila de atendimento: no screen renders a draft or any configuration
+// change, the one send is a member's own reply in the Fila de atendimento
+// (SI-87), and each screen's h1 is its label.
 
 export type ScreenId =
   | "overview"
+  | "inbox"
   | "agenda"
   | "funnel"
   | "health"
@@ -67,6 +72,13 @@ export const SCREENS: readonly ScreenDefinition[] = [
     path: "",
     group: "Operação",
     icon: LayoutDashboard,
+  },
+  {
+    id: "inbox",
+    label: "Fila de atendimento",
+    path: "inbox",
+    group: "Operação",
+    icon: MessagesSquare,
   },
   {
     id: "agenda",
@@ -158,6 +170,7 @@ export type ScreenComponents = Readonly<Record<ScreenId, ComponentType>>;
 
 export const DEFAULT_SCREENS: ScreenComponents = {
   overview: OverviewScreen,
+  inbox: InboxScreen,
   agenda: AgendaScreen,
   funnel: FunnelScreen,
   health: HealthScreen,

@@ -98,7 +98,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
 | Item | Status |
 | --- | --- |
 | Operator surface: overview, tasks, runs, reviews with Jev, decision intelligence, health, agenda, funnel, costs, agents, communications, stops | ✅ (ADR 0019, Phases 2C to 3B) |
-| Exception and approval inbox | 🟡 its parts exist (reviews, health attention, stops, indeterminate work); the exception store, owner tool and feed events integrated (PR #33, ADR 0025 Part A) · ⬜ the browser inbox (ADR 0026) |
+| Exception and approval inbox | 🟡 its parts exist (reviews, health attention, stops, indeterminate work); the exception store, owner tool and feed events integrated (PR #33, ADR 0025 Part A) · 🟡 the browser inbox ("Fila de atendimento": open a waiting conversation, reply, release) built on `feature/browser-inbox` (ADR 0026 slice 5, SI-87), not yet in a PR · ⬜ exception acts in the browser |
 | Daily Brief from structured state | ⬜ |
 | Owner notifications | ⬜ a WhatsApp notification to the owner for the waiting list (ADR 0026) |
 | Owner questions over analytical tools | ⬜ |
@@ -140,7 +140,7 @@ This is not the brief's example phase list. It is adjusted for what the audit ac
    - identity resolution and attribution capture at entry;
    - structured triage;
    - the first catalogued lead events (A, E). The exception queue is integrated (PR #33, ADR 0025 Part A); the rest is planned in ADR 0026;
-   - the autonomous front desk for leads (ADR 0026): automatic fixed replies, automatic lead creation, the waiting list with the owner's notification, the browser inbox.
+   - the autonomous front desk for leads (ADR 0026): automatic fixed replies, automatic lead creation, the waiting list with the owner's notification, the browser inbox (slices 2 to 5 built on stacked branches, each its own PR).
 3. **Scheduling in the journey:**
    - real slots offered in conversation;
    - the booking page with holds;

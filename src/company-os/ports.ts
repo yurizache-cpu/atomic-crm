@@ -114,8 +114,9 @@ export interface CompanyOsApi {
     options?: CallOptions,
   ): Promise<OperationResult<O>>;
   /**
-   * The six acts (S7.1 decide_review, S7.2 trip_stop, and the four commercial
-   * acts of Phase 3B.2), apart from the reads
+   * The eight acts (S7.1 decide_review, S7.2 trip_stop, the four commercial
+   * acts of Phase 3B.2, and the browser inbox's reply_to_conversation and
+   * release_conversation of ADR 0026 §E), apart from the reads
    * so nothing typed as a read can name one. The same checks as call. Called
    * once per explicit human confirmation, never retried: a lost connection is
    * OS500, whose outcome is unknown, and the caller re-reads the state

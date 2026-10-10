@@ -363,7 +363,11 @@ begin
     ('ops_operator_api', 'ops.gate_move_opportunity(bigint, text, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_set_opportunity_next_action(bigint, timestamptz, text)'::regprocedure),
     ('ops_operator_api', 'ops.gate_convert_opportunity(bigint, text, text)'::regprocedure),
-    ('ops_operator_api', 'ops.gate_lose_opportunity(bigint, text, text)'::regprocedure)
+    ('ops_operator_api', 'ops.gate_lose_opportunity(bigint, text, text)'::regprocedure),
+    -- ADR 0026 §E: the browser inbox's read and two acts (browser_inbox.sql).
+    ('ops_operator_api', 'ops.gate_get_conversation(uuid)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_reply_to_conversation(uuid, text, integer)'::regprocedure),
+    ('ops_operator_api', 'ops.gate_release_conversation(uuid, integer)'::regprocedure)
   ),
   actual as (
     select r.rolname, p.oid::regprocedure as fn
@@ -463,7 +467,9 @@ begin
                            'gate_list_events', 'gate_list_stops', 'gate_spend_summary',
                            'gate_communication_status', 'gate_decide_review', 'gate_trip_stop',
                            'gate_move_opportunity', 'gate_set_opportunity_next_action',
-                           'gate_convert_opportunity', 'gate_lose_opportunity');
+                           'gate_convert_opportunity', 'gate_lose_opportunity',
+                           'gate_get_conversation', 'gate_reply_to_conversation',
+                           'gate_release_conversation');
   if v_bad is not null then
     raise exception 'A5: unexpected SECURITY DEFINER function(s) in ops: %', v_bad;
   end if;

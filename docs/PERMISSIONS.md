@@ -356,4 +356,25 @@ Every run capability first share-locks the leased job and requires the lease to 
 
 **The closed real-data gate** *(Phase 2B pre-push review, 2026-09-18; governance aligned with ADR 0018 owner amendment 1, 2026-09-21)*. `communication_channels_q8_real_data_gate` keeps every production channel inactive, for every role including the owner's own statements; `ops.configure_whatsapp_channel` refuses a live one with OS403, and the static migration guard reports dropping it (`constraint-dropped`). No role, flag, setting or configuration opens it. Opening it requires a NEW, explicitly owner-approved, Accepted ADR that settles BASELINE Q8, the lawful basis, the representation of real WhatsApp consent and opt-in, and the retention and erasure of message bodies and phone identifiers. Only after that ADR may a reviewed migration implement the change: a migration alone cannot open the gate. Until that ADR is Accepted and the reviewed migration has applied, the gate stays closed and no production WhatsApp channel can become active; BASELINE Q8 is open today.
 
-**Sending is the owner's act, not a role's.** No application role can create, begin or settle a send. The only path is `npm run messaging -- send`, run by a person holding the owner credential and `WHATSAPP_ACCESS_TOKEN`. The database re-checks eligibility at the moment of the call (SI-49).
+**Sending is the owner's act, not a role's.** No application role can create, begin or settle a send. The only path is `npm run messaging -- send`, run by a person holding the owner credential and `WHATSAPP_ACCESS_TOKEN`. The database re-checks eligibility at the moment of the call (SI-49). *(Since ADR 0026 §B and §E, two more sends exist, and still no role creates one directly: the database requests a send of a published fixed text as the owner's policy, or of a person's own reply in the browser inbox's act (§15); only the worker's `outbound.reply_send` job carries either, through its pinned lease-bound capabilities, under the same eligibility.)*
+
+## 15. The browser's acts (ADR 0019, ADR 0026 §E)
+
+A Company OS member acts only through `company_os_api`: 24 functions, each owned by `ops_operator_api`, executable only by `authenticated`, and each calling its one identity gate in `ops` (`ops.operator_scope()` first: verified claims, a live AAL2 session and an active membership, SI-55, SI-74). Sixteen are reads; eight are acts, each VOLATILE, each with fixed arguments and no generic operation (SI-58):
+
+| Act | What it does | Bound |
+| --- | --- | --- |
+| `decide_review` | Records accepted, rejected or needs_edit on one of its tenant's browser-decidable reviews; sends nothing | — |
+| `trip_stop` | Trips a stop at tenant, company, department or agent scope; never clears one | 2 s, OS429 |
+| `move_opportunity`, `set_opportunity_next_action`, `convert_opportunity`, `lose_opportunity` | The four commercial acts on the local CRM's deals, at an opaque revision (SI-68) | 2 s, OS429 |
+| `reply_to_conversation` | A person's own reply to a waiting conversation a person holds: one accepted person review, one `person_reply` send request and one reply job (SI-87) | 2 s, OS429 |
+| `release_conversation` | The owner's release of a waiting conversation a person holds, through `ops.release_conversation` (SI-82, SI-87) | 2 s, OS429 |
+
+**The reply's prerequisites,** each checked by the database under the conversation's lock, every refusal an answer state that records nothing:
+- the session verified, within the hour, an authenticator-app factor the user had before the session began, by the auth provider's own records (`auth.sessions`, `auth.mfa_factors`, `auth.mfa_amr_claims`); only the seed's non-production exemption row waives it;
+- a test channel, a number not erased, and a newest message of synthetic or test class;
+- the conversation waits for a person (an open `person_requested` or `message_waiting`), a person holds it, and the revision is the one the member saw;
+- its newest message can be answered (not redacted, fewer than five person replies at that revision, the contact not do-not-contact) and the send's own gates would let a reply leave now (exactly one CRM contact whose flag is false, no open opt-out, the 24-hour window); an execution stop holds the send instead of refusing it;
+- the text is 1 to 2000 characters, not blank, with no control character but the line break.
+
+The send table's guard admits a `person_reply` row only inside that act, for a review the same principal accepted in the same transaction. The release needs no recent factor and is refused (`opt_out_open`) while an opt-out is open. No browser act takes a conversation over, makes an exception act, clears a stop, resends, retries or marks a send.
